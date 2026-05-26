@@ -131,8 +131,6 @@ class TmuxController:
             ]
         ).strip()
         window_id, content_pane_id = raw.split("\t", 1)
-        self.select_window(window_id)
-        self.select_pane(content_pane_id)
         self._install_window_options(window_id)
         nav_pane_id = self._split_nav_pane(config, content_pane_id)
         self._set_window_option(window_id, EMPTY_WINDOW_OPTION, "0")
