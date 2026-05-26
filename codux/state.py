@@ -177,3 +177,20 @@ def prune_stale_tabs(
         changed = True
     repaired = AppState(tabs=kept, active_tab_id=active_tab_id, focus=state.focus)
     return repaired, changed
+
+
+def state_after_closing_tab(state: AppState, target_id: str) -> AppState:
+    target_index = next((index for index, tab in enumerate(state.tabs) if tab.id == target_id), -1)
+    if target_index < 0:
+        return state
+    remaining = [tab for tab in state.tabs if tab.id != target_id]
+    if not remaining:
+        return AppState(tabs=[], active_tab_id=None, focus="nav")
+
+    remaining_ids = {tab.id for tab in remaining}
+    if state.active_tab_id in remaining_ids:
+        active_tab_id = state.active_tab_id
+    else:
+        next_index = min(target_index, len(remaining) - 1)
+        active_tab_id = remaining[next_index].id
+    return AppState(tabs=remaining, active_tab_id=active_tab_id, focus=state.focus)

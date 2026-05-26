@@ -16,7 +16,7 @@ from dataclasses import replace
 from codux.config import ensure_config
 from codux.navigation import select_grid_tab
 from codux.render import render_nav
-from codux.state import AppState, StateStore
+from codux.state import AppState, StateStore, state_after_closing_tab
 from codux.tmux import TmuxController
 
 
@@ -102,7 +102,7 @@ class NavPane:
                 self.run_cli_async("new")
                 self.skip_next_render = True
             elif key == "x":
-                self.run_cli("close")
+                self.close_active_tab()
             elif key == "r":
                 self.rename_prompt()
             elif key == "?":
@@ -167,6 +167,24 @@ class NavPane:
         if pane_id:
             self.tmux.select_pane(pane_id)
         self.refresh_static_panes_async()
+
+    def close_active_tab(self) -> None:
+        state = self.current_state_for_input()
+        target = state.active_tab
+        if target is None:
+            return
+
+        def mutate(current: AppState) -> AppState:
+            current = replace(current, active_tab_id=target.id, focus="nav")
+            return state_after_closing_tab(current, target.id)
+
+        updated = self.store.update(mutate)
+        self.state = updated
+        next_tab = updated.active_tab
+        if next_tab is not None:
+            self.select_nav_for_window(next_tab.tmux_window_id)
+            self.skip_next_render = True
+        self.run_cli_async("_finish-close-window", target.tmux_window_id)
 
     def select_nav_for_window(self, window_id: str) -> None:
         pane_id = self.nav_panes_by_window.get(window_id)

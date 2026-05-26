@@ -25,6 +25,7 @@ from codux.state import (
     Tab,
     now_iso,
     prune_stale_tabs,
+    state_after_closing_tab,
     state_path,
 )
 from codux.tmux import TmuxController
@@ -90,11 +91,21 @@ def generated_tab_title(tmux: TmuxController, tab: Tab) -> str | None:
     title = title.strip()
     if title in IGNORED_GENERATED_TITLES:
         return None
-    if title.startswith("Ready | "):
+    if is_transient_codex_title(title):
         return None
     if title.endswith(".local"):
         return None
     return title
+
+
+def is_transient_codex_title(title: str) -> bool:
+    return (
+        title.startswith(("Ready | ", "Starting | "))
+        or " Ready | " in title
+        or " Starting | " in title
+        or title in {"Ready", "Starting"}
+        or title.endswith((" Ready", " Starting"))
+    )
 
 
 def select_active_or_empty(config: CoduxConfig, state: AppState, tmux: TmuxController) -> None:
@@ -157,7 +168,10 @@ def start(
 def new(title: str | None = typer.Argument(None, help="Optional tab title.")) -> None:
     """Create a new Codex tab."""
     config, store, tmux = load_runtime()
+    had_session = tmux.has_session()
     tmux.ensure_session(config)
+    if not had_session:
+        tmux.install_look_and_keys(config, codux_command())
     tab_id = uuid.uuid4().hex[:8]
     title = title or "New Codex"
     created = tmux.create_tab_window(config, title, tab_id)
@@ -177,17 +191,15 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
         return AppState(
             tabs=[*current.tabs, tab],
             active_tab_id=tab.id,
-            focus="codex",
+            focus="nav",
         )
 
     state = store.update(mutate)
-    write_render_files(config, state)
     tmux.remove_empty_windows()
-    tmux.install_look_and_keys(config, codux_command())
     tmux.refresh_window_frame_panes(config, state, tab.tmux_window_id)
-    refresh_runtime_async()
     tmux.select_window(tab.tmux_window_id)
-    tmux.select_pane(tab.tmux_pane_id)
+    tmux.select_pane(created.nav_pane_id)
+    refresh_runtime_async()
     console.print(f"Created [bold]{tab.title}[/bold].")
 
 
@@ -210,18 +222,14 @@ def close(
     target = state.tabs[target_index]
     if len(state.tabs) == 1:
         tmux.ensure_empty_window(config)
-    tmux.kill_window(target.tmux_window_id)
 
     def mutate(current: AppState) -> AppState:
-        remaining = [tab for tab in current.tabs if tab.id != target_id]
-        if not remaining:
-            return AppState(tabs=[], active_tab_id=None, focus="nav")
-        next_index = min(target_index, len(remaining) - 1)
-        return AppState(tabs=remaining, active_tab_id=remaining[next_index].id, focus=current.focus)
+        return state_after_closing_tab(current, target_id)
 
     state = store.update(mutate)
     render_runtime(config, state, tmux)
     select_active_or_empty(config, state, tmux)
+    tmux.kill_window(target.tmux_window_id)
     console.print(f"Closed [bold]{target.title}[/bold].")
 
 
@@ -538,6 +546,17 @@ def focus_window_command(window_id: str, focus: FocusTarget) -> None:
 
     state = store.update(mutate)
     tmux.refresh_window_frame_colors(config, state, window_id)
+
+
+@app.command("_finish-close-window", hidden=True)
+def finish_close_window_command(window_id: str) -> None:
+    config, store, tmux = load_runtime()
+    state = store.read()
+    if not state.tabs:
+        tmux.ensure_empty_window(config)
+    tmux.kill_window(window_id)
+    state = repair_and_render(config, store, tmux)
+    select_active_or_empty(config, state, tmux)
 
 
 def refresh_runtime_async() -> None:

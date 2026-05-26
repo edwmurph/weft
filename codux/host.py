@@ -576,11 +576,21 @@ def generated_child_title(title: str) -> str | None:
     title = title.strip()
     if title in IGNORED_GENERATED_TITLES:
         return None
-    if title.startswith("Ready | "):
+    if is_transient_codex_title(title):
         return None
     if title.endswith(".local"):
         return None
     return title
+
+
+def is_transient_codex_title(title: str) -> bool:
+    return (
+        title.startswith(("Ready | ", "Starting | "))
+        or " Ready | " in title
+        or " Starting | " in title
+        or title in {"Ready", "Starting"}
+        or title.endswith((" Ready", " Starting"))
+    )
 
 
 def cell_style(char) -> str:

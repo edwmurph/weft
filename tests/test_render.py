@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from codux.config import CoduxConfig
 from codux.render import (
     codex_shortcuts,
@@ -17,6 +19,9 @@ from codux.state import Tab, now_iso
 from codux.state import AppState
 
 
+ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
+
+
 def test_nav_column_widths_fill_available_width():
     widths = nav_column_widths(count=3, width=100, gap=2)
 
@@ -29,11 +34,15 @@ def test_render_nav_uses_configured_width():
 
     first_line = rendered.splitlines()[0]
     second_line = rendered.splitlines()[1]
-    assert len(first_line) == 60
+    plain_first_line = ANSI_RE.sub("", first_line)
+    assert len(plain_first_line) == 60
     assert len(second_line) == 60
-    assert first_line[0:5] == "INBOX"
-    assert first_line[21:30] == "IMPLEMENT"
-    assert first_line[42:46] == "SHIP"
+    assert "\033[4mINBOX\033[24m" in first_line
+    assert "\033[4mIMPLEMENT\033[24m" in first_line
+    assert "\033[4mSHIP\033[24m" in first_line
+    assert plain_first_line[0:5] == "INBOX"
+    assert plain_first_line[21:30] == "IMPLEMENT"
+    assert plain_first_line[42:46] == "SHIP"
     assert "-" not in second_line
 
 

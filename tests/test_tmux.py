@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import codux.tmux as tmux_module
 from codux.config import CoduxConfig
 from codux.state import AppState, Tab, now_iso
 from codux.tmux import TmuxController
+from types import SimpleNamespace
 
 
 def tab(tab_id: str, window_id: str) -> Tab:
@@ -63,3 +65,46 @@ def test_create_tab_window_does_not_select_detached_window(monkeypatch):
     assert selected_windows == []
     assert commands[0][0] == "new-window"
     assert "-d" in commands[0]
+
+
+def test_refresh_window_frame_panes_resizes_nav_before_writing_render(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[str] = []
+    first = tab("one", "@1")
+    second = tab("two", "@2")
+    state = AppState(tabs=[first, second], active_tab_id=second.id)
+
+    monkeypatch.setattr(controller, "has_session", lambda: True)
+    monkeypatch.setattr(controller, "window_exists", lambda window_id: True)
+    monkeypatch.setattr(
+        controller, "_ensure_window_frame", lambda window_id: events.append("frame")
+    )
+    monkeypatch.setattr(controller, "nav_pane_for_window", lambda window_id: "%nav")
+    monkeypatch.setattr(
+        controller,
+        "_resize_nav_frame",
+        lambda window_id, pane_id, height: events.append(f"resize:{height}"),
+    )
+    monkeypatch.setattr(
+        tmux_module,
+        "write_render_files",
+        lambda config, current_state: events.append("write"),
+    )
+    monkeypatch.setattr(controller, "_border_panes", lambda window_id: {})
+
+    controller.refresh_window_frame_panes(CoduxConfig(), state, "@2")
+
+    assert events == ["frame", "resize:3", "write"]
+
+
+def test_window_exists_is_scoped_to_codux_session(monkeypatch):
+    controller = TmuxController("codux")
+
+    def fake_run_tmux(args, check=True):
+        assert args[:3] == ["list-windows", "-t", "codux"]
+        return SimpleNamespace(returncode=0, stdout="@1\n@2\n")
+
+    monkeypatch.setattr(tmux_module, "_run_tmux", fake_run_tmux)
+
+    assert controller.window_exists("@2")
+    assert not controller.window_exists("@3")

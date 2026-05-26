@@ -11,6 +11,7 @@ import struct
 import sys
 import termios
 import tty
+from collections.abc import Callable
 
 
 PROBE_PATTERNS = {
@@ -38,6 +39,7 @@ def run_codex_proxy(command: list[str] | None = None) -> int:
         tty.setraw(stdin_fd)
 
     proxy = _ProbeProxy(responses)
+    loading = _LoadingIndicator(stdout_fd)
     _copy_terminal_size(stdin_fd, master_fd)
     old_winch = signal.getsignal(signal.SIGWINCH)
 
@@ -46,8 +48,12 @@ def run_codex_proxy(command: list[str] | None = None) -> int:
 
     signal.signal(signal.SIGWINCH, handle_winch)
     try:
+        loading.render()
         while True:
-            readable, _, _ = select.select([stdin_fd, master_fd], [], [])
+            readable, _, _ = select.select([stdin_fd, master_fd], [], [], loading.timeout)
+            if not readable:
+                loading.render()
+                continue
             if stdin_fd in readable:
                 data = os.read(stdin_fd, 8192)
                 if not data:
@@ -62,8 +68,9 @@ def run_codex_proxy(command: list[str] | None = None) -> int:
                     raise
                 if not data:
                     break
-                proxy.feed(data, stdout_fd, master_fd)
+                proxy.feed(data, stdout_fd, master_fd, before_stdout=loading.clear)
     finally:
+        loading.clear()
         proxy.flush(stdout_fd)
         signal.signal(signal.SIGWINCH, old_winch)
         if old_termios is not None:
@@ -83,22 +90,34 @@ class _ProbeProxy:
         self.responses = responses
         self.pending = b""
 
-    def feed(self, data: bytes, stdout_fd: int, child_fd: int) -> None:
+    def feed(
+        self,
+        data: bytes,
+        stdout_fd: int,
+        child_fd: int,
+        before_stdout: Callable[[], None] | None = None,
+    ) -> None:
         self.pending += data
-        self._drain(stdout_fd, child_fd, final=False)
+        self._drain(stdout_fd, child_fd, final=False, before_stdout=before_stdout)
 
     def flush(self, stdout_fd: int) -> None:
         if self.pending:
             os.write(stdout_fd, self.pending)
             self.pending = b""
 
-    def _drain(self, stdout_fd: int, child_fd: int, final: bool) -> None:
+    def _drain(
+        self,
+        stdout_fd: int,
+        child_fd: int,
+        final: bool,
+        before_stdout: Callable[[], None] | None = None,
+    ) -> None:
         while self.pending:
             match = self._next_match()
             if match is not None:
                 index, pattern, response = match
                 if index:
-                    os.write(stdout_fd, self.pending[:index])
+                    self._write_stdout(stdout_fd, self.pending[:index], before_stdout)
                 os.write(child_fd, response)
                 self.pending = self.pending[index + len(pattern) :]
                 continue
@@ -107,8 +126,20 @@ class _ProbeProxy:
             if len(self.pending) <= keep:
                 return
             cutoff = len(self.pending) - keep
-            os.write(stdout_fd, self.pending[:cutoff])
+            self._write_stdout(stdout_fd, self.pending[:cutoff], before_stdout)
             self.pending = self.pending[cutoff:]
+
+    def _write_stdout(
+        self,
+        stdout_fd: int,
+        data: bytes,
+        before_stdout: Callable[[], None] | None,
+    ) -> None:
+        if not data:
+            return
+        if before_stdout is not None:
+            before_stdout()
+        os.write(stdout_fd, data)
 
     def _next_match(self) -> tuple[int, bytes, bytes] | None:
         matches = [
@@ -166,12 +197,50 @@ def _osc_color_response(slot: int, rgb: tuple[int, int, int]) -> bytes:
     return f"\x1b]{slot};rgb:{channels}\x1b\\".encode()
 
 
+class _LoadingIndicator:
+    frames = "|/-\\"
+
+    def __init__(self, stdout_fd: int) -> None:
+        self.stdout_fd = stdout_fd
+        self.active = True
+        self.index = 0
+        self.timeout = 0.08
+
+    def render(self) -> None:
+        if not self.active:
+            self.timeout = None
+            return
+        rows, cols = _terminal_dimensions(self.stdout_fd)
+        message = f"{self.frames[self.index % len(self.frames)]} Starting Codex"
+        self.index += 1
+        row = max(1, rows // 2)
+        col = max(1, ((cols - len(message)) // 2) + 1)
+        payload = f"\x1b[?25l\x1b[2J\x1b[{row};{col}H{message}"
+        os.write(self.stdout_fd, payload.encode())
+
+    def clear(self) -> None:
+        if not self.active:
+            return
+        self.active = False
+        self.timeout = None
+        os.write(self.stdout_fd, b"\x1b[2J\x1b[H")
+
+
 def _prepare_child_env() -> None:
     for name in ("NO_COLOR", "CODEX_CI", "CI", "CLICOLOR_FORCE", "FORCE_COLOR"):
         os.environ.pop(name, None)
     os.environ["TERM"] = "tmux-256color"
     os.environ["COLORTERM"] = "truecolor"
     os.environ["CLICOLOR"] = "1"
+
+
+def _terminal_dimensions(fd: int) -> tuple[int, int]:
+    try:
+        size = fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\0" * 8)
+        rows, cols, _, _ = struct.unpack("HHHH", size)
+        return max(1, rows), max(1, cols)
+    except OSError:
+        return 24, 80
 
 
 def _copy_terminal_size(source_fd: int, target_fd: int) -> None:

@@ -191,12 +191,26 @@ class TmuxController:
         return [line.split("\t", 1)[0] for line in raw.splitlines() if line.endswith("\t1")]
 
     def window_exists(self, window_id: str) -> bool:
-        result = _run_tmux(["display-message", "-p", "-t", window_id, "#{window_id}"], check=False)
-        return result.returncode == 0
+        if not window_id:
+            return False
+        result = _run_tmux(
+            ["list-windows", "-t", self.session_name, "-F", "#{window_id}"],
+            check=False,
+        )
+        if result.returncode != 0:
+            return False
+        return window_id in result.stdout.splitlines()
 
     def pane_exists(self, pane_id: str) -> bool:
-        result = _run_tmux(["display-message", "-p", "-t", pane_id, "#{pane_id}"], check=False)
-        return result.returncode == 0
+        if not pane_id:
+            return False
+        result = _run_tmux(
+            ["list-panes", "-s", "-t", self.session_name, "-F", "#{pane_id}"],
+            check=False,
+        )
+        if result.returncode != 0:
+            return False
+        return pane_id in result.stdout.splitlines()
 
     def kill_window(self, window_id: str) -> None:
         self._tmux(["kill-window", "-t", window_id], check=False)
@@ -335,6 +349,9 @@ class TmuxController:
         if not self.has_session() or not self.window_exists(window_id):
             return
         self._ensure_window_frame(window_id)
+        nav_pane_id = self.nav_pane_for_window(window_id)
+        if nav_pane_id:
+            self._resize_nav_frame(window_id, nav_pane_id, nav_content_height(config, state))
         write_render_files(config, state)
         for pane_id, role in self._border_panes(window_id).items():
             self._refresh_border_pane(config, window_id, pane_id, role, state)

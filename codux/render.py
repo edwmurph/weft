@@ -13,6 +13,8 @@ ACTIVE_BORDER_COLOR = f"\033[38;5;{ACTIVE_COLOR}m"
 ACTIVE_TAB_COLOR = f"\033[48;5;{ACTIVE_COLOR}m\033[38;5;16m"
 INACTIVE_BORDER_COLOR = "\033[38;5;244m"
 RESET_COLOR = "\033[0m"
+UNDERLINE = "\033[4m"
+END_UNDERLINE = "\033[24m"
 
 
 def render_nav(config: CoduxConfig, state: AppState, width: int | None = None) -> str:
@@ -20,7 +22,7 @@ def render_nav(config: CoduxConfig, state: AppState, width: int | None = None) -
     column_widths = nav_column_widths(len(config.columns), width, gap)
     lines = [
         (" " * gap).join(
-            column.upper().ljust(column_widths[index])
+            _underlined_header(column.upper(), column_widths[index])
             for index, column in enumerate(config.columns)
         )
     ]
@@ -145,6 +147,11 @@ def _paint_border(text: str, active: bool) -> str:
 
 def _paint_active_tab(text: str) -> str:
     return f"{ACTIVE_TAB_COLOR}{text}{RESET_COLOR}"
+
+
+def _underlined_header(text: str, width: int) -> str:
+    label = text[:width]
+    return f"{UNDERLINE}{label}{END_UNDERLINE}" + (" " * max(0, width - len(label)))
 
 
 def render_help(config: CoduxConfig) -> str:
