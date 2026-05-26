@@ -99,7 +99,8 @@ class NavPane:
             elif key == "Enter":
                 self.focus_codex()
             elif key == "n":
-                self.run_cli("new")
+                self.run_cli_async("new")
+                self.skip_next_render = True
             elif key == "x":
                 self.run_cli("close")
             elif key == "r":
@@ -254,6 +255,14 @@ class NavPane:
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+        )
+
+    def run_cli_async(self, *args: str) -> None:
+        subprocess.Popen(
+            [sys.executable, "-m", "codux.cli", *args],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
 
     def rename_prompt(self) -> None:

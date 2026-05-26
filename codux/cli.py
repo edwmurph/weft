@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shlex
 import shutil
+import subprocess
 import sys
 import uuid
 from dataclasses import replace
@@ -157,7 +158,6 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
     """Create a new Codex tab."""
     config, store, tmux = load_runtime()
     tmux.ensure_session(config)
-    state = repair_and_render(config, store, tmux)
     tab_id = uuid.uuid4().hex[:8]
     title = title or "New Codex"
     created = tmux.create_tab_window(config, title, tab_id)
@@ -181,10 +181,11 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
         )
 
     state = store.update(mutate)
-    render_runtime(config, state, tmux)
+    write_render_files(config, state)
     tmux.remove_empty_windows()
     tmux.install_look_and_keys(config, codux_command())
-    render_runtime(config, state, tmux)
+    tmux.refresh_window_frame_panes(config, state, tab.tmux_window_id)
+    refresh_runtime_async()
     tmux.select_window(tab.tmux_window_id)
     tmux.select_pane(tab.tmux_pane_id)
     console.print(f"Created [bold]{tab.title}[/bold].")
@@ -524,6 +525,28 @@ def activate_window_command(window_id: str) -> None:
         return replace(current, active_tab_id=target.id, focus="nav")
 
     store.update(mutate)
+
+
+@app.command("_focus-window", hidden=True)
+def focus_window_command(window_id: str, focus: FocusTarget) -> None:
+    config, store, tmux = load_runtime()
+
+    def mutate(current: AppState) -> AppState:
+        target = next((tab for tab in current.tabs if tab.tmux_window_id == window_id), None)
+        active_tab_id = target.id if target is not None else current.active_tab_id
+        return replace(current, active_tab_id=active_tab_id, focus=focus)
+
+    state = store.update(mutate)
+    tmux.refresh_window_frame_colors(config, state, window_id)
+
+
+def refresh_runtime_async() -> None:
+    subprocess.Popen(
+        [sys.executable, "-m", "codux.cli", "_refresh"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 @app.command("_nav-pane", hidden=True)
