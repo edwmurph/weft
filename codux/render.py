@@ -6,6 +6,7 @@ from textwrap import shorten
 from codux.config import CoduxConfig
 from codux.state import AppState
 from codux.theme import Theme
+from codux.titles import render_display_title
 
 
 NAV_HORIZONTAL_PADDING = 2
@@ -37,9 +38,8 @@ def render_nav(config: CoduxConfig, state: AppState, width: int | None = None) -
             tabs = tabs_by_column[column]
             if index < len(tabs):
                 tab = tabs[index]
-                label = shorten(tab.title, width=max(column_width, 3), placeholder="...")[
-                    :column_width
-                ]
+                title = render_display_title(tab.title, tab.codex_title)
+                label = shorten(title, width=max(column_width, 3), placeholder="...")[:column_width]
                 cell = label.ljust(column_width)
                 cells.append(_paint_active_tab(cell) if tab.id == active_id else cell)
             else:

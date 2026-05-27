@@ -18,6 +18,7 @@ from codux.render import (
 )
 from codux.state import Tab, now_iso
 from codux.state import AppState
+from codux.titles import CODEX_TITLE_TEMPLATE
 
 
 ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
@@ -83,6 +84,87 @@ def test_render_nav_highlights_active_tab_without_marker():
 
     assert "> Active tab" not in rendered
     assert "\033[48;5;117m\033[38;5;16mActive tab" in rendered
+
+
+def test_render_nav_substitutes_codex_placeholder():
+    created_at = now_iso()
+    tab = Tab(
+        id="active",
+        title=f"Task {CODEX_TITLE_TEMPLATE}",
+        codex_title="Implement auth",
+        column="inbox",
+        tmux_session="codux",
+        tmux_window_id="@1",
+        tmux_pane_id="%1",
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+    rendered = render_nav(CoduxConfig(), AppState(tabs=[tab], active_tab_id=tab.id), width=80)
+    plain = ANSI_RE.sub("", rendered)
+
+    assert "Task Implement auth" in plain
+
+
+def test_render_nav_substitutes_codex_startup_title():
+    created_at = now_iso()
+    tab = Tab(
+        id="active",
+        title=CODEX_TITLE_TEMPLATE,
+        codex_title="Starting | 019e",
+        column="inbox",
+        tmux_session="codux",
+        tmux_window_id="@1",
+        tmux_pane_id="%1",
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+    rendered = render_nav(CoduxConfig(), AppState(tabs=[tab], active_tab_id=tab.id), width=80)
+    plain = ANSI_RE.sub("", rendered)
+
+    assert "Starting | 019e" in plain
+
+
+def test_render_nav_uses_clean_codex_fallback():
+    created_at = now_iso()
+    tab = Tab(
+        id="active",
+        title=CODEX_TITLE_TEMPLATE,
+        column="inbox",
+        tmux_session="codux",
+        tmux_window_id="@1",
+        tmux_pane_id="%1",
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+    rendered = render_nav(CoduxConfig(), AppState(tabs=[tab], active_tab_id=tab.id), width=80)
+    plain = ANSI_RE.sub("", rendered)
+
+    assert "Codex" in plain
+
+
+def test_render_nav_leaves_manual_titles_undecorated():
+    created_at = now_iso()
+    tab = Tab(
+        id="active",
+        title="Manual title",
+        codex_title="Live Codex title",
+        column="inbox",
+        tmux_session="codux",
+        tmux_window_id="@1",
+        tmux_pane_id="%1",
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+    rendered = render_nav(CoduxConfig(), AppState(tabs=[tab], active_tab_id=tab.id), width=80)
+    plain = ANSI_RE.sub("", rendered)
+
+    assert "Manual title" in plain
+    assert "Live Codex title" not in plain
+    assert "..." not in plain
 
 
 def test_render_top_border_draws_rounded_title_line():

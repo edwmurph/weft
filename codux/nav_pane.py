@@ -26,6 +26,8 @@ from codux.state import (
     state_after_closing_tab,
 )
 from codux.theme import Theme
+from codux.title_sync import state_with_live_codex_titles
+from codux.titles import CODEX_TITLE_TEMPLATE
 from codux.tmux import TmuxController
 
 
@@ -33,6 +35,7 @@ RESET = Theme().reset
 HIDE_CURSOR = "\033[?25l"
 POPUP_STYLE = "fg=default,bg=default"
 POPUP_BORDER_STYLE = "fg=default,bg=default"
+TITLE_POLL_INTERVAL = 0.5
 
 
 def run_nav_pane() -> int:
@@ -53,6 +56,7 @@ class NavPane:
         self.last_payload = ""
         self.last_render = 0.0
         self.last_state_mtime = 0.0
+        self.last_title_poll = 0.0
         self.skip_next_render = False
         self.resize_pending = False
         self.refresh_nav_pane_cache()
@@ -223,7 +227,7 @@ class NavPane:
 
     def new_tab(self) -> None:
         tab_id = uuid.uuid4().hex[:8]
-        title = "New Codex"
+        title = CODEX_TITLE_TEMPLATE
         created_at = now_iso()
         current = self.store.read()
         pending_tab = Tab(
@@ -418,8 +422,28 @@ class NavPane:
             mtime = self.store.path.stat().st_mtime
         except OSError:
             mtime = 0.0
-        if mtime != self.last_state_mtime:
+        titles_changed = self.poll_live_titles(now)
+        if mtime != self.last_state_mtime or titles_changed:
             self.render(force=True)
+
+    def poll_live_titles(self, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        if now - self.last_title_poll < TITLE_POLL_INTERVAL:
+            return False
+        self.last_title_poll = now
+        try:
+            current = self.store.read()
+        except StateLockTimeout:
+            return False
+        updated = state_with_live_codex_titles(current, self.tmux.pane_title)
+        if updated == current:
+            return False
+        try:
+            written = self.store.update(lambda latest: updated if latest == current else latest)
+        except StateLockTimeout:
+            return False
+        self.state = written
+        return written == updated
 
     def render(self, force: bool = False) -> None:
         now = time.monotonic()

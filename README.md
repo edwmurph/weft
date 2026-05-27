@@ -21,6 +21,13 @@ uv run codux status
 
 `uv run start` is the shortest local start command; it is equivalent to `uv run codux start`.
 
+New tabs store their title as `{codex}` by default. In the nav pane, Codux replaces
+that placeholder with the live terminal title from the Codex tmux pane, so Codex
+`/title` updates appear without Codux proxying Codex IO. If no live title is
+available yet, the nav shows `Codex`. Manual titles can also include the
+placeholder, for example `codux rename "Task {codex}"`; titles without
+`{codex}` render exactly as entered.
+
 Default nav shortcuts, active when the nav region is focused:
 
 | Key | Action |

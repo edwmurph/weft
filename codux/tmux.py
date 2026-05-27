@@ -21,6 +21,7 @@ from codux.render import (
     render_top_border,
 )
 from codux.state import AppState, Tab, now_iso
+from codux.titles import recovered_tab_title, title_uses_codex_placeholder
 from codux.tmux_api import TmuxError  # noqa: F401
 from codux.tmux_api import run_tmux
 from codux.tmux_snapshot import TmuxSnapshot, fetch_snapshot
@@ -201,7 +202,7 @@ class TmuxController:
             tabs.append(
                 Tab(
                     id=tab_id,
-                    title=title or "New Codex",
+                    title=recovered_tab_title(title),
                     column=config.columns[0],
                     tmux_session=self.session_name,
                     tmux_window_id=window_id,
@@ -264,7 +265,8 @@ class TmuxController:
         self._set_window_option(window_id, EMPTY_WINDOW_OPTION, "0")
         self._set_window_option(window_id, SPARE_WINDOW_OPTION, "0")
         self._set_window_option(window_id, TAB_ID_OPTION, tab_id)
-        self._set_pane_title(created.content_pane_id, title)
+        if not title_uses_codex_placeholder(title):
+            self._set_pane_title(created.content_pane_id, title)
         self.rename_window(window_id, title)
 
     def ensure_empty_window(self, config: CoduxConfig) -> str:
@@ -799,7 +801,6 @@ class TmuxController:
         self._set_pane_role(nav_pane_id, NAV_PANE_TITLE)
         self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
         self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
-        self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
 
     def _ensure_window_frame(self, window_id: str, snapshot: TmuxSnapshot) -> bool:
         changed = False
@@ -1030,7 +1031,6 @@ class TmuxController:
         self._tmux(["respawn-pane", "-k", "-t", pane_id, self._codex_shell_command(config)])
         self._tmux(["clear-history", "-t", pane_id], check=False)
         self._set_pane_role(pane_id, CODEX_PANE_TITLE)
-        self._set_pane_title(pane_id, CODEX_PANE_TITLE)
 
     def pane_size(self, pane_id: str) -> tuple[int, int]:
         raw = self._tmux(

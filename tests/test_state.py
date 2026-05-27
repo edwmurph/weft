@@ -44,6 +44,36 @@ def test_state_store_writes_and_reads_json(tmp_path):
     assert state_path(tmp_path).with_suffix(".lock").exists()
 
 
+def test_state_loads_tabs_without_codex_title(tmp_path):
+    path = state_path(tmp_path)
+    created_at = now_iso()
+    path.write_text(
+        json.dumps(
+            {
+                "tabs": [
+                    {
+                        "id": "abc",
+                        "title": "{codex}",
+                        "column": "Backlog",
+                        "tmux_session": "codux",
+                        "tmux_window_id": "@1",
+                        "tmux_pane_id": "%1",
+                        "created_at": created_at,
+                        "updated_at": created_at,
+                    }
+                ],
+                "active_tab_id": "abc",
+                "focus": "nav",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = StateStore(path).read()
+
+    assert loaded.active_tab.codex_title is None
+
+
 def test_state_store_update_is_persisted(tmp_path):
     store = StateStore(state_path(tmp_path))
 

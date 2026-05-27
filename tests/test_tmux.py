@@ -50,6 +50,32 @@ def test_codex_shell_command_does_not_rewrite_custom_launcher():
     assert command == "unset NO_COLOR; exec my-codex --foo"
 
 
+def test_respawn_codex_pane_preserves_terminal_title(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[tuple[str, str] | tuple[str, tuple[str, ...]]] = []
+
+    monkeypatch.setattr(
+        controller,
+        "_tmux",
+        lambda args, check=True: events.append(("tmux", tuple(args))) or "",
+    )
+    monkeypatch.setattr(
+        controller,
+        "_set_pane_role",
+        lambda pane_id, role: events.append(("role", pane_id)),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_set_pane_title",
+        lambda pane_id, title: events.append(("title", title)),
+    )
+
+    controller._respawn_codex_pane(CoduxConfig(), "%codex")
+
+    assert ("role", "%codex") in events
+    assert not any(event[0] == "title" for event in events)
+
+
 def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
     controller = TmuxController("codux")
     root = shlex.quote(str(tmux_module.PROJECT_ROOT))

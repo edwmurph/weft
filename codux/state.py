@@ -27,12 +27,16 @@ class Tab:
     tmux_pane_id: str
     created_at: str
     updated_at: str
+    codex_title: str | None = None
 
     @classmethod
     def from_mapping(cls, raw: dict[str, Any]) -> Tab:
+        raw_codex_title = raw.get("codex_title")
+        codex_title = str(raw_codex_title) if raw_codex_title is not None else None
         return cls(
             id=str(raw["id"]),
             title=str(raw["title"]),
+            codex_title=codex_title,
             column=str(raw["column"]),
             tmux_session=str(raw["tmux_session"]),
             tmux_window_id=str(raw["tmux_window_id"]),

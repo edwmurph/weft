@@ -12,6 +12,7 @@ import codux.launcher as launcher_module
 from codux.cli import is_transient_codex_title, repair_and_render
 from codux.config import CoduxConfig
 from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
+from codux.titles import CODEX_TITLE_TEMPLATE, normalize_codex_title
 from codux.tmux import TmuxError
 from rich.console import Console
 
@@ -101,12 +102,13 @@ def test_state_after_closing_inactive_tab_preserves_active_tab():
     assert updated.focus == "nav"
 
 
-def test_transient_codex_titles_are_ignored():
+def test_codex_runtime_titles_are_accepted_for_display():
     assert is_transient_codex_title("Starting | 019e")
-    assert is_transient_codex_title("| Starting | 019e")
-    assert is_transient_codex_title("- Starting")
     assert is_transient_codex_title("Ready | 019e")
     assert not is_transient_codex_title("Implement auth flow")
+    assert normalize_codex_title("Starting | 019e") == "Starting | 019e"
+    assert normalize_codex_title("Ready | 019e") == "Ready | 019e"
+    assert normalize_codex_title("Working | 019e") == "Working | 019e"
 
 
 def test_frame_pane_does_not_append_trailing_newline(monkeypatch):
@@ -181,6 +183,86 @@ def test_repair_and_render_recovers_live_tmux_tabs(monkeypatch, tmp_path):
     assert state.tabs == [recovered]
     assert state.active_tab_id == recovered.id
     assert refreshed[-1].active_tab_id == recovered.id
+
+
+def test_repair_and_render_reads_live_codex_title(monkeypatch, tmp_path):
+    active = tab("active").with_updates(title=CODEX_TITLE_TEMPLATE)
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState(tabs=[active], active_tab_id=active.id))
+
+    class FakeTmux:
+        def has_session(self):
+            return True
+
+        def window_exists(self, window_id):
+            return True
+
+        def pane_exists(self, pane_id):
+            return True
+
+        def pane_title(self, pane_id):
+            return "Implement auth"
+
+        def recoverable_tabs(self, config):
+            return []
+
+        def active_tab_id_from_tmux(self):
+            return active.id
+
+        def refresh_static_panes(self, config, state):
+            pass
+
+    state = repair_and_render(CoduxConfig(), store, FakeTmux())
+
+    assert state.active_tab.codex_title == "Implement auth"
+    assert store.read().active_tab.codex_title == "Implement auth"
+
+
+def test_new_defaults_stored_title_to_codex_template(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState())
+    claimed_titles: list[str] = []
+
+    class FakeTmux:
+        def has_session(self):
+            return True
+
+        def ensure_session(self, config):
+            pass
+
+        def claim_spare_tab_window(self, config, state, title, tab_id):
+            claimed_titles.append(title)
+            return SimpleNamespace(
+                window_id="@new",
+                content_pane_id="%content",
+                nav_pane_id="%nav",
+            )
+
+        def remove_empty_windows(self):
+            pass
+
+        def refresh_window_frame_panes(self, config, state, window_id):
+            pass
+
+        def refresh_window_frame_colors(self, config, state, window_id):
+            pass
+
+        def select_window(self, window_id):
+            pass
+
+        def select_pane(self, pane_id):
+            pass
+
+        def prepare_spare_window_async(self):
+            pass
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+    monkeypatch.setattr(cli_module, "refresh_runtime_async", lambda: None)
+
+    cli_module.new(None)
+
+    assert claimed_titles == [CODEX_TITLE_TEMPLATE]
+    assert store.read().active_tab.title == CODEX_TITLE_TEMPLATE
 
 
 def test_new_focuses_codex_pane(monkeypatch, tmp_path):
@@ -408,3 +490,25 @@ def test_rename_active_tab_updates_state_and_tmux(monkeypatch, tmp_path):
         ("rename-window", active.tmux_window_id, "Renamed"),
         ("set-pane-title", active.tmux_pane_id, "Renamed"),
     ]
+
+
+def test_rename_with_codex_placeholder_preserves_pane_title(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    active = tab("active")
+    store.write(AppState(tabs=[active], active_tab_id=active.id, focus="codex"))
+    events: list[tuple[str, str, str]] = []
+
+    class FakeTmux:
+        def rename_window(self, window_id, title):
+            events.append(("rename-window", window_id, title))
+
+        def set_pane_title(self, pane_id, title):
+            events.append(("set-pane-title", pane_id, title))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+    monkeypatch.setattr(cli_module, "refresh_runtime_async", lambda: None)
+
+    state = cli_module.rename_active_tab(f"Task {CODEX_TITLE_TEMPLATE}")
+
+    assert state.active_tab.title == f"Task {CODEX_TITLE_TEMPLATE}"
+    assert events == [("rename-window", active.tmux_window_id, f"Task {CODEX_TITLE_TEMPLATE}")]

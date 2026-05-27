@@ -33,12 +33,18 @@ from codux.state import (
     state_after_closing_tab,
     state_path,
 )
+from codux.title_sync import state_with_live_codex_titles
+from codux import titles as title_helpers
+from codux.titles import (
+    CODEX_TITLE_TEMPLATE,
+    normalize_codex_title,
+    title_uses_codex_placeholder,
+)
 from codux.tmux import FRAME_HOST_OPTION, FRAME_HOST_VERSION, TmuxController
 
 
 app = typer.Typer(help="Manage Codex sessions in a tmux-native tab UI.")
 console = Console()
-IGNORED_GENERATED_TITLES = {"", "CODEX", "NAV", "Codux Empty"}
 
 
 def codux_command() -> str:
@@ -115,19 +121,22 @@ def repaired_runtime_state(
         changes = {}
         if tab.column not in config.columns:
             changes["column"] = config.columns[0]
-        generated_title = generated_tab_title(tmux, tab)
-        if generated_title and generated_title != tab.title:
-            changes["title"] = generated_title
         tabs.append(tab.with_updates(**changes) if changes else tab)
+    state_with_recovered_tabs = replace(repaired, tabs=tabs)
+    state_with_recovered_tabs = state_with_live_codex_titles(
+        state_with_recovered_tabs,
+        lambda pane_id: tmux.pane_title(pane_id),
+    )
+    tabs = state_with_recovered_tabs.tabs
     tab_ids = {tab.id for tab in tabs}
-    active_tab_id = repaired.active_tab_id
+    active_tab_id = state_with_recovered_tabs.active_tab_id
     if active_tab_id not in tab_ids:
         tmux_active_tab_id = tmux.active_tab_id_from_tmux()
         active_tab_id = tmux_active_tab_id if tmux_active_tab_id in tab_ids else None
     if active_tab_id is None and tabs:
         active_tab_id = tabs[0].id
-    focus = "nav" if active_tab_id is None else repaired.focus
-    return replace(repaired, tabs=tabs, active_tab_id=active_tab_id, focus=focus)
+    focus = "nav" if active_tab_id is None else state_with_recovered_tabs.focus
+    return replace(state_with_recovered_tabs, active_tab_id=active_tab_id, focus=focus)
 
 
 def render_runtime(config: CoduxConfig, state: AppState, tmux: TmuxController) -> None:
@@ -136,27 +145,11 @@ def render_runtime(config: CoduxConfig, state: AppState, tmux: TmuxController) -
 
 
 def generated_tab_title(tmux: TmuxController, tab: Tab) -> str | None:
-    title = tmux.pane_title(tab.tmux_pane_id)
-    if title is None:
-        return None
-    title = title.strip()
-    if title in IGNORED_GENERATED_TITLES:
-        return None
-    if is_transient_codex_title(title):
-        return None
-    if title.endswith(".local"):
-        return None
-    return title
+    return normalize_codex_title(tmux.pane_title(tab.tmux_pane_id))
 
 
 def is_transient_codex_title(title: str) -> bool:
-    return (
-        title.startswith(("Ready | ", "Starting | "))
-        or " Ready | " in title
-        or " Starting | " in title
-        or title in {"Ready", "Starting"}
-        or title.endswith((" Ready", " Starting"))
-    )
+    return title_helpers.is_transient_codex_title(title)
 
 
 def select_active_or_empty(config: CoduxConfig, state: AppState, tmux: TmuxController) -> None:
@@ -231,7 +224,7 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
     if not had_session:
         tmux.install_look_and_keys(config, codux_command())
     tab_id = uuid.uuid4().hex[:8]
-    title = title or "New Codex"
+    title = title or CODEX_TITLE_TEMPLATE
     created = tmux.claim_spare_tab_window(config, store.read(), title, tab_id)
     created_at = now_iso()
     tab = Tab(
@@ -312,7 +305,8 @@ def rename_active_tab(title: str) -> AppState:
 
     state = store.update(mutate)
     tmux.rename_window(target.tmux_window_id, title)
-    tmux.set_pane_title(target.tmux_pane_id, title)
+    if not title_uses_codex_placeholder(title):
+        tmux.set_pane_title(target.tmux_pane_id, title)
     refresh_runtime_async()
     return state
 

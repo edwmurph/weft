@@ -8,6 +8,7 @@ import codux.nav_pane as nav_pane_module
 from codux.config import CoduxConfig
 from codux.nav_pane import NavPane, nav_keys
 from codux.state import AppState, StateStore, Tab, now_iso
+from codux.titles import CODEX_TITLE_TEMPLATE
 
 
 def tab(tab_id: str, column: str = "inbox") -> Tab:
@@ -275,9 +276,11 @@ def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
     events: list[tuple[str, object]] = []
     frame_states: list[AppState] = []
     color_states: list[AppState] = []
+    claimed_titles: list[str] = []
 
     class FakeTmux:
         def claim_spare_tab_window(self, config_arg, state_arg, title, tab_id):
+            claimed_titles.append(title)
             return SimpleNamespace(
                 window_id="@new",
                 content_pane_id="%content",
@@ -319,7 +322,9 @@ def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
 
     state = store.read()
     assert state.active_tab is not None
+    assert state.active_tab.title == CODEX_TITLE_TEMPLATE
     assert state.focus == "codex"
+    assert claimed_titles == [CODEX_TITLE_TEMPLATE]
     assert frame_states[-1].focus == "codex"
     assert color_states[-1].focus == "codex"
     assert events == [
@@ -333,3 +338,23 @@ def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
         ("refresh-async", True),
         ("remove-empty", True),
     ]
+
+
+def test_nav_pane_polls_live_codex_titles(tmp_path):
+    active = tab("active").with_updates(title=CODEX_TITLE_TEMPLATE, codex_title="Working | 019e")
+    state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
+    store = StateStore(tmp_path / "state.json")
+    store.write(state)
+
+    class FakeTmux:
+        def pane_title(self, pane_id):
+            return "Ready | 019e"
+
+    pane = NavPane.__new__(NavPane)
+    pane.store = store
+    pane.tmux = FakeTmux()
+    pane.state = state
+    pane.last_title_poll = 0.0
+
+    assert pane.poll_live_titles(now=1.0)
+    assert store.read().active_tab.codex_title == "Ready | 019e"
