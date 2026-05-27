@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from codux.cli import is_transient_codex_title
-from codux.state import AppState, Tab, now_iso, state_after_closing_tab
+from codux.cli import is_transient_codex_title, repair_and_render
+from codux.config import CoduxConfig
+from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
 
 
 def tab(tab_id: str) -> Tab:
@@ -48,3 +49,40 @@ def test_transient_codex_titles_are_ignored():
     assert is_transient_codex_title("- Starting")
     assert is_transient_codex_title("Ready | 019e")
     assert not is_transient_codex_title("Implement auth flow")
+
+
+def test_repair_and_render_recovers_live_tmux_tabs(monkeypatch, tmp_path):
+    recovered = tab("live").with_updates(title="Recovered")
+    refreshed: list[AppState] = []
+
+    class FakeTmux:
+        def has_session(self):
+            return True
+
+        def window_exists(self, window_id):
+            return True
+
+        def pane_exists(self, pane_id):
+            return True
+
+        def pane_title(self, pane_id):
+            return None
+
+        def recoverable_tabs(self, config):
+            return [recovered]
+
+        def active_tab_id_from_tmux(self):
+            return recovered.id
+
+        def refresh_static_panes(self, config, state):
+            refreshed.append(state)
+
+    monkeypatch.setattr("codux.cli.write_render_files", lambda config, state: None)
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState())
+
+    state = repair_and_render(CoduxConfig(), store, FakeTmux())
+
+    assert state.tabs == [recovered]
+    assert state.active_tab_id == recovered.id
+    assert refreshed[-1].active_tab_id == recovered.id

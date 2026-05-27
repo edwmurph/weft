@@ -40,10 +40,18 @@ def test_render_nav_uses_configured_width():
     assert "\033[4mINBOX\033[24m" in first_line
     assert "\033[4mIMPLEMENT\033[24m" in first_line
     assert "\033[4mSHIP\033[24m" in first_line
-    assert plain_first_line[0:5] == "INBOX"
-    assert plain_first_line[21:30] == "IMPLEMENT"
-    assert plain_first_line[42:46] == "SHIP"
+    assert plain_first_line[0:7] == "  INBOX"
+    assert plain_first_line[22:31] == "IMPLEMENT"
+    assert plain_first_line[41:45] == "SHIP"
     assert "-" not in second_line
+
+
+def test_render_nav_keeps_padding_when_empty():
+    rendered = render_nav(CoduxConfig(), AppState(), width=60)
+    plain_lines = [ANSI_RE.sub("", line) for line in rendered.splitlines()]
+
+    assert plain_lines[0].startswith("  INBOX")
+    assert plain_lines[1].startswith("  ")
 
 
 def test_render_nav_highlights_active_tab_without_marker():

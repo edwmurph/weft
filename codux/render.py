@@ -15,16 +15,21 @@ INACTIVE_BORDER_COLOR = "\033[38;5;244m"
 RESET_COLOR = "\033[0m"
 UNDERLINE = "\033[4m"
 END_UNDERLINE = "\033[24m"
+NAV_HORIZONTAL_PADDING = 2
 
 
 def render_nav(config: CoduxConfig, state: AppState, width: int | None = None) -> str:
     gap = 2
-    column_widths = nav_column_widths(len(config.columns), width, gap)
+    padding = " " * NAV_HORIZONTAL_PADDING
+    inner_width = max(1, width - (NAV_HORIZONTAL_PADDING * 2)) if width is not None else None
+    column_widths = nav_column_widths(len(config.columns), inner_width, gap)
     lines = [
-        (" " * gap).join(
+        padding
+        + (" " * gap).join(
             _underlined_header(column.upper(), column_widths[index])
             for index, column in enumerate(config.columns)
         )
+        + padding
     ]
     active_id = state.active_tab_id
     tabs_by_column = {
@@ -45,7 +50,7 @@ def render_nav(config: CoduxConfig, state: AppState, width: int | None = None) -
                 cells.append(_paint_active_tab(cell) if tab.id == active_id else cell)
             else:
                 cells.append(" " * column_width)
-        lines.append((" " * gap).join(cells))
+        lines.append(padding + (" " * gap).join(cells) + padding)
     return "\n".join(lines)
 
 

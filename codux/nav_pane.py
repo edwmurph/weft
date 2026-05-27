@@ -11,12 +11,13 @@ import sys
 import termios
 import time
 import tty
+import uuid
 from dataclasses import replace
 
 from codux.config import ensure_config
 from codux.navigation import select_grid_tab
 from codux.render import render_nav
-from codux.state import AppState, StateStore, state_after_closing_tab
+from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
 from codux.tmux import TmuxController
 
 
@@ -99,7 +100,7 @@ class NavPane:
             elif key == "Enter":
                 self.focus_codex()
             elif key == "n":
-                self.run_cli_async("new")
+                self.new_tab()
                 self.skip_next_render = True
             elif key == "x":
                 self.close_active_tab()
@@ -152,9 +153,11 @@ class NavPane:
                 focus="nav",
             )
 
-        updated = self.store.update(mutate)
-        self.tmux.refresh_static_panes(self.config, updated)
+        self.state = self.store.update(mutate)
+        self.render_snapshot(self.state)
+        self.tmux.resize_nav_frame_for_window(self.config, self.state, target.tmux_window_id)
         self.select_nav_for_window(target.tmux_window_id)
+        self.refresh_static_panes_async()
 
     def focus_codex(self) -> None:
         state = self.store.update(lambda current: replace(current, focus="codex"))
@@ -185,6 +188,48 @@ class NavPane:
             self.select_nav_for_window(next_tab.tmux_window_id)
             self.skip_next_render = True
         self.run_cli_async("_finish-close-window", target.tmux_window_id)
+
+    def new_tab(self) -> None:
+        tab_id = uuid.uuid4().hex[:8]
+        title = "New Codex"
+        created_at = now_iso()
+        current = self.store.read()
+        pending_tab = Tab(
+            id=tab_id,
+            title=title,
+            column=self.config.columns[0],
+            tmux_session=self.config.tmux_session,
+            tmux_window_id=self.window_id,
+            tmux_pane_id=self.pane_id,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        self.render_snapshot(
+            AppState(tabs=[*current.tabs, pending_tab], active_tab_id=tab_id, focus="nav")
+        )
+
+        created = self.tmux.claim_spare_tab_window(self.config, current, title, tab_id)
+        tab = Tab(
+            id=tab_id,
+            title=title,
+            column=self.config.columns[0],
+            tmux_session=self.config.tmux_session,
+            tmux_window_id=created.window_id,
+            tmux_pane_id=created.content_pane_id,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+
+        def mutate(current: AppState) -> AppState:
+            return AppState(tabs=[*current.tabs, tab], active_tab_id=tab.id, focus="nav")
+
+        self.state = self.store.update(mutate)
+        self.tmux.remove_empty_windows()
+        self.tmux.refresh_window_frame_panes(self.config, self.state, tab.tmux_window_id)
+        self.refresh_nav_pane_cache()
+        self.select_nav_for_window(tab.tmux_window_id)
+        self.tmux.prepare_spare_window_async()
+        self.refresh_static_panes_async()
 
     def select_nav_for_window(self, window_id: str) -> None:
         pane_id = self.nav_panes_by_window.get(window_id)
@@ -319,13 +364,16 @@ class NavPane:
         if not force and now - self.last_render < 0.03:
             return
         self.last_render = now
-        width, height = terminal_size()
         state = self.store.read()
         self.state = state
         try:
             self.last_state_mtime = self.store.path.stat().st_mtime
         except OSError:
             self.last_state_mtime = 0.0
+        self.render_snapshot(state)
+
+    def render_snapshot(self, state: AppState) -> None:
+        width, height = terminal_size()
         lines = render_nav(self.config, state, width).splitlines()
         visible_lines = [visible_pad(line, width) for line in lines[:height]]
         if len(visible_lines) < height:

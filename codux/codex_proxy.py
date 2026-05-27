@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import fcntl
 import os
+import plistlib
 import pty
 import select
 import shlex
@@ -11,16 +12,20 @@ import struct
 import sys
 import termios
 import tty
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from pathlib import Path
 
 
-PROBE_PATTERNS = {
-    b"\x1b]10;?\x1b\\": b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\",
-    b"\x1b]10;?\x07": b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\",
-    b"\x1b]11;?\x1b\\": b"\x1b]11;rgb:0000/0000/0000\x1b\\",
-    b"\x1b]11;?\x07": b"\x1b]11;rgb:0000/0000/0000\x1b\\",
-}
-MAX_PATTERN_LEN = max(len(pattern) for pattern in PROBE_PATTERNS)
+PROBE_QUERIES = (
+    b"\x1b]10;?\x1b\\",
+    b"\x1b]10;?\x07",
+    b"\x1b]11;?\x1b\\",
+    b"\x1b]11;?\x07",
+)
+MAX_PATTERN_LEN = max(len(pattern) for pattern in PROBE_QUERIES)
+DEFAULT_FG_RGB = (232, 235, 237)
+DEFAULT_BG_RGB = (29, 38, 42)
+RGB_ENV_SEPARATOR = ","
 
 
 def run_codex_proxy(command: list[str] | None = None) -> int:
@@ -151,7 +156,7 @@ class _ProbeProxy:
 
 
 def _probe_responses() -> dict[bytes, bytes]:
-    fg, bg = _colorfgbg_rgb()
+    fg, bg = _terminal_rgb()
     return {
         b"\x1b]10;?\x1b\\": _osc_color_response(10, fg),
         b"\x1b]10;?\x07": _osc_color_response(10, fg),
@@ -160,12 +165,147 @@ def _probe_responses() -> dict[bytes, bytes]:
     }
 
 
-def _colorfgbg_rgb() -> tuple[tuple[int, int, int], tuple[int, int, int]]:
-    value = os.environ.get("COLORFGBG", "")
+def terminal_color_env(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    fg, bg = _terminal_rgb(os.environ if environ is None else environ)
+    return {
+        "CODUX_FG_RGB": _format_rgb_env(fg),
+        "CODUX_BG_RGB": _format_rgb_env(bg),
+        "COLORFGBG": _colorfgbg_for_rgb(fg, bg),
+    }
+
+
+def _terminal_rgb(
+    environ: Mapping[str, str] | None = None,
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    environ = os.environ if environ is None else environ
+    fg = _rgb_env(environ.get("CODUX_FG_RGB"))
+    bg = _rgb_env(environ.get("CODUX_BG_RGB"))
+    if fg is not None and bg is not None:
+        return fg, bg
+
+    colorfgbg = environ.get("CODUX_COLORFGBG")
+    if colorfgbg:
+        return _colorfgbg_rgb(colorfgbg)
+
+    iterm = _iterm_profile_rgb(environ)
+    if iterm is not None:
+        return iterm
+
+    return DEFAULT_FG_RGB, DEFAULT_BG_RGB
+
+
+def _colorfgbg_rgb(value: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     parts = [part for part in value.replace(";", " ").split() if part.lstrip("-").isdigit()]
     if len(parts) >= 2:
         return _ansi_color(int(parts[0])), _ansi_color(int(parts[-1]))
-    return (255, 255, 255), (0, 0, 0)
+    return DEFAULT_FG_RGB, DEFAULT_BG_RGB
+
+
+def _rgb_env(value: str | None) -> tuple[int, int, int] | None:
+    if not value:
+        return None
+    value = value.strip()
+    if value.startswith("#") and len(value) == 7:
+        try:
+            return tuple(int(value[index : index + 2], 16) for index in (1, 3, 5))
+        except ValueError:
+            return None
+    parts = [
+        part.strip()
+        for part in value.replace("rgb:", "")
+        .replace("/", RGB_ENV_SEPARATOR)
+        .split(RGB_ENV_SEPARATOR)
+    ]
+    if len(parts) != 3:
+        return None
+    channels: list[int] = []
+    for part in parts:
+        try:
+            number = int(part, 16) // 257 if len(part) == 4 else int(part)
+        except ValueError:
+            return None
+        channels.append(max(0, min(255, number)))
+    return tuple(channels)  # type: ignore[return-value]
+
+
+def _iterm_profile_rgb(
+    environ: Mapping[str, str],
+) -> tuple[tuple[int, int, int], tuple[int, int, int]] | None:
+    if not _looks_like_iterm(environ):
+        return None
+    prefs_path = Path.home() / "Library" / "Preferences" / "com.googlecode.iterm2.plist"
+    try:
+        prefs = plistlib.loads(prefs_path.read_bytes())
+    except (OSError, plistlib.InvalidFileException):
+        return None
+
+    profiles = prefs.get("New Bookmarks")
+    if not isinstance(profiles, list):
+        return None
+
+    profile = _find_iterm_profile(profiles, prefs, environ)
+    if profile is None:
+        return None
+    fg = _iterm_color(profile.get("Foreground Color"))
+    bg = _iterm_color(profile.get("Background Color"))
+    if fg is None or bg is None:
+        return None
+    return fg, bg
+
+
+def _looks_like_iterm(environ: Mapping[str, str]) -> bool:
+    return (
+        environ.get("TERM_PROGRAM") == "iTerm.app"
+        or environ.get("LC_TERMINAL") == "iTerm2"
+        or bool(environ.get("ITERM_PROFILE"))
+    )
+
+
+def _find_iterm_profile(
+    profiles: list[object],
+    prefs: Mapping[str, object],
+    environ: Mapping[str, str],
+) -> Mapping[str, object] | None:
+    profile_name = environ.get("ITERM_PROFILE")
+    if profile_name:
+        for profile in profiles:
+            if isinstance(profile, Mapping) and profile.get("Name") == profile_name:
+                return profile
+
+    default_guid = prefs.get("Default Bookmark Guid")
+    for profile in profiles:
+        if isinstance(profile, Mapping) and profile.get("Guid") == default_guid:
+            return profile
+    return None
+
+
+def _iterm_color(raw: object) -> tuple[int, int, int] | None:
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        red = float(raw["Red Component"])
+        green = float(raw["Green Component"])
+        blue = float(raw["Blue Component"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (
+        max(0, min(255, round(red * 255))),
+        max(0, min(255, round(green * 255))),
+        max(0, min(255, round(blue * 255))),
+    )
+
+
+def _format_rgb_env(rgb: tuple[int, int, int]) -> str:
+    return RGB_ENV_SEPARATOR.join(str(channel) for channel in rgb)
+
+
+def _colorfgbg_for_rgb(
+    fg: tuple[int, int, int],
+    bg: tuple[int, int, int],
+) -> str:
+    fg_index = 15 if sum(fg) >= 384 else 0
+    bg_index = 15 if sum(bg) >= 384 else 0
+    return f"{fg_index};{bg_index}"
 
 
 def _ansi_color(index: int) -> tuple[int, int, int]:
@@ -229,9 +369,10 @@ class _LoadingIndicator:
 def _prepare_child_env() -> None:
     for name in ("NO_COLOR", "CODEX_CI", "CI", "CLICOLOR_FORCE", "FORCE_COLOR"):
         os.environ.pop(name, None)
-    os.environ["TERM"] = "tmux-256color"
+    os.environ["TERM"] = os.environ.get("CODUX_CHILD_TERM", "xterm-256color")
     os.environ["COLORTERM"] = "truecolor"
     os.environ["CLICOLOR"] = "1"
+    os.environ.update(terminal_color_env())
 
 
 def _terminal_dimensions(fd: int) -> tuple[int, int]:

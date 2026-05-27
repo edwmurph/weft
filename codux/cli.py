@@ -4,6 +4,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import replace
 
@@ -61,8 +62,13 @@ def repair_and_render(
                 and tmux.pane_exists(tab.tmux_pane_id)
             ),
         )
+        recovered_tabs = [
+            tab
+            for tab in tmux.recoverable_tabs(config)
+            if tab.id not in {existing.id for existing in repaired.tabs}
+        ]
         tabs: list[Tab] = []
-        for tab in repaired.tabs:
+        for tab in [*repaired.tabs, *recovered_tabs]:
             changes = {}
             if tab.column not in config.columns:
                 changes["column"] = config.columns[0]
@@ -70,8 +76,15 @@ def repair_and_render(
             if generated_title and generated_title != tab.title:
                 changes["title"] = generated_title
             tabs.append(tab.with_updates(**changes) if changes else tab)
-        focus = "nav" if repaired.active_tab_id is None else repaired.focus
-        return replace(repaired, tabs=tabs, focus=focus)
+        tab_ids = {tab.id for tab in tabs}
+        active_tab_id = repaired.active_tab_id
+        if active_tab_id not in tab_ids:
+            tmux_active_tab_id = tmux.active_tab_id_from_tmux()
+            active_tab_id = tmux_active_tab_id if tmux_active_tab_id in tab_ids else None
+        if active_tab_id is None and tabs:
+            active_tab_id = tabs[0].id
+        focus = "nav" if active_tab_id is None else repaired.focus
+        return replace(repaired, tabs=tabs, active_tab_id=active_tab_id, focus=focus)
 
     state = store.update(mutate)
     render_runtime(config, state, tmux)
@@ -157,6 +170,7 @@ def start(
     tmux.ensure_session(config)
     tmux.install_look_and_keys(config, codux_command())
     state = repair_and_render(config, store, tmux)
+    tmux.ensure_spare_window(config, state)
     select_active_or_empty(config, state, tmux)
     if attach:
         tmux.attach()
@@ -174,7 +188,7 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
         tmux.install_look_and_keys(config, codux_command())
     tab_id = uuid.uuid4().hex[:8]
     title = title or "New Codex"
-    created = tmux.create_tab_window(config, title, tab_id)
+    created = tmux.claim_spare_tab_window(config, store.read(), title, tab_id)
     created_at = now_iso()
     tab = Tab(
         id=tab_id,
@@ -199,6 +213,7 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
     tmux.refresh_window_frame_panes(config, state, tab.tmux_window_id)
     tmux.select_window(tab.tmux_window_id)
     tmux.select_pane(created.nav_pane_id)
+    tmux.prepare_spare_window_async()
     refresh_runtime_async()
     console.print(f"Created [bold]{tab.title}[/bold].")
 
@@ -237,7 +252,7 @@ def close(
 def rename(title: str = typer.Argument(..., help="New active tab title.")) -> None:
     """Rename the active Codex tab."""
     config, store, tmux = load_runtime()
-    state = repair_and_render(config, store, tmux)
+    state = store.read()
     target = current_tab_or_exit(state)
 
     def mutate(current: AppState) -> AppState:
@@ -249,7 +264,8 @@ def rename(title: str = typer.Argument(..., help="New active tab title.")) -> No
     state = store.update(mutate)
     tmux.rename_window(target.tmux_window_id, title)
     tmux.set_pane_title(target.tmux_pane_id, title)
-    render_runtime(config, state, tmux)
+    write_render_files(config, state)
+    refresh_runtime_async()
     console.print(f"Renamed tab to [bold]{title}[/bold].")
 
 
@@ -557,6 +573,31 @@ def finish_close_window_command(window_id: str) -> None:
     tmux.kill_window(window_id)
     state = repair_and_render(config, store, tmux)
     select_active_or_empty(config, state, tmux)
+
+
+@app.command("_prepare-spare-window", hidden=True)
+def prepare_spare_window_command() -> None:
+    config, store, tmux = load_runtime()
+    state = repair_and_render(config, store, tmux)
+    tmux.ensure_spare_window(config, state)
+
+
+@app.command("_loading-pane", hidden=True)
+def loading_pane_command() -> None:
+    frames = "|/-\\"
+    index = 0
+    try:
+        while True:
+            width, height = shutil.get_terminal_size((80, 24))
+            message = f"{frames[index % len(frames)]} Starting Codex"
+            index += 1
+            row = max(1, height // 2)
+            col = max(1, ((width - len(message)) // 2) + 1)
+            console.file.write(f"\033[?25l\033[2J\033[{row};{col}H{message}")
+            console.file.flush()
+            time.sleep(0.08)
+    except KeyboardInterrupt:
+        return
 
 
 def refresh_runtime_async() -> None:
