@@ -9,8 +9,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from codux.codex_proxy import terminal_color_env
 from codux.config import CoduxConfig, render_dir
+from codux.navigation import select_grid_tab
 from codux.render import (
     codex_shortcuts,
     nav_content_height,
@@ -21,33 +21,50 @@ from codux.render import (
     render_top_border,
     write_render_files,
 )
-from codux.navigation import select_grid_tab
 from codux.state import AppState, Tab, now_iso
 
 
 EMPTY_WINDOW_OPTION = "@codux-empty"
 SPARE_WINDOW_OPTION = "@codux-spare"
 TAB_ID_OPTION = "@codux-tab-id"
-HOST_PANE_OPTION = "@codux-host"
+LEGACY_HOST_PANE_OPTION = "@codux-host"
 NAV_HOST_OPTION = "@codux-nav-host"
-NAV_HOST_VERSION = "10"
+NAV_HOST_VERSION = "13"
 STATIC_HOST_OPTION = "@codux-static-host"
-STATIC_HOST_VERSION = "1"
+STATIC_HOST_VERSION = "2"
 CODEX_PANE_TITLE = "CODEX"
 NAV_PANE_TITLE = "NAV"
 OLD_NAV_PANE_TITLE = "Codux Nav"
 FRAME_EDGE_SIZE = 1
 FRAME_SIDE_WIDTH = 3
-FRAME_LAYOUT_VERSION = "5"
+FRAME_LAYOUT_VERSION = "6"
 FRAME_VERSION_OPTION = "@codux-frame-version"
 NAV_FRAME_EXTRA_HEIGHT = 4
 DEFAULT_NAV_FRAME_HEIGHT = "7"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BORDER_SUFFIXES = ("TOP", "BOTTOM", "LEFT", "RIGHT")
 BORDER_ROLES = {
     f"{logical_role}_{suffix}"
     for logical_role in (NAV_PANE_TITLE, CODEX_PANE_TITLE)
     for suffix in BORDER_SUFFIXES
 }
+STALE_CODEX_COLOR_ENV = (
+    "CODUX_FG_RGB",
+    "CODUX_BG_RGB",
+    "CODUX_COLORFGBG",
+    "CODUX_CHILD_TERM",
+)
+TERMINAL_ENV_PASSTHROUGH = (
+    "CLICOLOR",
+    "COLORFGBG",
+    "COLORTERM",
+    "ITERM_PROFILE",
+    "LC_TERMINAL",
+    "LC_TERMINAL_VERSION",
+    "TERM_FEATURES",
+    "TERM_PROGRAM",
+    "TERM_PROGRAM_VERSION",
+)
 ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
 
 
@@ -82,15 +99,7 @@ class TmuxController:
         if self.has_session():
             return
         created = self._new_session_empty_window(config)
-        self._set_window_option(created.window_id, EMPTY_WINDOW_OPTION, "1")
-        self._set_window_option(created.window_id, "@codux-nav-pane", created.nav_pane_id)
-        self._set_window_option(created.window_id, "@codux-codex-pane", created.content_pane_id)
-        self._set_pane_role(created.content_pane_id, CODEX_PANE_TITLE)
-        self._set_pane_option(created.content_pane_id, HOST_PANE_OPTION, "1")
-        self._set_pane_title(created.content_pane_id, CODEX_PANE_TITLE)
-        if created.nav_pane_id != created.content_pane_id:
-            self._set_pane_role(created.nav_pane_id, NAV_PANE_TITLE)
-            self._set_pane_title(created.nav_pane_id, NAV_PANE_TITLE)
+        self._mark_empty_window(created)
         self.select_window(created.window_id)
 
     def attach(self) -> None:
@@ -105,13 +114,6 @@ class TmuxController:
         self.repair_window_sizes()
         self._install_hooks(codux_command)
         self._install_bindings(config, codux_command)
-
-    def supports_rounded_borders(self) -> bool:
-        result = _run_tmux(
-            ["set-window-option", "-t", self.session_name, "pane-border-lines", "rounded"],
-            check=False,
-        )
-        return result.returncode == 0
 
     def create_tab_window(
         self,
@@ -255,15 +257,8 @@ class TmuxController:
         window_id, content_pane_id = raw.split("\t", 1)
         self._install_window_options(window_id)
         self._sync_window_to_attached_client(window_id)
-        nav_pane_id = self._split_nav_pane(config, content_pane_id)
-        self._set_window_option(window_id, "@codux-nav-pane", nav_pane_id)
-        self._set_window_option(window_id, "@codux-codex-pane", content_pane_id)
-        self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
-        self._unset_pane_option(content_pane_id, HOST_PANE_OPTION)
-        self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
-        self._set_pane_role(nav_pane_id, NAV_PANE_TITLE)
-        self._unset_pane_option(nav_pane_id, HOST_PANE_OPTION)
-        self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
+        nav_pane_id = self._split_nav_pane(content_pane_id)
+        self._configure_native_panes(window_id, nav_pane_id, content_pane_id)
         return CreatedWindow(
             window_id=window_id, content_pane_id=content_pane_id, nav_pane_id=nav_pane_id
         )
@@ -273,7 +268,7 @@ class TmuxController:
         self._set_window_option(window_id, EMPTY_WINDOW_OPTION, "0")
         self._set_window_option(window_id, SPARE_WINDOW_OPTION, "0")
         self._set_window_option(window_id, TAB_ID_OPTION, tab_id)
-        self._set_pane_title(created.content_pane_id, CODEX_PANE_TITLE)
+        self._set_pane_title(created.content_pane_id, title)
         self.rename_window(window_id, title)
 
     def ensure_empty_window(self, config: CoduxConfig) -> str:
@@ -285,16 +280,15 @@ class TmuxController:
             created = self._new_session_empty_window(config)
         else:
             created = self._new_empty_window(config)
-        self._set_window_option(created.window_id, EMPTY_WINDOW_OPTION, "1")
-        self._set_window_option(created.window_id, "@codux-nav-pane", created.nav_pane_id)
-        self._set_window_option(created.window_id, "@codux-codex-pane", created.content_pane_id)
-        self._set_pane_role(created.content_pane_id, CODEX_PANE_TITLE)
-        self._set_pane_option(created.content_pane_id, HOST_PANE_OPTION, "1")
-        self._set_pane_title(created.content_pane_id, CODEX_PANE_TITLE)
-        if created.nav_pane_id != created.content_pane_id:
-            self._set_pane_role(created.nav_pane_id, NAV_PANE_TITLE)
-            self._set_pane_title(created.nav_pane_id, NAV_PANE_TITLE)
+        self._mark_empty_window(created)
         return created.window_id
+
+    def _mark_empty_window(self, created: CreatedWindow) -> None:
+        self._set_window_option(created.window_id, EMPTY_WINDOW_OPTION, "1")
+        self._set_window_option(created.window_id, SPARE_WINDOW_OPTION, "0")
+        self._set_window_option(created.window_id, TAB_ID_OPTION, "")
+        self._set_pane_title(created.content_pane_id, CODEX_PANE_TITLE)
+        self._set_pane_title(created.nav_pane_id, NAV_PANE_TITLE)
 
     def remove_empty_windows(self) -> None:
         for window_id in self.empty_window_ids():
@@ -417,17 +411,11 @@ class TmuxController:
         return None
 
     def _ensure_empty_window_titles(self, window_id: str) -> None:
-        nav_pane_id, content_pane_id = self._window_panes(window_id)
-        if not nav_pane_id and not content_pane_id:
-            return
+        nav_pane_id, content_pane_id = self._ensure_native_window(window_id)
         if nav_pane_id:
-            self._set_window_option(window_id, "@codux-nav-pane", nav_pane_id)
-            if nav_pane_id != content_pane_id:
-                self._set_pane_role(nav_pane_id, NAV_PANE_TITLE)
-                self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
+            self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
         if content_pane_id:
-            self._set_window_option(window_id, "@codux-codex-pane", content_pane_id)
-            self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
+            self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
 
     def refresh_static_panes(
         self,
@@ -438,46 +426,33 @@ class TmuxController:
             return
         self.repair_window_sizes()
         if config is not None and state is not None:
+            write_render_files(config, state)
             self._refresh_navigation_targets(config, state)
         for window_id, is_empty in self._codux_windows():
-            nav_pane_id, content_pane_id = self._window_panes(window_id)
-            host_pane_id = content_pane_id or nav_pane_id
-            if host_pane_id:
-                self._set_window_option(window_id, "@codux-codex-pane", host_pane_id)
-                self._set_window_option(window_id, "@codux-nav-pane", host_pane_id)
-                self._set_pane_role(host_pane_id, CODEX_PANE_TITLE)
-                if content_pane_id is None or nav_pane_id == content_pane_id:
-                    self._set_pane_option(host_pane_id, HOST_PANE_OPTION, "1")
-                    self._set_pane_title(host_pane_id, CODEX_PANE_TITLE)
-                    if config is not None and state is not None:
-                        write_render_files(config, state)
-                    continue
-                self._unset_pane_option(host_pane_id, HOST_PANE_OPTION)
-            if nav_pane_id and content_pane_id and nav_pane_id != content_pane_id:
+            nav_pane_id, content_pane_id = self._ensure_native_window(window_id)
+            if nav_pane_id and content_pane_id:
                 self._ensure_window_frame(window_id)
             if nav_pane_id:
-                self._set_window_option(window_id, "@codux-nav-pane", nav_pane_id)
-                self._set_pane_role(nav_pane_id, NAV_PANE_TITLE)
-                self._unset_pane_option(nav_pane_id, HOST_PANE_OPTION)
-                self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
                 self._ensure_nav_interactive_pane(nav_pane_id)
                 if config is not None and state is not None:
                     self._resize_nav_frame(
-                        window_id, nav_pane_id, nav_content_height(config, state)
+                        window_id,
+                        nav_pane_id,
+                        nav_content_height(config, state),
                     )
             if content_pane_id:
                 self._set_window_option(window_id, "@codux-codex-pane", content_pane_id)
                 self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
-                self._unset_pane_option(content_pane_id, HOST_PANE_OPTION)
-                if not is_empty:
-                    if config is not None and self._pane_needs_codex_respawn(
-                        window_id,
-                        content_pane_id,
-                    ):
-                        self._respawn_codex_pane(config, content_pane_id)
+                self._unset_pane_option(content_pane_id, LEGACY_HOST_PANE_OPTION)
+                if is_empty:
+                    self._ensure_static_pane(content_pane_id, render_dir() / "empty.txt")
                     self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
+                elif config is not None and self._pane_needs_codex_respawn(
+                    window_id,
+                    content_pane_id,
+                ):
+                    self._respawn_codex_pane(config, content_pane_id)
             if config is not None and state is not None:
-                write_render_files(config, state)
                 for pane_id, role in self._border_panes(window_id).items():
                     self._refresh_border_pane(config, window_id, pane_id, role, state)
 
@@ -492,11 +467,15 @@ class TmuxController:
     ) -> None:
         if not self.has_session() or not self.window_exists(window_id):
             return
-        self._ensure_window_frame(window_id)
-        nav_pane_id = self.nav_pane_for_window(window_id)
+        nav_pane_id, content_pane_id = self._ensure_native_window(window_id)
+        if nav_pane_id and content_pane_id:
+            self._ensure_window_frame(window_id)
         if nav_pane_id:
+            self._ensure_nav_interactive_pane(nav_pane_id)
             self._resize_nav_frame(window_id, nav_pane_id, nav_content_height(config, state))
         write_render_files(config, state)
+        if content_pane_id and self._window_option(window_id, EMPTY_WINDOW_OPTION) == "1":
+            self._ensure_static_pane(content_pane_id, render_dir() / "empty.txt")
         for pane_id, role in self._border_panes(window_id).items():
             self._refresh_border_pane(config, window_id, pane_id, role, state)
 
@@ -553,10 +532,13 @@ class TmuxController:
 
     def _install_window_options(self, window_id: str) -> None:
         for option, value in (
-            ("pane-active-border-style", "fg=default"),
-            ("pane-border-style", "fg=default"),
+            ("window-style", "fg=default,bg=default"),
+            ("window-active-style", "fg=default,bg=default"),
+            ("pane-active-border-style", "fg=default,bg=default"),
+            ("pane-border-style", "fg=default,bg=default"),
             ("allow-set-title", "on"),
             ("automatic-rename", "off"),
+            ("mode-style", "fg=default,bg=default"),
             ("pane-border-status", "off"),
             ("pane-border-lines", "spaces"),
         ):
@@ -627,7 +609,7 @@ class TmuxController:
             pane_id, _, rest = line.partition("\t")
             role, _, rest = rest.partition("\t")
             title, _, top_value = rest.partition("\t")
-            if not pane_id:
+            if not pane_id or role in BORDER_ROLES:
                 continue
             try:
                 pane_top = int(top_value)
@@ -637,7 +619,17 @@ class TmuxController:
         if not panes:
             return None, None
 
-        nav_pane_id = next(
+        pane_ids = {pane_id for pane_id, _, _, _ in panes}
+        configured_nav_pane_id = self._window_option(window_id, "@codux-nav-pane")
+        configured_content_pane_id = self._window_option(window_id, "@codux-codex-pane")
+        nav_pane_id = configured_nav_pane_id if configured_nav_pane_id in pane_ids else None
+        content_pane_id = (
+            configured_content_pane_id
+            if configured_content_pane_id in pane_ids and configured_content_pane_id != nav_pane_id
+            else None
+        )
+
+        nav_pane_id = nav_pane_id or next(
             (
                 pane_id
                 for pane_id, role, title, _ in panes
@@ -647,19 +639,28 @@ class TmuxController:
         )
         if nav_pane_id is None and len(panes) > 1:
             nav_pane_id = min(panes, key=lambda pane: pane[3])[0]
-        content_pane_id = next(
-            (pane_id for pane_id, role, _, _ in panes if role == CODEX_PANE_TITLE),
+
+        content_pane_id = content_pane_id or next(
+            (
+                pane_id
+                for pane_id, role, _, _ in panes
+                if role == CODEX_PANE_TITLE and pane_id != nav_pane_id
+            ),
             None,
         )
         if content_pane_id is None:
             content_pane_id = next(
                 (
                     pane_id
-                    for pane_id, role, _, _ in panes
-                    if pane_id != nav_pane_id and role not in BORDER_ROLES
+                    for pane_id, role, title, _ in panes
+                    if pane_id != nav_pane_id
+                    and role != NAV_PANE_TITLE
+                    and title not in {NAV_PANE_TITLE, OLD_NAV_PANE_TITLE}
                 ),
                 None,
             )
+        if content_pane_id is None and nav_pane_id is None:
+            content_pane_id = panes[0][0]
         return nav_pane_id, content_pane_id
 
     def _border_panes(self, window_id: str) -> dict[str, str]:
@@ -673,6 +674,90 @@ class TmuxController:
             if role in BORDER_ROLES:
                 panes[pane_id] = role
         return panes
+
+    def _ensure_native_window(self, window_id: str) -> tuple[str | None, str | None]:
+        self._install_window_options(window_id)
+        nav_pane_id, content_pane_id = self._window_panes(window_id)
+        if content_pane_id is None and nav_pane_id is not None:
+            self._kill_border_panes(window_id, BORDER_ROLES)
+            self._set_pane_role(nav_pane_id, CODEX_PANE_TITLE)
+            self._set_pane_title(nav_pane_id, CODEX_PANE_TITLE)
+            self._set_window_option(window_id, "@codux-codex-pane", nav_pane_id)
+            self._set_window_option(window_id, "@codux-nav-pane", "")
+            content_pane_id = nav_pane_id
+            nav_pane_id = None
+        if content_pane_id is None:
+            return nav_pane_id, content_pane_id
+        if nav_pane_id is None or nav_pane_id == content_pane_id:
+            self._kill_border_panes(window_id, BORDER_ROLES)
+            nav_pane_id = self._split_nav_pane(content_pane_id)
+        if self._kill_duplicate_managed_panes(window_id, {nav_pane_id, content_pane_id}):
+            self._kill_border_panes(window_id, BORDER_ROLES)
+        self._configure_native_panes(window_id, nav_pane_id, content_pane_id)
+        return nav_pane_id, content_pane_id
+
+    def _kill_duplicate_managed_panes(self, window_id: str, keep_pane_ids: set[str]) -> bool:
+        killed = False
+        for pane_id in self._duplicate_managed_panes(window_id, keep_pane_ids):
+            self._tmux(["kill-pane", "-t", pane_id], check=False)
+            killed = True
+        return killed
+
+    def _duplicate_managed_panes(self, window_id: str, keep_pane_ids: set[str]) -> list[str]:
+        raw = self._tmux(
+            [
+                "list-panes",
+                "-t",
+                window_id,
+                "-F",
+                "#{pane_id}\t#{@codux-role}\t#{pane_title}\t#{pane_start_command}",
+            ],
+            check=False,
+        )
+        duplicates: list[str] = []
+        for line in raw.splitlines():
+            pane_id, _, rest = line.partition("\t")
+            role, _, rest = rest.partition("\t")
+            title, _, start_command = rest.partition("\t")
+            if (
+                pane_id
+                and pane_id not in keep_pane_ids
+                and role not in BORDER_ROLES
+                and self._is_managed_duplicate_pane(role, title, start_command)
+            ):
+                duplicates.append(pane_id)
+        return duplicates
+
+    def _is_managed_duplicate_pane(self, role: str, title: str, start_command: str) -> bool:
+        if role in {NAV_PANE_TITLE, CODEX_PANE_TITLE}:
+            return True
+        if title in {NAV_PANE_TITLE, CODEX_PANE_TITLE, OLD_NAV_PANE_TITLE}:
+            return True
+        return any(
+            marker in start_command
+            for marker in (
+                "_nav-pane",
+                "_loading-pane",
+                "_codex-proxy",
+                "_host",
+                "empty.txt",
+                "nav.txt",
+            )
+        )
+
+    def _configure_native_panes(
+        self,
+        window_id: str,
+        nav_pane_id: str,
+        content_pane_id: str,
+    ) -> None:
+        self._set_window_option(window_id, "@codux-nav-pane", nav_pane_id)
+        self._set_window_option(window_id, "@codux-codex-pane", content_pane_id)
+        self._set_pane_role(nav_pane_id, NAV_PANE_TITLE)
+        self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
+        self._unset_pane_option(nav_pane_id, LEGACY_HOST_PANE_OPTION)
+        self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
+        self._unset_pane_option(content_pane_id, LEGACY_HOST_PANE_OPTION)
 
     def _ensure_window_frame(self, window_id: str) -> None:
         self._install_window_options(window_id)
@@ -714,7 +799,8 @@ class TmuxController:
                 check=False,
             )
         self._tmux(
-            ["resize-pane", "-t", nav_pane_id, "-y", str(desired_content_height)], check=False
+            ["resize-pane", "-t", nav_pane_id, "-y", str(desired_content_height)],
+            check=False,
         )
         self._normalize_frame_edges(window_id)
 
@@ -782,7 +868,7 @@ class TmuxController:
             ]
         ).strip()
         self._set_pane_role(pane_id, role)
-        self._unset_pane_option(pane_id, HOST_PANE_OPTION)
+        self._unset_pane_option(pane_id, LEGACY_HOST_PANE_OPTION)
         self._set_pane_title(pane_id, role)
         return pane_id
 
@@ -835,32 +921,6 @@ class TmuxController:
         width = max(len(ANSI_RE.sub("", line)) for line in lines)
         return max(1, width), len(lines)
 
-    def _pane_current_command(self, pane_id: str) -> str:
-        return self._tmux(
-            ["display-message", "-p", "-t", pane_id, "#{pane_current_command}"],
-            check=False,
-        ).strip()
-
-    def _pane_start_command(self, pane_id: str) -> str:
-        return self._tmux(
-            ["display-message", "-p", "-t", pane_id, "#{pane_start_command}"],
-            check=False,
-        ).strip()
-
-    def _pane_needs_codex_respawn(self, window_id: str, pane_id: str) -> bool:
-        if self._window_option(window_id, SPARE_WINDOW_OPTION) == "1":
-            return False
-        return self._pane_current_command(
-            pane_id
-        ) == "sleep" or "_loading-pane" in self._pane_start_command(pane_id)
-
-    def _respawn_codex_pane(self, config: CoduxConfig, pane_id: str) -> None:
-        self._tmux(["respawn-pane", "-k", "-t", pane_id, self._codex_shell_command(config)])
-        self._tmux(["clear-history", "-t", pane_id], check=False)
-        self._set_pane_role(pane_id, CODEX_PANE_TITLE)
-        self._unset_pane_option(pane_id, HOST_PANE_OPTION)
-        self._set_pane_title(pane_id, CODEX_PANE_TITLE)
-
     def _border_is_active(self, _window_id: str, role: str, state: AppState) -> bool:
         if role.startswith(f"{NAV_PANE_TITLE}_"):
             return state.focus == "nav"
@@ -878,6 +938,39 @@ class TmuxController:
     def _border_render_path(self, pane_id: str) -> Path:
         safe_pane_id = pane_id.replace("%", "")
         return render_dir() / f"border-{safe_pane_id}.txt"
+
+    def _pane_current_command(self, pane_id: str) -> str:
+        return self._tmux(
+            ["display-message", "-p", "-t", pane_id, "#{pane_current_command}"],
+            check=False,
+        ).strip()
+
+    def _pane_start_command(self, pane_id: str) -> str:
+        return self._tmux(
+            ["display-message", "-p", "-t", pane_id, "#{pane_start_command}"],
+            check=False,
+        ).strip()
+
+    def _pane_needs_codex_respawn(self, window_id: str, pane_id: str) -> bool:
+        if self._window_option(window_id, SPARE_WINDOW_OPTION) == "1":
+            return False
+        start_command = self._pane_start_command(pane_id)
+        return (
+            self._pane_current_command(pane_id) == "sleep"
+            or "_loading-pane" in start_command
+            or "_nav-pane" in start_command
+            or "_codex-proxy" in start_command
+            or "_host" in start_command
+            or "empty.txt" in start_command
+        )
+
+    def _respawn_codex_pane(self, config: CoduxConfig, pane_id: str) -> None:
+        self._tmux(["respawn-pane", "-k", "-t", pane_id, self._codex_shell_command(config)])
+        self._tmux(["clear-history", "-t", pane_id], check=False)
+        self._set_pane_role(pane_id, CODEX_PANE_TITLE)
+        self._unset_pane_option(pane_id, LEGACY_HOST_PANE_OPTION)
+        self._unset_pane_option(pane_id, STATIC_HOST_OPTION)
+        self._set_pane_title(pane_id, CODEX_PANE_TITLE)
 
     def pane_size(self, pane_id: str) -> tuple[int, int]:
         raw = self._tmux(
@@ -930,11 +1023,14 @@ class TmuxController:
                 "-P",
                 "-F",
                 "#{window_id}\t#{pane_id}",
-                self._host_shell_command(None),
+                self._empty_shell_command(),
             ]
         ).strip()
         window_id, content_pane_id = raw.split("\t", 1)
-        nav_pane_id = content_pane_id
+        self._install_window_options(window_id)
+        self._sync_window_to_attached_client(window_id)
+        nav_pane_id = self._split_nav_pane(content_pane_id)
+        self._configure_native_panes(window_id, nav_pane_id, content_pane_id)
         return CreatedWindow(window_id, content_pane_id, nav_pane_id)
 
     def _new_empty_window(self, config: CoduxConfig) -> CreatedWindow:
@@ -949,14 +1045,17 @@ class TmuxController:
                 f"{self.session_name}:",
                 "-n",
                 "codux",
-                self._host_shell_command(None),
+                self._empty_shell_command(),
             ]
         ).strip()
         window_id, content_pane_id = raw.split("\t", 1)
-        nav_pane_id = content_pane_id
+        self._install_window_options(window_id)
+        self._sync_window_to_attached_client(window_id)
+        nav_pane_id = self._split_nav_pane(content_pane_id)
+        self._configure_native_panes(window_id, nav_pane_id, content_pane_id)
         return CreatedWindow(window_id, content_pane_id, nav_pane_id)
 
-    def _split_nav_pane(self, config: CoduxConfig, content_pane_id: str) -> str:
+    def _split_nav_pane(self, content_pane_id: str) -> str:
         nav_pane_id = self._tmux(
             [
                 "split-window",
@@ -973,7 +1072,6 @@ class TmuxController:
                 self._display_file_command(render_dir() / "nav.txt"),
             ]
         ).strip()
-        self._tmux(["select-layout", "-t", content_pane_id, "even-vertical"], check=False)
         self._tmux(["resize-pane", "-t", nav_pane_id, "-y", DEFAULT_NAV_FRAME_HEIGHT], check=False)
         return nav_pane_id
 
@@ -1082,36 +1180,25 @@ class TmuxController:
         return f"sh -lc {shlex.quote(script)}"
 
     def _nav_shell_command(self, pane_id: str) -> str:
-        return f"env TMUX_PANE={shlex.quote(pane_id)} {shlex.quote(sys.executable)} -m codux.cli _nav-pane"
+        return (
+            f"cd {shlex.quote(str(PROJECT_ROOT))} && "
+            f"env TMUX_PANE={shlex.quote(pane_id)} {shlex.quote(sys.executable)} -m codux.cli _nav-pane"
+        )
+
+    def _empty_shell_command(self) -> str:
+        return self._display_file_command(render_dir() / "empty.txt")
 
     def _loading_shell_command(self) -> str:
-        return f"{shlex.quote(sys.executable)} -m codux.cli _loading-pane"
+        return (
+            f"cd {shlex.quote(str(PROJECT_ROOT))} && "
+            f"{shlex.quote(sys.executable)} -m codux.cli _loading-pane"
+        )
 
     def _codex_shell_command(self, config: CoduxConfig) -> str:
-        proxy_command = (
-            f"{shlex.quote(sys.executable)} -m codux.cli _codex-proxy -- {config.codex_command}"
-        )
-        return (
-            "env "
-            "-u NO_COLOR "
-            "-u CODEX_CI "
-            "-u CI "
-            "-u CLICOLOR_FORCE "
-            "-u FORCE_COLOR "
-            "TERM=tmux-256color "
-            "COLORTERM=truecolor "
-            "CLICOLOR=1 "
-            f"{proxy_command}"
-        )
-
-    def _host_shell_command(self, tab_id: str | None) -> str:
-        command = f"{shlex.quote(sys.executable)} -m codux.cli _host"
-        if tab_id is not None:
-            command += f" --tab-id {shlex.quote(tab_id)}"
-        return command
+        return f"exec {config.codex_command}"
 
     def _codux_cli_command(self) -> str:
-        return f"{shlex.quote(sys.executable)} -m codux.cli"
+        return f"cd {shlex.quote(str(PROJECT_ROOT))} && {shlex.quote(sys.executable)} -m codux.cli"
 
     def _install_bindings(self, config: CoduxConfig, codux_command: str) -> None:
         bindings = config.key_bindings
@@ -1121,9 +1208,6 @@ class TmuxController:
             f"#{{==:#{{session_name}},{self.session_name}}},"
             f"#{{==:#{{@codux-role}},{NAV_PANE_TITLE}}}"
             "}"
-        )
-        scoped_host_pane = (
-            f"#{{&&:#{{==:#{{session_name}},{self.session_name}}},#{{==:#{{@codux-host}},1}}}}"
         )
         for key in (
             bindings.new,
@@ -1135,6 +1219,7 @@ class TmuxController:
             bindings.help,
             bindings.rename,
             bindings.focus_toggle,
+            bindings.quit,
             "Up",
             "Down",
             "Left",
@@ -1172,19 +1257,6 @@ class TmuxController:
                 scoped_session,
                 f"detach-client -s {shlex.quote(self.session_name)}",
                 f"send-keys {shlex.quote(bindings.quit)}",
-            ],
-            check=False,
-        )
-        self._tmux(
-            [
-                "bind-key",
-                "-n",
-                bindings.new,
-                "if-shell",
-                "-F",
-                scoped_host_pane,
-                self._run_shell_command(f"{codux_command} new"),
-                f"send-keys {bindings.new}",
             ],
             check=False,
         )
@@ -1257,32 +1329,11 @@ class TmuxController:
         )
 
     def _direct_focus_command(self, codux_command: str, target_pane: str, focus: str) -> str:
-        focus_command = f"{codux_command} _focus-window #{{window_id}} {focus} >/dev/null 2>&1"
+        focus_command = (
+            f"{codux_command} _focus-window #{{window_id}} {focus} >/dev/null 2>&1 || true"
+        )
         tmux_command = f'select-pane -t "{target_pane}" ; run-shell -b {shlex.quote(focus_command)}'
         return f"run-shell -bC {shlex.quote(tmux_command)}"
-
-    def _bind_host_or_nav_key(
-        self,
-        key: str,
-        action: str,
-        scoped_nav_pane: str,
-        *,
-        action_is_tmux_command: bool = False,
-    ) -> None:
-        action_command = action if action_is_tmux_command else self._run_shell_command(action)
-        self._tmux(
-            [
-                "bind-key",
-                "-n",
-                key,
-                "if-shell",
-                "-F",
-                scoped_nav_pane,
-                action_command,
-                f"send-keys {key}",
-            ],
-            check=False,
-        )
 
     def _install_hooks(self, codux_command: str) -> None:
         refresh_command = self._run_shell_command(f"{codux_command} _refresh")
@@ -1292,26 +1343,21 @@ class TmuxController:
                 check=False,
             )
 
-    def _fast_focus_command(self, direction: str, command: str) -> str:
-        moves = "; ".join(f"select-pane -{direction}" for _ in range(3))
-        return f"{moves}; {self._run_shell_command(command)}"
-
     def _run_shell_command(self, command: str) -> str:
         return f"run-shell -b {shlex.quote(f'{command} >/dev/null 2>&1')}"
 
     def _rename_prompt_command(self, command: str) -> str:
-        return f"display-popup -w 72 -h 10 -T Rename {shlex.quote(f'{command} _popup-rename')}"
+        return (
+            f"display-popup -E -d {shlex.quote(str(PROJECT_ROOT))} "
+            f"-w 72 -h 10 -s fg=default,bg=default -S fg=default,bg=default "
+            f"-T Rename {shlex.quote(f'{command} _popup-rename')}"
+        )
 
     def _help_popup_command(self, command: str) -> str:
-        return f"display-popup -w 72 -h 22 -T Codux {shlex.quote(f'{command} _popup-help')}"
-
-    def _shortcut_footer(self, config: CoduxConfig) -> str:
-        bindings = config.key_bindings
         return (
-            f" {bindings.new} new | arrows select | "
-            f"{bindings.move_left}/{bindings.move_right} move tab | {bindings.rename} rename | "
-            f"{bindings.close} close | {bindings.help} help | "
-            f"{bindings.focus_toggle} focus | {bindings.quit} quit "
+            f"display-popup -E -d {shlex.quote(str(PROJECT_ROOT))} "
+            f"-w 72 -h 22 -s fg=default,bg=default -S fg=default,bg=default "
+            f"-T Codux {shlex.quote(f'{command} _popup-help')}"
         )
 
     def _set_window_option(self, window_id: str, option: str, value: str) -> None:
@@ -1347,25 +1393,14 @@ class TmuxController:
             self._tmux(["set-option", "-as", "terminal-features", ",*:extkeys"], check=False)
 
     def _install_session_environment(self) -> None:
-        for name in ("NO_COLOR", "CODEX_CI", "CI", "CLICOLOR_FORCE", "FORCE_COLOR"):
+        for name in STALE_CODEX_COLOR_ENV:
             self._tmux(["set-environment", "-t", self.session_name, "-u", name], check=False)
-        self._tmux(["set-environment", "-t", self.session_name, "COLORTERM", "truecolor"])
-        self._tmux(["set-environment", "-t", self.session_name, "CLICOLOR", "1"])
-        child_term = os.environ.get("TERM")
-        if child_term and not child_term.startswith("tmux"):
-            self._tmux(["set-environment", "-t", self.session_name, "CODUX_CHILD_TERM", child_term])
-        for name in (
-            "ITERM_PROFILE",
-            "LC_TERMINAL",
-            "LC_TERMINAL_VERSION",
-            "TERM_FEATURES",
-            "TERM_PROGRAM",
-            "TERM_PROGRAM_VERSION",
-        ):
+
+        for name in TERMINAL_ENV_PASSTHROUGH:
             if value := os.environ.get(name):
                 self._tmux(["set-environment", "-t", self.session_name, name, value])
-        for name, value in terminal_color_env(os.environ).items():
-            self._tmux(["set-environment", "-t", self.session_name, name, value])
+            else:
+                self._tmux(["set-environment", "-t", self.session_name, "-u", name], check=False)
 
     def _tmux(self, args: list[str], check: bool = True) -> str:
         result = _run_tmux(args, check=check)

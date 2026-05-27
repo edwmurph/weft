@@ -7,14 +7,13 @@ import sys
 import time
 import uuid
 from dataclasses import replace
+from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from codux.codex_proxy import run_codex_proxy
 from codux.config import ConfigError, CoduxConfig, config_path, ensure_config
-from codux.host import run_host
 from codux.navigation import select_grid_tab
 from codux.nav_pane import run_nav_pane
 from codux.render import render_empty_state, render_help, render_nav, write_render_files
@@ -35,10 +34,11 @@ from codux.tmux import TmuxController
 app = typer.Typer(help="Manage Codex sessions in a tmux-native tab UI.")
 console = Console()
 IGNORED_GENERATED_TITLES = {"", "CODEX", "NAV", "Codux Empty"}
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def codux_command() -> str:
-    return f"{shlex.quote(sys.executable)} -m codux.cli"
+    return f"cd {shlex.quote(str(PROJECT_ROOT))} && {shlex.quote(sys.executable)} -m codux.cli"
 
 
 def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
@@ -477,9 +477,14 @@ def doctor() -> None:
     console.print(f"[green]ok[/green] config: {config_path()}")
     console.print(f"[green]ok[/green] state: {state_path()} ({len(state.tabs)} tabs)")
     console.print(
-        "[blue]info[/blue] rounded frames are drawn by the Codux host renderer; "
-        "native tmux pane borders are disabled to avoid separator gaps."
+        "[blue]info[/blue] native tmux panes are used for NAV and direct Codex content; "
+        "rounded frame panes provide the visible boxes."
     )
+    console.print(
+        "[blue]info[/blue] Codex panes run the configured command directly; Codux does "
+        "not force a Codex theme or color palette."
+    )
+    console.print("[blue]info[/blue] Codux windows reset native tmux pane styles to default.")
     if not TmuxController.available():
         pass
     elif tmux.has_session():
@@ -515,10 +520,10 @@ def render_help_command() -> None:
 @app.command("_popup-help", hidden=True)
 def popup_help_command() -> None:
     config = ensure_config()
-    console.print("\033[?25l", end="")
-    console.print(render_help(config))
-    console.print("\nPress Esc to close.", end="")
+    write_terminal_control("\033[?25l\033[2J\033[H")
     try:
+        console.print(render_help(config))
+        console.print("\nPress Esc to close.", end="")
         while True:
             key = read_single_key()
             if key in {"\x1b", ""}:
@@ -526,7 +531,7 @@ def popup_help_command() -> None:
     except EOFError:
         pass
     finally:
-        console.print("\033[?25h", end="")
+        write_terminal_control("\033[?25h")
 
 
 @app.command("_popup-rename", hidden=True)
@@ -535,8 +540,12 @@ def popup_rename_command() -> None:
     state = store.read()
     target = state.active_tab
     if target is None:
-        console.print("No active Codex session.\n\nPress Esc to close.", markup=False)
-        wait_for_escape()
+        write_terminal_control("\033[?25l\033[2J\033[H")
+        try:
+            console.print("No active Codex session.\n\nPress Esc to close.", markup=False)
+            wait_for_escape()
+        finally:
+            write_terminal_control("\033[?25h")
         return
 
     buffer = target.title
@@ -584,7 +593,7 @@ def popup_rename_command() -> None:
     except EOFError:
         pass
     finally:
-        console.print("\033[?25h", end="")
+        write_terminal_control("\033[?25h")
 
 
 def wait_for_escape() -> None:
@@ -597,18 +606,9 @@ def wait_for_escape() -> None:
         return
 
 
-@app.command(
-    "_codex-proxy",
-    hidden=True,
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)
-def codex_proxy_command(ctx: typer.Context) -> None:
-    raise typer.Exit(run_codex_proxy(ctx.args or ["codex"]))
-
-
-@app.command("_host", hidden=True)
-def host_command(tab_id: str | None = typer.Option(None, "--tab-id")) -> None:
-    raise typer.Exit(run_host(tab_id))
+def write_terminal_control(sequence: str) -> None:
+    console.file.write(sequence)
+    console.file.flush()
 
 
 @app.command("_activate-window", hidden=True)
@@ -626,15 +626,18 @@ def activate_window_command(window_id: str) -> None:
 
 @app.command("_focus-window", hidden=True)
 def focus_window_command(window_id: str, focus: FocusTarget) -> None:
-    config, store, tmux = load_runtime()
+    try:
+        config, store, tmux = load_runtime()
 
-    def mutate(current: AppState) -> AppState:
-        target = next((tab for tab in current.tabs if tab.tmux_window_id == window_id), None)
-        active_tab_id = target.id if target is not None else current.active_tab_id
-        return replace(current, active_tab_id=active_tab_id, focus=focus)
+        def mutate(current: AppState) -> AppState:
+            target = next((tab for tab in current.tabs if tab.tmux_window_id == window_id), None)
+            active_tab_id = target.id if target is not None else current.active_tab_id
+            return replace(current, active_tab_id=active_tab_id, focus=focus)
 
-    state = store.update(mutate)
-    tmux.refresh_window_frame_colors(config, state, window_id)
+        state = store.update(mutate)
+        tmux.refresh_window_frame_colors(config, state, window_id)
+    except Exception:
+        pass
 
 
 @app.command("_finish-close-window", hidden=True)

@@ -1,6 +1,6 @@
 # codux
 
-`codux` is a small Python CLI that runs Codex sessions inside one tmux session. It keeps a lightweight Kanban-style nav region above each Codex region, with one tmux window per Codex tab.
+`codux` is a small Python CLI that runs Codex sessions inside one tmux session. It keeps a lightweight Kanban-style nav pane above a native Codex pane, with one tmux window per Codex tab.
 
 ## Install
 
@@ -65,10 +65,10 @@ State writes are atomic and guarded by `~/.codux/state.lock` so rapid tmux keybi
 
 ## tmux Notes
 
-Codux uses one tmux session named `codux`, one tmux window per Codex tab, and one host pane per window. The host pane renders:
+Codux uses one tmux session named `codux`, one tmux window per Codex tab, and two native content panes per tab window:
 
-- top box: `NAV`
-- lower box: `CODEX`
+- top pane: `NAV`, an interactive Kanban tab navigator
+- lower pane: `CODEX`, the Codex process launched directly from `codex_command`
 
 When no tabs exist, Codux keeps an empty dashboard window open with:
 
@@ -77,9 +77,9 @@ No Codex sessions open
 Press n to create one.
 ```
 
-Codux draws the visible rounded `NAV` and `CODEX` frames in the host renderer instead of using native tmux borders or decorative panes. This avoids tmux separator gaps, lets the active frame color update instantly, keeps the nav height tied to the tallest configured column, and embeds the active region's shortcuts in that region's bottom border.
+Codux keeps the same rounded `NAV` and `CODEX` frame boxes around those panes. The frames are lightweight tmux panes, while the NAV and CODEX interiors remain real interactive panes. The nav frame height follows the tallest configured column, and the active frame's bottom edge shows that pane's shortcuts.
 
-Codex runs inside a child PTY owned by the host renderer. The host strips inherited CI/no-color overrides, enables truecolor hints, answers Codex's startup terminal background probe, and forwards Codex terminal-title updates back into the dashboard tab title.
+Codex runs as the tmux pane command. Codux does not proxy Codex IO, re-render Codex output, inject Codex hooks, or force a Codex theme. Terminal color and theme behavior stays with the real tmux PTY and the user's `codex_command`; Codux only clears stale `CODUX_*` color hints left by older versions and neutralizes inherited tmux pane/window color styles for Codux windows.
 
 ## Development
 

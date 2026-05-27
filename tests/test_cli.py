@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import shlex
 from types import SimpleNamespace
 
 import codux.cli as cli_module
 from codux.cli import is_transient_codex_title, repair_and_render
 from codux.config import CoduxConfig
 from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
+from codux.tmux import TmuxError
 
 
 def tab(tab_id: str) -> Tab:
@@ -19,6 +21,17 @@ def tab(tab_id: str) -> Tab:
         tmux_pane_id=f"%{tab_id}",
         created_at=created_at,
         updated_at=created_at,
+    )
+
+
+def test_codux_command_runs_from_project_root(monkeypatch):
+    monkeypatch.setattr(cli_module.sys, "executable", "/tmp/codux python")
+
+    command = cli_module.codux_command()
+
+    assert command == (
+        f"cd {shlex.quote(str(cli_module.PROJECT_ROOT))} && "
+        f"{shlex.quote('/tmp/codux python')} -m codux.cli"
     )
 
 
@@ -138,6 +151,33 @@ def test_new_focuses_codex_pane(monkeypatch, tmp_path):
     assert state.active_tab.tmux_pane_id == "%content"
     assert refreshed[-1].focus == "codex"
     assert events == [("window", "@new"), ("pane", "%content")]
+
+
+def test_focus_window_ignores_frame_refresh_race(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    active = tab("active")
+    store.write(AppState(tabs=[active], active_tab_id=active.id, focus="codex"))
+
+    class FakeTmux:
+        def refresh_window_frame_colors(self, config, state, window_id):
+            raise TmuxError("pane went away")
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+
+    cli_module.focus_window_command(active.tmux_window_id, "nav")
+
+    state = store.read()
+    assert state.active_tab_id == active.id
+    assert state.focus == "nav"
+
+
+def test_focus_window_is_best_effort_when_runtime_is_unavailable(monkeypatch):
+    def fail_runtime():
+        raise RuntimeError("runtime changed")
+
+    monkeypatch.setattr(cli_module, "load_runtime", fail_runtime)
+
+    cli_module.focus_window_command("@missing", "nav")
 
 
 def test_rename_active_tab_updates_state_and_tmux(monkeypatch, tmp_path):

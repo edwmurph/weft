@@ -7,6 +7,5 @@
 
 ## Runtime Constraints
 
-- Treat tmux and PTY interactions as potentially flaky: keep boundaries narrow and mockable.
+- Treat tmux interactions as potentially flaky: keep boundaries narrow and mockable.
 - Preserve atomic state writes and locking semantics in `codux/state.py`.
-
