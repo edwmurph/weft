@@ -10,6 +10,7 @@
 ## Git / Worktrees
 
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
+- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change, e.g. `cd /abs/path/to/repo/.worktrees/<slug> && <command>`.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".
 
