@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codux Refactor"
+  short_description: "Refactor codux with a learning log"
+  default_prompt: "Use $codux-refactor to simplify codux, improve docs and instructions, and log refactor suggestions."

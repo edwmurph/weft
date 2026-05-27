@@ -88,3 +88,5 @@ uv run ruff format
 uv run ruff check
 uv run pytest
 ```
+
+Repo-specific Codex maintenance guidance lives in `AGENTS.md`. Broad refactor work should use the repo-local `$codux-refactor` skill in `skills/codux-refactor/`.
