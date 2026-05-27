@@ -126,7 +126,7 @@ def test_render_nav_substitutes_codex_startup_title():
     assert "Starting | 019e" in plain
 
 
-def test_render_nav_uses_clean_codex_fallback():
+def test_render_nav_shows_pending_codex_placeholder_until_live_title():
     created_at = now_iso()
     tab = Tab(
         id="active",
@@ -140,9 +140,10 @@ def test_render_nav_uses_clean_codex_fallback():
     )
 
     rendered = render_nav(CoduxConfig(), AppState(tabs=[tab], active_tab_id=tab.id), width=80)
-    plain = ANSI_RE.sub("", rendered)
+    plain_lines = [ANSI_RE.sub("", line) for line in rendered.splitlines()]
 
-    assert "Codex" in plain
+    assert "Codex" not in "\n".join(plain_lines)
+    assert plain_lines[1].strip() == "..."
 
 
 def test_render_nav_leaves_manual_titles_undecorated():

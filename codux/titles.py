@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 CODEX_TITLE_TEMPLATE = "{codex}"
-CODEX_TITLE_FALLBACK = "Codex"
+CODEX_TITLE_PENDING = "..."
 IGNORED_CODEX_TITLES = {"", "CODEX", "NAV", "Codux Empty", "Codux Loading"}
 
 
@@ -35,7 +35,7 @@ def render_display_title(title: str, codex_title: str | None) -> str:
         return title
     return title.replace(
         CODEX_TITLE_TEMPLATE,
-        normalize_codex_title(codex_title) or CODEX_TITLE_FALLBACK,
+        normalize_codex_title(codex_title) or CODEX_TITLE_PENDING,
     )
 
 
