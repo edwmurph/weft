@@ -1,6 +1,6 @@
 # codux
 
-`codux` is a small Python CLI that runs Codex sessions inside one tmux session. It keeps a lightweight Kanban-style nav pane above a native Codex pane, with one tmux window per Codex tab.
+`codux` is a small Python CLI that manages multiple Codex agents across parallel workflows in tmux. It keeps a lightweight Kanban-style nav pane above a native Codex pane, with one tmux window per Codex tab.
 
 ## Install
 
@@ -15,18 +15,22 @@ uv run codux doctor
 uv run start
 uv run codux start
 uv run codux doctor
+uv run codux sessions
+uv run codux delete-session SESSION
 uv run codux quit
 uv run codux quit --kill
 ```
 
-`uv run start` is the shortest local start command; it is equivalent to `uv run codux start`. For the MVP, `codux` intentionally exposes only three user shell commands:
+`uv run start` is the shortest local start command; it is equivalent to `uv run codux start`. User-facing shell commands are:
 
-- `codux start`: create or attach to the singleton dashboard
+- `codux start`: create or attach to the dashboard for the current workdir
 - `codux doctor`: check local dependencies and runtime files
-- `codux quit`: detach the dashboard and leave Codex sessions running
-- `codux quit --kill`: stop the singleton tmux session
+- `codux sessions`: list active Codux dashboard sessions
+- `codux delete-session SESSION`: delete a tmux session without confirmation
+- `codux quit`: detach the dashboard and leave Codex tabs running
+- `codux quit --kill`: stop the current dashboard tmux session
 
-Create, rename, close, focus, and move Codex sessions from inside the dashboard with the nav shortcuts below.
+Create, rename, close, focus, move Codex tabs, and manage other dashboard sessions from inside Codux with the nav shortcuts below.
 
 New tabs store their title as `{codex}` by default. In the nav pane, Codux replaces
 that placeholder with the live terminal title from the Codex tmux pane, so Codex
@@ -39,28 +43,31 @@ Default nav shortcuts, active when the nav region is focused:
 
 | Key | Action |
 | --- | --- |
-| `n` | new Codex session |
-| arrow keys | move through the visible nav grid |
-| `Shift` + arrow keys | move active tab left / right across columns |
-| `Enter` | focus the active Codex pane |
+| `n` | new Codex tab |
 | `r` | rename active tab |
 | `c` | close active tab |
+| `←`/`→`/`↑`/`↓` | switch tabs |
+| `shift + ←`/`→` | move active tab left / right across columns |
+| `s` | view and close other dashboard sessions |
+| `Enter` | focus the active Codex pane |
 | `?` | help popup |
-| `C-d` | toggle focus between nav and Codex |
-| `C-q` | detach dashboard and leave sessions running |
+| `C-d` | focus the other pane |
+| `C-q` | detach dashboard and leave Codex tabs running |
 
-`C-d` is session-scoped to the `codux` tmux session and configurable because it is intercepted before it reaches Codex.
+The nav footer shows `s sessions (N)`, where `N` is the count of other active Codux dashboards.
+
+`C-d` is scoped to the current Codux tmux session and configurable because it is intercepted before it reaches Codex.
 
 ## Config And State
 
 On first run, Codux creates:
 
-- singleton runtime: `~/.codux/config.toml` and `~/.codux/state.json`
+- workdir-scoped runtime: `~/.codux/workdirs/<workdir-id>/config.toml` and `~/.codux/workdirs/<workdir-id>/state.json`
 
 The default config:
 
 ```toml
-tmux_session = "codux"
+tmux_session = "codux-<workdir-id>"
 codex_command = "codex"
 # Ordered columns shown in the nav pane.
 columns = ["inbox", "implement", "ship"]
@@ -73,6 +80,7 @@ move_left = "S-Left"
 move_right = "S-Right"
 rename = "r"
 close = "c"
+sessions = "s"
 help = "?"
 focus_toggle = "C-d"
 quit = "C-q"
@@ -80,15 +88,15 @@ quit = "C-q"
 
 Set `columns` to change the nav columns and their order. Existing tabs in removed columns are moved to the first configured column the next time Codux repairs runtime state.
 
-The config file also controls `codex_command`, `key_bindings`, and `tmux_session`. See https://github.com/edwmurph/codux#config-and-state for details.
+The config file also controls `codex_command`, `key_bindings`, and `tmux_session`. See https://github.com/edwmurph/codux for details.
 
-Codux is expected to run as a singleton dashboard backed by the `codux` tmux session. If that session is already owned by a different checkout, `codux start` refuses to attach so stale hooks do not render an old dashboard. Set `CODUX_HOME` only when you intentionally need a separate runtime directory for development or tests.
+By default, `codux start` maps the current workdir to a stable runtime directory and tmux session, so starting Codux again from the same workdir reattaches to that dashboard. Separate workdirs get separate dashboards. Set `CODUX_HOME` only when you intentionally need a separate runtime directory for development or tests.
 
 State writes are atomic and guarded by `state.lock` so rapid tmux keybindings do not corrupt the JSON file.
 
 ## tmux Notes
 
-Codux uses one tmux session, one tmux window per Codex tab, and two native content panes per tab window:
+Each Codux dashboard uses one tmux session, one tmux window per Codex tab, and two native content panes per tab window:
 
 - top pane: `NAV`, an interactive Kanban tab navigator
 - lower pane: `CODEX`, the Codex process launched directly from `codex_command`
@@ -96,13 +104,13 @@ Codux uses one tmux session, one tmux window per Codex tab, and two native conte
 When no tabs exist, Codux keeps an empty dashboard window open with:
 
 ```text
-No Codex sessions open
+No Codex tabs open
 Press n to create one.
 ```
 
 Codux keeps the same rounded `NAV` and `CODEX` frame boxes around those panes. The frames are lightweight tmux panes, while the NAV and CODEX interiors remain real interactive panes. The nav frame height follows the tallest configured column, and the active frame's bottom edge shows that pane's shortcuts.
 
-Codex runs as the tmux pane command. Codux does not proxy Codex IO, re-render Codex output, inject Codex hooks, or force a Codex theme. Terminal color and theme behavior stays with the real tmux PTY and the user's `codex_command`; Codux only clears stale `CODUX_*` color hints left by older versions and neutralizes inherited tmux pane/window color styles for Codux windows.
+Codex runs as the tmux pane command. Codux does not proxy Codex IO, re-render Codex output, inject Codex hooks, or force a Codex theme. Terminal color and theme behavior stays with the real tmux PTY and the user's `codex_command`; Codux clears stale `CODUX_*` color hints left by older versions, keeps its runtime env out of Codex panes, and neutralizes inherited tmux pane/window color styles for Codux windows.
 
 ## Development
 

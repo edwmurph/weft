@@ -4,6 +4,7 @@ import pytest
 
 from codux.config import (
     APP_DIR_ENV,
+    WORKDIR_ENV,
     ConfigError,
     DEFAULT_COLUMNS,
     app_dir,
@@ -11,6 +12,7 @@ from codux.config import (
     default_tmux_session,
     ensure_config,
     load_config,
+    runtime_id,
 )
 
 
@@ -25,24 +27,44 @@ def test_ensure_config_creates_default(tmp_path):
     assert config.key_bindings.prev == "Left"
     assert config.key_bindings.move_right == "S-Right"
     assert config.key_bindings.close == "c"
+    assert config.key_bindings.sessions == "s"
     assert config.key_bindings.focus_toggle == "C-d"
 
 
-def test_runtime_defaults_are_singleton(monkeypatch, tmp_path):
+def test_runtime_defaults_are_scoped_to_current_workdir(monkeypatch, tmp_path):
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
+    monkeypatch.chdir(workdir)
 
     runtime_dir = app_dir()
+    identifier = runtime_id(workdir.resolve())
 
-    assert runtime_dir == tmp_path / "home" / ".codux"
-    assert default_tmux_session() == "codux"
+    assert runtime_dir == tmp_path / "home" / ".codux" / "workdirs" / identifier
+    assert default_tmux_session() == f"codux-{identifier}"
 
 
 def test_codux_home_override_preserves_global_session_default(monkeypatch, tmp_path):
     monkeypatch.setenv(APP_DIR_ENV, str(tmp_path / "custom"))
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
 
     assert app_dir() == tmp_path / "custom"
     assert default_tmux_session() == "codux"
+
+
+def test_codux_workdir_env_scopes_runtime(monkeypatch, tmp_path):
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.setenv(WORKDIR_ENV, str(workdir))
+
+    identifier = runtime_id(workdir.resolve())
+
+    assert app_dir() == tmp_path / "home" / ".codux" / "workdirs" / identifier
+    assert default_tmux_session() == f"codux-{identifier}"
 
 
 def test_load_config_accepts_custom_values(tmp_path):
@@ -131,6 +153,7 @@ focus_toggle = "C-a"
     assert config.key_bindings.move_left == "S-Left"
     assert config.key_bindings.move_right == "S-Right"
     assert config.key_bindings.close == "c"
+    assert config.key_bindings.sessions == "s"
     assert config.key_bindings.focus_toggle == "C-d"
     text = path.read_text(encoding="utf-8")
     assert 'columns = ["inbox", "implement", "ship"]' in text
@@ -138,4 +161,5 @@ focus_toggle = "C-a"
     assert 'prev = "Left"' in text
     assert 'move_right = "S-Right"' in text
     assert 'close = "c"' in text
+    assert 'sessions = "s"' in text
     assert 'focus_toggle = "C-d"' in text

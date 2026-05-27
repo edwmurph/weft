@@ -67,7 +67,7 @@ def test_render_empty_state_centers_in_available_pane():
     assert rendered.splitlines() == [
         "",
         "",
-        "    No Codex sessions open",
+        "      No Codex tabs open",
         "    Press n to create one.",
     ]
 
@@ -236,33 +236,60 @@ def test_nav_content_height_tracks_tallest_column():
 
 def test_shortcut_labels_are_pane_specific():
     config = CoduxConfig()
+    shortcuts = nav_shortcuts(config, other_session_count=2)
 
-    assert "new" in nav_shortcuts(config)
+    assert "n new tab" in shortcuts
+    assert "r rename tab" in shortcuts
+    assert "c close tab" in shortcuts
+    assert "sessions (2)" in shortcuts
+    assert shortcuts.index("n new tab") < shortcuts.index("r rename tab")
+    assert shortcuts.index("r rename tab") < shortcuts.index("c close tab")
+    assert shortcuts.index("c close tab") < shortcuts.index("←/→/↑/↓ switch tab")
+    assert shortcuts.index("shift + ←/→ move tab") < shortcuts.index("s sessions (2)")
+    assert shortcuts.endswith("C-d focus codex pane  C-q quit  ? help")
     assert "new" not in codex_shortcuts(config)
+    assert codex_shortcuts(config).startswith("C-d focus nav pane")
 
 
-def test_help_orients_user_and_lists_mvp_shell_commands():
+def test_help_orients_user_and_lists_shortcuts():
     rendered = render_help(CoduxConfig())
 
     assert rendered.startswith(
-        "Manage multiple Codex agents across parallel workflows in a shared workspace.\n\nDocs:"
+        "  Manage multiple Codex agents across parallel workflows in a shared workspace.\n\n  Docs:"
     )
     assert "Config:" not in rendered
     assert "Controls:" not in rendered
     assert "Current columns:" not in rendered
     assert f"Docs: {HELP_DOCS_URL}" in rendered
+    assert rendered.index(f"Docs: {HELP_DOCS_URL}") < rendered.index(
+        f"Feature requests: {HELP_ISSUES_URL}"
+    )
+    assert rendered.index(f"Feature requests: {HELP_ISSUES_URL}") < rendered.index(
+        "Nav Pane Shortcuts"
+    )
     assert "#config-and-state" not in rendered
     assert "Nav Pane Shortcuts" in rendered
     assert "Codex Pane Shortcuts" in rendered
-    assert "Shell Commands" in rendered
+    assert "New tab" in rendered
+    assert "Switch tab" in rendered
+    assert "Move tab between columns" in rendered
+    assert "Other dashboard sessions" in rendered
+    assert "Detach dashboard and leave Codex tabs running" in rendered
+    assert "New session" not in rendered
+    assert "Select session" not in rendered
+    assert "Move active session" not in rendered
+    assert "Shell Commands" not in rendered
     assert "Shell Commands (MVP)" not in rendered
     assert "←/→/↑/↓" in rendered
-    assert "⇧←/⇧→" in rendered
+    assert "shift + ←/→" in rendered
+    assert "⇧←/⇧→" not in rendered
     assert "Shift+Left/Right" not in rendered
     assert "Other keys pass through to Codex." not in rendered
-    assert "codux start" in rendered
-    assert "codux doctor" in rendered
-    assert "codux quit [--kill]" in rendered
+    assert "codux start" not in rendered
+    assert "codux doctor" not in rendered
+    assert "codux sessions" not in rendered
+    assert "codux delete-session SESSION" not in rendered
+    assert "codux quit [--kill]" not in rendered
     assert "codux new" not in rendered
     assert "codux rename" not in rendered
     assert "codux status" not in rendered

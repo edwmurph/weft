@@ -18,11 +18,24 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from codux.config import ConfigError, CoduxConfig, config_path, ensure_config
-from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
+from codux.config import (
+    ConfigError,
+    CoduxConfig,
+    config_path,
+    ensure_config,
+    ensure_runtime_environment,
+)
+from codux.launcher import codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.nav_pane import run_nav_pane
 from codux.render import render_empty_state, render_help, render_nav
+from codux.sessions import (
+    CoduxSession,
+    display_path,
+    kill_codux_session,
+    list_codux_sessions,
+    other_codux_sessions,
+)
 from codux.state import (
     AppState,
     FocusTarget,
@@ -46,12 +59,14 @@ from codux.titles import (
 from codux.tmux import FRAME_HOST_OPTION, FRAME_HOST_VERSION, TmuxController
 
 
-app = typer.Typer(help="Start, inspect, or detach the singleton Codux dashboard.")
+app = typer.Typer(help="Start, inspect, or detach Codux dashboards.")
 console = Console()
 RENAME_INPUT_PREFIX = "> "
 RENAME_INPUT_BACKGROUND = "\033[48;2;30;35;45m"
 RESET_TERMINAL_STYLE = "\033[0m"
 CLEAR_TO_LINE_END = "\033[K"
+SESSIONS_POPUP_WIDTH = 96
+SESSIONS_POPUP_HEIGHT = 18
 ENABLE_MOUSE_CAPTURE = "\033[?1000h\033[?1002h\033[?1006h"
 DISABLE_MOUSE_CAPTURE = "\033[?1006l\033[?1002l\033[?1000l"
 ESCAPE_SEQUENCE_TIMEOUT_SECONDS = 0.12
@@ -78,21 +93,16 @@ def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
 
 
 def load_config_and_tmux() -> tuple[CoduxConfig, TmuxController]:
+    ensure_runtime_environment()
     config = ensure_config()
     return config, TmuxController(config.tmux_session)
 
 
-def exit_for_busy_state_lock(exc: StateLockTimeout) -> None:
+def exit_for_busy_state_lock(exc: StateLockTimeout, session_name: str) -> None:
     console.print(f"[red]error[/red] Codux state is busy: {exc}")
-    console.print("If the dashboard is already running, attach with `tmux attach -t codux`.")
-    raise typer.Exit(1) from exc
-
-
-def exit_for_foreign_session(project_root: str) -> None:
-    console.print("[red]error[/red] Codux singleton session is already running elsewhere.")
-    console.print(f"existing session: {project_root}")
-    console.print(f"current command:  {PROJECT_ROOT}")
-    console.print("Close or kill the existing `codux` tmux session before starting this checkout.")
+    console.print(
+        f"If the dashboard is already running, attach with `tmux attach -t {session_name}`."
+    )
     raise typer.Exit(1)
 
 
@@ -235,9 +245,6 @@ def start(
     """Create or attach to the Codux tmux session."""
     config, tmux = load_config_and_tmux()
     if tmux.has_session():
-        project_root = tmux.project_root()
-        if project_root and project_root != str(PROJECT_ROOT):
-            exit_for_foreign_session(project_root)
         tmux.install_look_and_keys(config, codux_command())
         if attach:
             tmux.attach()
@@ -249,7 +256,7 @@ def start(
         if attach and tmux.has_session():
             tmux.attach()
             return
-        exit_for_busy_state_lock(exc)
+        exit_for_busy_state_lock(exc, config.tmux_session)
     tmux.ensure_session(config)
     tmux.install_look_and_keys(config, codux_command())
     state = repair_and_render(config, store, tmux)
@@ -309,7 +316,7 @@ def close(
     state = repair_and_render(config, store, tmux)
     target_id = tab_id or state.active_tab_id
     if target_id is None:
-        console.print("No Codex sessions are open.")
+        console.print("No Codex tabs are open.")
         return
     target_index = next(
         (index for index, tab in enumerate(state.tabs) if tab.id == target_id), None
@@ -371,6 +378,42 @@ def quit(
         tmux.kill_session()
     else:
         tmux.detach_clients()
+
+
+@app.command("sessions")
+def list_sessions_command() -> None:
+    """List active Codux dashboard sessions."""
+    config, _ = load_config_and_tmux()
+    sessions = list_codux_sessions(config.tmux_session)
+    if not sessions:
+        console.print("No Codux sessions are running.")
+        return
+    table = Table(title="Codux Sessions")
+    table.add_column("Current")
+    table.add_column("Session")
+    table.add_column("Workdir")
+    table.add_column("Windows", justify="right")
+    table.add_column("Clients", justify="right")
+    for session in sessions:
+        table.add_row(
+            "*" if session.current else "",
+            session.name,
+            display_path(session.workdir),
+            str(session.window_count),
+            str(session.attached_clients),
+        )
+    console.print(table)
+
+
+@app.command("delete-session")
+def delete_session_command(
+    session_name: str = typer.Argument(..., help="Exact tmux session name to delete."),
+) -> None:
+    """Delete a Codux dashboard session without confirmation."""
+    if not kill_codux_session(session_name):
+        console.print(f"tmux session not found: {session_name}")
+        raise typer.Exit(1)
+    console.print(f"Deleted tmux session: {session_name}")
 
 
 def move_left() -> None:
@@ -532,6 +575,7 @@ def doctor() -> None:
     problems: list[str] = []
     warnings: list[str] = []
     try:
+        ensure_runtime_environment()
         config = ensure_config()
         store = StateStore()
         state = store.ensure()
@@ -590,16 +634,19 @@ def render_empty_command() -> None:
 
 @app.command("_render-help", hidden=True)
 def render_help_command() -> None:
+    ensure_runtime_environment()
     config = ensure_config()
     console.print(render_help(config))
 
 
 @app.command("_popup-help", hidden=True)
 def popup_help_command() -> None:
+    ensure_runtime_environment()
     config = ensure_config()
     write_terminal_control(f"\033[?25l{ENABLE_MOUSE_CAPTURE}\033[2J\033[H")
     try:
-        console.print(render_help(config))
+        console.file.write(render_help(config))
+        console.file.flush()
         while True:
             key = read_single_key()
             if key in {"\x1b", ""}:
@@ -608,6 +655,105 @@ def popup_help_command() -> None:
         pass
     finally:
         write_terminal_control(f"{DISABLE_MOUSE_CAPTURE}\033[?25h")
+
+
+@app.command("_popup-sessions", hidden=True)
+def popup_sessions_command() -> None:
+    config, _ = load_config_and_tmux()
+    sessions = other_codux_sessions(config.tmux_session)
+    selected_index = 0
+    pending_kill: str | None = None
+    status = ""
+
+    def redraw() -> None:
+        size = shutil.get_terminal_size((SESSIONS_POPUP_WIDTH, SESSIONS_POPUP_HEIGHT))
+        lines = _sessions_popup_screen(
+            sessions,
+            selected_index,
+            pending_kill,
+            status,
+            size.columns,
+            size.lines,
+        )
+        console.file.write("\033[?25l\033[2J\033[H")
+        console.file.write("\n".join(lines))
+        console.file.flush()
+
+    write_terminal_control(f"\033[?25l{ENABLE_MOUSE_CAPTURE}\033[2J\033[H")
+    try:
+        redraw()
+        while True:
+            key = read_single_key()
+            if key in {"\x1b", ""}:
+                break
+            if pending_kill is not None:
+                if key.lower() == "y":
+                    killed = kill_codux_session(pending_kill)
+                    status = f"Deleted {pending_kill}." if killed else f"Not found: {pending_kill}."
+                    sessions = other_codux_sessions(config.tmux_session)
+                    selected_index = min(selected_index, max(0, len(sessions) - 1))
+                    pending_kill = None
+                    redraw()
+                elif key.lower() in {"n", "c"}:
+                    status = "Delete canceled."
+                    pending_kill = None
+                    redraw()
+                continue
+            if key in {"\x1b[A", "\x1bOA"} and sessions:
+                selected_index = max(0, selected_index - 1)
+                redraw()
+            elif key in {"\x1b[B", "\x1bOB"} and sessions:
+                selected_index = min(len(sessions) - 1, selected_index + 1)
+                redraw()
+            elif key == "c" and sessions:
+                pending_kill = sessions[selected_index].name
+                status = ""
+                redraw()
+    except EOFError:
+        pass
+    finally:
+        write_terminal_control(f"{DISABLE_MOUSE_CAPTURE}\033[?25h")
+
+
+def _sessions_popup_screen(
+    sessions: list[CoduxSession],
+    selected_index: int,
+    pending_kill: str | None,
+    status: str,
+    width: int,
+    height: int,
+) -> list[str]:
+    lines = [
+        "Other Codux sessions",
+        "",
+    ]
+    if sessions:
+        lines.extend(
+            [
+                f"{'':2} {'Session':<28} {'Clients':>7} {'Windows':>7}  Workdir",
+                "",
+            ]
+        )
+        for index, session in enumerate(sessions):
+            marker = "›" if index == selected_index else " "
+            lines.append(
+                f"{marker} {session.name:<28.28} {session.attached_clients:>7} "
+                f"{session.window_count:>7}  {display_path(session.workdir)}"
+            )
+    else:
+        lines.append("No other Codux sessions are running.")
+
+    footer = status or "↑/↓ select  c close  Esc cancel"
+    if pending_kill is not None:
+        footer = f"Delete {pending_kill}? y/N"
+    if len(lines) + 1 < height:
+        lines.extend([""] * (height - len(lines) - 1))
+    lines.append(footer)
+    return [_clip_popup_line(line, width) for line in lines[:height]]
+
+
+def _clip_popup_line(line: str, width: int) -> str:
+    return line[: max(0, width - 1)]
 
 
 @app.command("_popup-rename", hidden=True)

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import os
 import shlex
 from pathlib import Path
+
+from codux.config import APP_DIR_ENV, WORKDIR_ENV
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def codux_cli_args(*args: str) -> list[str]:
-    return [
+    command = [
         "uv",
         "--directory",
         str(PROJECT_ROOT),
@@ -18,6 +21,12 @@ def codux_cli_args(*args: str) -> list[str]:
         "codux",
         *args,
     ]
+    environment = [
+        f"{name}={value}" for name in (APP_DIR_ENV, WORKDIR_ENV) if (value := os.environ.get(name))
+    ]
+    if environment:
+        return ["env", *environment, *command]
+    return command
 
 
 def codux_cli_shell_command(*args: str) -> str:

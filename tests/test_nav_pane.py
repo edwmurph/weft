@@ -45,6 +45,20 @@ def test_nav_pane_closes_on_c_not_x():
     assert events == ["render:True", "close", "render:True"]
 
 
+def test_nav_pane_opens_sessions_popup_on_s():
+    events: list[str] = []
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = CoduxConfig()
+    pane.skip_next_render = False
+    pane.sessions_popup = lambda: events.append("sessions")
+    pane.render = lambda *, force=False: events.append(f"render:{force}")
+
+    pane.handle_input(b"s")
+
+    assert events == ["sessions", "render:True"]
+
+
 def test_nav_pane_cli_helpers_run_from_project_root(monkeypatch):
     calls: list[tuple[list[str], object]] = []
 
@@ -142,6 +156,40 @@ def test_help_popup_sizes_to_rendered_help(monkeypatch):
     ]
     root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
     assert command == f"uv --directory {root} --project {root} run codux _popup-help"
+
+
+def test_sessions_popup_runs_from_project_root(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+
+    monkeypatch.setattr(nav_pane_module.subprocess, "run", fake_run)
+
+    pane = NavPane.__new__(NavPane)
+    pane.sessions_popup()
+
+    command = calls[0][-1]
+    assert calls[0] == [
+        "tmux",
+        "display-popup",
+        "-E",
+        "-d",
+        str(nav_pane_module.PROJECT_ROOT),
+        "-w",
+        str(nav_pane_module.SESSIONS_POPUP_WIDTH),
+        "-h",
+        str(nav_pane_module.SESSIONS_POPUP_HEIGHT),
+        "-s",
+        "fg=default,bg=default",
+        "-S",
+        "fg=default,bg=default",
+        "-T",
+        "Codux Sessions",
+        command,
+    ]
+    root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
+    assert command == f"uv --directory {root} --project {root} run codux _popup-sessions"
 
 
 def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):

@@ -8,7 +8,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 
-from codux.config import CoduxConfig
+from codux.config import APP_DIR_ENV, WORKDIR_ENV, CoduxConfig, app_dir, current_workdir
 from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.render import (
@@ -37,6 +37,8 @@ NAV_HOST_VERSION = "16"
 FRAME_HOST_OPTION = "@codux-frame-host"
 FRAME_HOST_VERSION = "6"
 PROJECT_ROOT_OPTION = "@codux-project-root"
+WORKDIR_OPTION = "@codux-workdir"
+RUNTIME_DIR_OPTION = "@codux-runtime-dir"
 CODEX_PANE_TITLE = "CODEX"
 NAV_PANE_TITLE = "NAV"
 FRAME_EDGE_SIZE = 1
@@ -108,6 +110,8 @@ class TmuxController:
         self._install_terminal_options()
         self._install_session_environment()
         self.set_project_root(str(PROJECT_ROOT))
+        self._set_session_option(WORKDIR_OPTION, str(current_workdir()))
+        self._set_session_option(RUNTIME_DIR_OPTION, str(app_dir()))
         self._tmux(["set-option", "-t", self.session_name, "status", "off"])
         snapshot = self._snapshot()
         for window_id, _ in self._codux_windows(snapshot):
@@ -269,6 +273,8 @@ class TmuxController:
                 "#{window_id}\t#{pane_id}",
                 "-t",
                 f"{self.session_name}:",
+                "-c",
+                str(current_workdir()),
                 "-n",
                 title,
                 command,
@@ -1020,7 +1026,12 @@ class TmuxController:
 
     def _shortcut_label(self, config: CoduxConfig, role: str) -> str:
         if role == NAV_PANE_TITLE:
-            return nav_shortcuts(config)
+            from codux.sessions import other_codux_session_count
+
+            return nav_shortcuts(
+                config,
+                other_session_count=other_codux_session_count(self.session_name),
+            )
         if role == CODEX_PANE_TITLE:
             return codex_shortcuts(config)
         return ""
@@ -1113,6 +1124,8 @@ class TmuxController:
                 "-d",
                 "-s",
                 self.session_name,
+                "-c",
+                str(current_workdir()),
                 "-n",
                 "codux",
                 "-P",
@@ -1138,6 +1151,8 @@ class TmuxController:
                 "#{window_id}\t#{pane_id}",
                 "-t",
                 f"{self.session_name}:",
+                "-c",
+                str(current_workdir()),
                 "-n",
                 "codux",
                 self._empty_shell_command(),
@@ -1286,7 +1301,7 @@ class TmuxController:
         return codux_cli_shell_command("_loading-pane")
 
     def _codex_shell_command(self, config: CoduxConfig) -> str:
-        return f"unset NO_COLOR; exec {config.codex_command}"
+        return f"unset NO_COLOR {APP_DIR_ENV} {WORKDIR_ENV}; exec {config.codex_command}"
 
     def _codux_cli_command(self) -> str:
         return codux_cli_shell_command()
@@ -1307,6 +1322,7 @@ class TmuxController:
             bindings.move_left,
             bindings.move_right,
             bindings.close,
+            bindings.sessions,
             bindings.help,
             bindings.rename,
             bindings.focus_toggle,

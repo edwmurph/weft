@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import textwrap
 from textwrap import shorten
 
 from codux.config import CoduxConfig
@@ -12,6 +11,8 @@ from codux.titles import render_display_title
 NAV_HORIZONTAL_PADDING = 2
 HELP_POPUP_WIDTH = 84
 HELP_POPUP_VERTICAL_PADDING = 2
+HELP_POPUP_INDENT = "  "
+HELP_SHORTCUT_KEY_WIDTH = 13
 HELP_DOCS_URL = "https://github.com/edwmurph/codux"
 HELP_ISSUES_URL = "https://github.com/edwmurph/codux/issues"
 DEFAULT_THEME = Theme()
@@ -71,7 +72,7 @@ def nav_column_widths(count: int, width: int | None, gap: int) -> list[int]:
 
 
 def render_empty_state(width: int | None = None, height: int | None = None) -> str:
-    lines = ["No Codex sessions open", "Press n to create one."]
+    lines = ["No Codex tabs open", "Press n to create one."]
     if width is not None:
         lines = [line.center(max(1, width)).rstrip() for line in lines]
     if height is None:
@@ -107,18 +108,19 @@ def render_right_border(width: int, height: int, active: bool) -> str:
     )
 
 
-def nav_shortcuts(config: CoduxConfig) -> str:
+def nav_shortcuts(config: CoduxConfig, other_session_count: int = 0) -> str:
     bindings = config.key_bindings
     return (
-        f"{bindings.new} new  arrows move cursor  shift+arrows move tab  {bindings.rename} rename  "
-        f"{bindings.close} close  {bindings.help} help  "
-        f"{bindings.focus_toggle} codex  {bindings.quit} quit"
+        f"{bindings.new} new tab  {bindings.rename} rename tab  "
+        f"{bindings.close} close tab  ←/→/↑/↓ switch tab  shift + ←/→ move tab  "
+        f"{bindings.sessions} sessions ({other_session_count})  "
+        f"{bindings.focus_toggle} focus codex pane  {bindings.quit} quit  {bindings.help} help"
     )
 
 
 def codex_shortcuts(config: CoduxConfig) -> str:
     bindings = config.key_bindings
-    return f"{bindings.focus_toggle} nav  {bindings.quit} quit"
+    return f"{bindings.focus_toggle} focus nav pane  {bindings.quit} quit"
 
 
 def _horizontal_border(width: int, label: str) -> str:
@@ -167,32 +169,33 @@ def _underlined_header(text: str, width: int) -> str:
 
 def render_help(config: CoduxConfig) -> str:
     bindings = config.key_bindings
-    return textwrap.dedent(
-        f"""
-        Manage multiple Codex agents across parallel workflows in a shared workspace.
+    lines = [
+        "Manage multiple Codex agents across parallel workflows in a shared workspace.",
+        "",
+        f"Docs: {HELP_DOCS_URL}",
+        f"Feature requests: {HELP_ISSUES_URL}",
+        "",
+        "Nav Pane Shortcuts",
+        _help_shortcut_row(bindings.new, "New tab"),
+        _help_shortcut_row(bindings.rename, "Rename tab"),
+        _help_shortcut_row(bindings.close, "Close tab"),
+        _help_shortcut_row("←/→/↑/↓", "Switch tab"),
+        _help_shortcut_row("shift + ←/→", "Move tab between columns"),
+        _help_shortcut_row(bindings.sessions, "Other dashboard sessions"),
+        _help_shortcut_row(f"Enter/{bindings.focus_toggle}", "Focus the active Codex pane"),
+        _help_shortcut_row(bindings.quit, "Detach dashboard and leave Codex tabs running"),
+        _help_shortcut_row(bindings.help, "Help"),
+        _help_shortcut_row("Esc", "Close help"),
+        "",
+        "Codex Pane Shortcuts",
+        _help_shortcut_row(bindings.focus_toggle, "Focus the nav pane"),
+        _help_shortcut_row(bindings.quit, "Detach dashboard and leave Codex tabs running"),
+    ]
+    return "\n".join(f"{HELP_POPUP_INDENT}{line}" if line else "" for line in lines)
 
-        Docs: {HELP_DOCS_URL}
 
-        Nav Pane Shortcuts
-        {bindings.new}        New session
-        ←/→/↑/↓  Select session
-        ⇧←/⇧→    Move active session between columns
-        {bindings.rename}        Rename tab
-        {bindings.close}        Close tab
-        {bindings.help}        Help
-        Esc      Close help
-        Enter/{bindings.focus_toggle}  Focus the active Codex pane
-        {bindings.quit}      Detach Codux and leave sessions running
-
-        Codex Pane Shortcuts
-        {bindings.focus_toggle}      Focus the nav pane
-        {bindings.quit}      Detach Codux and leave sessions running
-
-        Shell Commands: codux start | codux doctor | codux quit [--kill]
-
-        Feature requests: {HELP_ISSUES_URL}
-        """
-    ).strip()
+def _help_shortcut_row(key: str, description: str) -> str:
+    return f"{key:<{HELP_SHORTCUT_KEY_WIDTH}}{description}"
 
 
 def help_popup_height(config: CoduxConfig) -> int:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,6 +10,7 @@ from typing import Any
 
 
 APP_DIR_ENV = "CODUX_HOME"
+WORKDIR_ENV = "CODUX_WORKDIR"
 OLD_DEFAULT_COLUMNS = ["Backlog", "Active", "Review", "Done"]
 DEFAULT_COLUMNS = ["inbox", "implement", "ship"]
 
@@ -25,6 +28,7 @@ class KeyBindings:
     move_right: str = "S-Right"
     rename: str = "r"
     close: str = "c"
+    sessions: str = "s"
     help: str = "?"
     focus_toggle: str = "C-d"
     quit: str = "C-q"
@@ -40,6 +44,7 @@ class KeyBindings:
             move_right=str(values.get("move_right", cls.move_right)),
             rename=str(values.get("rename", cls.rename)),
             close=str(values.get("close", cls.close)),
+            sessions=str(values.get("sessions", cls.sessions)),
             help=str(values.get("help", cls.help)),
             focus_toggle=str(values.get("focus_toggle", cls.focus_toggle)),
             quit=str(values.get("quit", cls.quit)),
@@ -98,11 +103,32 @@ class CoduxConfig:
 def app_dir() -> Path:
     if configured := os.environ.get(APP_DIR_ENV):
         return Path(configured).expanduser()
-    return Path.home() / ".codux"
+    return Path.home() / ".codux" / "workdirs" / runtime_id(current_workdir())
+
+
+def current_workdir() -> Path:
+    if configured := os.environ.get(WORKDIR_ENV):
+        return Path(configured).expanduser().resolve()
+    return Path.cwd().resolve()
+
+
+def runtime_id(workdir: Path) -> str:
+    name = re.sub(r"[^A-Za-z0-9_-]+", "-", workdir.name).strip("-").lower()
+    digest = hashlib.sha1(str(workdir).encode("utf-8")).hexdigest()[:8]
+    return f"{name or 'workdir'}-{digest}"
 
 
 def default_tmux_session(base_dir: Path | None = None) -> str:
-    return CoduxConfig.tmux_session
+    if base_dir is not None:
+        return CoduxConfig.tmux_session
+    if os.environ.get(APP_DIR_ENV) and not os.environ.get(WORKDIR_ENV):
+        return CoduxConfig.tmux_session
+    return f"codux-{runtime_id(current_workdir())}"
+
+
+def ensure_runtime_environment() -> None:
+    os.environ.setdefault(WORKDIR_ENV, str(current_workdir()))
+    os.environ.setdefault(APP_DIR_ENV, str(app_dir()))
 
 
 def config_path(base_dir: Path | None = None) -> Path:
@@ -130,6 +156,7 @@ move_left = "S-Left"
 move_right = "S-Right"
 rename = "r"
 close = "c"
+sessions = "s"
 help = "?"
 focus_toggle = "C-d"
 quit = "C-q"
@@ -170,6 +197,8 @@ def migrate_default_config(path: Path) -> None:
         updated = updated.replace('move_left = "H"\n', 'move_left = "S-Left"\n')
         updated = updated.replace('move_right = "L"\n', 'move_right = "S-Right"\n')
         updated = updated.replace('close = "x"\n', 'close = "c"\n')
+        if "\nsessions =" not in updated:
+            updated = updated.replace('close = "c"\n', 'close = "c"\nsessions = "s"\n')
         updated = updated.replace('focus_toggle = "C-a"\n', 'focus_toggle = "C-d"\n')
     if updated != text:
         path.write_text(updated, encoding="utf-8")

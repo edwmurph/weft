@@ -3,6 +3,7 @@ from __future__ import annotations
 import shlex
 from types import SimpleNamespace
 
+import codux.sessions as sessions_module
 import codux.tmux as tmux_module
 from codux.config import CoduxConfig
 from codux.state import AppState, Tab, now_iso
@@ -28,10 +29,9 @@ def test_codex_shell_command_launches_direct_codex_without_proxy():
     controller = TmuxController("codux")
     command = controller._codex_shell_command(CoduxConfig(codex_command="codex --foo"))
 
-    assert command == "unset NO_COLOR; exec codex --foo"
+    assert command == "unset NO_COLOR CODUX_HOME CODUX_WORKDIR; exec codex --foo"
     assert "_codex-proxy" not in command
     assert "tui.theme" not in command
-    assert "CODUX_" not in command
 
 
 def test_codex_shell_command_preserves_user_codex_command():
@@ -40,14 +40,16 @@ def test_codex_shell_command_preserves_user_codex_command():
         CoduxConfig(codex_command='codex -c tui.theme="dark" --foo')
     )
 
-    assert command == 'unset NO_COLOR; exec codex -c tui.theme="dark" --foo'
+    assert command == (
+        'unset NO_COLOR CODUX_HOME CODUX_WORKDIR; exec codex -c tui.theme="dark" --foo'
+    )
 
 
 def test_codex_shell_command_does_not_rewrite_custom_launcher():
     controller = TmuxController("codux")
     command = controller._codex_shell_command(CoduxConfig(codex_command="my-codex --foo"))
 
-    assert command == "unset NO_COLOR; exec my-codex --foo"
+    assert command == "unset NO_COLOR CODUX_HOME CODUX_WORKDIR; exec my-codex --foo"
 
 
 def test_respawn_codex_pane_preserves_terminal_title(monkeypatch):
@@ -147,6 +149,8 @@ def test_install_records_current_project_root(monkeypatch):
     monkeypatch.setattr(controller, "_snapshot", lambda: SimpleNamespace())
     monkeypatch.setattr(controller, "_codux_windows", lambda snapshot: [])
     monkeypatch.setattr(controller, "repair_window_sizes", lambda: None)
+    monkeypatch.setattr(tmux_module, "current_workdir", lambda: tmux_module.PROJECT_ROOT)
+    monkeypatch.setattr(tmux_module, "app_dir", lambda: tmux_module.PROJECT_ROOT / ".codux-test")
 
     controller.install_look_and_keys(CoduxConfig(), "uv run codux")
 
@@ -156,6 +160,20 @@ def test_install_records_current_project_root(monkeypatch):
         "codux",
         tmux_module.PROJECT_ROOT_OPTION,
         str(tmux_module.PROJECT_ROOT),
+    ) in commands
+    assert (
+        "set-option",
+        "-t",
+        "codux",
+        tmux_module.WORKDIR_OPTION,
+        str(tmux_module.PROJECT_ROOT),
+    ) in commands
+    assert (
+        "set-option",
+        "-t",
+        "codux",
+        tmux_module.RUNTIME_DIR_OPTION,
+        str(tmux_module.PROJECT_ROOT / ".codux-test"),
     ) in commands
 
 
@@ -197,15 +215,19 @@ def test_codex_border_stays_active_across_tab_windows_when_focus_is_codex():
     assert not controller._border_is_active(second.tmux_window_id, "NAV_TOP", state)
 
 
-def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused():
+def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused(monkeypatch):
     controller = TmuxController("codux")
     config = CoduxConfig()
     state = AppState(focus="codex")
+    monkeypatch.setattr(sessions_module, "other_codux_session_count", lambda current: 2)
 
-    content = controller._border_content(config, "@1", "NAV_BOTTOM", state, width=120, height=1)
+    content = controller._border_content(config, "@1", "NAV_BOTTOM", state, width=180, height=1)
 
-    assert "n new" in content
-    assert "C-d codex" in content
+    assert "n new tab" in content
+    assert "r rename tab" in content
+    assert "c close tab" in content
+    assert "s sessions (2)" in content
+    assert "C-d focus codex pane" in content
     assert "\033[38;5;244m" in content
 
 
@@ -213,6 +235,7 @@ def test_create_tab_window_uses_native_nav_and_codex_panes(monkeypatch):
     controller = TmuxController("codux")
     commands: list[tuple[str, ...]] = []
     selected_windows: list[str] = []
+    workdir = tmux_module.PROJECT_ROOT / "example-workdir"
 
     def fake_tmux(args, check=True):
         commands.append(tuple(args))
@@ -224,6 +247,7 @@ def test_create_tab_window_uses_native_nav_and_codex_panes(monkeypatch):
     monkeypatch.setattr(controller, "_tmux", fake_tmux)
     monkeypatch.setattr(controller, "_split_nav_pane", lambda pane_id, **kwargs: "%10")
     monkeypatch.setattr(controller, "select_window", selected_windows.append)
+    monkeypatch.setattr(tmux_module, "current_workdir", lambda: workdir)
 
     created = controller.create_tab_window(CoduxConfig(), "New Codex", "tab123")
 
@@ -237,6 +261,10 @@ def test_create_tab_window_uses_native_nav_and_codex_panes(monkeypatch):
     assert ("set-option", "-p", "-t", "%9", "@codux-role", "CODEX") in commands
     new_window_command = next(command for command in commands if command[0] == "new-window")
     assert "-d" in new_window_command
+    assert ("-c", str(workdir)) == (
+        new_window_command[new_window_command.index("-c")],
+        new_window_command[new_window_command.index("-c") + 1],
+    )
     assert "_codex-proxy" not in new_window_command[-1]
 
 
@@ -999,7 +1027,7 @@ def test_empty_content_uses_pane_dimensions():
     assert controller._empty_content("%empty", snapshot).splitlines() == [
         "",
         "",
-        "    No Codex sessions open",
+        "      No Codex tabs open",
         "    Press n to create one.",
     ]
 

@@ -35,6 +35,8 @@ RESET = Theme().reset
 HIDE_CURSOR = "\033[?25l"
 POPUP_STYLE = "fg=default,bg=default"
 POPUP_BORDER_STYLE = "fg=default,bg=default"
+SESSIONS_POPUP_WIDTH = 96
+SESSIONS_POPUP_HEIGHT = 18
 TITLE_POLL_INTERVAL = 0.5
 
 
@@ -125,6 +127,8 @@ class NavPane:
                 self.close_active_tab()
             elif key == bindings.rename:
                 self.rename_prompt()
+            elif key == bindings.sessions:
+                self.sessions_popup()
             elif key == bindings.help:
                 self.help_popup()
         if self.skip_next_render:
@@ -410,6 +414,30 @@ class NavPane:
                 POPUP_BORDER_STYLE,
                 "-T",
                 "Codux",
+                command,
+            ],
+            check=False,
+        )
+
+    def sessions_popup(self) -> None:
+        command = codux_cli_shell_command("_popup-sessions")
+        subprocess.run(
+            [
+                "tmux",
+                "display-popup",
+                "-E",
+                "-d",
+                str(PROJECT_ROOT),
+                "-w",
+                str(SESSIONS_POPUP_WIDTH),
+                "-h",
+                str(SESSIONS_POPUP_HEIGHT),
+                "-s",
+                POPUP_STYLE,
+                "-S",
+                POPUP_BORDER_STYLE,
+                "-T",
+                "Codux Sessions",
                 command,
             ],
             check=False,

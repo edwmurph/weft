@@ -10,7 +10,7 @@ import pytest
 import codux.cli as cli_module
 import codux.launcher as launcher_module
 from codux.cli import is_transient_codex_title, repair_and_render
-from codux.config import CoduxConfig
+from codux.config import APP_DIR_ENV, WORKDIR_ENV, CoduxConfig
 from codux.state import (
     AppState,
     StateLockTimeout,
@@ -43,12 +43,30 @@ def tab(tab_id: str) -> Tab:
     )
 
 
-def test_codux_command_uses_uv_project_root_without_cd():
+def test_codux_command_uses_uv_project_root_without_cd(monkeypatch):
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
     command = cli_module.codux_command()
     root = shlex.quote(str(launcher_module.PROJECT_ROOT))
 
     assert command == f"uv --directory {root} --project {root} run codux"
     assert "cd " not in command
+
+
+def test_codux_command_preserves_runtime_environment(monkeypatch, tmp_path):
+    runtime_dir = tmp_path / "runtime"
+    workdir = tmp_path / "repo"
+    monkeypatch.setenv(APP_DIR_ENV, str(runtime_dir))
+    monkeypatch.setenv(WORKDIR_ENV, str(workdir))
+
+    command = cli_module.codux_command()
+    root = shlex.quote(str(launcher_module.PROJECT_ROOT))
+
+    assert command == (
+        f"env CODUX_HOME={shlex.quote(str(runtime_dir))} "
+        f"CODUX_WORKDIR={shlex.quote(str(workdir))} "
+        f"uv --directory {root} --project {root} run codux"
+    )
 
 
 def test_start_entrypoint_dispatches_start_command(monkeypatch):
@@ -76,20 +94,20 @@ def test_start_entrypoint_dispatches_start_command(monkeypatch):
     assert cli_module.sys.argv == original_argv
 
 
-def test_public_shell_commands_are_mvp_only():
+def test_public_shell_commands_stay_limited():
     root_command = cli_module.typer.main.get_command(cli_module.app)
 
     visible_commands = {
         name for name, command in root_command.commands.items() if not command.hidden
     }
 
-    assert visible_commands == {"doctor", "quit", "start"}
+    assert visible_commands == {"delete-session", "doctor", "quit", "sessions", "start"}
     assert "new" not in root_command.commands
     assert "rename" not in root_command.commands
     assert "status" not in root_command.commands
 
 
-def test_start_attaches_existing_singleton_without_state_lock(monkeypatch):
+def test_start_attaches_existing_workdir_session_without_state_lock(monkeypatch):
     events: list[tuple[str, str]] = []
 
     class FakeTmux:
@@ -99,10 +117,6 @@ def test_start_attaches_existing_singleton_without_state_lock(monkeypatch):
         def has_session(self):
             events.append(("has-session", ""))
             return True
-
-        def project_root(self):
-            events.append(("project-root", ""))
-            return str(cli_module.PROJECT_ROOT)
 
         def install_look_and_keys(self, config, command):
             events.append(("install", command))
@@ -123,46 +137,50 @@ def test_start_attaches_existing_singleton_without_state_lock(monkeypatch):
     assert events == [
         ("init", "codux"),
         ("has-session", ""),
-        ("project-root", ""),
         ("install", cli_module.codux_command()),
         ("attach", ""),
     ]
 
 
-def test_start_rejects_foreign_singleton_session(monkeypatch):
-    output = io.StringIO()
+def test_start_repairs_existing_workdir_session_even_if_project_root_differs(monkeypatch):
+    events: list[tuple[str, str]] = []
 
     class FakeTmux:
         def __init__(self, session_name):
-            pass
+            events.append(("init", session_name))
 
         def has_session(self):
+            events.append(("has-session", ""))
             return True
 
         def project_root(self):
             return "/tmp/old-codux"
 
         def install_look_and_keys(self, config, command):
-            raise AssertionError("foreign session should not be mutated")
+            events.append(("install", command))
+
+        def attach(self):
+            events.append(("attach", ""))
 
     monkeypatch.setattr(cli_module, "ensure_config", lambda: CoduxConfig())
     monkeypatch.setattr(cli_module, "TmuxController", FakeTmux)
-    monkeypatch.setattr(cli_module, "console", Console(file=output))
     monkeypatch.setattr(
         cli_module,
         "StateStore",
         lambda: (_ for _ in ()).throw(AssertionError("state should not be opened")),
     )
 
-    with pytest.raises(cli_module.typer.Exit) as exc:
-        cli_module.start()
+    cli_module.start()
 
-    assert exc.value.exit_code == 1
-    assert "already running elsewhere" in output.getvalue()
-    assert "/tmp/old-codux" in output.getvalue()
+    assert events == [
+        ("init", "codux"),
+        ("has-session", ""),
+        ("install", cli_module.codux_command()),
+        ("attach", ""),
+    ]
 
 
-def test_start_reports_busy_state_when_no_singleton_session(monkeypatch):
+def test_start_reports_busy_state_when_no_workdir_session(monkeypatch):
     output = io.StringIO()
 
     class FakeStore:
@@ -189,7 +207,7 @@ def test_start_reports_busy_state_when_no_singleton_session(monkeypatch):
     assert "tmux attach -t codux" in output.getvalue()
 
 
-def test_quit_detaches_singleton_without_state_lock(monkeypatch):
+def test_quit_detaches_workdir_session_without_state_lock(monkeypatch):
     events: list[tuple[str, str]] = []
 
     class FakeTmux:
@@ -216,7 +234,7 @@ def test_quit_detaches_singleton_without_state_lock(monkeypatch):
     assert events == [("init", "codux"), ("has-session", ""), ("detach", "")]
 
 
-def test_quit_kill_stops_singleton_without_state_lock(monkeypatch):
+def test_quit_kill_stops_workdir_session_without_state_lock(monkeypatch):
     events: list[tuple[str, str]] = []
 
     class FakeTmux:
@@ -244,6 +262,116 @@ def test_quit_kill_stops_singleton_without_state_lock(monkeypatch):
     cli_module.quit(kill=True)
 
     assert events == [("init", "codux"), ("has-session", ""), ("kill", "")]
+
+
+def test_sessions_command_lists_codux_sessions(monkeypatch):
+    output = io.StringIO()
+    listed = [
+        cli_module.CoduxSession(
+            name="codux-current",
+            workdir="/Users/me/current",
+            runtime_dir="/tmp/current",
+            project_root="/repo",
+            window_count=2,
+            created_at=1,
+            attached_clients=1,
+            current=True,
+        ),
+        cli_module.CoduxSession(
+            name="codux-other",
+            workdir="/Users/me/other",
+            runtime_dir="/tmp/other",
+            project_root="/repo",
+            window_count=3,
+            created_at=2,
+            attached_clients=0,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        cli_module,
+        "load_config_and_tmux",
+        lambda: (CoduxConfig(tmux_session="codux-current"), object()),
+    )
+    monkeypatch.setattr(cli_module, "list_codux_sessions", lambda current: listed)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.list_sessions_command()
+
+    rendered = output.getvalue()
+    assert "codux-current" in rendered
+    assert "codux-other" in rendered
+    assert "/Users/me/current" in rendered
+
+
+def test_delete_session_command_kills_without_confirmation(monkeypatch):
+    output = io.StringIO()
+    deleted: list[str] = []
+
+    monkeypatch.setattr(cli_module, "kill_codux_session", lambda name: deleted.append(name) or True)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.delete_session_command("codux-old")
+
+    assert deleted == ["codux-old"]
+    assert "Deleted tmux session: codux-old" in output.getvalue()
+
+
+def test_delete_session_command_reports_missing_session(monkeypatch):
+    output = io.StringIO()
+
+    monkeypatch.setattr(cli_module, "kill_codux_session", lambda name: False)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    with pytest.raises(cli_module.typer.Exit) as exc:
+        cli_module.delete_session_command("missing")
+
+    assert exc.value.exit_code == 1
+    assert "tmux session not found: missing" in output.getvalue()
+
+
+def test_sessions_popup_requires_confirmation_before_delete(monkeypatch):
+    output = io.StringIO()
+    controls: list[str] = []
+    deleted: list[str] = []
+    session = cli_module.CoduxSession(
+        name="codux-other",
+        workdir="/Users/me/other",
+        runtime_dir="/tmp/other",
+        project_root="/repo",
+        window_count=1,
+        created_at=1,
+        attached_clients=0,
+    )
+    keys = iter(["c", "y", "\x1b"])
+
+    monkeypatch.setattr(
+        cli_module,
+        "load_config_and_tmux",
+        lambda: (CoduxConfig(tmux_session="codux-current"), object()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "other_codux_sessions",
+        lambda current: [] if deleted else [session],
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "kill_codux_session",
+        lambda name: deleted.append(name) or True,
+    )
+    monkeypatch.setattr(cli_module, "read_single_key", lambda: next(keys))
+    monkeypatch.setattr(cli_module, "write_terminal_control", controls.append)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.popup_sessions_command()
+
+    assert deleted == ["codux-other"]
+    assert controls == [
+        f"\033[?25l{cli_module.ENABLE_MOUSE_CAPTURE}\033[2J\033[H",
+        f"{cli_module.DISABLE_MOUSE_CAPTURE}\033[?25h",
+    ]
+    assert "Delete codux-other? y/N" in output.getvalue()
 
 
 def test_hidden_command_signatures_are_preserved():
@@ -707,8 +835,9 @@ def test_help_popup_captures_mouse_until_escape(monkeypatch):
         f"{cli_module.DISABLE_MOUSE_CAPTURE}\033[?25h",
     ]
     assert output.getvalue().startswith(
-        "Manage multiple Codex agents across parallel workflows in a shared workspace."
+        "  Manage multiple Codex agents across parallel workflows in a shared workspace."
     )
+    assert not output.getvalue().endswith("\n")
 
 
 def test_rename_popup_describes_template_variables():
