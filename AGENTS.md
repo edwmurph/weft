@@ -23,4 +23,6 @@
 
 ## Dashboard Runtime Commands
 
-- Dashboard/internal Codux commands must not shell through `cd`; use `uv --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run codux ...` so the repo root and uv project path are explicit and valid from any current directory.
+- Dashboard/internal Codux commands must not shell through `cd`; keep the repo root and uv project path explicit with `uv --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree ...` so commands are valid from any current directory.
+- Prefer `uv --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run start` when giving the user a dashboard launch command.
+- Use `uv --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run codux ...` for non-start Codux subcommands.

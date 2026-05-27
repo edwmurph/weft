@@ -41,8 +41,8 @@ Default nav shortcuts, active when the nav region is focused:
 
 On first run, Codux creates:
 
-- `~/.codux/config.toml`
-- `~/.codux/state.json`
+- installed/global runtime: `~/.codux/config.toml` and `~/.codux/state.json`
+- source checkout/worktree runtime: `~/.codux/worktrees/<checkout-id>/config.toml` and `state.json`
 
 The default config:
 
@@ -64,11 +64,13 @@ focus_toggle = "C-d"
 quit = "C-q"
 ```
 
-State writes are atomic and guarded by `~/.codux/state.lock` so rapid tmux keybindings do not corrupt the JSON file.
+When Codux runs from a git checkout or worktree, the generated `tmux_session` includes the checkout id so multiple worktrees do not share dashboard state or tmux sessions. Set `CODUX_HOME` to force a specific runtime directory.
+
+State writes are atomic and guarded by `state.lock` so rapid tmux keybindings do not corrupt the JSON file.
 
 ## tmux Notes
 
-Codux uses one tmux session named `codux`, one tmux window per Codex tab, and two native content panes per tab window:
+Codux uses one tmux session, one tmux window per Codex tab, and two native content panes per tab window:
 
 - top pane: `NAV`, an interactive Kanban tab navigator
 - lower pane: `CODEX`, the Codex process launched directly from `codex_command`

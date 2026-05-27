@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -78,10 +79,26 @@ class AppState:
         return next((tab for tab in self.tabs if tab.id == self.active_tab_id), None)
 
 
+class StateError(ValueError):
+    """Raised when state cannot be loaded."""
+
+
+class StateLockTimeout(StateError):
+    """Raised when another process holds the state lock too long."""
+
+
 class StateStore:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        lock_timeout: float = 2.0,
+        lock_poll_interval: float = 0.02,
+    ) -> None:
         self.path = path or state_path()
         self.lock_path = self.path.with_suffix(".lock")
+        self.lock_timeout = lock_timeout
+        self.lock_poll_interval = lock_poll_interval
 
     def ensure(self) -> AppState:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -116,8 +133,18 @@ class StateStore:
 
     def _lock(self):
         lock_file = self.lock_path.open("a+", encoding="utf-8")
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        return _HeldFileLock(lock_file)
+        deadline = time.monotonic() + self.lock_timeout
+        while True:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return _HeldFileLock(lock_file)
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    lock_file.close()
+                    raise StateLockTimeout(
+                        f"timed out waiting for state lock: {self.lock_path}"
+                    ) from exc
+                time.sleep(self.lock_poll_interval)
 
     def _read_unlocked(self) -> AppState:
         try:
@@ -151,10 +178,6 @@ class _HeldFileLock:
     def __exit__(self, exc_type, exc, traceback) -> None:
         fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
         self.lock_file.close()
-
-
-class StateError(ValueError):
-    """Raised when state cannot be loaded."""
 
 
 def state_path(base_dir: Path | None = None) -> Path:

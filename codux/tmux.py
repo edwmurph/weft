@@ -30,9 +30,9 @@ EMPTY_WINDOW_OPTION = "@codux-empty"
 SPARE_WINDOW_OPTION = "@codux-spare"
 TAB_ID_OPTION = "@codux-tab-id"
 NAV_HOST_OPTION = "@codux-nav-host"
-NAV_HOST_VERSION = "14"
+NAV_HOST_VERSION = "16"
 FRAME_HOST_OPTION = "@codux-frame-host"
-FRAME_HOST_VERSION = "5"
+FRAME_HOST_VERSION = "6"
 CODEX_PANE_TITLE = "CODEX"
 NAV_PANE_TITLE = "NAV"
 FRAME_EDGE_SIZE = 1
@@ -272,6 +272,11 @@ class TmuxController:
         if empty_window and self.window_exists(empty_window):
             self._ensure_empty_window_titles(empty_window)
             return empty_window
+        spare_window = self.spare_window()
+        if spare_window is not None:
+            self.rename_window(spare_window.window_id, "codux")
+            self._mark_empty_window(spare_window)
+            return spare_window.window_id
         if not self.has_session():
             created = self._new_session_empty_window(config)
         else:
@@ -499,6 +504,8 @@ class TmuxController:
         config: CoduxConfig,
         state: AppState,
         window_id: str,
+        *,
+        min_nav_content_height: int | None = None,
     ) -> None:
         if not self.has_session() or not self.window_exists(window_id):
             return
@@ -509,10 +516,20 @@ class TmuxController:
                 snapshot = self._snapshot()
         if nav_pane_id:
             self._ensure_nav_interactive_pane(nav_pane_id, snapshot)
+            desired_nav_content_height = nav_content_height(config, state)
+            if min_nav_content_height is not None:
+                desired_nav_content_height = max(
+                    desired_nav_content_height,
+                    min_nav_content_height,
+                )
             self._resize_nav_frame(
-                window_id, nav_pane_id, nav_content_height(config, state), snapshot
+                window_id,
+                nav_pane_id,
+                desired_nav_content_height,
+                snapshot,
             )
             snapshot = self._snapshot()
+        self._refresh_navigation_targets(config, state, snapshot)
         window = snapshot.window(window_id)
         if content_pane_id and window and window.empty == "1":
             self._render_frame_pane(
@@ -960,11 +977,7 @@ class TmuxController:
         if suffix == "TOP":
             return render_top_border(width, logical_role, active)
         elif suffix == "BOTTOM":
-            return render_bottom_border(
-                width,
-                active,
-                self._shortcut_label(config, logical_role) if active else "",
-            )
+            return render_bottom_border(width, active, self._shortcut_label(config, logical_role))
         elif suffix == "LEFT":
             return render_left_border(width, height, active)
         elif suffix == "RIGHT":
@@ -1352,9 +1365,9 @@ class TmuxController:
             f"{codux_command} _activate-window {target_window} >/dev/null 2>&1 || true"
         )
         tmux_command = (
-            f"run-shell {shlex.quote(activate_command)} ; "
             f'select-window -t "{target_window}" ; '
-            f'select-pane -t "{target_pane}"'
+            f'select-pane -t "{target_pane}" ; '
+            f"run-shell {shlex.quote(activate_command)}"
         )
         self._tmux(
             [

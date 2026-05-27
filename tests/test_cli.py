@@ -6,6 +6,7 @@ import io
 import shlex
 from types import SimpleNamespace
 
+import pytest
 import codux.cli as cli_module
 import codux.launcher as launcher_module
 from codux.cli import is_transient_codex_title, repair_and_render
@@ -13,6 +14,11 @@ from codux.config import CoduxConfig
 from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
 from codux.tmux import TmuxError
 from rich.console import Console
+
+
+@pytest.fixture(autouse=True)
+def isolate_runtime_lock(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli_module, "runtime_lock_path", lambda: tmp_path / "state.runtime.lock")
 
 
 def tab(tab_id: str) -> Tab:
@@ -243,6 +249,9 @@ def test_focus_window_ignores_frame_refresh_race(monkeypatch, tmp_path):
     store.write(AppState(tabs=[active], active_tab_id=active.id, focus="codex"))
 
     class FakeTmux:
+        def active_window_id(self):
+            return active.tmux_window_id
+
         def refresh_window_frame_colors(self, config, state, window_id):
             raise TmuxError("pane went away")
 
@@ -269,14 +278,45 @@ def test_activate_window_updates_state_without_runtime_lock(monkeypatch, tmp_pat
     first = tab("first")
     second = tab("second")
     store.write(AppState(tabs=[first, second], active_tab_id=second.id, focus="nav"))
+    refreshed: list[tuple[AppState, str]] = []
 
-    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, object()))
+    class FakeTmux:
+        def active_window_id(self):
+            return first.tmux_window_id
+
+        def refresh_window_frame_colors(self, config, state, window_id):
+            refreshed.append((state, window_id))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
 
     cli_module.activate_window_command(first.tmux_window_id)
 
     state = store.read()
     assert state.active_tab_id == first.id
     assert state.focus == "nav"
+    assert refreshed == [(state, first.tmux_window_id)]
+
+
+def test_stale_activate_window_does_not_override_newer_focus(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    previous = tab("previous")
+    current = tab("current")
+    store.write(AppState(tabs=[previous, current], active_tab_id=current.id, focus="codex"))
+
+    class FakeTmux:
+        def active_window_id(self):
+            return current.tmux_window_id
+
+        def refresh_window_frame_colors(self, config, state, window_id):
+            raise AssertionError("stale activation should not refresh")
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+
+    cli_module.activate_window_command(previous.tmux_window_id)
+
+    state = store.read()
+    assert state.active_tab_id == current.id
+    assert state.focus == "codex"
 
 
 def test_finish_close_last_tab_renders_empty_before_killing_old_window(monkeypatch, tmp_path):

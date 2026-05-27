@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import shlex
 from types import SimpleNamespace
 
@@ -92,7 +93,7 @@ def test_rename_popup_runs_from_project_root(monkeypatch):
     assert "cd " not in command
 
 
-def test_move_column_refreshes_frame_before_redraw(tmp_path):
+def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
     config = CoduxConfig()
     active = tab("active")
     state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
@@ -101,8 +102,10 @@ def test_move_column_refreshes_frame_before_redraw(tmp_path):
     events: list[tuple[str, object]] = []
 
     class FakeTmux:
-        def refresh_window_frame_panes(self, config_arg, state_arg, window_id):
-            events.append(("frame", state_arg.active_tab.column))
+        def refresh_window_frame_panes(
+            self, config_arg, state_arg, window_id, *, min_nav_content_height=None
+        ):
+            events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
 
     pane = NavPane.__new__(NavPane)
     pane.config = config
@@ -110,20 +113,112 @@ def test_move_column_refreshes_frame_before_redraw(tmp_path):
     pane.state = state
     pane.tmux = FakeTmux()
     pane.skip_next_render = False
-    pane.render = lambda force=False: events.append(("render", force))
+    pane.render_snapshot = lambda state_arg: events.append(("render", state_arg.active_tab.column))
     pane.select_nav_for_window = lambda window_id: events.append(("select", window_id))
-    pane.refresh_static_panes_async = lambda: events.append(("refresh-async", True))
 
     pane.move_column(1)
 
     assert store.read().active_tab.column == "implement"
     assert events == [
-        ("frame", "implement"),
-        ("render", True),
+        ("render", "implement"),
+        ("frame", "implement", 2),
+        ("render", "implement"),
         ("select", active.tmux_window_id),
-        ("refresh-async", True),
     ]
     assert pane.skip_next_render
+
+
+def test_move_column_expands_before_rendering_new_row(tmp_path):
+    config = CoduxConfig()
+    left = tab("left", "inbox")
+    active = tab("active", "implement")
+    state = AppState(tabs=[left, active], active_tab_id=active.id, focus="nav")
+    store = StateStore(tmp_path / "state.json")
+    store.write(state)
+    events: list[tuple[str, object]] = []
+
+    class FakeTmux:
+        def refresh_window_frame_panes(
+            self, config_arg, state_arg, window_id, *, min_nav_content_height=None
+        ):
+            events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = config
+    pane.store = store
+    pane.state = state
+    pane.tmux = FakeTmux()
+    pane.skip_next_render = False
+    pane.render_snapshot = lambda state_arg: events.append(("render", state_arg.active_tab.column))
+    pane.select_nav_for_window = lambda window_id: events.append(("select", window_id))
+
+    pane.move_column(-1)
+
+    assert store.read().active_tab.column == "inbox"
+    assert events == [
+        ("frame", "inbox", 3),
+        ("render", "inbox"),
+        ("render", "inbox"),
+        ("select", active.tmux_window_id),
+    ]
+
+
+def test_move_column_avoids_shrinking_nav_during_move(tmp_path):
+    config = CoduxConfig()
+    top = tab("top", "inbox")
+    active = tab("active", "inbox")
+    state = AppState(tabs=[top, active], active_tab_id=active.id, focus="nav")
+    store = StateStore(tmp_path / "state.json")
+    store.write(state)
+    events: list[tuple[str, object]] = []
+
+    class FakeTmux:
+        def refresh_window_frame_panes(
+            self, config_arg, state_arg, window_id, *, min_nav_content_height=None
+        ):
+            events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = config
+    pane.store = store
+    pane.state = state
+    pane.tmux = FakeTmux()
+    pane.skip_next_render = False
+    pane.render_snapshot = lambda state_arg: events.append(("render", state_arg.active_tab.column))
+    pane.select_nav_for_window = lambda window_id: events.append(("select", window_id))
+
+    pane.move_column(1)
+
+    assert store.read().active_tab.column == "implement"
+    assert events == [
+        ("render", "implement"),
+        ("frame", "implement", 3),
+        ("render", "implement"),
+        ("select", active.tmux_window_id),
+    ]
+
+
+def test_nav_render_snapshot_clears_before_repainting(monkeypatch):
+    active = tab("active")
+    state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
+    writes: list[str] = []
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = CoduxConfig()
+    pane.last_payload = ""
+
+    monkeypatch.setattr(nav_pane_module, "terminal_size", lambda: (60, 3))
+    monkeypatch.setattr(
+        nav_pane_module.os,
+        "write",
+        lambda _fd, payload: writes.append(payload.decode("utf-8")) or len(payload),
+    )
+
+    pane.render_snapshot(state)
+
+    assert writes
+    assert writes[0].startswith(nav_pane_module.HIDE_CURSOR + "\033[2J\033[H")
+    assert writes[0].count("INBOX") == 1
 
 
 def test_close_last_tab_skips_redrawing_closing_nav_pane(tmp_path):
@@ -149,6 +244,28 @@ def test_close_last_tab_skips_redrawing_closing_nav_pane(tmp_path):
     assert store.read() == AppState(tabs=[], active_tab_id=None, focus="nav")
     assert pane.skip_next_render
     assert events == [("run", f"_finish-close-window {active.tmux_window_id}")]
+
+
+def test_nav_render_skips_busy_state_lock(tmp_path):
+    store = StateStore(tmp_path / "state.json", lock_timeout=0.01, lock_poll_interval=0.001)
+    store.write(AppState(focus="nav"))
+    events: list[str] = []
+    lock_file = store.lock_path.open("a+", encoding="utf-8")
+
+    pane = NavPane.__new__(NavPane)
+    pane.store = store
+    pane.last_render = 0.0
+    pane.state = AppState()
+    pane.render_snapshot = lambda state: events.append(state.focus)
+
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        pane.render(force=True)
+    finally:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
+
+    assert events == []
 
 
 def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):

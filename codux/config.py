@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,6 +10,7 @@ from typing import Any
 
 
 APP_DIR_ENV = "CODUX_HOME"
+SOURCE_ROOT = Path(__file__).resolve().parent.parent
 OLD_DEFAULT_COLUMNS = ["Backlog", "Active", "Review", "Done"]
 DEFAULT_COLUMNS = ["inbox", "implement", "ship"]
 
@@ -61,7 +64,9 @@ class CoduxConfig:
     key_bindings: KeyBindings = field(default_factory=KeyBindings)
 
     @classmethod
-    def from_mapping(cls, raw: dict[str, Any]) -> CoduxConfig:
+    def from_mapping(
+        cls, raw: dict[str, Any], tmux_session_default: str | None = None
+    ) -> CoduxConfig:
         key_binding_raw = raw.get("key_bindings", raw.get("bindings", {}))
         columns = raw.get("columns", DEFAULT_COLUMNS)
         if not isinstance(columns, list):
@@ -69,7 +74,7 @@ class CoduxConfig:
         if columns == OLD_DEFAULT_COLUMNS:
             columns = DEFAULT_COLUMNS
         config = cls(
-            tmux_session=str(raw.get("tmux_session", cls.tmux_session)),
+            tmux_session=str(raw.get("tmux_session", tmux_session_default or cls.tmux_session)),
             codex_command=str(raw.get("codex_command", cls.codex_command)),
             columns=[str(column) for column in columns],
             key_bindings=KeyBindings.from_mapping(key_binding_raw),
@@ -93,7 +98,29 @@ class CoduxConfig:
 
 
 def app_dir() -> Path:
-    return Path(os.environ.get(APP_DIR_ENV, Path.home() / ".codux")).expanduser()
+    if configured := os.environ.get(APP_DIR_ENV):
+        return Path(configured).expanduser()
+    if source_root := source_checkout_root():
+        return Path.home() / ".codux" / "worktrees" / runtime_id(source_root)
+    return Path.home() / ".codux"
+
+
+def source_checkout_root() -> Path | None:
+    return SOURCE_ROOT if (SOURCE_ROOT / ".git").exists() else None
+
+
+def runtime_id(source_root: Path) -> str:
+    name = re.sub(r"[^A-Za-z0-9_-]+", "-", source_root.name).strip("-").lower()
+    digest = hashlib.sha1(str(source_root).encode("utf-8")).hexdigest()[:8]
+    return f"{name or 'codux'}-{digest}"
+
+
+def default_tmux_session(base_dir: Path | None = None) -> str:
+    if base_dir is not None or os.environ.get(APP_DIR_ENV):
+        return CoduxConfig.tmux_session
+    if source_root := source_checkout_root():
+        return f"codux-{runtime_id(source_root)}"
+    return CoduxConfig.tmux_session
 
 
 def config_path(base_dir: Path | None = None) -> Path:
@@ -104,10 +131,11 @@ def render_dir(base_dir: Path | None = None) -> Path:
     return (base_dir or app_dir()) / "render"
 
 
-def default_config_text() -> str:
+def default_config_text(tmux_session: str | None = None) -> str:
     columns = ", ".join(f'"{column}"' for column in DEFAULT_COLUMNS)
+    tmux_session = tmux_session or default_tmux_session()
     return f"""# Codux runtime configuration.
-tmux_session = "codux"
+tmux_session = "{tmux_session}"
 codex_command = "codex"
 columns = [{columns}]
 
@@ -129,7 +157,10 @@ def ensure_config(base_dir: Path | None = None) -> CoduxConfig:
     path = config_path(base_dir)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(default_config_text(), encoding="utf-8")
+        path.write_text(
+            default_config_text(tmux_session=default_tmux_session(base_dir)),
+            encoding="utf-8",
+        )
     else:
         migrate_default_config(path)
     return load_config(path)
@@ -166,4 +197,4 @@ def load_config(path: Path | None = None) -> CoduxConfig:
         raw = tomllib.loads(config_file.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"could not parse {config_file}: {exc}") from exc
-    return CoduxConfig.from_mapping(raw)
+    return CoduxConfig.from_mapping(raw, tmux_session_default=default_tmux_session())

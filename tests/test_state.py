@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+import fcntl
 import json
 
-from codux.state import AppState, StateStore, Tab, now_iso, prune_stale_tabs, state_path
+import pytest
+
+from codux.state import (
+    AppState,
+    StateLockTimeout,
+    StateStore,
+    Tab,
+    now_iso,
+    prune_stale_tabs,
+    state_path,
+)
 
 
 def make_tab(tab_id: str, window_id: str = "@1", pane_id: str = "%1") -> Tab:
@@ -40,6 +51,21 @@ def test_state_store_update_is_persisted(tmp_path):
 
     assert updated.active_tab_id == "abc"
     assert store.read().active_tab_id == "abc"
+
+
+def test_state_store_lock_timeout_raises_instead_of_hanging(tmp_path):
+    store = StateStore(state_path(tmp_path), lock_timeout=0.01, lock_poll_interval=0.001)
+    store.write(AppState())
+
+    lock_file = store.lock_path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+        with pytest.raises(StateLockTimeout):
+            store.read()
+    finally:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
 
 
 def test_prune_stale_tabs_removes_missing_tab_and_repairs_active():

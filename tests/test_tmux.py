@@ -71,7 +71,7 @@ def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
     assert all("cd " not in command for command in commands)
 
 
-def test_direct_nav_arrow_activates_state_before_selecting_window(monkeypatch):
+def test_direct_nav_arrow_activates_state_after_selecting_window(monkeypatch):
     controller = TmuxController("codux")
     commands: list[list[str]] = []
 
@@ -85,7 +85,7 @@ def test_direct_nav_arrow_activates_state_before_selecting_window(monkeypatch):
 
     bound_command = commands[0][-2]
     assert "_activate-window" in bound_command
-    assert bound_command.index("_activate-window") < bound_command.index("select-window")
+    assert bound_command.index("select-pane") < bound_command.index("_activate-window")
     assert "run-shell -b 'uv run codux _activate-window" not in bound_command
 
 
@@ -107,6 +107,18 @@ def test_codex_border_stays_active_across_tab_windows_when_focus_is_codex():
 
     assert controller._border_is_active(second.tmux_window_id, "CODEX_TOP", state)
     assert not controller._border_is_active(second.tmux_window_id, "NAV_TOP", state)
+
+
+def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused():
+    controller = TmuxController("codux")
+    config = CoduxConfig()
+    state = AppState(focus="codex")
+
+    content = controller._border_content(config, "@1", "NAV_BOTTOM", state, width=120, height=1)
+
+    assert "n new" in content
+    assert "C-d codex" in content
+    assert "\033[38;5;244m" in content
 
 
 def test_create_tab_window_uses_native_nav_and_codex_panes(monkeypatch):
@@ -172,6 +184,46 @@ def test_claim_spare_tab_window_respawns_claimed_loading_pane(monkeypatch):
     ]
 
 
+def test_ensure_empty_window_converts_spare_loading_window(monkeypatch):
+    controller = TmuxController("codux")
+    spare = SimpleNamespace(window_id="@9", content_pane_id="%9", nav_pane_id="%10")
+    events: list[tuple[str, str] | tuple[str, str, str]] = []
+
+    monkeypatch.setattr(controller, "empty_window_id", lambda: None)
+    monkeypatch.setattr(controller, "spare_window", lambda: spare)
+    monkeypatch.setattr(
+        controller,
+        "rename_window",
+        lambda window_id, title: events.append(("rename", window_id, title)),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_set_window_option",
+        lambda window_id, option, value: events.append(("option", option, value)),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_set_pane_title",
+        lambda pane_id, title: events.append(("title", pane_id, title)),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_new_empty_window",
+        lambda config: (_ for _ in ()).throw(AssertionError("created empty window")),
+    )
+
+    assert controller.ensure_empty_window(CoduxConfig()) == "@9"
+
+    assert events == [
+        ("rename", "@9", "codux"),
+        ("option", tmux_module.EMPTY_WINDOW_OPTION, "1"),
+        ("option", tmux_module.SPARE_WINDOW_OPTION, "0"),
+        ("option", tmux_module.TAB_ID_OPTION, ""),
+        ("title", "%9", tmux_module.CODEX_PANE_TITLE),
+        ("title", "%10", tmux_module.NAV_PANE_TITLE),
+    ]
+
+
 def test_refresh_window_frame_panes_resizes_nav_before_writing_render(monkeypatch):
     controller = TmuxController("codux")
     events: list[str] = []
@@ -206,11 +258,55 @@ def test_refresh_window_frame_panes_resizes_nav_before_writing_render(monkeypatc
         "_resize_nav_frame",
         lambda window_id, pane_id, height, snapshot: events.append(f"resize:{height}"),
     )
+    monkeypatch.setattr(
+        controller,
+        "_refresh_navigation_targets",
+        lambda config, state, snapshot: events.append("targets"),
+    )
     monkeypatch.setattr(controller, "_border_panes", lambda window_id, snapshot: {})
 
     controller.refresh_window_frame_panes(CoduxConfig(), state, "@2")
 
-    assert events == ["native", "frame", "nav:%nav", "resize:3"]
+    assert events == ["native", "frame", "nav:%nav", "resize:3", "targets"]
+
+
+def test_refresh_window_frame_panes_respects_minimum_nav_height(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[str] = []
+    state = AppState()
+
+    monkeypatch.setattr(controller, "has_session", lambda: True)
+    monkeypatch.setattr(controller, "window_exists", lambda window_id: True)
+    monkeypatch.setattr(
+        controller,
+        "_snapshot",
+        lambda: SimpleNamespace(panes={}, windows={}, window=lambda _id: None),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_ensure_native_window",
+        lambda window_id, snapshot: ("%nav", "%codex"),
+    )
+    monkeypatch.setattr(controller, "_ensure_window_frame", lambda window_id, snapshot: None)
+    monkeypatch.setattr(controller, "_ensure_nav_interactive_pane", lambda pane_id, snapshot: None)
+    monkeypatch.setattr(
+        controller,
+        "_resize_nav_frame",
+        lambda window_id, pane_id, height, snapshot: events.append(f"resize:{height}"),
+    )
+    monkeypatch.setattr(
+        controller, "_refresh_navigation_targets", lambda config, state, snapshot: None
+    )
+    monkeypatch.setattr(controller, "_border_panes", lambda window_id, snapshot: {})
+
+    controller.refresh_window_frame_panes(
+        CoduxConfig(),
+        state,
+        "@2",
+        min_nav_content_height=5,
+    )
+
+    assert events == ["resize:5"]
 
 
 def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monkeypatch):

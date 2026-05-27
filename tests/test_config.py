@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+import codux.config as config_module
 from codux.config import (
+    APP_DIR_ENV,
     ConfigError,
     DEFAULT_COLUMNS,
+    app_dir,
     config_path,
+    default_tmux_session,
     ensure_config,
     load_config,
 )
@@ -22,6 +26,28 @@ def test_ensure_config_creates_default(tmp_path):
     assert config.key_bindings.prev == "Left"
     assert config.key_bindings.move_right == "S-Right"
     assert config.key_bindings.focus_toggle == "C-d"
+
+
+def test_source_checkout_runtime_defaults_are_worktree_isolated(monkeypatch, tmp_path):
+    source_root = tmp_path / "repo" / ".worktrees" / "feature-a"
+    source_root.mkdir(parents=True)
+    (source_root / ".git").write_text("gitdir: ../../.git/worktrees/feature-a\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.setattr(config_module, "SOURCE_ROOT", source_root)
+
+    runtime_dir = app_dir()
+
+    assert runtime_dir.parent == tmp_path / "home" / ".codux" / "worktrees"
+    assert runtime_dir.name.startswith("feature-a-")
+    assert default_tmux_session().startswith(f"codux-{runtime_dir.name}")
+
+
+def test_codux_home_override_preserves_global_session_default(monkeypatch, tmp_path):
+    monkeypatch.setenv(APP_DIR_ENV, str(tmp_path / "custom"))
+
+    assert app_dir() == tmp_path / "custom"
+    assert default_tmux_session() == "codux"
 
 
 def test_load_config_accepts_custom_values(tmp_path):

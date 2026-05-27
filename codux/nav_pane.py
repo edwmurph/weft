@@ -16,8 +16,15 @@ from dataclasses import replace
 from codux.config import ensure_config
 from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
-from codux.render import render_nav
-from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
+from codux.render import nav_content_height, render_nav
+from codux.state import (
+    AppState,
+    StateLockTimeout,
+    StateStore,
+    Tab,
+    now_iso,
+    state_after_closing_tab,
+)
 from codux.theme import Theme
 from codux.tmux import TmuxController
 
@@ -47,6 +54,7 @@ class NavPane:
         self.last_render = 0.0
         self.last_state_mtime = 0.0
         self.skip_next_render = False
+        self.resize_pending = False
         self.refresh_nav_pane_cache()
 
     def run(self) -> int:
@@ -59,7 +67,7 @@ class NavPane:
         old_winch = signal.getsignal(signal.SIGWINCH)
 
         def handle_winch(_signum, _frame) -> None:
-            self.render(force=True)
+            self.resize_pending = True
 
         signal.signal(signal.SIGWINCH, handle_winch)
         try:
@@ -72,6 +80,9 @@ class NavPane:
                     if not data:
                         break
                     self.handle_input(data)
+                if self.resize_pending:
+                    self.resize_pending = False
+                    self.render(force=True)
                 self.render_if_state_changed()
         finally:
             os.write(stdout_fd, f"{RESET}\033[?7h\033[?25h".encode())
@@ -138,6 +149,7 @@ class NavPane:
         target = state.active_tab
         if target is None:
             return
+        previous_height = nav_content_height(self.config, state)
         current_index = (
             self.config.columns.index(target.column) if target.column in self.config.columns else 0
         )
@@ -157,10 +169,26 @@ class NavPane:
             )
 
         self.state = self.store.update(mutate)
-        self.tmux.refresh_window_frame_panes(self.config, self.state, target.tmux_window_id)
-        self.render(force=True)
+        next_height = nav_content_height(self.config, self.state)
+        pinned_height = max(previous_height, next_height)
+        if next_height > previous_height:
+            self.tmux.refresh_window_frame_panes(
+                self.config,
+                self.state,
+                target.tmux_window_id,
+                min_nav_content_height=pinned_height,
+            )
+            self.render_snapshot(self.state)
+        else:
+            self.render_snapshot(self.state)
+            self.tmux.refresh_window_frame_panes(
+                self.config,
+                self.state,
+                target.tmux_window_id,
+                min_nav_content_height=pinned_height,
+            )
+        self.render_snapshot(self.state)
         self.select_nav_for_window(target.tmux_window_id)
-        self.refresh_static_panes_async()
         self.skip_next_render = True
 
     def focus_codex(self) -> None:
@@ -398,7 +426,10 @@ class NavPane:
         if not force and now - self.last_render < 0.03:
             return
         self.last_render = now
-        state = self.store.read()
+        try:
+            state = self.store.read()
+        except StateLockTimeout:
+            return
         self.state = state
         try:
             self.last_state_mtime = self.store.path.stat().st_mtime
@@ -412,8 +443,10 @@ class NavPane:
         visible_lines = [visible_pad(line, width) for line in lines[:height]]
         if len(visible_lines) < height:
             visible_lines.extend([" " * width] * (height - len(visible_lines)))
-        payload = HIDE_CURSOR + "".join(
-            f"\033[{index};1H{line}" for index, line in enumerate(visible_lines, 1)
+        payload = (
+            HIDE_CURSOR
+            + "\033[2J\033[H"
+            + "".join(f"\033[{index};1H{line}" for index, line in enumerate(visible_lines, 1))
         )
         if payload != self.last_payload:
             os.write(sys.stdout.fileno(), payload.encode())

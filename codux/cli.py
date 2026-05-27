@@ -61,10 +61,9 @@ def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
 
 
 def _with_runtime_lock(fn):
-    lock_path = state_path().with_suffix(".runtime.lock")
-
     @wraps(fn)
     def wrapped(*args, **kwargs):
+        lock_path = runtime_lock_path()
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with open(lock_path, "w", encoding="utf-8") as lock_file:
             try:
@@ -76,47 +75,59 @@ def _with_runtime_lock(fn):
     return wrapped
 
 
+def runtime_lock_path():
+    return state_path().with_suffix(".runtime.lock")
+
+
 def repair_and_render(
     config: CoduxConfig,
     store: StateStore,
     tmux: TmuxController,
 ) -> AppState:
-    def mutate(state: AppState) -> AppState:
-        repaired, _ = prune_stale_tabs(
-            state,
-            lambda tab: (
-                tmux.has_session()
-                and tmux.window_exists(tab.tmux_window_id)
-                and tmux.pane_exists(tab.tmux_pane_id)
-            ),
-        )
-        recovered_tabs = [
-            tab
-            for tab in tmux.recoverable_tabs(config)
-            if tab.id not in {existing.id for existing in repaired.tabs}
-        ]
-        tabs: list[Tab] = []
-        for tab in [*repaired.tabs, *recovered_tabs]:
-            changes = {}
-            if tab.column not in config.columns:
-                changes["column"] = config.columns[0]
-            generated_title = generated_tab_title(tmux, tab)
-            if generated_title and generated_title != tab.title:
-                changes["title"] = generated_title
-            tabs.append(tab.with_updates(**changes) if changes else tab)
-        tab_ids = {tab.id for tab in tabs}
-        active_tab_id = repaired.active_tab_id
-        if active_tab_id not in tab_ids:
-            tmux_active_tab_id = tmux.active_tab_id_from_tmux()
-            active_tab_id = tmux_active_tab_id if tmux_active_tab_id in tab_ids else None
-        if active_tab_id is None and tabs:
-            active_tab_id = tabs[0].id
-        focus = "nav" if active_tab_id is None else repaired.focus
-        return replace(repaired, tabs=tabs, active_tab_id=active_tab_id, focus=focus)
+    initial = store.read()
+    repaired_state = repaired_runtime_state(config, initial, tmux)
 
-    state = store.update(mutate)
+    state = store.update(lambda current: repaired_state if current == initial else current)
     render_runtime(config, state, tmux)
     return state
+
+
+def repaired_runtime_state(
+    config: CoduxConfig,
+    state: AppState,
+    tmux: TmuxController,
+) -> AppState:
+    repaired, _ = prune_stale_tabs(
+        state,
+        lambda tab: (
+            tmux.has_session()
+            and tmux.window_exists(tab.tmux_window_id)
+            and tmux.pane_exists(tab.tmux_pane_id)
+        ),
+    )
+    recovered_tabs = [
+        tab
+        for tab in tmux.recoverable_tabs(config)
+        if tab.id not in {existing.id for existing in repaired.tabs}
+    ]
+    tabs: list[Tab] = []
+    for tab in [*repaired.tabs, *recovered_tabs]:
+        changes = {}
+        if tab.column not in config.columns:
+            changes["column"] = config.columns[0]
+        generated_title = generated_tab_title(tmux, tab)
+        if generated_title and generated_title != tab.title:
+            changes["title"] = generated_title
+        tabs.append(tab.with_updates(**changes) if changes else tab)
+    tab_ids = {tab.id for tab in tabs}
+    active_tab_id = repaired.active_tab_id
+    if active_tab_id not in tab_ids:
+        tmux_active_tab_id = tmux.active_tab_id_from_tmux()
+        active_tab_id = tmux_active_tab_id if tmux_active_tab_id in tab_ids else None
+    if active_tab_id is None and tabs:
+        active_tab_id = tabs[0].id
+    focus = "nav" if active_tab_id is None else repaired.focus
+    return replace(repaired, tabs=tabs, active_tab_id=active_tab_id, focus=focus)
 
 
 def render_runtime(config: CoduxConfig, state: AppState, tmux: TmuxController) -> None:
@@ -645,7 +656,9 @@ def write_terminal_control(sequence: str) -> None:
 
 @app.command("_activate-window", hidden=True)
 def activate_window_command(window_id: str) -> None:
-    _, store, _ = load_runtime()
+    config, store, tmux = load_runtime()
+    if not _active_tmux_window_matches(tmux, window_id):
+        return
 
     def mutate(current: AppState) -> AppState:
         target = next((tab for tab in current.tabs if tab.tmux_window_id == window_id), None)
@@ -653,7 +666,11 @@ def activate_window_command(window_id: str) -> None:
             return current
         return replace(current, active_tab_id=target.id, focus="nav")
 
-    store.update(mutate)
+    state = store.update(mutate)
+    try:
+        tmux.refresh_window_frame_colors(config, state, window_id)
+    except Exception:
+        pass
 
 
 @app.command("_focus-window", hidden=True)
@@ -661,6 +678,8 @@ def activate_window_command(window_id: str) -> None:
 def focus_window_command(window_id: str, focus: FocusTarget) -> None:
     try:
         config, store, tmux = load_runtime()
+        if not _active_tmux_window_matches(tmux, window_id):
+            return
 
         def mutate(current: AppState) -> AppState:
             target = next((tab for tab in current.tabs if tab.tmux_window_id == window_id), None)
@@ -671,6 +690,11 @@ def focus_window_command(window_id: str, focus: FocusTarget) -> None:
         tmux.refresh_window_frame_colors(config, state, window_id)
     except Exception:
         pass
+
+
+def _active_tmux_window_matches(tmux: TmuxController, window_id: str) -> bool:
+    active_window_id = tmux.active_window_id()
+    return active_window_id is None or active_window_id == window_id
 
 
 @app.command("_finish-close-window", hidden=True)
