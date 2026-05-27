@@ -37,7 +37,7 @@ Default nav shortcuts, active when the nav region is focused:
 | `Shift` + arrow keys | move active tab left / right across columns |
 | `Enter` | focus the active Codex pane |
 | `r` | rename active tab |
-| `x` | close active tab |
+| `c` | close active tab |
 | `?` | help popup |
 | `C-d` | toggle focus between nav and Codex |
 | `C-q` | detach dashboard and leave sessions running |
@@ -65,7 +65,7 @@ next = "Right"
 move_left = "S-Left"
 move_right = "S-Right"
 rename = "r"
-close = "x"
+close = "c"
 help = "?"
 focus_toggle = "C-d"
 quit = "C-q"

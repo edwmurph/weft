@@ -27,7 +27,7 @@ class KeyBindings:
     move_left: str = "S-Left"
     move_right: str = "S-Right"
     rename: str = "r"
-    close: str = "x"
+    close: str = "c"
     help: str = "?"
     focus_toggle: str = "C-d"
     quit: str = "C-q"
@@ -146,7 +146,7 @@ next = "Right"
 move_left = "S-Left"
 move_right = "S-Right"
 rename = "r"
-close = "x"
+close = "c"
 help = "?"
 focus_toggle = "C-d"
 quit = "C-q"
@@ -186,6 +186,7 @@ def migrate_default_config(path: Path) -> None:
         updated = updated.replace('next = "l"\n', 'next = "Right"\n')
         updated = updated.replace('move_left = "H"\n', 'move_left = "S-Left"\n')
         updated = updated.replace('move_right = "L"\n', 'move_right = "S-Right"\n')
+        updated = updated.replace('close = "x"\n', 'close = "c"\n')
         updated = updated.replace('focus_toggle = "C-a"\n', 'focus_toggle = "C-d"\n')
     if updated != text:
         path.write_text(updated, encoding="utf-8")

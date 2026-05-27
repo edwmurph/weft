@@ -96,35 +96,36 @@ class NavPane:
         return 0
 
     def handle_input(self, data: bytes) -> None:
+        bindings = self.config.key_bindings
         for key in nav_keys(data):
-            if key == "C-q":
+            if key == bindings.quit:
                 subprocess.run(
                     ["tmux", "detach-client", "-s", self.config.tmux_session], check=False
                 )
-            elif key == "C-d":
+            elif key == bindings.focus_toggle:
                 self.focus_codex()
-            elif key == "Left":
+            elif key == bindings.prev:
                 self.select_grid(delta_column=-1)
-            elif key == "Right":
+            elif key == bindings.next:
                 self.select_grid(delta_column=1)
             elif key == "Up":
                 self.select_grid(delta_row=-1)
             elif key == "Down":
                 self.select_grid(delta_row=1)
-            elif key == "S-Left":
+            elif key == bindings.move_left:
                 self.move_column(-1)
-            elif key == "S-Right":
+            elif key == bindings.move_right:
                 self.move_column(1)
             elif key == "Enter":
                 self.focus_codex()
-            elif key == "n":
+            elif key == bindings.new:
                 self.new_tab()
                 self.skip_next_render = True
-            elif key == "x":
+            elif key == bindings.close:
                 self.close_active_tab()
-            elif key == "r":
+            elif key == bindings.rename:
                 self.rename_prompt()
-            elif key == "?":
+            elif key == bindings.help:
                 self.help_popup()
         if self.skip_next_render:
             self.skip_next_render = False
@@ -507,7 +508,7 @@ def nav_keys(data: bytes) -> list[str]:
                 break
         else:
             char = data[index : index + 1]
-            if char in {b"n", b"x", b"r", b"?"}:
+            if 32 <= char[0] <= 126:
                 keys.append(char.decode())
             index += 1
     return keys

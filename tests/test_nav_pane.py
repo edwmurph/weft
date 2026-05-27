@@ -30,6 +30,21 @@ def test_nav_keys_use_ctrl_d_for_focus_toggle():
     assert nav_keys(b"\x01") == []
 
 
+def test_nav_pane_closes_on_c_not_x():
+    events: list[str] = []
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = CoduxConfig()
+    pane.skip_next_render = False
+    pane.close_active_tab = lambda: events.append("close")
+    pane.render = lambda *, force=False: events.append(f"render:{force}")
+
+    pane.handle_input(b"x")
+    pane.handle_input(b"c")
+
+    assert events == ["render:True", "close", "render:True"]
+
+
 def test_nav_pane_cli_helpers_run_from_project_root(monkeypatch):
     calls: list[tuple[list[str], object]] = []
 
