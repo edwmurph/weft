@@ -512,3 +512,87 @@ def test_rename_with_codex_placeholder_preserves_pane_title(monkeypatch, tmp_pat
 
     assert state.active_tab.title == f"Task {CODEX_TITLE_TEMPLATE}"
     assert events == [("rename-window", active.tmux_window_id, f"Task {CODEX_TITLE_TEMPLATE}")]
+
+
+def test_rename_popup_describes_template_variables():
+    lines, cursor_row, cursor_column = cli_module._rename_popup_screen(
+        f"Task {CODEX_TITLE_TEMPLATE}",
+        len("Task "),
+        "",
+        80,
+        10,
+    )
+
+    input_line = f"> Task {CODEX_TITLE_TEMPLATE}"
+
+    assert "Enter a nav tab title template with live variables." in lines
+    assert "Variables:" in lines
+    assert "  {codex}  Live title from the Codex pane" in lines
+    assert "New title template:" not in lines
+    assert lines[lines.index("Rename active tab") + 1] == (
+        "Enter a nav tab title template with live variables."
+    )
+    assert lines[lines.index("Variables:") - 1] == ""
+    assert input_line in lines
+    assert lines[lines.index(input_line) - 1] == ""
+    assert lines[lines.index(input_line) + 1] == ""
+    assert cursor_row == lines.index(input_line) + 1
+    assert cursor_column == len("> Task ") + 1
+    assert lines[-1] == "Enter save  Esc cancel  Arrows move cursor  Ctrl-A/E ends"
+
+
+def test_rename_popup_highlights_input_row():
+    rendered = cli_module._render_popup_line(
+        "> Task",
+        row=4,
+        cursor_row=4,
+        width=20,
+    )
+
+    assert rendered.startswith(cli_module.RENAME_INPUT_BACKGROUND)
+    assert cli_module.CLEAR_TO_LINE_END in rendered
+    assert rendered.endswith(cli_module.RESET_TERMINAL_STYLE)
+
+
+def test_rename_popup_visual_cursor_is_one_row_above_edit_row():
+    assert cli_module._visual_cursor_row(7) == 6
+    assert cli_module._visual_cursor_row(1) == 1
+
+
+def test_rename_input_ctrl_a_moves_cursor_to_start():
+    buffer, cursor = cli_module._edit_rename_buffer("Task", 4, "\x01")
+    buffer, cursor = cli_module._edit_rename_buffer(buffer, cursor, "New ")
+
+    assert buffer == "New Task"
+    assert cursor == len("New ")
+
+
+def test_rename_input_arrow_keys_move_cursor():
+    buffer, cursor = cli_module._edit_rename_buffer("Task", 4, "\x1b[D")
+    buffer, cursor = cli_module._edit_rename_buffer(buffer, cursor, "\x1b[D")
+    buffer, cursor = cli_module._edit_rename_buffer(buffer, cursor, "X")
+    buffer, cursor = cli_module._edit_rename_buffer(buffer, cursor, "\x1b[C")
+    buffer, cursor = cli_module._edit_rename_buffer(buffer, cursor, "Y")
+
+    assert buffer == "TaXsYk"
+    assert cursor == len("TaXsY")
+
+
+def test_tty_key_reader_collects_arrow_escape_sequence(monkeypatch):
+    keys = iter([b"\x1b", b"[", b"D"])
+
+    monkeypatch.setattr(cli_module.os, "read", lambda fd, count: next(keys))
+    monkeypatch.setattr(
+        cli_module.select, "select", lambda reads, writes, errors, timeout: (reads, [], [])
+    )
+
+    assert cli_module._read_key_from_tty(9) == "\x1b[D"
+
+
+def test_tty_key_reader_returns_bare_escape_when_sequence_never_arrives(monkeypatch):
+    monkeypatch.setattr(cli_module.os, "read", lambda fd, count: b"\x1b")
+    monkeypatch.setattr(
+        cli_module.select, "select", lambda reads, writes, errors, timeout: ([], [], [])
+    )
+
+    assert cli_module._read_key_from_tty(9) == "\x1b"

@@ -3,6 +3,12 @@ from __future__ import annotations
 CODEX_TITLE_TEMPLATE = "{codex}"
 CODEX_TITLE_PENDING = "..."
 IGNORED_CODEX_TITLES = {"", "CODEX", "NAV", "Codux Empty", "Codux Loading"}
+TITLE_TEMPLATE_VARIABLES = (
+    (
+        CODEX_TITLE_TEMPLATE,
+        "Live title from the Codex pane",
+    ),
+)
 
 
 def title_uses_codex_placeholder(title: str) -> bool:

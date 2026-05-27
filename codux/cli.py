@@ -9,6 +9,7 @@ import uuid
 import base64
 import fcntl
 import os
+import select
 import termios
 from dataclasses import replace
 from functools import wraps
@@ -37,6 +38,7 @@ from codux.title_sync import state_with_live_codex_titles
 from codux import titles as title_helpers
 from codux.titles import (
     CODEX_TITLE_TEMPLATE,
+    TITLE_TEMPLATE_VARIABLES,
     normalize_codex_title,
     title_uses_codex_placeholder,
 )
@@ -45,6 +47,12 @@ from codux.tmux import FRAME_HOST_OPTION, FRAME_HOST_VERSION, TmuxController
 
 app = typer.Typer(help="Manage Codex sessions in a tmux-native tab UI.")
 console = Console()
+RENAME_INPUT_PREFIX = "> "
+RENAME_INPUT_BACKGROUND = "\033[48;2;30;35;45m"
+RESET_TERMINAL_STYLE = "\033[0m"
+CLEAR_TO_LINE_END = "\033[K"
+ESCAPE_SEQUENCE_TIMEOUT_SECONDS = 0.12
+MAX_ESCAPE_SEQUENCE_BYTES = 8
 
 
 def codux_command() -> str:
@@ -586,23 +594,32 @@ def popup_rename_command() -> None:
         return
 
     buffer = target.title
+    cursor = len(buffer)
     status = ""
 
     def redraw() -> None:
         nonlocal status
-        width = shutil.get_terminal_size((72, 10)).columns
-        input_line = f"> {buffer}"
-        lines = [
-            "Rename active tab",
-            "",
-            "New title:",
-            input_line,
-            "",
-            status or "Enter save  Esc cancel",
-        ]
-        console.file.write("\033[?25l\033[2J\033[H")
-        for line in lines:
-            console.file.write(line[: max(0, width - 1)] + "\n")
+        size = shutil.get_terminal_size((72, 10))
+        lines, cursor_row, cursor_column = _rename_popup_screen(
+            buffer,
+            cursor,
+            status,
+            size.columns,
+            size.lines,
+        )
+        console.file.write("\033[?25h\033[2J\033[H")
+        for index, line in enumerate(lines, start=1):
+            console.file.write(
+                _render_popup_line(
+                    line,
+                    row=index,
+                    cursor_row=cursor_row,
+                    width=size.columns,
+                )
+            )
+            if index < len(lines):
+                console.file.write("\n")
+        console.file.write(f"\033[{_visual_cursor_row(cursor_row)};{cursor_column}H")
         console.file.flush()
         status = ""
 
@@ -620,17 +637,89 @@ def popup_rename_command() -> None:
                     continue
                 rename_active_tab(title)
                 break
-            if key in {"\x7f", "\b"}:
-                buffer = buffer[:-1]
-            elif key == "\x15":
-                buffer = ""
-            elif key.isprintable():
-                buffer += key
+            buffer, cursor = _edit_rename_buffer(buffer, cursor, key)
             redraw()
     except EOFError:
         pass
     finally:
         write_terminal_control("\033[?25h")
+
+
+def _rename_popup_screen(
+    buffer: str,
+    cursor: int,
+    status: str,
+    width: int,
+    height: int,
+) -> tuple[list[str], int, int]:
+    visible_buffer, visible_cursor = _visible_rename_buffer(
+        buffer,
+        cursor,
+        max(1, width - len(RENAME_INPUT_PREFIX) - 1),
+    )
+    input_line = f"{RENAME_INPUT_PREFIX}{visible_buffer}"
+    lines_before_input = [
+        "Rename active tab",
+        "Enter a nav tab title template with live variables.",
+        "",
+        "Variables:",
+        *[f"  {variable}  {definition}" for variable, definition in TITLE_TEMPLATE_VARIABLES],
+        "",
+    ]
+    lines = [*lines_before_input, input_line, ""]
+    footer = status or "Enter save  Esc cancel  Arrows move cursor  Ctrl-A/E ends"
+    if len(lines) + 1 < height:
+        lines.extend([""] * (height - len(lines) - 1))
+    lines.append(footer)
+    cursor_column = min(
+        max(1, len(RENAME_INPUT_PREFIX) + visible_cursor + 1),
+        max(1, width),
+    )
+    return lines, len(lines_before_input) + 1, cursor_column
+
+
+def _render_popup_line(line: str, *, row: int, cursor_row: int, width: int) -> str:
+    visible_line = line[: max(0, width - 1)]
+    if row != cursor_row:
+        return visible_line
+    return f"{RENAME_INPUT_BACKGROUND}{visible_line}{CLEAR_TO_LINE_END}{RESET_TERMINAL_STYLE}"
+
+
+def _visual_cursor_row(cursor_row: int) -> int:
+    return max(1, cursor_row - 1)
+
+
+def _visible_rename_buffer(buffer: str, cursor: int, width: int) -> tuple[str, int]:
+    cursor = max(0, min(cursor, len(buffer)))
+    if len(buffer) <= width:
+        return buffer, cursor
+    start = max(0, cursor - width)
+    return buffer[start : start + width], cursor - start
+
+
+def _edit_rename_buffer(buffer: str, cursor: int, key: str) -> tuple[str, int]:
+    cursor = max(0, min(cursor, len(buffer)))
+    if key in {"\x1b[D", "\x1bOD"}:
+        return buffer, max(0, cursor - 1)
+    if key in {"\x1b[C", "\x1bOC"}:
+        return buffer, min(len(buffer), cursor + 1)
+    if key in {"\x1b[H", "\x1bOH"}:
+        return buffer, 0
+    if key in {"\x1b[F", "\x1bOF"}:
+        return buffer, len(buffer)
+    if key in {"\x7f", "\b"}:
+        if cursor == 0:
+            return buffer, cursor
+        return buffer[: cursor - 1] + buffer[cursor:], cursor - 1
+    if key == "\x15":
+        return "", 0
+    if key == "\x01":
+        return buffer, 0
+    if key == "\x05":
+        return buffer, len(buffer)
+    if key.isprintable():
+        return buffer[:cursor] + key + buffer[cursor:], cursor + len(key)
+    return buffer, cursor
 
 
 def wait_for_escape() -> None:
@@ -811,9 +900,43 @@ def read_single_key() -> str:
     old_attrs = termios.tcgetattr(fd)
     try:
         tty.setcbreak(fd)
-        return sys.stdin.read(1)
+        return _read_key_from_tty(fd)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+
+
+def _read_key_from_tty(fd: int) -> str:
+    key = os.read(fd, 1)
+    if key != b"\x1b":
+        return key.decode(errors="ignore")
+    return _read_escape_sequence(fd, key).decode(errors="ignore")
+
+
+def _read_escape_sequence(fd: int, sequence: bytes) -> bytes:
+    while len(sequence) < MAX_ESCAPE_SEQUENCE_BYTES:
+        ready, _, _ = select.select(
+            [fd],
+            [],
+            [],
+            ESCAPE_SEQUENCE_TIMEOUT_SECONDS,
+        )
+        if not ready:
+            break
+        sequence += os.read(fd, 1)
+        if _escape_sequence_complete(sequence):
+            break
+    return sequence
+
+
+def _escape_sequence_complete(sequence: bytes) -> bool:
+    if len(sequence) < 2 or not sequence.startswith(b"\x1b"):
+        return True
+    introducer = sequence[1:2]
+    if introducer == b"[":
+        return len(sequence) >= 3 and 0x40 <= sequence[-1] <= 0x7E
+    if introducer == b"O":
+        return len(sequence) >= 3
+    return True
 
 
 @app.command("_refresh", hidden=True)
