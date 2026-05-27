@@ -3,6 +3,7 @@
 ## Workflow
 
 - For any requested change: implement it, run the full test/lint workflow, confirm it passes, then pause for user review.
+- If an implementation change causes drift with docs or agent instructions, update the docs/instructions in the same change to keep them accurate.
 - When the user says **"ship it"**: squash-merge the reviewed change into `main` and push to `origin/main`.
 
 ## Git / Worktrees
@@ -17,4 +18,3 @@
 - Format: `uv run ruff format`
 - Lint: `uv run ruff check`
 - Tests: `uv run pytest`
-
