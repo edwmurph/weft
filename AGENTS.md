@@ -20,3 +20,7 @@
 - Format: `uv run ruff format`
 - Lint: `uv run ruff check`
 - Tests: `uv run pytest`
+
+## Dashboard Runtime Commands
+
+- Dashboard/internal Codux commands must not shell through `cd`; use `uv --directory <repo-root> --project <repo-root> run python -m codux.cli ...` so the repo root and uv project path are explicit.

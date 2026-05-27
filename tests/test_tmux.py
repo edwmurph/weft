@@ -50,22 +50,25 @@ def test_codex_shell_command_does_not_rewrite_custom_launcher():
     assert command == "exec my-codex --foo"
 
 
-def test_tmux_internal_shell_commands_run_from_project_root(monkeypatch):
+def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
     controller = TmuxController("codux")
-    monkeypatch.setattr(tmux_module.sys, "executable", "/tmp/codux python")
     root = shlex.quote(str(tmux_module.PROJECT_ROOT))
-    python = shlex.quote("/tmp/codux python")
+    codux_command = f"uv --directory {root} --project {root} run python -m codux.cli"
 
-    assert controller._nav_shell_command("%1") == (
-        f"cd {root} && env TMUX_PANE=%1 {python} -m codux.cli _nav-pane"
-    )
-    assert controller._loading_shell_command() == (
-        f"cd {root} && {python} -m codux.cli _loading-pane"
-    )
-    assert (
-        controller._frame_pane_shell_command() == f"cd {root} && {python} -m codux.cli _frame-pane"
-    )
-    assert controller._codux_cli_command() == f"cd {root} && {python} -m codux.cli"
+    commands = [
+        controller._nav_shell_command("%1"),
+        controller._loading_shell_command(),
+        controller._frame_pane_shell_command(),
+        controller._codux_cli_command(),
+    ]
+
+    assert commands == [
+        f"env TMUX_PANE=%1 {codux_command} _nav-pane",
+        f"{codux_command} _loading-pane",
+        f"{codux_command} _frame-pane",
+        codux_command,
+    ]
+    assert all("cd " not in command for command in commands)
 
 
 def test_nav_border_stays_active_across_tab_windows_when_focus_is_nav():

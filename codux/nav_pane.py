@@ -3,7 +3,6 @@ from __future__ import annotations
 import fcntl
 import os
 import select
-import shlex
 import signal
 import struct
 import subprocess
@@ -13,9 +12,9 @@ import time
 import tty
 import uuid
 from dataclasses import replace
-from pathlib import Path
 
 from codux.config import ensure_config
+from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.render import render_nav
 from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
@@ -25,20 +24,8 @@ from codux.tmux import TmuxController
 
 RESET = Theme().reset
 HIDE_CURSOR = "\033[?25l"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POPUP_STYLE = "fg=default,bg=default"
 POPUP_BORDER_STYLE = "fg=default,bg=default"
-
-
-def codux_cli_args(*args: str) -> list[str]:
-    return [sys.executable, "-m", "codux.cli", *args]
-
-
-def codux_cli_shell_command(*args: str) -> str:
-    command = " ".join(
-        [shlex.quote(sys.executable), "-m", "codux.cli", *(shlex.quote(arg) for arg in args)]
-    )
-    return f"cd {shlex.quote(str(PROJECT_ROOT))} && {command}"
 
 
 def run_nav_pane() -> int:
@@ -317,7 +304,6 @@ class NavPane:
             return
         subprocess.Popen(
             codux_cli_args("_refresh"),
-            cwd=PROJECT_ROOT,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -326,7 +312,6 @@ class NavPane:
     def activate_window_async(self, window_id: str) -> None:
         subprocess.Popen(
             codux_cli_args("_activate-window", window_id),
-            cwd=PROJECT_ROOT,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -336,7 +321,6 @@ class NavPane:
         subprocess.run(
             codux_cli_args(*args),
             check=False,
-            cwd=PROJECT_ROOT,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -344,7 +328,6 @@ class NavPane:
     def run_cli_async(self, *args: str) -> None:
         subprocess.Popen(
             codux_cli_args(*args),
-            cwd=PROJECT_ROOT,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

@@ -29,7 +29,6 @@ def test_nav_keys_use_ctrl_d_for_focus_toggle():
 
 def test_nav_pane_cli_helpers_run_from_project_root(monkeypatch):
     calls: list[tuple[list[str], object]] = []
-    monkeypatch.setattr(nav_pane_module.sys, "executable", "/tmp/codux python")
 
     def fake_run(args, **kwargs):
         calls.append((args, kwargs.get("cwd")))
@@ -41,15 +40,26 @@ def test_nav_pane_cli_helpers_run_from_project_root(monkeypatch):
 
     assert calls == [
         (
-            ["/tmp/codux python", "-m", "codux.cli", "_finish-close-window", "@1"],
-            nav_pane_module.PROJECT_ROOT,
+            [
+                "uv",
+                "--directory",
+                str(nav_pane_module.PROJECT_ROOT),
+                "--project",
+                str(nav_pane_module.PROJECT_ROOT),
+                "run",
+                "python",
+                "-m",
+                "codux.cli",
+                "_finish-close-window",
+                "@1",
+            ],
+            None,
         )
     ]
 
 
 def test_rename_popup_runs_from_project_root(monkeypatch):
     calls: list[list[str]] = []
-    monkeypatch.setattr(nav_pane_module.sys, "executable", "/tmp/codux python")
 
     def fake_run(args, **kwargs):
         calls.append(args)
@@ -78,10 +88,11 @@ def test_rename_popup_runs_from_project_root(monkeypatch):
         "Rename",
         command,
     ]
+    root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
     assert command == (
-        f"cd {shlex.quote(str(nav_pane_module.PROJECT_ROOT))} && "
-        f"{shlex.quote('/tmp/codux python')} -m codux.cli _popup-rename"
+        f"uv --directory {root} --project {root} run python -m codux.cli _popup-rename"
     )
+    assert "cd " not in command
 
 
 def test_move_column_refreshes_frame_before_redraw(tmp_path):

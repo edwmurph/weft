@@ -4,12 +4,11 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 import base64
 from dataclasses import dataclass
-from pathlib import Path
 
 from codux.config import CoduxConfig
+from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.render import (
     codex_shortcuts,
@@ -41,7 +40,6 @@ FRAME_LAYOUT_VERSION = "6"
 FRAME_VERSION_OPTION = "@codux-frame-version"
 NAV_FRAME_EXTRA_HEIGHT = 4
 DEFAULT_NAV_FRAME_HEIGHT = "7"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BORDER_SUFFIXES = ("TOP", "BOTTOM", "LEFT", "RIGHT")
 BORDER_ROLES = {
     f"{logical_role}_{suffix}"
@@ -221,7 +219,7 @@ class TmuxController:
 
     def prepare_spare_window_async(self) -> None:
         subprocess.Popen(
-            [sys.executable, "-m", "codux.cli", "_prepare-spare-window"],
+            codux_cli_args("_prepare-spare-window"),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -1172,16 +1170,10 @@ class TmuxController:
         return "sh -lc 'stty -echo -icanon min 0 time 0 2>/dev/null; exec sleep 2147483647'"
 
     def _frame_pane_shell_command(self) -> str:
-        return (
-            f"cd {shlex.quote(str(PROJECT_ROOT))} && "
-            f"{shlex.quote(sys.executable)} -m codux.cli _frame-pane"
-        )
+        return codux_cli_shell_command("_frame-pane")
 
     def _nav_shell_command(self, pane_id: str) -> str:
-        return (
-            f"cd {shlex.quote(str(PROJECT_ROOT))} && "
-            f"env TMUX_PANE={shlex.quote(pane_id)} {shlex.quote(sys.executable)} -m codux.cli _nav-pane"
-        )
+        return f"env TMUX_PANE={shlex.quote(pane_id)} {codux_cli_shell_command('_nav-pane')}"
 
     def _empty_shell_command(self) -> str:
         return self._frame_pane_shell_command()
@@ -1192,16 +1184,13 @@ class TmuxController:
         return render_empty_state()
 
     def _loading_shell_command(self) -> str:
-        return (
-            f"cd {shlex.quote(str(PROJECT_ROOT))} && "
-            f"{shlex.quote(sys.executable)} -m codux.cli _loading-pane"
-        )
+        return codux_cli_shell_command("_loading-pane")
 
     def _codex_shell_command(self, config: CoduxConfig) -> str:
         return f"exec {config.codex_command}"
 
     def _codux_cli_command(self) -> str:
-        return f"cd {shlex.quote(str(PROJECT_ROOT))} && {shlex.quote(sys.executable)} -m codux.cli"
+        return codux_cli_shell_command()
 
     def _install_bindings(self, config: CoduxConfig, codux_command: str) -> None:
         bindings = config.key_bindings

@@ -7,6 +7,7 @@ import shlex
 from types import SimpleNamespace
 
 import codux.cli as cli_module
+import codux.launcher as launcher_module
 from codux.cli import is_transient_codex_title, repair_and_render
 from codux.config import CoduxConfig
 from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
@@ -28,15 +29,12 @@ def tab(tab_id: str) -> Tab:
     )
 
 
-def test_codux_command_runs_from_project_root(monkeypatch):
-    monkeypatch.setattr(cli_module.sys, "executable", "/tmp/codux python")
-
+def test_codux_command_uses_uv_project_root_without_cd():
     command = cli_module.codux_command()
+    root = shlex.quote(str(launcher_module.PROJECT_ROOT))
 
-    assert command == (
-        f"cd {shlex.quote(str(cli_module.PROJECT_ROOT))} && "
-        f"{shlex.quote('/tmp/codux python')} -m codux.cli"
-    )
+    assert command == f"uv --directory {root} --project {root} run python -m codux.cli"
+    assert "cd " not in command
 
 
 def test_runtime_lock_preserves_hidden_command_signatures():

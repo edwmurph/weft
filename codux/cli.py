@@ -11,13 +11,13 @@ import fcntl
 import termios
 from dataclasses import replace
 from functools import wraps
-from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from codux.config import ConfigError, CoduxConfig, config_path, ensure_config
+from codux.launcher import codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.nav_pane import run_nav_pane
 from codux.render import render_empty_state, render_help, render_nav
@@ -38,11 +38,10 @@ from codux.tmux import TmuxController
 app = typer.Typer(help="Manage Codex sessions in a tmux-native tab UI.")
 console = Console()
 IGNORED_GENERATED_TITLES = {"", "CODEX", "NAV", "Codux Empty"}
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def codux_command() -> str:
-    return f"cd {shlex.quote(str(PROJECT_ROOT))} && {shlex.quote(sys.executable)} -m codux.cli"
+    return codux_cli_shell_command()
 
 
 def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
@@ -734,7 +733,7 @@ def _disable_stdin_echo(fd: int):
 
 def refresh_runtime_async() -> None:
     subprocess.Popen(
-        [sys.executable, "-m", "codux.cli", "_refresh"],
+        codux_cli_args("_refresh"),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
