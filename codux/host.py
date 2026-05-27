@@ -235,15 +235,9 @@ class DashboardHost:
         )
 
     def rename_prompt(self) -> None:
-        command = f'{shlex.quote(sys.executable)} -m codux.cli rename "%%"'
+        command = f"{shlex.quote(sys.executable)} -m codux.cli _popup-rename"
         subprocess.run(
-            [
-                "tmux",
-                "command-prompt",
-                "-p",
-                "Rename tab:",
-                f"run-shell -b {shlex.quote(command + ' >/dev/null 2>&1')}",
-            ],
+            ["tmux", "display-popup", "-w", "72", "-h", "10", "-T", "Rename", command],
             check=False,
         )
 

@@ -205,14 +205,14 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
         return AppState(
             tabs=[*current.tabs, tab],
             active_tab_id=tab.id,
-            focus="nav",
+            focus="codex",
         )
 
     state = store.update(mutate)
     tmux.remove_empty_windows()
     tmux.refresh_window_frame_panes(config, state, tab.tmux_window_id)
     tmux.select_window(tab.tmux_window_id)
-    tmux.select_pane(created.nav_pane_id)
+    tmux.select_pane(created.content_pane_id)
     tmux.prepare_spare_window_async()
     refresh_runtime_async()
     console.print(f"Created [bold]{tab.title}[/bold].")
@@ -251,6 +251,11 @@ def close(
 @app.command()
 def rename(title: str = typer.Argument(..., help="New active tab title.")) -> None:
     """Rename the active Codex tab."""
+    rename_active_tab(title)
+    console.print(f"Renamed tab to [bold]{title}[/bold].")
+
+
+def rename_active_tab(title: str) -> AppState:
     config, store, tmux = load_runtime()
     state = store.read()
     target = current_tab_or_exit(state)
@@ -266,7 +271,7 @@ def rename(title: str = typer.Argument(..., help="New active tab title.")) -> No
     tmux.set_pane_title(target.tmux_pane_id, title)
     write_render_files(config, state)
     refresh_runtime_async()
-    console.print(f"Renamed tab to [bold]{title}[/bold].")
+    return state
 
 
 @app.command()
@@ -522,6 +527,74 @@ def popup_help_command() -> None:
         pass
     finally:
         console.print("\033[?25h", end="")
+
+
+@app.command("_popup-rename", hidden=True)
+def popup_rename_command() -> None:
+    _, store, _ = load_runtime()
+    state = store.read()
+    target = state.active_tab
+    if target is None:
+        console.print("No active Codex session.\n\nPress Esc to close.", markup=False)
+        wait_for_escape()
+        return
+
+    buffer = target.title
+    status = ""
+
+    def redraw() -> None:
+        nonlocal status
+        width = shutil.get_terminal_size((72, 10)).columns
+        input_line = f"> {buffer}"
+        lines = [
+            "Rename active tab",
+            "",
+            "New title:",
+            input_line,
+            "",
+            status or "Enter save  Esc cancel",
+        ]
+        console.file.write("\033[?25l\033[2J\033[H")
+        for line in lines:
+            console.file.write(line[: max(0, width - 1)] + "\n")
+        console.file.flush()
+        status = ""
+
+    try:
+        redraw()
+        while True:
+            key = read_single_key()
+            if key in {"\x1b", "\x03", ""}:
+                break
+            if key in {"\r", "\n"}:
+                title = buffer.strip()
+                if not title:
+                    status = "Title cannot be empty."
+                    redraw()
+                    continue
+                rename_active_tab(title)
+                break
+            if key in {"\x7f", "\b"}:
+                buffer = buffer[:-1]
+            elif key == "\x15":
+                buffer = ""
+            elif key.isprintable():
+                buffer += key
+            redraw()
+    except EOFError:
+        pass
+    finally:
+        console.print("\033[?25h", end="")
+
+
+def wait_for_escape() -> None:
+    try:
+        while True:
+            key = read_single_key()
+            if key in {"\x1b", "\r", "\n", ""}:
+                return
+    except EOFError:
+        return
 
 
 @app.command(

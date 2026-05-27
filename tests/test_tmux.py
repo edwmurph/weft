@@ -205,6 +205,16 @@ def test_repair_window_sizes_skips_windows_already_at_target(monkeypatch):
     assert not any(command[0] == "resize-window" for command in commands)
 
 
+def test_rename_prompt_uses_popup():
+    controller = TmuxController("codux")
+
+    command = controller._rename_prompt_command("python -m codux.cli")
+
+    assert "display-popup" in command
+    assert "_popup-rename" in command
+    assert "command-prompt" not in command
+
+
 def test_create_tab_window_does_not_force_manual_window_size(monkeypatch):
     controller = TmuxController("codux")
     commands: list[tuple[str, ...]] = []

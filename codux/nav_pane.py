@@ -205,7 +205,7 @@ class NavPane:
             updated_at=created_at,
         )
         self.render_snapshot(
-            AppState(tabs=[*current.tabs, pending_tab], active_tab_id=tab_id, focus="nav")
+            AppState(tabs=[*current.tabs, pending_tab], active_tab_id=tab_id, focus="codex")
         )
 
         created = self.tmux.claim_spare_tab_window(self.config, current, title, tab_id)
@@ -221,13 +221,14 @@ class NavPane:
         )
 
         def mutate(current: AppState) -> AppState:
-            return AppState(tabs=[*current.tabs, tab], active_tab_id=tab.id, focus="nav")
+            return AppState(tabs=[*current.tabs, tab], active_tab_id=tab.id, focus="codex")
 
         self.state = self.store.update(mutate)
         self.tmux.remove_empty_windows()
         self.tmux.refresh_window_frame_panes(self.config, self.state, tab.tmux_window_id)
         self.refresh_nav_pane_cache()
-        self.select_nav_for_window(tab.tmux_window_id)
+        self.tmux.select_window(tab.tmux_window_id)
+        self.tmux.select_pane(created.content_pane_id)
         self.tmux.prepare_spare_window_async()
         self.refresh_static_panes_async()
 
@@ -329,15 +330,9 @@ class NavPane:
         )
 
     def rename_prompt(self) -> None:
-        command = f'{shlex.quote(sys.executable)} -m codux.cli rename "%%"'
+        command = f"{shlex.quote(sys.executable)} -m codux.cli _popup-rename"
         subprocess.run(
-            [
-                "tmux",
-                "command-prompt",
-                "-p",
-                "Rename tab:",
-                f"run-shell -b {shlex.quote(command + ' >/dev/null 2>&1')}",
-            ],
+            ["tmux", "display-popup", "-w", "72", "-h", "10", "-T", "Rename", command],
             check=False,
         )
 

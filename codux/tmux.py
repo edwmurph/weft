@@ -30,7 +30,7 @@ SPARE_WINDOW_OPTION = "@codux-spare"
 TAB_ID_OPTION = "@codux-tab-id"
 HOST_PANE_OPTION = "@codux-host"
 NAV_HOST_OPTION = "@codux-nav-host"
-NAV_HOST_VERSION = "8"
+NAV_HOST_VERSION = "9"
 STATIC_HOST_OPTION = "@codux-static-host"
 STATIC_HOST_VERSION = "1"
 CODEX_PANE_TITLE = "CODEX"
@@ -1298,8 +1298,7 @@ class TmuxController:
         return f"run-shell -b {shlex.quote(f'{command} >/dev/null 2>&1')}"
 
     def _rename_prompt_command(self, command: str) -> str:
-        rename_command = f'{command} rename "%%"'
-        return f"command-prompt -p 'Rename tab:' {shlex.quote(self._run_shell_command(rename_command))}"
+        return f"display-popup -w 72 -h 10 -T Rename {shlex.quote(f'{command} _popup-rename')}"
 
     def _help_popup_command(self, command: str) -> str:
         return f"display-popup -w 72 -h 22 -T Codux {shlex.quote(f'{command} _popup-help')}"
