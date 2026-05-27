@@ -15,9 +15,7 @@ def codux_cli_args(*args: str) -> list[str]:
         "--project",
         str(PROJECT_ROOT),
         "run",
-        "python",
-        "-m",
-        "codux.cli",
+        "codux",
         *args,
     ]
 

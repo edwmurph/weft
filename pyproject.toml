@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 codux = "codux.cli:app"
+start = "codux.cli:start_entrypoint"
 
 [build-system]
 requires = ["hatchling"]

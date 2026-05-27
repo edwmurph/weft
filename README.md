@@ -12,11 +12,14 @@ uv run codux doctor
 ## Usage
 
 ```sh
+uv run start
 uv run codux start
 uv run codux new "Fix parser"
 uv run codux rename "Parser follow-up"
 uv run codux status
 ```
+
+`uv run start` is the shortest local start command; it is equivalent to `uv run codux start`.
 
 Default nav shortcuts, active when the nav region is focused:
 

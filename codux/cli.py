@@ -45,6 +45,14 @@ def codux_command() -> str:
     return codux_cli_shell_command()
 
 
+def start_entrypoint() -> None:
+    root_command = typer.main.get_command(app)
+    start_command = root_command.get_command(None, "start")
+    if start_command is None:
+        raise RuntimeError("start command is not registered")
+    start_command.main(args=sys.argv[1:], prog_name="start")
+
+
 def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
     config = ensure_config()
     store = StateStore()
@@ -636,7 +644,6 @@ def write_terminal_control(sequence: str) -> None:
 
 
 @app.command("_activate-window", hidden=True)
-@_with_runtime_lock
 def activate_window_command(window_id: str) -> None:
     _, store, _ = load_runtime()
 

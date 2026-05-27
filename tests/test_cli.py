@@ -33,11 +33,36 @@ def test_codux_command_uses_uv_project_root_without_cd():
     command = cli_module.codux_command()
     root = shlex.quote(str(launcher_module.PROJECT_ROOT))
 
-    assert command == f"uv --directory {root} --project {root} run python -m codux.cli"
+    assert command == f"uv --directory {root} --project {root} run codux"
     assert "cd " not in command
 
 
-def test_runtime_lock_preserves_hidden_command_signatures():
+def test_start_entrypoint_dispatches_start_command(monkeypatch):
+    calls: list[tuple[str, object]] = []
+    original_argv = ["start", "--no-attach"]
+
+    class FakeStartCommand:
+        def main(self, *, args, prog_name):
+            calls.append(("main", (list(args), prog_name)))
+
+    class FakeRootCommand:
+        def get_command(self, ctx, name):
+            calls.append(("get", (ctx, name)))
+            return FakeStartCommand()
+
+    monkeypatch.setattr(cli_module.sys, "argv", [*original_argv])
+    monkeypatch.setattr(cli_module.typer.main, "get_command", lambda app: FakeRootCommand())
+
+    cli_module.start_entrypoint()
+
+    assert calls == [
+        ("get", (None, "start")),
+        ("main", (["--no-attach"], "start")),
+    ]
+    assert cli_module.sys.argv == original_argv
+
+
+def test_hidden_command_signatures_are_preserved():
     assert list(inspect.signature(cli_module.refresh_command).parameters) == []
     assert list(inspect.signature(cli_module.activate_window_command).parameters) == ["window_id"]
     assert list(inspect.signature(cli_module.focus_window_command).parameters) == [
@@ -237,6 +262,21 @@ def test_focus_window_is_best_effort_when_runtime_is_unavailable(monkeypatch):
     monkeypatch.setattr(cli_module, "load_runtime", fail_runtime)
 
     cli_module.focus_window_command("@missing", "nav")
+
+
+def test_activate_window_updates_state_without_runtime_lock(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    first = tab("first")
+    second = tab("second")
+    store.write(AppState(tabs=[first, second], active_tab_id=second.id, focus="nav"))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, object()))
+
+    cli_module.activate_window_command(first.tmux_window_id)
+
+    state = store.read()
+    assert state.active_tab_id == first.id
+    assert state.focus == "nav"
 
 
 def test_finish_close_last_tab_renders_empty_before_killing_old_window(monkeypatch, tmp_path):

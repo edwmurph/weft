@@ -53,7 +53,7 @@ def test_codex_shell_command_does_not_rewrite_custom_launcher():
 def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
     controller = TmuxController("codux")
     root = shlex.quote(str(tmux_module.PROJECT_ROOT))
-    codux_command = f"uv --directory {root} --project {root} run python -m codux.cli"
+    codux_command = f"uv --directory {root} --project {root} run codux"
 
     commands = [
         controller._nav_shell_command("%1"),
@@ -69,6 +69,24 @@ def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
         codux_command,
     ]
     assert all("cd " not in command for command in commands)
+
+
+def test_direct_nav_arrow_activates_state_before_selecting_window(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        controller,
+        "_tmux",
+        lambda args, check=True: commands.append(args) or "",
+    )
+
+    controller._bind_direct_nav_arrow("Left", "left", "#{nav}", "uv run codux")
+
+    bound_command = commands[0][-2]
+    assert "_activate-window" in bound_command
+    assert bound_command.index("_activate-window") < bound_command.index("select-window")
+    assert "run-shell -b 'uv run codux _activate-window" not in bound_command
 
 
 def test_nav_border_stays_active_across_tab_windows_when_focus_is_nav():

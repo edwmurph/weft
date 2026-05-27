@@ -1348,11 +1348,13 @@ class TmuxController:
         target_window = f"#{{@codux-nav-{direction}}}"
         target_pane = f"#{{@codux-nav-{direction}-pane}}"
         condition = f"#{{&&:{scoped_nav_pane},#{{&&:{target_window},{target_pane}}}}}"
-        activate_command = f"{codux_command} _activate-window {target_window} >/dev/null 2>&1"
+        activate_command = (
+            f"{codux_command} _activate-window {target_window} >/dev/null 2>&1 || true"
+        )
         tmux_command = (
+            f"run-shell {shlex.quote(activate_command)} ; "
             f'select-window -t "{target_window}" ; '
-            f'select-pane -t "{target_pane}" ; '
-            f"run-shell -b {shlex.quote(activate_command)}"
+            f'select-pane -t "{target_pane}"'
         )
         self._tmux(
             [

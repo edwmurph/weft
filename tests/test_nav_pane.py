@@ -48,9 +48,7 @@ def test_nav_pane_cli_helpers_run_from_project_root(monkeypatch):
                 "--project",
                 str(nav_pane_module.PROJECT_ROOT),
                 "run",
-                "python",
-                "-m",
-                "codux.cli",
+                "codux",
                 "_finish-close-window",
                 "@1",
             ],
@@ -90,9 +88,7 @@ def test_rename_popup_runs_from_project_root(monkeypatch):
         command,
     ]
     root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
-    assert command == (
-        f"uv --directory {root} --project {root} run python -m codux.cli _popup-rename"
-    )
+    assert command == f"uv --directory {root} --project {root} run codux _popup-rename"
     assert "cd " not in command
 
 
