@@ -8,6 +8,7 @@ import time
 import uuid
 import base64
 import fcntl
+import os
 import termios
 from dataclasses import replace
 from functools import wraps
@@ -32,7 +33,7 @@ from codux.state import (
     state_after_closing_tab,
     state_path,
 )
-from codux.tmux import TmuxController
+from codux.tmux import FRAME_HOST_OPTION, FRAME_HOST_VERSION, TmuxController
 
 
 app = typer.Typer(help="Manage Codex sessions in a tmux-native tab UI.")
@@ -148,12 +149,18 @@ def select_active_or_empty(config: CoduxConfig, state: AppState, tmux: TmuxContr
         else:
             tmux.select_pane(state.active_tab.tmux_pane_id)
         return
-    empty_window_id = tmux.ensure_empty_window(config)
+    empty_window_id = prepare_empty_dashboard(config, state, tmux)
     tmux.select_window(empty_window_id)
     if state.focus == "nav":
         focus_nav_for_window(tmux, empty_window_id)
     else:
         focus_content_for_window(tmux, empty_window_id)
+
+
+def prepare_empty_dashboard(config: CoduxConfig, state: AppState, tmux: TmuxController) -> str:
+    empty_window_id = tmux.ensure_empty_window(config)
+    tmux.refresh_window_frame_panes(config, state, empty_window_id)
+    return empty_window_id
 
 
 def focus_nav_for_window(tmux: TmuxController, window_id: str) -> None:
@@ -253,14 +260,13 @@ def close(
     if target_index is None:
         raise typer.BadParameter(f"unknown tab id: {target_id}")
     target = state.tabs[target_index]
-    if len(state.tabs) == 1:
-        tmux.ensure_empty_window(config)
 
     def mutate(current: AppState) -> AppState:
         return state_after_closing_tab(current, target_id)
 
     state = store.update(mutate)
-    render_runtime(config, state, tmux)
+    if state.tabs:
+        render_runtime(config, state, tmux)
     select_active_or_empty(config, state, tmux)
     tmux.kill_window(target.tmux_window_id)
     console.print(f"Closed [bold]{target.title}[/bold].")
@@ -664,7 +670,15 @@ def finish_close_window_command(window_id: str) -> None:
     config, store, tmux = load_runtime()
     state = store.read()
     if not state.tabs:
-        tmux.ensure_empty_window(config)
+        empty_window_id = prepare_empty_dashboard(config, state, tmux)
+        tmux.select_window(empty_window_id)
+        if state.focus == "nav":
+            focus_nav_for_window(tmux, empty_window_id)
+        else:
+            focus_content_for_window(tmux, empty_window_id)
+        if window_id != empty_window_id:
+            tmux.kill_window(window_id)
+        return
     tmux.kill_window(window_id)
     state = repair_and_render(config, store, tmux)
     select_active_or_empty(config, state, tmux)
@@ -699,6 +713,7 @@ def loading_pane_command() -> None:
 def frame_pane_command() -> None:
     stdin_fd = sys.stdin.fileno()
     old_termios = _disable_stdin_echo(stdin_fd) if sys.stdin.isatty() else None
+    _mark_frame_pane_ready()
     try:
         for raw in sys.stdin.buffer:
             try:
@@ -721,6 +736,21 @@ def frame_pane_command() -> None:
     finally:
         if old_termios is not None:
             termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_termios)
+
+
+def _mark_frame_pane_ready() -> None:
+    pane_id = os.environ.get("TMUX_PANE")
+    if not pane_id:
+        return
+    try:
+        subprocess.run(
+            ["tmux", "set-option", "-p", "-t", pane_id, FRAME_HOST_OPTION, FRAME_HOST_VERSION],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        return
 
 
 def _disable_stdin_echo(fd: int):

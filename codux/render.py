@@ -66,8 +66,15 @@ def nav_column_widths(count: int, width: int | None, gap: int) -> list[int]:
     return [base + (1 if index < remainder else 0) for index in range(count)]
 
 
-def render_empty_state() -> str:
-    return "\n\nNo Codex sessions open\nPress n to create one."
+def render_empty_state(width: int | None = None, height: int | None = None) -> str:
+    lines = ["No Codex sessions open", "Press n to create one."]
+    if width is not None:
+        lines = [line.center(max(1, width)).rstrip() for line in lines]
+    if height is None:
+        return "\n\n" + "\n".join(lines)
+
+    top_padding = max(0, (height - len(lines)) // 2)
+    return "\n".join([*([""] * top_padding), *lines])
 
 
 def render_top_border(width: int, title: str, active: bool) -> str:

@@ -28,7 +28,7 @@ def test_codex_shell_command_launches_direct_codex_without_proxy():
     controller = TmuxController("codux")
     command = controller._codex_shell_command(CoduxConfig(codex_command="codex --foo"))
 
-    assert command == "exec codex --foo"
+    assert command == "unset NO_COLOR; exec codex --foo"
     assert "_codex-proxy" not in command
     assert "tui.theme" not in command
     assert "CODUX_" not in command
@@ -40,14 +40,14 @@ def test_codex_shell_command_preserves_user_codex_command():
         CoduxConfig(codex_command='codex -c tui.theme="dark" --foo')
     )
 
-    assert command == 'exec codex -c tui.theme="dark" --foo'
+    assert command == 'unset NO_COLOR; exec codex -c tui.theme="dark" --foo'
 
 
 def test_codex_shell_command_does_not_rewrite_custom_launcher():
     controller = TmuxController("codux")
     command = controller._codex_shell_command(CoduxConfig(codex_command="my-codex --foo"))
 
-    assert command == "exec my-codex --foo"
+    assert command == "unset NO_COLOR; exec my-codex --foo"
 
 
 def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
@@ -65,7 +65,7 @@ def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
     assert commands == [
         f"env TMUX_PANE=%1 {codux_command} _nav-pane",
         f"{codux_command} _loading-pane",
-        f"{codux_command} _frame-pane",
+        f"stty -echo 2>/dev/null || true; exec {codux_command} _frame-pane",
         codux_command,
     ]
     assert all("cd " not in command for command in commands)
@@ -104,7 +104,7 @@ def test_create_tab_window_uses_native_nav_and_codex_panes(monkeypatch):
 
     monkeypatch.setattr(controller, "ensure_session", lambda config: None)
     monkeypatch.setattr(controller, "_tmux", fake_tmux)
-    monkeypatch.setattr(controller, "_split_nav_pane", lambda pane_id: "%10")
+    monkeypatch.setattr(controller, "_split_nav_pane", lambda pane_id, **kwargs: "%10")
     monkeypatch.setattr(controller, "select_window", selected_windows.append)
 
     created = controller.create_tab_window(CoduxConfig(), "New Codex", "tab123")
@@ -226,7 +226,7 @@ def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monk
     monkeypatch.setattr(
         controller,
         "_split_nav_pane",
-        lambda pane_id: events.append(("split", pane_id)) or "%new-nav",
+        lambda pane_id, **kwargs: events.append(("split", pane_id)) or "%new-nav",
     )
     monkeypatch.setattr(controller, "_kill_duplicate_managed_panes", lambda *args, **kwargs: False)
     snapshot = SimpleNamespace()
@@ -235,6 +235,79 @@ def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monk
     assert ("kill-borders", "@1", tmux_module.BORDER_ROLES) in events
     assert ("role", "%nav", "CODEX") in events
     assert ("split", "%nav") in events
+
+
+def test_missing_content_pane_during_nav_split_is_ignored(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(controller, "_install_window_options", lambda window_id: None)
+    monkeypatch.setattr(
+        controller, "_window_panes_from_snapshot", lambda window_id, snapshot: (None, "%gone")
+    )
+    monkeypatch.setattr(
+        controller,
+        "_kill_border_panes",
+        lambda window_id, roles, snapshot: events.append(("kill-borders", window_id, roles)),
+    )
+    monkeypatch.setattr(controller, "_kill_duplicate_managed_panes", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        tmux_module,
+        "_run_tmux",
+        lambda args, check=True: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="can't find pane: %gone",
+        ),
+    )
+
+    assert controller._ensure_native_window("@1", SimpleNamespace()) == (None, None)
+    assert ("kill-borders", "@1", tmux_module.BORDER_ROLES) in events
+
+
+def test_short_nav_pane_is_expanded_before_frame_creation(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[tuple[str, object]] = []
+    pane = PaneSnapshot(
+        pane_id="%nav",
+        window_id="@1",
+        role="NAV",
+        title="NAV",
+        top=0,
+        left=0,
+        width=120,
+        height=2,
+        current_command="python3.14",
+        start_command="python -m codux.cli _nav-pane",
+        nav_host_version="13",
+        frame_host_version="",
+    )
+    snapshot = TmuxSnapshot(
+        windows={},
+        panes={"%nav": pane},
+        panes_by_window={"@1": [pane]},
+    )
+
+    monkeypatch.setattr(
+        controller,
+        "_tmux",
+        lambda args, check=True: events.append(("tmux", tuple(args))) or "",
+    )
+    monkeypatch.setattr(controller, "pane_size", lambda pane_id: (120, 7))
+    monkeypatch.setattr(
+        controller,
+        "_create_border_pane",
+        lambda pane_id, role, split_args: events.append(("create", role)) or f"%{role}",
+    )
+
+    controller._ensure_pane_frame("@1", "%nav", tmux_module.NAV_PANE_TITLE, snapshot)
+
+    assert (
+        "tmux",
+        ("resize-pane", "-t", "%nav", "-y", tmux_module.DEFAULT_NAV_FRAME_HEIGHT),
+    ) in events
+    assert ("create", "NAV_TOP") in events
+    assert ("create", "NAV_BOTTOM") in events
 
 
 def test_window_panes_prefers_configured_native_panes(monkeypatch):
@@ -455,7 +528,7 @@ def test_create_tab_window_does_not_force_manual_window_size(monkeypatch):
 
     monkeypatch.setattr(controller, "ensure_session", lambda config: None)
     monkeypatch.setattr(controller, "_tmux", fake_tmux)
-    monkeypatch.setattr(controller, "_split_nav_pane", lambda pane_id: "%10")
+    monkeypatch.setattr(controller, "_split_nav_pane", lambda pane_id, **kwargs: "%10")
 
     controller.create_tab_window(CoduxConfig(), "New Codex", "tab123")
 
@@ -629,6 +702,106 @@ def test_render_frame_pane_sends_base64_payload(monkeypatch):
     assert calls[1] == ("send-keys", "-t", "%1", "Enter")
 
 
+def test_create_border_pane_ignores_missing_target_pane(monkeypatch):
+    controller = TmuxController("codux")
+    monkeypatch.setattr(
+        tmux_module,
+        "_run_tmux",
+        lambda args, check=True: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="can't find pane: %gone",
+        ),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_set_pane_role",
+        lambda pane_id, role: (_ for _ in ()).throw(AssertionError("role set")),
+    )
+
+    assert controller._create_border_pane("%gone", "CODEX_TOP", ["-v"]) is None
+
+
+def test_ensure_frame_pane_waits_until_ready_before_render_input(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[tuple[str, ...]] = []
+    option_values = iter(["", tmux_module.FRAME_HOST_VERSION])
+    snapshot = TmuxSnapshot(
+        windows={},
+        panes={
+            "%1": PaneSnapshot(
+                pane_id="%1",
+                window_id="@1",
+                role="CODEX",
+                title="CODEX",
+                top=0,
+                left=0,
+                width=10,
+                height=5,
+                current_command="python",
+                start_command="python -m codux.cli _frame-pane",
+                nav_host_version="",
+                frame_host_version="",
+            )
+        },
+        panes_by_window={},
+    )
+
+    def fake_tmux(args, check=True):
+        commands.append(tuple(args))
+        if args[:3] == ["show-option", "-p", "-qv"]:
+            return next(option_values)
+        return ""
+
+    monkeypatch.setattr(controller, "_tmux", fake_tmux)
+    monkeypatch.setattr(tmux_module.time, "sleep", lambda seconds: None)
+
+    controller._render_frame_pane("%1", "hello", snapshot)
+
+    assert commands[0][:3] == ("respawn-pane", "-k", "-t")
+    assert ("show-option", "-p", "-qv", "-t", "%1", tmux_module.FRAME_HOST_OPTION) in commands
+    assert (
+        "set-option",
+        "-p",
+        "-t",
+        "%1",
+        tmux_module.FRAME_HOST_OPTION,
+        tmux_module.FRAME_HOST_VERSION,
+    ) not in commands
+    assert commands[-2][0] == "send-keys"
+
+
+def test_empty_content_uses_pane_dimensions():
+    controller = TmuxController("codux")
+    snapshot = TmuxSnapshot(
+        windows={},
+        panes={
+            "%empty": PaneSnapshot(
+                pane_id="%empty",
+                window_id="@1",
+                role="CODEX",
+                title="CODEX",
+                top=0,
+                left=0,
+                width=30,
+                height=6,
+                current_command="python3.14",
+                start_command="python -m codux.cli _frame-pane",
+                nav_host_version="",
+                frame_host_version=tmux_module.FRAME_HOST_VERSION,
+            )
+        },
+        panes_by_window={"@1": []},
+    )
+
+    assert controller._empty_content("%empty", snapshot).splitlines() == [
+        "",
+        "",
+        "    No Codex sessions open",
+        "    Press n to create one.",
+    ]
+
+
 def test_terminal_options_enable_extended_keys_for_shift_enter(monkeypatch):
     controller = TmuxController("codux")
     commands: list[tuple[str, ...]] = []
@@ -681,17 +854,19 @@ def test_session_environment_passes_terminal_metadata_without_codux_color_hints(
     monkeypatch.setenv("COLORFGBG", "15;0")
     monkeypatch.setenv("ITERM_PROFILE", "Default")
     monkeypatch.setenv("CODUX_BG_RGB", "29,38,42")
+    monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.setattr(controller, "_tmux", lambda args, check=True: commands.append(tuple(args)))
 
     controller._install_session_environment()
 
     assert ("set-environment", "-t", "codux", "-u", "CODUX_BG_RGB") in commands
+    assert ("set-environment", "-t", "codux", "-u", "NO_COLOR") in commands
     assert ("set-environment", "-t", "codux", "COLORTERM", "truecolor") in commands
     assert ("set-environment", "-t", "codux", "COLORFGBG", "15;0") in commands
     assert ("set-environment", "-t", "codux", "ITERM_PROFILE", "Default") in commands
 
 
-def test_session_environment_unsets_missing_terminal_metadata(monkeypatch):
+def test_session_environment_preserves_missing_terminal_metadata(monkeypatch):
     controller = TmuxController("codux")
     commands: list[tuple[str, ...]] = []
 
@@ -701,8 +876,8 @@ def test_session_environment_unsets_missing_terminal_metadata(monkeypatch):
 
     controller._install_session_environment()
 
-    assert ("set-environment", "-t", "codux", "-u", "COLORTERM") in commands
-    assert ("set-environment", "-t", "codux", "-u", "ITERM_PROFILE") in commands
+    assert ("set-environment", "-t", "codux", "-u", "COLORTERM") not in commands
+    assert ("set-environment", "-t", "codux", "-u", "ITERM_PROFILE") not in commands
 
 
 def test_enter_uses_direct_focus_from_nav_pane(monkeypatch):

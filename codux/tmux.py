@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import base64
 import os
 import shlex
 import shutil
 import subprocess
-import base64
+import time
 from dataclasses import dataclass
 
 from codux.config import CoduxConfig
@@ -29,9 +30,9 @@ EMPTY_WINDOW_OPTION = "@codux-empty"
 SPARE_WINDOW_OPTION = "@codux-spare"
 TAB_ID_OPTION = "@codux-tab-id"
 NAV_HOST_OPTION = "@codux-nav-host"
-NAV_HOST_VERSION = "13"
+NAV_HOST_VERSION = "14"
 FRAME_HOST_OPTION = "@codux-frame-host"
-FRAME_HOST_VERSION = "3"
+FRAME_HOST_VERSION = "5"
 CODEX_PANE_TITLE = "CODEX"
 NAV_PANE_TITLE = "NAV"
 FRAME_EDGE_SIZE = 1
@@ -51,6 +52,7 @@ STALE_CODEX_COLOR_ENV = (
     "CODUX_BG_RGB",
     "CODUX_COLORFGBG",
     "CODUX_CHILD_TERM",
+    "NO_COLOR",
 )
 TERMINAL_ENV_PASSTHROUGH = (
     "CLICOLOR",
@@ -445,7 +447,8 @@ class TmuxController:
         for window_id, is_empty in self._codux_windows(snapshot):
             nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
             if nav_pane_id and content_pane_id:
-                self._ensure_window_frame(window_id, snapshot)
+                if self._ensure_window_frame(window_id, snapshot):
+                    snapshot = self._snapshot()
             if nav_pane_id:
                 self._ensure_nav_interactive_pane(nav_pane_id, snapshot)
                 if config is not None and state is not None:
@@ -455,12 +458,17 @@ class TmuxController:
                         nav_content_height(config, state),
                         snapshot,
                     )
+                    snapshot = self._snapshot()
             if content_pane_id:
                 self._set_window_option(window_id, "@codux-codex-pane", content_pane_id)
                 self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
                 if is_empty:
                     self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
-                    self._render_frame_pane(content_pane_id, self._empty_content(), snapshot)
+                    self._render_frame_pane(
+                        content_pane_id,
+                        self._empty_content(content_pane_id, snapshot),
+                        snapshot,
+                    )
                 elif config is not None and self._pane_needs_codex_respawn(
                     window_id,
                     content_pane_id,
@@ -497,15 +505,21 @@ class TmuxController:
         snapshot = self._snapshot()
         nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
         if nav_pane_id and content_pane_id:
-            self._ensure_window_frame(window_id, snapshot)
+            if self._ensure_window_frame(window_id, snapshot):
+                snapshot = self._snapshot()
         if nav_pane_id:
             self._ensure_nav_interactive_pane(nav_pane_id, snapshot)
             self._resize_nav_frame(
                 window_id, nav_pane_id, nav_content_height(config, state), snapshot
             )
+            snapshot = self._snapshot()
         window = snapshot.window(window_id)
         if content_pane_id and window and window.empty == "1":
-            self._render_frame_pane(content_pane_id, self._empty_content(), snapshot)
+            self._render_frame_pane(
+                content_pane_id,
+                self._empty_content(content_pane_id, snapshot),
+                snapshot,
+            )
         for pane_id, role in self._border_panes(window_id, snapshot).items():
             pane = snapshot.panes.get(pane_id)
             if pane is None:
@@ -706,7 +720,9 @@ class TmuxController:
             return nav_pane_id, content_pane_id
         if nav_pane_id is None or nav_pane_id == content_pane_id:
             self._kill_border_panes(window_id, BORDER_ROLES, snapshot)
-            nav_pane_id = self._split_nav_pane(content_pane_id)
+            nav_pane_id = self._split_nav_pane(content_pane_id, check=False)
+            if nav_pane_id is None:
+                return None, None
         if self._kill_duplicate_managed_panes(window_id, {nav_pane_id, content_pane_id}, snapshot):
             self._kill_border_panes(window_id, BORDER_ROLES, snapshot)
         self._configure_native_panes(window_id, nav_pane_id, content_pane_id)
@@ -768,17 +784,26 @@ class TmuxController:
         self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
         self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
 
-    def _ensure_window_frame(self, window_id: str, snapshot: TmuxSnapshot) -> None:
+    def _ensure_window_frame(self, window_id: str, snapshot: TmuxSnapshot) -> bool:
+        changed = False
         self._install_window_options(window_id)
         window = snapshot.window(window_id)
         if not window or window.frame_version != FRAME_LAYOUT_VERSION:
             self._kill_border_panes(window_id, BORDER_ROLES, snapshot)
             self._set_window_option(window_id, FRAME_VERSION_OPTION, FRAME_LAYOUT_VERSION)
+            snapshot = self._snapshot()
+            changed = True
         nav_pane_id, content_pane_id = self._window_panes_from_snapshot(window_id, snapshot)
         if nav_pane_id:
-            self._ensure_pane_frame(window_id, nav_pane_id, NAV_PANE_TITLE, snapshot)
+            changed = (
+                self._ensure_pane_frame(window_id, nav_pane_id, NAV_PANE_TITLE, snapshot) or changed
+            )
         if content_pane_id:
-            self._ensure_pane_frame(window_id, content_pane_id, CODEX_PANE_TITLE, snapshot)
+            changed = (
+                self._ensure_pane_frame(window_id, content_pane_id, CODEX_PANE_TITLE, snapshot)
+                or changed
+            )
+        return changed
 
     def _resize_nav_frame(
         self,
@@ -828,21 +853,30 @@ class TmuxController:
 
     def _ensure_pane_frame(
         self, window_id: str, content_pane_id: str, role: str, snapshot: TmuxSnapshot
-    ) -> None:
+    ) -> bool:
         expected_roles = {f"{role}_{suffix}" for suffix in BORDER_SUFFIXES}
         border_panes = self._border_panes(window_id, snapshot)
         existing_roles = set(border_panes.values()) & expected_roles
         if existing_roles == expected_roles and not self._frame_needs_rebuild(
             border_panes, expected_roles, snapshot
         ):
-            return
+            return False
+        changed = False
         if existing_roles:
             self._kill_border_panes(window_id, expected_roles, snapshot)
+            changed = True
 
         pane = snapshot.panes.get(content_pane_id)
         width, height = (pane.width, pane.height) if pane else self.pane_size(content_pane_id)
+        if role == NAV_PANE_TITLE and height < 5:
+            self._tmux(
+                ["resize-pane", "-t", content_pane_id, "-y", DEFAULT_NAV_FRAME_HEIGHT],
+                check=False,
+            )
+            width, height = self.pane_size(content_pane_id)
+            changed = True
         if width < 12 or height < 5:
-            return
+            return changed
 
         side_width = str(FRAME_SIDE_WIDTH)
         self._create_border_pane(content_pane_id, f"{role}_LEFT", ["-h", "-b", "-l", side_width])
@@ -850,6 +884,7 @@ class TmuxController:
         edge_size = str(FRAME_EDGE_SIZE)
         self._create_border_pane(content_pane_id, f"{role}_TOP", ["-v", "-b", "-l", edge_size])
         self._create_border_pane(content_pane_id, f"{role}_BOTTOM", ["-v", "-l", edge_size])
+        return True
 
     def _frame_needs_rebuild(
         self, border_panes: dict[str, str], roles: set[str], snapshot: TmuxSnapshot
@@ -870,8 +905,10 @@ class TmuxController:
             if role in roles:
                 self._tmux(["kill-pane", "-t", pane_id], check=False)
 
-    def _create_border_pane(self, target_pane_id: str, role: str, split_args: list[str]) -> str:
-        pane_id = self._tmux(
+    def _create_border_pane(
+        self, target_pane_id: str, role: str, split_args: list[str]
+    ) -> str | None:
+        result = _run_tmux(
             [
                 "split-window",
                 "-d",
@@ -882,8 +919,14 @@ class TmuxController:
                 "-t",
                 target_pane_id,
                 self._frame_pane_shell_command(),
-            ]
-        ).strip()
+            ],
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        pane_id = result.stdout.strip()
+        if not pane_id:
+            return None
         self._set_pane_role(pane_id, role)
         self._set_pane_title(pane_id, role)
         return pane_id
@@ -1009,7 +1052,14 @@ class TmuxController:
             check=False,
         )
         self._tmux(["clear-history", "-t", pane_id], check=False)
-        self._set_pane_option(pane_id, FRAME_HOST_OPTION, FRAME_HOST_VERSION)
+        self._wait_for_frame_pane_ready(pane_id)
+
+    def _wait_for_frame_pane_ready(self, pane_id: str) -> None:
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            if self._pane_option(pane_id, FRAME_HOST_OPTION) == FRAME_HOST_VERSION:
+                return
+            time.sleep(0.01)
 
     def _render_frame_pane(self, pane_id: str, content: str, snapshot: TmuxSnapshot) -> None:
         self._ensure_frame_pane(pane_id, snapshot)
@@ -1061,23 +1111,30 @@ class TmuxController:
         self._configure_native_panes(window_id, nav_pane_id, content_pane_id)
         return CreatedWindow(window_id, content_pane_id, nav_pane_id)
 
-    def _split_nav_pane(self, content_pane_id: str) -> str:
-        nav_pane_id = self._tmux(
-            [
-                "split-window",
-                "-d",
-                "-v",
-                "-b",
-                "-l",
-                DEFAULT_NAV_FRAME_HEIGHT,
-                "-P",
-                "-F",
-                "#{pane_id}",
-                "-t",
-                content_pane_id,
-                self._frame_pane_shell_command(),
-            ]
-        ).strip()
+    def _split_nav_pane(self, content_pane_id: str, *, check: bool = True) -> str | None:
+        command = [
+            "split-window",
+            "-d",
+            "-v",
+            "-b",
+            "-l",
+            DEFAULT_NAV_FRAME_HEIGHT,
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            content_pane_id,
+            self._frame_pane_shell_command(),
+        ]
+        result = _run_tmux(command, check=check)
+        if isinstance(result, str):
+            nav_pane_id = result.strip()
+        else:
+            if result.returncode != 0:
+                return None
+            nav_pane_id = result.stdout.strip()
+        if not nav_pane_id:
+            return None
         self._tmux(["resize-pane", "-t", nav_pane_id, "-y", DEFAULT_NAV_FRAME_HEIGHT], check=False)
         return nav_pane_id
 
@@ -1170,7 +1227,7 @@ class TmuxController:
         return "sh -lc 'stty -echo -icanon min 0 time 0 2>/dev/null; exec sleep 2147483647'"
 
     def _frame_pane_shell_command(self) -> str:
-        return codux_cli_shell_command("_frame-pane")
+        return f"stty -echo 2>/dev/null || true; exec {codux_cli_shell_command('_frame-pane')}"
 
     def _nav_shell_command(self, pane_id: str) -> str:
         return f"env TMUX_PANE={shlex.quote(pane_id)} {codux_cli_shell_command('_nav-pane')}"
@@ -1178,16 +1235,19 @@ class TmuxController:
     def _empty_shell_command(self) -> str:
         return self._frame_pane_shell_command()
 
-    def _empty_content(self) -> str:
+    def _empty_content(
+        self, pane_id: str | None = None, snapshot: TmuxSnapshot | None = None
+    ) -> str:
         from codux.render import render_empty_state
 
-        return render_empty_state()
+        pane = snapshot.panes.get(pane_id) if pane_id and snapshot else None
+        return render_empty_state(pane.width if pane else None, pane.height if pane else None)
 
     def _loading_shell_command(self) -> str:
         return codux_cli_shell_command("_loading-pane")
 
     def _codex_shell_command(self, config: CoduxConfig) -> str:
-        return f"exec {config.codex_command}"
+        return f"unset NO_COLOR; exec {config.codex_command}"
 
     def _codux_cli_command(self) -> str:
         return codux_cli_shell_command()
@@ -1369,6 +1429,9 @@ class TmuxController:
     def _set_pane_option(self, pane_id: str, option: str, value: str) -> None:
         self._tmux(["set-option", "-p", "-t", pane_id, option, value], check=False)
 
+    def _pane_option(self, pane_id: str, option: str) -> str:
+        return self._tmux(["show-option", "-p", "-qv", "-t", pane_id, option], check=False).strip()
+
     def _unset_pane_option(self, pane_id: str, option: str) -> None:
         self._tmux(["set-option", "-p", "-u", "-t", pane_id, option], check=False)
 
@@ -1391,8 +1454,6 @@ class TmuxController:
         for name in TERMINAL_ENV_PASSTHROUGH:
             if value := os.environ.get(name):
                 self._tmux(["set-environment", "-t", self.session_name, name, value])
-            else:
-                self._tmux(["set-environment", "-t", self.session_name, "-u", name], check=False)
 
     def _tmux(self, args: list[str], check: bool = True) -> str:
         result = _run_tmux(args, check=check)

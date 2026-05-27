@@ -228,6 +228,70 @@ def test_focus_window_is_best_effort_when_runtime_is_unavailable(monkeypatch):
     cli_module.focus_window_command("@missing", "nav")
 
 
+def test_finish_close_last_tab_renders_empty_before_killing_old_window(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState(focus="nav"))
+    events: list[tuple[str, object]] = []
+
+    class FakeTmux:
+        def ensure_empty_window(self, config):
+            events.append(("ensure-empty", None))
+            return "@empty"
+
+        def refresh_window_frame_panes(self, config, state, window_id):
+            events.append(("refresh-window", window_id))
+
+        def select_window(self, window_id):
+            events.append(("select-window", window_id))
+
+        def nav_pane_for_window(self, window_id):
+            events.append(("nav-pane", window_id))
+            return "%nav"
+
+        def select_pane(self, pane_id):
+            events.append(("select-pane", pane_id))
+
+        def kill_window(self, window_id):
+            events.append(("kill-window", window_id))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+
+    cli_module.finish_close_window_command("@old")
+
+    assert events == [
+        ("ensure-empty", None),
+        ("refresh-window", "@empty"),
+        ("select-window", "@empty"),
+        ("nav-pane", "@empty"),
+        ("select-pane", "%nav"),
+        ("kill-window", "@old"),
+    ]
+
+
+def test_frame_pane_marks_tmux_pane_ready(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setenv("TMUX_PANE", "%1")
+
+    def fake_run(args, **kwargs):
+        calls.append(tuple(args))
+
+    monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
+
+    cli_module._mark_frame_pane_ready()
+
+    assert calls == [
+        (
+            "tmux",
+            "set-option",
+            "-p",
+            "-t",
+            "%1",
+            cli_module.FRAME_HOST_OPTION,
+            cli_module.FRAME_HOST_VERSION,
+        )
+    ]
+
+
 def test_rename_active_tab_updates_state_and_tmux(monkeypatch, tmp_path):
     store = StateStore(tmp_path / "state.json")
     active = tab("active")

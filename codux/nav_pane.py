@@ -190,7 +190,7 @@ class NavPane:
         next_tab = updated.active_tab
         if next_tab is not None:
             self.select_nav_for_window(next_tab.tmux_window_id)
-            self.skip_next_render = True
+        self.skip_next_render = True
         self.run_cli_async("_finish-close-window", target.tmux_window_id)
 
     def new_tab(self) -> None:

@@ -127,3 +127,28 @@ def test_move_column_refreshes_frame_before_redraw(tmp_path):
         ("refresh-async", True),
     ]
     assert pane.skip_next_render
+
+
+def test_close_last_tab_skips_redrawing_closing_nav_pane(tmp_path):
+    config = CoduxConfig()
+    active = tab("active")
+    state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
+    store = StateStore(tmp_path / "state.json")
+    store.write(state)
+    events: list[tuple[str, str]] = []
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = config
+    pane.store = store
+    pane.state = state
+    pane.tmux = object()
+    pane.skip_next_render = False
+    pane.current_state_for_input = lambda: store.read()
+    pane.select_nav_for_window = lambda window_id: events.append(("select", window_id))
+    pane.run_cli_async = lambda *args: events.append(("run", " ".join(args)))
+
+    pane.close_active_tab()
+
+    assert store.read() == AppState(tabs=[], active_tab_id=None, focus="nav")
+    assert pane.skip_next_render
+    assert events == [("run", f"_finish-close-window {active.tmux_window_id}")]

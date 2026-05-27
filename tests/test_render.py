@@ -9,6 +9,7 @@ from codux.render import (
     nav_content_height,
     nav_shortcuts,
     render_bottom_border,
+    render_empty_state,
     render_left_border,
     render_nav,
     render_right_border,
@@ -52,6 +53,17 @@ def test_render_nav_keeps_padding_when_empty():
 
     assert plain_lines[0].startswith("  INBOX")
     assert plain_lines[1].startswith("  ")
+
+
+def test_render_empty_state_centers_in_available_pane():
+    rendered = render_empty_state(width=30, height=6)
+
+    assert rendered.splitlines() == [
+        "",
+        "",
+        "    No Codex sessions open",
+        "    Press n to create one.",
+    ]
 
 
 def test_render_nav_highlights_active_tab_without_marker():
