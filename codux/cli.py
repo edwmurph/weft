@@ -234,12 +234,13 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
         )
 
     state = store.update(mutate)
-    tmux.remove_empty_windows()
     tmux.refresh_window_frame_panes(config, state, tab.tmux_window_id)
     tmux.select_window(tab.tmux_window_id)
     tmux.select_pane(created.content_pane_id)
+    tmux.refresh_window_frame_colors(config, state, tab.tmux_window_id)
     tmux.prepare_spare_window_async()
     refresh_runtime_async()
+    tmux.remove_empty_windows()
     console.print(f"Created [bold]{tab.title}[/bold].")
 
 

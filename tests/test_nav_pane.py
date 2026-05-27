@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shlex
+from types import SimpleNamespace
 
 import codux.nav_pane as nav_pane_module
 from codux.config import CoduxConfig
@@ -152,3 +153,70 @@ def test_close_last_tab_skips_redrawing_closing_nav_pane(tmp_path):
     assert store.read() == AppState(tabs=[], active_tab_id=None, focus="nav")
     assert pane.skip_next_render
     assert events == [("run", f"_finish-close-window {active.tmux_window_id}")]
+
+
+def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
+    config = CoduxConfig()
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState(focus="nav"))
+    events: list[tuple[str, object]] = []
+    frame_states: list[AppState] = []
+    color_states: list[AppState] = []
+
+    class FakeTmux:
+        def claim_spare_tab_window(self, config_arg, state_arg, title, tab_id):
+            return SimpleNamespace(
+                window_id="@new",
+                content_pane_id="%content",
+                nav_pane_id="%nav",
+            )
+
+        def remove_empty_windows(self):
+            events.append(("remove-empty", True))
+
+        def refresh_window_frame_panes(self, config_arg, state_arg, window_id):
+            events.append(("frame", window_id))
+            frame_states.append(state_arg)
+
+        def select_window(self, window_id):
+            events.append(("window", window_id))
+
+        def select_pane(self, pane_id):
+            events.append(("pane", pane_id))
+
+        def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
+            events.append(("colors", window_id))
+            color_states.append(state_arg)
+
+        def prepare_spare_window_async(self):
+            events.append(("prepare-spare", True))
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = config
+    pane.store = store
+    pane.state = store.read()
+    pane.tmux = FakeTmux()
+    pane.pane_id = "%nav"
+    pane.window_id = "@old"
+    pane.refresh_nav_pane_cache = lambda: events.append(("refresh-cache", True))
+    pane.refresh_static_panes_async = lambda: events.append(("refresh-async", True))
+    pane.render_snapshot = lambda state: events.append(("snapshot-focus", state.focus))
+
+    pane.new_tab()
+
+    state = store.read()
+    assert state.active_tab is not None
+    assert state.focus == "codex"
+    assert frame_states[-1].focus == "codex"
+    assert color_states[-1].focus == "codex"
+    assert events == [
+        ("snapshot-focus", "codex"),
+        ("frame", "@new"),
+        ("refresh-cache", True),
+        ("window", "@new"),
+        ("pane", "%content"),
+        ("colors", "@new"),
+        ("prepare-spare", True),
+        ("refresh-async", True),
+        ("remove-empty", True),
+    ]

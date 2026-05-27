@@ -10,7 +10,7 @@
 ## Git / Worktrees
 
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
-- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change, e.g. `cd /abs/path/to/repo/.worktrees/<slug> && <command>`.
+- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `uv --directory /abs/path/to/repo/.worktrees/<slug> --project /abs/path/to/repo/.worktrees/<slug> run python -m codux.cli start`; a `git diff` command alone is not enough. Do not use root-relative `--project .worktrees/<slug>` together with `--directory .worktrees/<slug>` because uv resolves `--project` after applying `--directory`.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".
 
@@ -23,4 +23,4 @@
 
 ## Dashboard Runtime Commands
 
-- Dashboard/internal Codux commands must not shell through `cd`; use `uv --directory <repo-root> --project <repo-root> run python -m codux.cli ...` so the repo root and uv project path are explicit.
+- Dashboard/internal Codux commands must not shell through `cd`; use `uv --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run python -m codux.cli ...` so the repo root and uv project path are explicit and valid from any current directory.

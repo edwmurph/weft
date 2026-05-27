@@ -157,6 +157,7 @@ def test_new_focuses_codex_pane(monkeypatch, tmp_path):
     store.write(AppState())
     events: list[tuple[str, str]] = []
     refreshed: list[AppState] = []
+    color_refreshed: list[AppState] = []
 
     class FakeTmux:
         def has_session(self):
@@ -173,10 +174,14 @@ def test_new_focuses_codex_pane(monkeypatch, tmp_path):
             )
 
         def remove_empty_windows(self):
-            pass
+            events.append(("remove-empty", ""))
 
         def refresh_window_frame_panes(self, config, state, window_id):
             refreshed.append(state)
+
+        def refresh_window_frame_colors(self, config, state, window_id):
+            events.append(("colors", window_id))
+            color_refreshed.append(state)
 
         def select_window(self, window_id):
             events.append(("window", window_id))
@@ -198,7 +203,13 @@ def test_new_focuses_codex_pane(monkeypatch, tmp_path):
     assert state.focus == "codex"
     assert state.active_tab.tmux_pane_id == "%content"
     assert refreshed[-1].focus == "codex"
-    assert events == [("window", "@new"), ("pane", "%content")]
+    assert color_refreshed[-1].focus == "codex"
+    assert events == [
+        ("window", "@new"),
+        ("pane", "%content"),
+        ("colors", "@new"),
+        ("remove-empty", ""),
+    ]
 
 
 def test_focus_window_ignores_frame_refresh_race(monkeypatch, tmp_path):

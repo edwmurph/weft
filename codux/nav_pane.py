@@ -228,13 +228,14 @@ class NavPane:
             return AppState(tabs=[*current.tabs, tab], active_tab_id=tab.id, focus="codex")
 
         self.state = self.store.update(mutate)
-        self.tmux.remove_empty_windows()
         self.tmux.refresh_window_frame_panes(self.config, self.state, tab.tmux_window_id)
         self.refresh_nav_pane_cache()
         self.tmux.select_window(tab.tmux_window_id)
         self.tmux.select_pane(created.content_pane_id)
+        self.tmux.refresh_window_frame_colors(self.config, self.state, tab.tmux_window_id)
         self.tmux.prepare_spare_window_async()
         self.refresh_static_panes_async()
+        self.tmux.remove_empty_windows()
 
     def select_nav_for_window(self, window_id: str) -> None:
         pane_id = self.nav_panes_by_window.get(window_id)
