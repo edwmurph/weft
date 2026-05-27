@@ -6,7 +6,11 @@ import subprocess
 import sys
 import time
 import uuid
+import base64
+import fcntl
+import termios
 from dataclasses import replace
+from functools import wraps
 from pathlib import Path
 
 import typer
@@ -16,7 +20,7 @@ from rich.table import Table
 from codux.config import ConfigError, CoduxConfig, config_path, ensure_config
 from codux.navigation import select_grid_tab
 from codux.nav_pane import run_nav_pane
-from codux.render import render_empty_state, render_help, render_nav, write_render_files
+from codux.render import render_empty_state, render_help, render_nav
 from codux.state import (
     AppState,
     FocusTarget,
@@ -46,6 +50,22 @@ def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
     store = StateStore()
     store.ensure()
     return config, store, TmuxController(config.tmux_session)
+
+
+def _with_runtime_lock(fn):
+    lock_path = state_path().with_suffix(".runtime.lock")
+
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "w", encoding="utf-8") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return None
+            return fn(*args, **kwargs)
+
+    return wrapped
 
 
 def repair_and_render(
@@ -92,7 +112,6 @@ def repair_and_render(
 
 
 def render_runtime(config: CoduxConfig, state: AppState, tmux: TmuxController) -> None:
-    write_render_files(config, state)
     if tmux.has_session():
         tmux.refresh_static_panes(config, state)
 
@@ -269,7 +288,6 @@ def rename_active_tab(title: str) -> AppState:
     state = store.update(mutate)
     tmux.rename_window(target.tmux_window_id, title)
     tmux.set_pane_title(target.tmux_pane_id, title)
-    write_render_files(config, state)
     refresh_runtime_async()
     return state
 
@@ -612,6 +630,7 @@ def write_terminal_control(sequence: str) -> None:
 
 
 @app.command("_activate-window", hidden=True)
+@_with_runtime_lock
 def activate_window_command(window_id: str) -> None:
     _, store, _ = load_runtime()
 
@@ -625,6 +644,7 @@ def activate_window_command(window_id: str) -> None:
 
 
 @app.command("_focus-window", hidden=True)
+@_with_runtime_lock
 def focus_window_command(window_id: str, focus: FocusTarget) -> None:
     try:
         config, store, tmux = load_runtime()
@@ -676,6 +696,42 @@ def loading_pane_command() -> None:
         return
 
 
+@app.command("_frame-pane", hidden=True)
+def frame_pane_command() -> None:
+    stdin_fd = sys.stdin.fileno()
+    old_termios = _disable_stdin_echo(stdin_fd) if sys.stdin.isatty() else None
+    try:
+        for raw in sys.stdin.buffer:
+            try:
+                line = raw.decode("utf-8", errors="ignore").strip()
+            except Exception:
+                continue
+            if not line.startswith("CODUX_FRAME:"):
+                continue
+            payload = line.removeprefix("CODUX_FRAME:")
+            try:
+                decoded = base64.b64decode(payload.encode("ascii"), validate=False)
+                content = decoded.decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            console.file.write("\033[?25l\033[2J\033[H")
+            console.file.write(content)
+            console.file.flush()
+    except KeyboardInterrupt:
+        return
+    finally:
+        if old_termios is not None:
+            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_termios)
+
+
+def _disable_stdin_echo(fd: int):
+    old_attrs = termios.tcgetattr(fd)
+    new_attrs = [*old_attrs]
+    new_attrs[3] = new_attrs[3] & ~termios.ECHO
+    termios.tcsetattr(fd, termios.TCSADRAIN, new_attrs)
+    return old_attrs
+
+
 def refresh_runtime_async() -> None:
     subprocess.Popen(
         [sys.executable, "-m", "codux.cli", "_refresh"],
@@ -706,6 +762,7 @@ def read_single_key() -> str:
 
 
 @app.command("_refresh", hidden=True)
+@_with_runtime_lock
 def refresh_command() -> None:
     config, store, tmux = load_runtime()
     repair_and_render(config, store, tmux)

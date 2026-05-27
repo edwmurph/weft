@@ -19,10 +19,11 @@ from codux.config import ensure_config
 from codux.navigation import select_grid_tab
 from codux.render import render_nav
 from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
+from codux.theme import Theme
 from codux.tmux import TmuxController
 
 
-RESET = "\033[0m"
+RESET = Theme().reset
 HIDE_CURSOR = "\033[?25l"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 POPUP_STYLE = "fg=default,bg=default"

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import inspect
+import io
 import shlex
 from types import SimpleNamespace
 
@@ -8,6 +11,7 @@ from codux.cli import is_transient_codex_title, repair_and_render
 from codux.config import CoduxConfig
 from codux.state import AppState, StateStore, Tab, now_iso, state_after_closing_tab
 from codux.tmux import TmuxError
+from rich.console import Console
 
 
 def tab(tab_id: str) -> Tab:
@@ -33,6 +37,15 @@ def test_codux_command_runs_from_project_root(monkeypatch):
         f"cd {shlex.quote(str(cli_module.PROJECT_ROOT))} && "
         f"{shlex.quote('/tmp/codux python')} -m codux.cli"
     )
+
+
+def test_runtime_lock_preserves_hidden_command_signatures():
+    assert list(inspect.signature(cli_module.refresh_command).parameters) == []
+    assert list(inspect.signature(cli_module.activate_window_command).parameters) == ["window_id"]
+    assert list(inspect.signature(cli_module.focus_window_command).parameters) == [
+        "window_id",
+        "focus",
+    ]
 
 
 def test_state_after_closing_active_tab_selects_neighbor():
@@ -67,6 +80,44 @@ def test_transient_codex_titles_are_ignored():
     assert not is_transient_codex_title("Implement auth flow")
 
 
+def test_frame_pane_does_not_append_trailing_newline(monkeypatch):
+    class FakeStdin:
+        def __init__(self, data: bytes) -> None:
+            self.buffer = io.BytesIO(data)
+
+        def fileno(self) -> int:
+            return 0
+
+        def isatty(self) -> bool:
+            return False
+
+    output = io.StringIO()
+    payload = base64.b64encode(b"abc").decode("ascii")
+
+    monkeypatch.setattr(cli_module.sys, "stdin", FakeStdin(f"CODUX_FRAME:{payload}\n".encode()))
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.frame_pane_command()
+
+    assert output.getvalue() == "\033[?25l\033[2J\033[Habc"
+
+
+def test_frame_pane_disables_terminal_echo(monkeypatch):
+    calls: list[tuple[str, object]] = []
+    old_attrs = [1, 2, 3, cli_module.termios.ECHO | 0x100, 5, 6]
+
+    monkeypatch.setattr(cli_module.termios, "tcgetattr", lambda fd: old_attrs)
+    monkeypatch.setattr(
+        cli_module.termios,
+        "tcsetattr",
+        lambda fd, when, attrs: calls.append(("set", attrs)),
+    )
+
+    assert cli_module._disable_stdin_echo(10) == old_attrs
+
+    assert calls == [("set", [1, 2, 3, 0x100, 5, 6])]
+
+
 def test_repair_and_render_recovers_live_tmux_tabs(monkeypatch, tmp_path):
     recovered = tab("live").with_updates(title="Recovered")
     refreshed: list[AppState] = []
@@ -93,7 +144,6 @@ def test_repair_and_render_recovers_live_tmux_tabs(monkeypatch, tmp_path):
         def refresh_static_panes(self, config, state):
             refreshed.append(state)
 
-    monkeypatch.setattr("codux.cli.write_render_files", lambda config, state: None)
     store = StateStore(tmp_path / "state.json")
     store.write(AppState())
 
@@ -194,11 +244,6 @@ def test_rename_active_tab_updates_state_and_tmux(monkeypatch, tmp_path):
             events.append(("set-pane-title", pane_id, title))
 
     monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
-    monkeypatch.setattr(
-        cli_module,
-        "write_render_files",
-        lambda config, state: events.append(("render", state)),
-    )
     monkeypatch.setattr(cli_module, "refresh_runtime_async", lambda: None)
 
     state = cli_module.rename_active_tab("Renamed")
@@ -209,5 +254,4 @@ def test_rename_active_tab_updates_state_and_tmux(monkeypatch, tmp_path):
     assert events == [
         ("rename-window", active.tmux_window_id, "Renamed"),
         ("set-pane-title", active.tmux_pane_id, "Renamed"),
-        ("render", state),
     ]

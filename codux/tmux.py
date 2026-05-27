@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import os
-import re
 import shlex
 import shutil
 import subprocess
 import sys
+import base64
 from dataclasses import dataclass
 from pathlib import Path
 
-from codux.config import CoduxConfig, render_dir
+from codux.config import CoduxConfig
 from codux.navigation import select_grid_tab
 from codux.render import (
     codex_shortcuts,
@@ -19,22 +19,22 @@ from codux.render import (
     render_left_border,
     render_right_border,
     render_top_border,
-    write_render_files,
 )
 from codux.state import AppState, Tab, now_iso
+from codux.tmux_api import TmuxError  # noqa: F401
+from codux.tmux_api import run_tmux
+from codux.tmux_snapshot import TmuxSnapshot, fetch_snapshot
 
 
 EMPTY_WINDOW_OPTION = "@codux-empty"
 SPARE_WINDOW_OPTION = "@codux-spare"
 TAB_ID_OPTION = "@codux-tab-id"
-LEGACY_HOST_PANE_OPTION = "@codux-host"
 NAV_HOST_OPTION = "@codux-nav-host"
 NAV_HOST_VERSION = "13"
-STATIC_HOST_OPTION = "@codux-static-host"
-STATIC_HOST_VERSION = "2"
+FRAME_HOST_OPTION = "@codux-frame-host"
+FRAME_HOST_VERSION = "3"
 CODEX_PANE_TITLE = "CODEX"
 NAV_PANE_TITLE = "NAV"
-OLD_NAV_PANE_TITLE = "Codux Nav"
 FRAME_EDGE_SIZE = 1
 FRAME_SIDE_WIDTH = 3
 FRAME_LAYOUT_VERSION = "6"
@@ -65,11 +65,6 @@ TERMINAL_ENV_PASSTHROUGH = (
     "TERM_PROGRAM",
     "TERM_PROGRAM_VERSION",
 )
-ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
-
-
-class TmuxError(RuntimeError):
-    """Raised when a tmux command fails."""
 
 
 @dataclass(frozen=True)
@@ -89,10 +84,10 @@ class TmuxController:
 
     @staticmethod
     def version_text() -> str:
-        return _run_tmux(["-V"]).strip()
+        return run_tmux(["-V"]).strip()
 
     def has_session(self) -> bool:
-        result = _run_tmux(["has-session", "-t", self.session_name], check=False)
+        result = run_tmux(["has-session", "-t", self.session_name], check=False)
         return result.returncode == 0
 
     def ensure_session(self, config: CoduxConfig) -> None:
@@ -109,7 +104,8 @@ class TmuxController:
         self._install_terminal_options()
         self._install_session_environment()
         self._tmux(["set-option", "-t", self.session_name, "status", "off"])
-        for window_id, _ in self._codux_windows():
+        snapshot = self._snapshot()
+        for window_id, _ in self._codux_windows(snapshot):
             self._install_window_options(window_id)
         self.repair_window_sizes()
         self._install_hooks(codux_command)
@@ -316,7 +312,7 @@ class TmuxController:
     def window_exists(self, window_id: str) -> bool:
         if not window_id:
             return False
-        result = _run_tmux(
+        result = run_tmux(
             ["list-windows", "-t", self.session_name, "-F", "#{window_id}"],
             check=False,
         )
@@ -327,7 +323,7 @@ class TmuxController:
     def pane_exists(self, pane_id: str) -> bool:
         if not pane_id:
             return False
-        result = _run_tmux(
+        result = run_tmux(
             ["list-panes", "-s", "-t", self.session_name, "-F", "#{pane_id}"],
             check=False,
         )
@@ -351,7 +347,7 @@ class TmuxController:
         self._set_pane_title(pane_id, title)
 
     def pane_title(self, pane_id: str) -> str | None:
-        result = _run_tmux(["display-message", "-p", "-t", pane_id, "#{pane_title}"], check=False)
+        result = run_tmux(["display-message", "-p", "-t", pane_id, "#{pane_title}"], check=False)
         if result.returncode != 0:
             return None
         return result.stdout.strip()
@@ -360,7 +356,7 @@ class TmuxController:
         self._tmux(["detach-client", "-s", self.session_name], check=False)
 
     def active_pane_id(self) -> str | None:
-        result = _run_tmux(
+        result = run_tmux(
             ["display-message", "-p", "-t", self.session_name, "#{pane_id}"],
             check=False,
         )
@@ -369,7 +365,7 @@ class TmuxController:
         return result.stdout.strip()
 
     def active_window_id(self) -> str | None:
-        result = _run_tmux(
+        result = run_tmux(
             ["display-message", "-p", "-t", self.session_name, "#{window_id}"],
             check=False,
         )
@@ -377,41 +373,61 @@ class TmuxController:
             return None
         return result.stdout.strip()
 
-    def nav_pane_for_window(self, window_id: str) -> str | None:
-        pane_option = self._window_option(window_id, "@codux-nav-pane")
-        if pane_option and self.pane_exists(pane_option):
-            return pane_option
-        panes = self._tmux(
-            ["list-panes", "-t", window_id, "-F", "#{pane_id}\t#{@codux-role}\t#{pane_title}"],
-            check=False,
+    def _snapshot(self) -> TmuxSnapshot:
+        return fetch_snapshot(
+            self._tmux,
+            session_name=self.session_name,
+            empty_window_option=EMPTY_WINDOW_OPTION,
+            spare_window_option=SPARE_WINDOW_OPTION,
+            tab_id_option=TAB_ID_OPTION,
+            frame_version_option=FRAME_VERSION_OPTION,
+            nav_host_option=NAV_HOST_OPTION,
+            frame_host_option=FRAME_HOST_OPTION,
         )
-        for line in panes.splitlines():
-            pane_id, _, rest = line.partition("\t")
-            role, _, title = rest.partition("\t")
-            if role == NAV_PANE_TITLE or title in {NAV_PANE_TITLE, OLD_NAV_PANE_TITLE}:
-                return pane_id
+
+    def nav_pane_for_window(self, window_id: str) -> str | None:
+        snapshot = self._snapshot()
+        return self._nav_pane_for_window_from_snapshot(window_id, snapshot)
+
+    def _nav_pane_for_window_from_snapshot(
+        self, window_id: str, snapshot: TmuxSnapshot
+    ) -> str | None:
+        window = snapshot.window(window_id)
+        panes = snapshot.window_panes(window_id)
+        pane_ids = {pane.pane_id for pane in panes}
+        if window and window.nav_pane_configured in pane_ids:
+            return window.nav_pane_configured
+        for pane in panes:
+            if pane.role == NAV_PANE_TITLE or pane.title == NAV_PANE_TITLE:
+                return pane.pane_id
         return None
 
     def content_pane_for_window(self, window_id: str) -> str | None:
-        pane_option = self._window_option(window_id, "@codux-codex-pane")
-        if pane_option and self.pane_exists(pane_option):
-            return pane_option
-        panes = self._tmux(
-            ["list-panes", "-t", window_id, "-F", "#{pane_id}\t#{@codux-role}\t#{pane_title}"],
-            check=False,
-        )
-        for line in panes.splitlines():
-            pane_id, _, rest = line.partition("\t")
-            role, _, title = rest.partition("\t")
-            if role == CODEX_PANE_TITLE or (
-                role not in {NAV_PANE_TITLE, *BORDER_ROLES}
-                and title not in {NAV_PANE_TITLE, OLD_NAV_PANE_TITLE}
-            ):
-                return pane_id
+        snapshot = self._snapshot()
+        return self._content_pane_for_window_from_snapshot(window_id, snapshot)
+
+    def _content_pane_for_window_from_snapshot(
+        self, window_id: str, snapshot: TmuxSnapshot
+    ) -> str | None:
+        window = snapshot.window(window_id)
+        panes = snapshot.window_panes(window_id)
+        pane_ids = {pane.pane_id for pane in panes}
+        if window and window.codex_pane_configured in pane_ids:
+            configured = window.codex_pane_configured
+            if configured and configured != window.nav_pane_configured:
+                return configured
+        nav_pane_id = window.nav_pane_configured if window else ""
+        for pane in panes:
+            if pane.role == CODEX_PANE_TITLE and pane.pane_id != nav_pane_id:
+                return pane.pane_id
+        for pane in panes:
+            if pane.role not in {NAV_PANE_TITLE, *BORDER_ROLES} and pane.title != NAV_PANE_TITLE:
+                return pane.pane_id
         return None
 
     def _ensure_empty_window_titles(self, window_id: str) -> None:
-        nav_pane_id, content_pane_id = self._ensure_native_window(window_id)
+        snapshot = self._snapshot()
+        nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
         if nav_pane_id:
             self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
         if content_pane_id:
@@ -425,36 +441,49 @@ class TmuxController:
         if not self.has_session():
             return
         self.repair_window_sizes()
+        snapshot = self._snapshot()
         if config is not None and state is not None:
-            write_render_files(config, state)
-            self._refresh_navigation_targets(config, state)
-        for window_id, is_empty in self._codux_windows():
-            nav_pane_id, content_pane_id = self._ensure_native_window(window_id)
+            self._refresh_navigation_targets(config, state, snapshot)
+        for window_id, is_empty in self._codux_windows(snapshot):
+            nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
             if nav_pane_id and content_pane_id:
-                self._ensure_window_frame(window_id)
+                self._ensure_window_frame(window_id, snapshot)
             if nav_pane_id:
-                self._ensure_nav_interactive_pane(nav_pane_id)
+                self._ensure_nav_interactive_pane(nav_pane_id, snapshot)
                 if config is not None and state is not None:
                     self._resize_nav_frame(
                         window_id,
                         nav_pane_id,
                         nav_content_height(config, state),
+                        snapshot,
                     )
             if content_pane_id:
                 self._set_window_option(window_id, "@codux-codex-pane", content_pane_id)
                 self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
-                self._unset_pane_option(content_pane_id, LEGACY_HOST_PANE_OPTION)
                 if is_empty:
-                    self._ensure_static_pane(content_pane_id, render_dir() / "empty.txt")
                     self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
+                    self._render_frame_pane(content_pane_id, self._empty_content(), snapshot)
                 elif config is not None and self._pane_needs_codex_respawn(
                     window_id,
                     content_pane_id,
+                    snapshot,
                 ):
                     self._respawn_codex_pane(config, content_pane_id)
             if config is not None and state is not None:
-                for pane_id, role in self._border_panes(window_id).items():
-                    self._refresh_border_pane(config, window_id, pane_id, role, state)
+                for pane_id, role in self._border_panes(window_id, snapshot).items():
+                    pane = snapshot.panes.get(pane_id)
+                    if pane is None:
+                        continue
+                    self._refresh_border_pane(
+                        config,
+                        window_id,
+                        pane_id,
+                        role,
+                        state,
+                        width=pane.width,
+                        height=pane.height,
+                        snapshot=snapshot,
+                    )
 
     def refresh_frame_panes(self, config: CoduxConfig, state: AppState) -> None:
         self.refresh_static_panes(config, state)
@@ -467,17 +496,32 @@ class TmuxController:
     ) -> None:
         if not self.has_session() or not self.window_exists(window_id):
             return
-        nav_pane_id, content_pane_id = self._ensure_native_window(window_id)
+        snapshot = self._snapshot()
+        nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
         if nav_pane_id and content_pane_id:
-            self._ensure_window_frame(window_id)
+            self._ensure_window_frame(window_id, snapshot)
         if nav_pane_id:
-            self._ensure_nav_interactive_pane(nav_pane_id)
-            self._resize_nav_frame(window_id, nav_pane_id, nav_content_height(config, state))
-        write_render_files(config, state)
-        if content_pane_id and self._window_option(window_id, EMPTY_WINDOW_OPTION) == "1":
-            self._ensure_static_pane(content_pane_id, render_dir() / "empty.txt")
-        for pane_id, role in self._border_panes(window_id).items():
-            self._refresh_border_pane(config, window_id, pane_id, role, state)
+            self._ensure_nav_interactive_pane(nav_pane_id, snapshot)
+            self._resize_nav_frame(
+                window_id, nav_pane_id, nav_content_height(config, state), snapshot
+            )
+        window = snapshot.window(window_id)
+        if content_pane_id and window and window.empty == "1":
+            self._render_frame_pane(content_pane_id, self._empty_content(), snapshot)
+        for pane_id, role in self._border_panes(window_id, snapshot).items():
+            pane = snapshot.panes.get(pane_id)
+            if pane is None:
+                continue
+            self._refresh_border_pane(
+                config,
+                window_id,
+                pane_id,
+                role,
+                state,
+                width=pane.width,
+                height=pane.height,
+                snapshot=snapshot,
+            )
 
     def resize_nav_frame_for_window(
         self,
@@ -487,9 +531,12 @@ class TmuxController:
     ) -> None:
         if not self.has_session() or not self.window_exists(window_id):
             return
+        snapshot = self._snapshot()
         nav_pane_id = self.nav_pane_for_window(window_id)
         if nav_pane_id:
-            self._resize_nav_frame(window_id, nav_pane_id, nav_content_height(config, state))
+            self._resize_nav_frame(
+                window_id, nav_pane_id, nav_content_height(config, state), snapshot
+            )
 
     def refresh_window_frame_colors(
         self,
@@ -499,35 +546,18 @@ class TmuxController:
     ) -> None:
         if not self.has_session() or not self.window_exists(window_id):
             return
-        write_render_files(config, state)
-        for pane_id, role in self._border_panes(window_id).items():
-            path = self._border_render_path(pane_id)
-            size = self._rendered_border_size(path)
-            if size is None:
-                self._refresh_border_pane(config, window_id, pane_id, role, state)
+        snapshot = self._snapshot()
+        for pane_id, role in self._border_panes(window_id, snapshot).items():
+            pane = snapshot.panes.get(pane_id)
+            if pane is None:
                 continue
-            width, height = size
-            path.write_text(
-                self._border_content(config, window_id, role, state, width, height),
-                encoding="utf-8",
-            )
+            content = self._border_content(config, window_id, role, state, pane.width, pane.height)
+            self._render_frame_pane(pane_id, content, snapshot)
 
-    def _codux_windows(self) -> list[tuple[str, bool]]:
-        raw = self._tmux(
-            [
-                "list-windows",
-                "-t",
-                self.session_name,
-                "-F",
-                f"#{{window_id}}\t#{{{EMPTY_WINDOW_OPTION}}}",
-            ],
-            check=False,
-        )
+    def _codux_windows(self, snapshot: TmuxSnapshot) -> list[tuple[str, bool]]:
         windows: list[tuple[str, bool]] = []
-        for line in raw.splitlines():
-            window_id, _, empty_value = line.partition("\t")
-            if window_id:
-                windows.append((window_id, empty_value == "1"))
+        for window in snapshot.windows.values():
+            windows.append((window.window_id, window.empty == "1"))
         return windows
 
     def _install_window_options(self, window_id: str) -> None:
@@ -544,9 +574,14 @@ class TmuxController:
         ):
             self._tmux(["set-window-option", "-t", window_id, option, value], check=False)
 
-    def _refresh_navigation_targets(self, config: CoduxConfig, state: AppState) -> None:
+    def _refresh_navigation_targets(
+        self, config: CoduxConfig, state: AppState, snapshot: TmuxSnapshot
+    ) -> None:
         for tab in state.tabs:
-            nav_pane_id = self.nav_pane_for_window(tab.tmux_window_id) or tab.tmux_pane_id
+            nav_pane_id = (
+                self._nav_pane_for_window_from_snapshot(tab.tmux_window_id, snapshot)
+                or tab.tmux_pane_id
+            )
             self._set_nav_target_options(
                 tab,
                 nav_pane_id,
@@ -594,92 +629,75 @@ class TmuxController:
             return None
 
     def _window_panes(self, window_id: str) -> tuple[str | None, str | None]:
-        raw = self._tmux(
-            [
-                "list-panes",
-                "-t",
-                window_id,
-                "-F",
-                "#{pane_id}\t#{@codux-role}\t#{pane_title}\t#{pane_top}",
-            ],
-            check=False,
-        )
-        panes: list[tuple[str, str, str, int]] = []
-        for line in raw.splitlines():
-            pane_id, _, rest = line.partition("\t")
-            role, _, rest = rest.partition("\t")
-            title, _, top_value = rest.partition("\t")
-            if not pane_id or role in BORDER_ROLES:
-                continue
-            try:
-                pane_top = int(top_value)
-            except ValueError:
-                pane_top = 0
-            panes.append((pane_id, role, title, pane_top))
+        snapshot = self._snapshot()
+        return self._window_panes_from_snapshot(window_id, snapshot)
+
+    def _window_panes_from_snapshot(
+        self, window_id: str, snapshot: TmuxSnapshot
+    ) -> tuple[str | None, str | None]:
+        window = snapshot.window(window_id)
+        panes = [pane for pane in snapshot.window_panes(window_id) if pane.role not in BORDER_ROLES]
         if not panes:
             return None, None
 
-        pane_ids = {pane_id for pane_id, _, _, _ in panes}
-        configured_nav_pane_id = self._window_option(window_id, "@codux-nav-pane")
-        configured_content_pane_id = self._window_option(window_id, "@codux-codex-pane")
-        nav_pane_id = configured_nav_pane_id if configured_nav_pane_id in pane_ids else None
+        pane_ids = {pane.pane_id for pane in panes}
+        configured_nav = window.nav_pane_configured if window else ""
+        configured_codex = window.codex_pane_configured if window else ""
+        nav_pane_id = configured_nav if configured_nav in pane_ids else None
         content_pane_id = (
-            configured_content_pane_id
-            if configured_content_pane_id in pane_ids and configured_content_pane_id != nav_pane_id
+            configured_codex
+            if configured_codex in pane_ids and configured_codex != nav_pane_id
             else None
         )
 
         nav_pane_id = nav_pane_id or next(
             (
-                pane_id
-                for pane_id, role, title, _ in panes
-                if role == NAV_PANE_TITLE or title in {NAV_PANE_TITLE, OLD_NAV_PANE_TITLE}
+                pane.pane_id
+                for pane in panes
+                if pane.role == NAV_PANE_TITLE or pane.title == NAV_PANE_TITLE
             ),
             None,
         )
         if nav_pane_id is None and len(panes) > 1:
-            nav_pane_id = min(panes, key=lambda pane: pane[3])[0]
+            nav_pane_id = min(panes, key=lambda pane: pane.top).pane_id
 
         content_pane_id = content_pane_id or next(
             (
-                pane_id
-                for pane_id, role, _, _ in panes
-                if role == CODEX_PANE_TITLE and pane_id != nav_pane_id
+                pane.pane_id
+                for pane in panes
+                if pane.role == CODEX_PANE_TITLE and pane.pane_id != nav_pane_id
             ),
             None,
         )
         if content_pane_id is None:
             content_pane_id = next(
                 (
-                    pane_id
-                    for pane_id, role, title, _ in panes
-                    if pane_id != nav_pane_id
-                    and role != NAV_PANE_TITLE
-                    and title not in {NAV_PANE_TITLE, OLD_NAV_PANE_TITLE}
+                    pane.pane_id
+                    for pane in panes
+                    if pane.pane_id != nav_pane_id
+                    and pane.role != NAV_PANE_TITLE
+                    and pane.title != NAV_PANE_TITLE
                 ),
                 None,
             )
         if content_pane_id is None and nav_pane_id is None:
-            content_pane_id = panes[0][0]
+            content_pane_id = panes[0].pane_id
         return nav_pane_id, content_pane_id
 
-    def _border_panes(self, window_id: str) -> dict[str, str]:
-        raw = self._tmux(
-            ["list-panes", "-t", window_id, "-F", "#{pane_id}\t#{@codux-role}"],
-            check=False,
-        )
+    def _border_panes(self, window_id: str, snapshot: TmuxSnapshot) -> dict[str, str]:
         panes: dict[str, str] = {}
-        for line in raw.splitlines():
-            pane_id, _, role = line.partition("\t")
-            if role in BORDER_ROLES:
-                panes[pane_id] = role
+        for pane in snapshot.window_panes(window_id):
+            if pane.role in BORDER_ROLES:
+                panes[pane.pane_id] = pane.role
         return panes
 
-    def _ensure_native_window(self, window_id: str) -> tuple[str | None, str | None]:
+    def _ensure_native_window(
+        self, window_id: str, snapshot: TmuxSnapshot
+    ) -> tuple[str | None, str | None]:
         self._install_window_options(window_id)
-        nav_pane_id, content_pane_id = self._window_panes(window_id)
+        nav_pane_id, content_pane_id = self._window_panes_from_snapshot(window_id, snapshot)
         if content_pane_id is None and nav_pane_id is not None:
-            self._kill_border_panes(window_id, BORDER_ROLES)
+            self._kill_border_panes(window_id, BORDER_ROLES, snapshot)
             self._set_pane_role(nav_pane_id, CODEX_PANE_TITLE)
             self._set_pane_title(nav_pane_id, CODEX_PANE_TITLE)
             self._set_window_option(window_id, "@codux-codex-pane", nav_pane_id)
@@ -689,36 +707,33 @@ class TmuxController:
         if content_pane_id is None:
             return nav_pane_id, content_pane_id
         if nav_pane_id is None or nav_pane_id == content_pane_id:
-            self._kill_border_panes(window_id, BORDER_ROLES)
+            self._kill_border_panes(window_id, BORDER_ROLES, snapshot)
             nav_pane_id = self._split_nav_pane(content_pane_id)
-        if self._kill_duplicate_managed_panes(window_id, {nav_pane_id, content_pane_id}):
-            self._kill_border_panes(window_id, BORDER_ROLES)
+        if self._kill_duplicate_managed_panes(window_id, {nav_pane_id, content_pane_id}, snapshot):
+            self._kill_border_panes(window_id, BORDER_ROLES, snapshot)
         self._configure_native_panes(window_id, nav_pane_id, content_pane_id)
         return nav_pane_id, content_pane_id
 
-    def _kill_duplicate_managed_panes(self, window_id: str, keep_pane_ids: set[str]) -> bool:
+    def _kill_duplicate_managed_panes(
+        self, window_id: str, keep_pane_ids: set[str], snapshot: TmuxSnapshot
+    ) -> bool:
         killed = False
-        for pane_id in self._duplicate_managed_panes(window_id, keep_pane_ids):
+        for pane_id in self._duplicate_managed_panes_from_snapshot(
+            window_id, keep_pane_ids, snapshot
+        ):
             self._tmux(["kill-pane", "-t", pane_id], check=False)
             killed = True
         return killed
 
-    def _duplicate_managed_panes(self, window_id: str, keep_pane_ids: set[str]) -> list[str]:
-        raw = self._tmux(
-            [
-                "list-panes",
-                "-t",
-                window_id,
-                "-F",
-                "#{pane_id}\t#{@codux-role}\t#{pane_title}\t#{pane_start_command}",
-            ],
-            check=False,
-        )
+    def _duplicate_managed_panes_from_snapshot(
+        self, window_id: str, keep_pane_ids: set[str], snapshot: TmuxSnapshot
+    ) -> list[str]:
         duplicates: list[str] = []
-        for line in raw.splitlines():
-            pane_id, _, rest = line.partition("\t")
-            role, _, rest = rest.partition("\t")
-            title, _, start_command = rest.partition("\t")
+        for pane in snapshot.window_panes(window_id):
+            pane_id = pane.pane_id
+            role = pane.role
+            title = pane.title
+            start_command = pane.start_command
             if (
                 pane_id
                 and pane_id not in keep_pane_ids
@@ -731,17 +746,14 @@ class TmuxController:
     def _is_managed_duplicate_pane(self, role: str, title: str, start_command: str) -> bool:
         if role in {NAV_PANE_TITLE, CODEX_PANE_TITLE}:
             return True
-        if title in {NAV_PANE_TITLE, CODEX_PANE_TITLE, OLD_NAV_PANE_TITLE}:
+        if title in {NAV_PANE_TITLE, CODEX_PANE_TITLE}:
             return True
         return any(
             marker in start_command
             for marker in (
                 "_nav-pane",
                 "_loading-pane",
-                "_codex-proxy",
-                "_host",
-                "empty.txt",
-                "nav.txt",
+                "_frame-pane",
             )
         )
 
@@ -755,30 +767,31 @@ class TmuxController:
         self._set_window_option(window_id, "@codux-codex-pane", content_pane_id)
         self._set_pane_role(nav_pane_id, NAV_PANE_TITLE)
         self._set_pane_title(nav_pane_id, NAV_PANE_TITLE)
-        self._unset_pane_option(nav_pane_id, LEGACY_HOST_PANE_OPTION)
         self._set_pane_role(content_pane_id, CODEX_PANE_TITLE)
-        self._unset_pane_option(content_pane_id, LEGACY_HOST_PANE_OPTION)
+        self._set_pane_title(content_pane_id, CODEX_PANE_TITLE)
 
-    def _ensure_window_frame(self, window_id: str) -> None:
+    def _ensure_window_frame(self, window_id: str, snapshot: TmuxSnapshot) -> None:
         self._install_window_options(window_id)
-        if self._window_option(window_id, FRAME_VERSION_OPTION) != FRAME_LAYOUT_VERSION:
-            self._kill_border_panes(window_id, BORDER_ROLES)
+        window = snapshot.window(window_id)
+        if not window or window.frame_version != FRAME_LAYOUT_VERSION:
+            self._kill_border_panes(window_id, BORDER_ROLES, snapshot)
             self._set_window_option(window_id, FRAME_VERSION_OPTION, FRAME_LAYOUT_VERSION)
-        nav_pane_id, content_pane_id = self._window_panes(window_id)
+        nav_pane_id, content_pane_id = self._window_panes_from_snapshot(window_id, snapshot)
         if nav_pane_id:
-            self._ensure_pane_frame(window_id, nav_pane_id, NAV_PANE_TITLE)
+            self._ensure_pane_frame(window_id, nav_pane_id, NAV_PANE_TITLE, snapshot)
         if content_pane_id:
-            self._ensure_pane_frame(window_id, content_pane_id, CODEX_PANE_TITLE)
+            self._ensure_pane_frame(window_id, content_pane_id, CODEX_PANE_TITLE, snapshot)
 
     def _resize_nav_frame(
         self,
         window_id: str,
         nav_pane_id: str,
         desired_content_height: int,
+        snapshot: TmuxSnapshot,
     ) -> None:
         desired_content_height = max(2, desired_content_height)
         desired_frame_height = desired_content_height + NAV_FRAME_EXTRA_HEIGHT
-        border_panes = self._role_to_pane(window_id)
+        border_panes = self._role_to_pane(window_id, snapshot)
         left_pane = border_panes.get(f"{NAV_PANE_TITLE}_LEFT")
         top_pane = border_panes.get(f"{NAV_PANE_TITLE}_TOP")
         bottom_pane = border_panes.get(f"{NAV_PANE_TITLE}_BOTTOM")
@@ -802,31 +815,34 @@ class TmuxController:
             ["resize-pane", "-t", nav_pane_id, "-y", str(desired_content_height)],
             check=False,
         )
-        self._normalize_frame_edges(window_id)
+        self._normalize_frame_edges(window_id, snapshot)
 
-    def _role_to_pane(self, window_id: str) -> dict[str, str]:
-        return {role: pane_id for pane_id, role in self._border_panes(window_id).items()}
+    def _role_to_pane(self, window_id: str, snapshot: TmuxSnapshot) -> dict[str, str]:
+        return {role: pane_id for pane_id, role in self._border_panes(window_id, snapshot).items()}
 
-    def _normalize_frame_edges(self, window_id: str) -> None:
-        for role, pane_id in self._role_to_pane(window_id).items():
+    def _normalize_frame_edges(self, window_id: str, snapshot: TmuxSnapshot) -> None:
+        for role, pane_id in self._role_to_pane(window_id, snapshot).items():
             if role.endswith(("_TOP", "_BOTTOM")):
                 self._tmux(
                     ["resize-pane", "-t", pane_id, "-y", str(FRAME_EDGE_SIZE)],
                     check=False,
                 )
 
-    def _ensure_pane_frame(self, window_id: str, content_pane_id: str, role: str) -> None:
+    def _ensure_pane_frame(
+        self, window_id: str, content_pane_id: str, role: str, snapshot: TmuxSnapshot
+    ) -> None:
         expected_roles = {f"{role}_{suffix}" for suffix in BORDER_SUFFIXES}
-        border_panes = self._border_panes(window_id)
+        border_panes = self._border_panes(window_id, snapshot)
         existing_roles = set(border_panes.values()) & expected_roles
         if existing_roles == expected_roles and not self._frame_needs_rebuild(
-            border_panes, expected_roles
+            border_panes, expected_roles, snapshot
         ):
             return
         if existing_roles:
-            self._kill_border_panes(window_id, expected_roles)
+            self._kill_border_panes(window_id, expected_roles, snapshot)
 
-        width, height = self.pane_size(content_pane_id)
+        pane = snapshot.panes.get(content_pane_id)
+        width, height = (pane.width, pane.height) if pane else self.pane_size(content_pane_id)
         if width < 12 or height < 5:
             return
 
@@ -837,19 +853,22 @@ class TmuxController:
         self._create_border_pane(content_pane_id, f"{role}_TOP", ["-v", "-b", "-l", edge_size])
         self._create_border_pane(content_pane_id, f"{role}_BOTTOM", ["-v", "-l", edge_size])
 
-    def _frame_needs_rebuild(self, border_panes: dict[str, str], roles: set[str]) -> bool:
+    def _frame_needs_rebuild(
+        self, border_panes: dict[str, str], roles: set[str], snapshot: TmuxSnapshot
+    ) -> bool:
         for role in roles:
             if list(border_panes.values()).count(role) != 1:
                 return True
         for pane_id, role in border_panes.items():
             if role in roles and role.endswith(("_TOP", "_BOTTOM")):
-                _, height = self.pane_size(pane_id)
+                pane = snapshot.panes.get(pane_id)
+                _, height = (pane.width, pane.height) if pane else self.pane_size(pane_id)
                 if height != FRAME_EDGE_SIZE:
                     return True
         return False
 
-    def _kill_border_panes(self, window_id: str, roles: set[str]) -> None:
-        for pane_id, role in self._border_panes(window_id).items():
+    def _kill_border_panes(self, window_id: str, roles: set[str], snapshot: TmuxSnapshot) -> None:
+        for pane_id, role in self._border_panes(window_id, snapshot).items():
             if role in roles:
                 self._tmux(["kill-pane", "-t", pane_id], check=False)
 
@@ -864,11 +883,10 @@ class TmuxController:
                 "#{pane_id}",
                 "-t",
                 target_pane_id,
-                self._sleep_command(),
+                self._frame_pane_shell_command(),
             ]
         ).strip()
         self._set_pane_role(pane_id, role)
-        self._unset_pane_option(pane_id, LEGACY_HOST_PANE_OPTION)
         self._set_pane_title(pane_id, role)
         return pane_id
 
@@ -879,12 +897,13 @@ class TmuxController:
         pane_id: str,
         role: str,
         state: AppState,
+        *,
+        width: int,
+        height: int,
+        snapshot: TmuxSnapshot,
     ) -> None:
-        width, height = self.pane_size(pane_id)
         content = self._border_content(config, window_id, role, state, width, height)
-        path = self._border_render_path(pane_id)
-        path.write_text(content, encoding="utf-8")
-        self._ensure_static_pane(pane_id, path)
+        self._render_frame_pane(pane_id, content, snapshot)
 
     def _border_content(
         self,
@@ -911,16 +930,6 @@ class TmuxController:
             return render_right_border(width, height, active)
         return ""
 
-    def _rendered_border_size(self, path: Path) -> tuple[int, int] | None:
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return None
-        if not lines:
-            return None
-        width = max(len(ANSI_RE.sub("", line)) for line in lines)
-        return max(1, width), len(lines)
-
     def _border_is_active(self, _window_id: str, role: str, state: AppState) -> bool:
         if role.startswith(f"{NAV_PANE_TITLE}_"):
             return state.focus == "nav"
@@ -935,10 +944,6 @@ class TmuxController:
             return codex_shortcuts(config)
         return ""
 
-    def _border_render_path(self, pane_id: str) -> Path:
-        safe_pane_id = pane_id.replace("%", "")
-        return render_dir() / f"border-{safe_pane_id}.txt"
-
     def _pane_current_command(self, pane_id: str) -> str:
         return self._tmux(
             ["display-message", "-p", "-t", pane_id, "#{pane_current_command}"],
@@ -951,25 +956,26 @@ class TmuxController:
             check=False,
         ).strip()
 
-    def _pane_needs_codex_respawn(self, window_id: str, pane_id: str) -> bool:
-        if self._window_option(window_id, SPARE_WINDOW_OPTION) == "1":
+    def _pane_needs_codex_respawn(
+        self, window_id: str, pane_id: str, snapshot: TmuxSnapshot
+    ) -> bool:
+        window = snapshot.window(window_id)
+        if window and window.spare == "1":
             return False
-        start_command = self._pane_start_command(pane_id)
+        pane = snapshot.panes.get(pane_id)
+        start_command = pane.start_command if pane else self._pane_start_command(pane_id)
+        current_command = pane.current_command if pane else self._pane_current_command(pane_id)
         return (
-            self._pane_current_command(pane_id) == "sleep"
+            current_command == "sleep"
             or "_loading-pane" in start_command
             or "_nav-pane" in start_command
-            or "_codex-proxy" in start_command
-            or "_host" in start_command
-            or "empty.txt" in start_command
+            or "_frame-pane" in start_command
         )
 
     def _respawn_codex_pane(self, config: CoduxConfig, pane_id: str) -> None:
         self._tmux(["respawn-pane", "-k", "-t", pane_id, self._codex_shell_command(config)])
         self._tmux(["clear-history", "-t", pane_id], check=False)
         self._set_pane_role(pane_id, CODEX_PANE_TITLE)
-        self._unset_pane_option(pane_id, LEGACY_HOST_PANE_OPTION)
-        self._unset_pane_option(pane_id, STATIC_HOST_OPTION)
         self._set_pane_title(pane_id, CODEX_PANE_TITLE)
 
     def pane_size(self, pane_id: str) -> tuple[int, int]:
@@ -983,25 +989,9 @@ class TmuxController:
         except ValueError:
             return 1, 1
 
-    def _ensure_static_pane(self, pane_id: str, path: Path) -> None:
-        current = self._tmux(
-            ["show-option", "-p", "-qv", "-t", pane_id, STATIC_HOST_OPTION],
-            check=False,
-        ).strip()
-        if current == STATIC_HOST_VERSION:
-            return
-        self._tmux(
-            ["respawn-pane", "-k", "-t", pane_id, self._display_file_command(path)],
-            check=False,
-        )
-        self._tmux(["clear-history", "-t", pane_id], check=False)
-        self._set_pane_option(pane_id, STATIC_HOST_OPTION, STATIC_HOST_VERSION)
-
-    def _ensure_nav_interactive_pane(self, pane_id: str) -> None:
-        current = self._tmux(
-            ["show-option", "-p", "-qv", "-t", pane_id, NAV_HOST_OPTION],
-            check=False,
-        ).strip()
+    def _ensure_nav_interactive_pane(self, pane_id: str, snapshot: TmuxSnapshot) -> None:
+        pane = snapshot.panes.get(pane_id)
+        current = pane.nav_host_version if pane else ""
         if current == NAV_HOST_VERSION:
             return
         self._tmux(
@@ -1010,6 +1000,24 @@ class TmuxController:
         )
         self._tmux(["clear-history", "-t", pane_id], check=False)
         self._set_pane_option(pane_id, NAV_HOST_OPTION, NAV_HOST_VERSION)
+
+    def _ensure_frame_pane(self, pane_id: str, snapshot: TmuxSnapshot) -> None:
+        pane = snapshot.panes.get(pane_id)
+        current = pane.frame_host_version if pane else ""
+        if current == FRAME_HOST_VERSION:
+            return
+        self._tmux(
+            ["respawn-pane", "-k", "-t", pane_id, self._frame_pane_shell_command()],
+            check=False,
+        )
+        self._tmux(["clear-history", "-t", pane_id], check=False)
+        self._set_pane_option(pane_id, FRAME_HOST_OPTION, FRAME_HOST_VERSION)
+
+    def _render_frame_pane(self, pane_id: str, content: str, snapshot: TmuxSnapshot) -> None:
+        self._ensure_frame_pane(pane_id, snapshot)
+        payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        self._tmux(["send-keys", "-l", "-t", pane_id, f"CODUX_FRAME:{payload}"], check=False)
+        self._tmux(["send-keys", "-t", pane_id, "Enter"], check=False)
 
     def _new_session_empty_window(self, config: CoduxConfig) -> CreatedWindow:
         raw = self._tmux(
@@ -1069,7 +1077,7 @@ class TmuxController:
                 "#{pane_id}",
                 "-t",
                 content_pane_id,
-                self._display_file_command(render_dir() / "nav.txt"),
+                self._frame_pane_shell_command(),
             ]
         ).strip()
         self._tmux(["resize-pane", "-t", nav_pane_id, "-y", DEFAULT_NAV_FRAME_HEIGHT], check=False)
@@ -1098,7 +1106,8 @@ class TmuxController:
         return max(sizes, key=lambda size: size[0] * size[1], default=None)
 
     def repair_window_sizes(self) -> None:
-        for window_id, _ in self._codux_windows():
+        snapshot = self._snapshot()
+        for window_id, _ in self._codux_windows(snapshot):
             self._sync_window_to_attached_client(window_id)
 
     def _sync_window_to_attached_client(self, window_id: str) -> None:
@@ -1162,22 +1171,11 @@ class TmuxController:
     def _sleep_command(self) -> str:
         return "sh -lc 'stty -echo -icanon min 0 time 0 2>/dev/null; exec sleep 2147483647'"
 
-    def _display_file_command(self, path: Path) -> str:
-        quoted_path = shlex.quote(str(path))
-        script = (
-            "stty -echo -icanon min 0 time 0 2>/dev/null; "
-            "last=''; "
-            "while :; do "
-            f"fingerprint=$(cksum {quoted_path} 2>/dev/null || true); "
-            'if [ "$fingerprint" != "$last" ]; then '
-            'last="$fingerprint"; '
-            "printf '\\033[?25l\\033[2J\\033[H'; "
-            f"if [ -f {quoted_path} ]; then cat {quoted_path}; fi; "
-            "fi; "
-            "sleep 0.05; "
-            "done"
+    def _frame_pane_shell_command(self) -> str:
+        return (
+            f"cd {shlex.quote(str(PROJECT_ROOT))} && "
+            f"{shlex.quote(sys.executable)} -m codux.cli _frame-pane"
         )
-        return f"sh -lc {shlex.quote(script)}"
 
     def _nav_shell_command(self, pane_id: str) -> str:
         return (
@@ -1186,7 +1184,12 @@ class TmuxController:
         )
 
     def _empty_shell_command(self) -> str:
-        return self._display_file_command(render_dir() / "empty.txt")
+        return self._frame_pane_shell_command()
+
+    def _empty_content(self) -> str:
+        from codux.render import render_empty_state
+
+        return render_empty_state()
 
     def _loading_shell_command(self) -> str:
         return (
@@ -1410,10 +1413,4 @@ class TmuxController:
 
 
 def _run_tmux(args: list[str], check: bool = True):
-    command = ["tmux", *args]
-    result = subprocess.run(command, check=False, text=True, capture_output=True)
-    if check and result.returncode != 0:
-        raise TmuxError(result.stderr.strip() or f"tmux command failed: {' '.join(command)}")
-    if check:
-        return result.stdout
-    return result
+    return run_tmux(args, check=check)

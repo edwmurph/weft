@@ -1,21 +1,15 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 from textwrap import shorten
 
-from codux.config import CoduxConfig, render_dir
+from codux.config import CoduxConfig
 from codux.state import AppState
+from codux.theme import Theme
 
 
-ACTIVE_COLOR = "117"
-ACTIVE_BORDER_COLOR = f"\033[38;5;{ACTIVE_COLOR}m"
-ACTIVE_TAB_COLOR = f"\033[48;5;{ACTIVE_COLOR}m\033[38;5;16m"
-INACTIVE_BORDER_COLOR = "\033[38;5;244m"
-RESET_COLOR = "\033[0m"
-UNDERLINE = "\033[4m"
-END_UNDERLINE = "\033[24m"
 NAV_HORIZONTAL_PADDING = 2
+DEFAULT_THEME = Theme()
 
 
 def render_nav(config: CoduxConfig, state: AppState, width: int | None = None) -> str:
@@ -77,11 +71,11 @@ def render_empty_state() -> str:
 
 
 def render_top_border(width: int, title: str, active: bool) -> str:
-    return _paint_border(_horizontal_border(width, label=title), active)
+    return DEFAULT_THEME.paint_border(_horizontal_border(width, label=title), active)
 
 
 def render_bottom_border(width: int, active: bool, label: str = "") -> str:
-    return _paint_border(_horizontal_border(width, label=label), active)
+    return DEFAULT_THEME.paint_border(_horizontal_border(width, label=label), active)
 
 
 def render_side_border(height: int, active: bool) -> str:
@@ -89,14 +83,14 @@ def render_side_border(height: int, active: bool) -> str:
 
 
 def render_left_border(width: int, height: int, active: bool) -> str:
-    return _paint_border(
+    return DEFAULT_THEME.paint_border(
         _vertical_border(width, height, top="╭", bottom="╰", align="left"),
         active,
     )
 
 
 def render_right_border(width: int, height: int, active: bool) -> str:
-    return _paint_border(
+    return DEFAULT_THEME.paint_border(
         _vertical_border(width, height, top="╮", bottom="╯", align="right"),
         active,
     )
@@ -146,17 +140,18 @@ def _vertical_border(width: int, height: int, top: str, bottom: str, align: str)
 
 
 def _paint_border(text: str, active: bool) -> str:
-    color = ACTIVE_BORDER_COLOR if active else INACTIVE_BORDER_COLOR
-    return f"{color}{text}{RESET_COLOR}"
+    return DEFAULT_THEME.paint_border(text, active)
 
 
 def _paint_active_tab(text: str) -> str:
-    return f"{ACTIVE_TAB_COLOR}{text}{RESET_COLOR}"
+    return DEFAULT_THEME.paint_active_tab(text)
 
 
 def _underlined_header(text: str, width: int) -> str:
     label = text[:width]
-    return f"{UNDERLINE}{label}{END_UNDERLINE}" + (" " * max(0, width - len(label)))
+    return f"{DEFAULT_THEME.underline}{label}{DEFAULT_THEME.end_underline}" + (
+        " " * max(0, width - len(label))
+    )
 
 
 def render_help(config: CoduxConfig) -> str:
@@ -189,13 +184,16 @@ def render_help(config: CoduxConfig) -> str:
     ).strip()
 
 
-def write_render_files(
-    config: CoduxConfig,
-    state: AppState,
-    base_dir: Path | None = None,
-    nav_width: int | None = None,
-) -> None:
-    directory = render_dir(base_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "nav.txt").write_text(render_nav(config, state, nav_width), encoding="utf-8")
-    (directory / "empty.txt").write_text(render_empty_state(), encoding="utf-8")
+__all__ = [
+    "render_nav",
+    "nav_content_height",
+    "render_empty_state",
+    "render_top_border",
+    "render_bottom_border",
+    "render_side_border",
+    "render_left_border",
+    "render_right_border",
+    "nav_shortcuts",
+    "codex_shortcuts",
+    "render_help",
+]

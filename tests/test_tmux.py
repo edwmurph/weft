@@ -7,6 +7,7 @@ import codux.tmux as tmux_module
 from codux.config import CoduxConfig
 from codux.state import AppState, Tab, now_iso
 from codux.tmux import TmuxController
+from codux.tmux_snapshot import PaneSnapshot, TmuxSnapshot, WindowSnapshot
 
 
 def tab(tab_id: str, window_id: str, column: str = "inbox") -> Tab:
@@ -60,6 +61,9 @@ def test_tmux_internal_shell_commands_run_from_project_root(monkeypatch):
     )
     assert controller._loading_shell_command() == (
         f"cd {root} && {python} -m codux.cli _loading-pane"
+    )
+    assert (
+        controller._frame_pane_shell_command() == f"cd {root} && {python} -m codux.cli _frame-pane"
     )
     assert controller._codux_cli_command() == f"cd {root} && {python} -m codux.cli"
 
@@ -157,36 +161,35 @@ def test_refresh_window_frame_panes_resizes_nav_before_writing_render(monkeypatc
     monkeypatch.setattr(controller, "has_session", lambda: True)
     monkeypatch.setattr(controller, "window_exists", lambda window_id: True)
     monkeypatch.setattr(
-        tmux_module,
-        "write_render_files",
-        lambda config, current_state: events.append("write"),
+        controller,
+        "_snapshot",
+        lambda: SimpleNamespace(panes={}, windows={}, window=lambda _id: None),
     )
     monkeypatch.setattr(
         controller,
         "_ensure_native_window",
-        lambda window_id: events.append("native") or ("%nav", "%codex"),
+        lambda window_id, snapshot: events.append("native") or ("%nav", "%codex"),
     )
     monkeypatch.setattr(
         controller,
         "_ensure_window_frame",
-        lambda window_id: events.append("frame"),
+        lambda window_id, snapshot: events.append("frame"),
     )
     monkeypatch.setattr(
         controller,
         "_ensure_nav_interactive_pane",
-        lambda pane_id: events.append(f"nav:{pane_id}"),
+        lambda pane_id, snapshot: events.append(f"nav:{pane_id}"),
     )
     monkeypatch.setattr(
         controller,
         "_resize_nav_frame",
-        lambda window_id, pane_id, height: events.append(f"resize:{height}"),
+        lambda window_id, pane_id, height, snapshot: events.append(f"resize:{height}"),
     )
-    monkeypatch.setattr(controller, "_window_option", lambda window_id, option: "0")
-    monkeypatch.setattr(controller, "_border_panes", lambda window_id: {})
+    monkeypatch.setattr(controller, "_border_panes", lambda window_id, snapshot: {})
 
     controller.refresh_window_frame_panes(CoduxConfig(), state, "@2")
 
-    assert events == ["native", "frame", "nav:%nav", "resize:3", "write"]
+    assert events == ["native", "frame", "nav:%nav", "resize:3"]
 
 
 def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monkeypatch):
@@ -194,11 +197,13 @@ def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monk
     events: list[tuple[str, object]] = []
 
     monkeypatch.setattr(controller, "_install_window_options", lambda window_id: None)
-    monkeypatch.setattr(controller, "_window_panes", lambda window_id: ("%nav", None))
+    monkeypatch.setattr(
+        controller, "_window_panes_from_snapshot", lambda window_id, snapshot: ("%nav", None)
+    )
     monkeypatch.setattr(
         controller,
         "_kill_border_panes",
-        lambda window_id, roles: events.append(("kill-borders", window_id, roles)),
+        lambda window_id, roles, snapshot: events.append(("kill-borders", window_id, roles)),
     )
     monkeypatch.setattr(
         controller,
@@ -220,9 +225,9 @@ def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monk
         "_split_nav_pane",
         lambda pane_id: events.append(("split", pane_id)) or "%new-nav",
     )
-    monkeypatch.setattr(controller, "_unset_pane_option", lambda pane_id, option: None)
-
-    assert controller._ensure_native_window("@1") == ("%new-nav", "%nav")
+    monkeypatch.setattr(controller, "_kill_duplicate_managed_panes", lambda *args, **kwargs: False)
+    snapshot = SimpleNamespace()
+    assert controller._ensure_native_window("@1", snapshot) == ("%new-nav", "%nav")
 
     assert ("kill-borders", "@1", tmux_module.BORDER_ROLES) in events
     assert ("role", "%nav", "CODEX") in events
@@ -231,23 +236,71 @@ def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monk
 
 def test_window_panes_prefers_configured_native_panes(monkeypatch):
     controller = TmuxController("codux")
-
-    def fake_tmux(args, check=True):
-        if args[0] == "list-panes":
-            return "\n".join(
-                [
-                    "%stale\tNAV\tNAV\t7",
-                    "%nav\tNAV\tNAV\t2",
-                    "%codex\tCODEX\tReady\t18",
-                ]
+    panes = {
+        "%stale": PaneSnapshot(
+            pane_id="%stale",
+            window_id="@1",
+            role="NAV",
+            title="NAV",
+            top=7,
+            left=0,
+            width=10,
+            height=10,
+            current_command="python",
+            start_command="python -m codux.cli _nav-pane",
+            nav_host_version="",
+            frame_host_version="",
+        ),
+        "%nav": PaneSnapshot(
+            pane_id="%nav",
+            window_id="@1",
+            role="NAV",
+            title="NAV",
+            top=2,
+            left=0,
+            width=10,
+            height=10,
+            current_command="python",
+            start_command="python -m codux.cli _nav-pane",
+            nav_host_version="",
+            frame_host_version="",
+        ),
+        "%codex": PaneSnapshot(
+            pane_id="%codex",
+            window_id="@1",
+            role="CODEX",
+            title="Ready",
+            top=18,
+            left=0,
+            width=10,
+            height=10,
+            current_command="codex",
+            start_command="codex",
+            nav_host_version="",
+            frame_host_version="",
+        ),
+    }
+    snapshot = TmuxSnapshot(
+        windows={
+            "@1": WindowSnapshot(
+                window_id="@1",
+                name="one",
+                width=120,
+                height=40,
+                empty="0",
+                spare="0",
+                tab_id="",
+                nav_pane_configured="%nav",
+                codex_pane_configured="%codex",
+                frame_version="",
             )
-        if args[-1] == "@codux-nav-pane":
-            return "%nav"
-        if args[-1] == "@codux-codex-pane":
-            return "%codex"
-        return ""
-
-    monkeypatch.setattr(controller, "_tmux", fake_tmux)
+        },
+        panes=panes,
+        panes_by_window={
+            "@1": list(panes.values()),
+        },
+    )
+    monkeypatch.setattr(controller, "_snapshot", lambda: snapshot)
 
     assert controller._window_panes("@1") == ("%nav", "%codex")
 
@@ -257,12 +310,20 @@ def test_duplicate_managed_nav_pane_is_removed_and_frames_rebuilt(monkeypatch):
     events: list[tuple[str, object]] = []
 
     monkeypatch.setattr(controller, "_install_window_options", lambda window_id: None)
-    monkeypatch.setattr(controller, "_window_panes", lambda window_id: ("%nav", "%codex"))
-    monkeypatch.setattr(controller, "_duplicate_managed_panes", lambda window_id, keep: ["%old"])
+    monkeypatch.setattr(
+        controller,
+        "_window_panes_from_snapshot",
+        lambda window_id, snapshot: ("%nav", "%codex"),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_duplicate_managed_panes_from_snapshot",
+        lambda window_id, keep, snapshot: ["%old"],
+    )
     monkeypatch.setattr(
         controller,
         "_kill_border_panes",
-        lambda window_id, roles: events.append(("kill-borders", roles)),
+        lambda window_id, roles, snapshot: events.append(("kill-borders", roles)),
     )
     monkeypatch.setattr(
         controller,
@@ -275,7 +336,8 @@ def test_duplicate_managed_nav_pane_is_removed_and_frames_rebuilt(monkeypatch):
         lambda args, check=True: events.append(("tmux", tuple(args))) or "",
     )
 
-    assert controller._ensure_native_window("@1") == ("%nav", "%codex")
+    snapshot = SimpleNamespace()
+    assert controller._ensure_native_window("@1", snapshot) == ("%nav", "%codex")
 
     assert ("tmux", ("kill-pane", "-t", "%old")) in events
     assert ("kill-borders", tmux_module.BORDER_ROLES) in events
@@ -289,7 +351,7 @@ def test_window_exists_is_scoped_to_codux_session(monkeypatch):
         assert args[:3] == ["list-windows", "-t", "codux"]
         return SimpleNamespace(returncode=0, stdout="@1\n@2\n")
 
-    monkeypatch.setattr(tmux_module, "_run_tmux", fake_run_tmux)
+    monkeypatch.setattr(tmux_module, "run_tmux", fake_run_tmux)
 
     assert controller.window_exists("@2")
     assert not controller.window_exists("@3")
@@ -306,7 +368,10 @@ def test_repair_window_sizes_expands_manual_windows_to_attached_client(monkeypat
         return ""
 
     monkeypatch.setattr(controller, "_tmux", fake_tmux)
-    monkeypatch.setattr(controller, "_codux_windows", lambda: [("@1", False), ("@2", False)])
+    monkeypatch.setattr(controller, "_snapshot", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        controller, "_codux_windows", lambda snapshot: [("@1", False), ("@2", False)]
+    )
     monkeypatch.setattr(controller, "window_size", lambda window_id: (80, 24))
 
     controller.repair_window_sizes()
@@ -330,7 +395,10 @@ def test_repair_window_sizes_uses_largest_window_when_detached(monkeypatch):
         return ""
 
     monkeypatch.setattr(controller, "_tmux", fake_tmux)
-    monkeypatch.setattr(controller, "_codux_windows", lambda: [("@1", False), ("@2", False)])
+    monkeypatch.setattr(controller, "_snapshot", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        controller, "_codux_windows", lambda snapshot: [("@1", False), ("@2", False)]
+    )
     monkeypatch.setattr(controller, "window_size", lambda window_id: (80, 24))
 
     controller.repair_window_sizes()
@@ -350,7 +418,8 @@ def test_repair_window_sizes_skips_windows_already_at_target(monkeypatch):
         return ""
 
     monkeypatch.setattr(controller, "_tmux", fake_tmux)
-    monkeypatch.setattr(controller, "_codux_windows", lambda: [("@1", False)])
+    monkeypatch.setattr(controller, "_snapshot", lambda: SimpleNamespace())
+    monkeypatch.setattr(controller, "_codux_windows", lambda snapshot: [("@1", False)])
     monkeypatch.setattr(controller, "window_size", lambda window_id: (204, 46))
 
     controller.repair_window_sizes()
@@ -392,6 +461,7 @@ def test_create_tab_window_does_not_force_manual_window_size(monkeypatch):
 
 def test_frame_rebuilds_when_border_roles_are_duplicated():
     controller = TmuxController("codux")
+    snapshot = TmuxSnapshot(windows={}, panes={}, panes_by_window={})
 
     assert controller._frame_needs_rebuild(
         {
@@ -402,46 +472,158 @@ def test_frame_rebuilds_when_border_roles_are_duplicated():
             "%5": "CODEX_RIGHT",
         },
         {"CODEX_TOP", "CODEX_BOTTOM", "CODEX_LEFT", "CODEX_RIGHT"},
+        snapshot,
     )
 
 
 def test_real_tab_loading_pane_is_respawned_as_codex(monkeypatch):
     controller = TmuxController("codux")
-    monkeypatch.setattr(controller, "_window_option", lambda window_id, option: "0")
-    monkeypatch.setattr(controller, "_pane_current_command", lambda pane_id: "python3.14")
-    monkeypatch.setattr(
-        controller,
-        "_pane_start_command",
-        lambda pane_id: "/venv/bin/python3 -m codux.cli _loading-pane",
+    snapshot = TmuxSnapshot(
+        windows={
+            "@1": WindowSnapshot(
+                window_id="@1",
+                name="one",
+                width=120,
+                height=40,
+                empty="0",
+                spare="0",
+                tab_id="",
+                nav_pane_configured="",
+                codex_pane_configured="%1",
+                frame_version="",
+            )
+        },
+        panes={
+            "%1": PaneSnapshot(
+                pane_id="%1",
+                window_id="@1",
+                role="CODEX",
+                title="CODEX",
+                top=0,
+                left=0,
+                width=10,
+                height=10,
+                current_command="python3.14",
+                start_command="/venv/bin/python3 -m codux.cli _loading-pane",
+                nav_host_version="",
+                frame_host_version="",
+            )
+        },
+        panes_by_window={"@1": []},
+    )
+    snapshot = TmuxSnapshot(
+        windows=snapshot.windows,
+        panes=snapshot.panes,
+        panes_by_window={"@1": list(snapshot.panes.values())},
     )
 
-    assert controller._pane_needs_codex_respawn("@1", "%1")
+    assert controller._pane_needs_codex_respawn("@1", "%1", snapshot)
 
 
 def test_nav_pane_process_is_respawned_as_codex(monkeypatch):
     controller = TmuxController("codux")
-    monkeypatch.setattr(controller, "_window_option", lambda window_id, option: "0")
-    monkeypatch.setattr(controller, "_pane_current_command", lambda pane_id: "python3.14")
-    monkeypatch.setattr(
-        controller,
-        "_pane_start_command",
-        lambda pane_id: "/venv/bin/python3 -m codux.cli _nav-pane",
+    snapshot = TmuxSnapshot(
+        windows={
+            "@1": WindowSnapshot(
+                window_id="@1",
+                name="one",
+                width=120,
+                height=40,
+                empty="0",
+                spare="0",
+                tab_id="",
+                nav_pane_configured="",
+                codex_pane_configured="%1",
+                frame_version="",
+            )
+        },
+        panes={
+            "%1": PaneSnapshot(
+                pane_id="%1",
+                window_id="@1",
+                role="NAV",
+                title="NAV",
+                top=0,
+                left=0,
+                width=10,
+                height=10,
+                current_command="python3.14",
+                start_command="/venv/bin/python3 -m codux.cli _nav-pane",
+                nav_host_version="",
+                frame_host_version="",
+            )
+        },
+        panes_by_window={"@1": []},
+    )
+    snapshot = TmuxSnapshot(
+        windows=snapshot.windows,
+        panes=snapshot.panes,
+        panes_by_window={"@1": list(snapshot.panes.values())},
     )
 
-    assert controller._pane_needs_codex_respawn("@1", "%1")
+    assert controller._pane_needs_codex_respawn("@1", "%1", snapshot)
 
 
 def test_spare_loading_pane_is_not_respawned_as_codex(monkeypatch):
     controller = TmuxController("codux")
-    monkeypatch.setattr(controller, "_window_option", lambda window_id, option: "1")
-    monkeypatch.setattr(controller, "_pane_current_command", lambda pane_id: "python3.14")
-    monkeypatch.setattr(
-        controller,
-        "_pane_start_command",
-        lambda pane_id: "/venv/bin/python3 -m codux.cli _loading-pane",
+    snapshot = TmuxSnapshot(
+        windows={
+            "@1": WindowSnapshot(
+                window_id="@1",
+                name="one",
+                width=120,
+                height=40,
+                empty="0",
+                spare="1",
+                tab_id="",
+                nav_pane_configured="",
+                codex_pane_configured="%1",
+                frame_version="",
+            )
+        },
+        panes={
+            "%1": PaneSnapshot(
+                pane_id="%1",
+                window_id="@1",
+                role="CODEX",
+                title="CODEX",
+                top=0,
+                left=0,
+                width=10,
+                height=10,
+                current_command="python3.14",
+                start_command="/venv/bin/python3 -m codux.cli _loading-pane",
+                nav_host_version="",
+                frame_host_version="",
+            )
+        },
+        panes_by_window={"@1": []},
+    )
+    snapshot = TmuxSnapshot(
+        windows=snapshot.windows,
+        panes=snapshot.panes,
+        panes_by_window={"@1": list(snapshot.panes.values())},
     )
 
-    assert not controller._pane_needs_codex_respawn("@1", "%1")
+    assert not controller._pane_needs_codex_respawn("@1", "%1", snapshot)
+
+
+def test_render_frame_pane_sends_base64_payload(monkeypatch):
+    controller = TmuxController("codux")
+    calls: list[tuple[str, ...]] = []
+    snapshot = TmuxSnapshot(windows={}, panes={}, panes_by_window={})
+
+    monkeypatch.setattr(controller, "_ensure_frame_pane", lambda pane_id, snapshot: None)
+    monkeypatch.setattr(
+        controller, "_tmux", lambda args, check=True: calls.append(tuple(args)) or ""
+    )
+
+    controller._render_frame_pane("%1", "hello\nworld\n", snapshot)
+
+    assert calls[0][:3] == ("send-keys", "-l", "-t")
+    assert calls[0][3] == "%1"
+    assert calls[0][4].startswith("CODUX_FRAME:")
+    assert calls[1] == ("send-keys", "-t", "%1", "Enter")
 
 
 def test_terminal_options_enable_extended_keys_for_shift_enter(monkeypatch):
