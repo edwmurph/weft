@@ -30,7 +30,7 @@ SPARE_WINDOW_OPTION = "@codux-spare"
 TAB_ID_OPTION = "@codux-tab-id"
 HOST_PANE_OPTION = "@codux-host"
 NAV_HOST_OPTION = "@codux-nav-host"
-NAV_HOST_VERSION = "9"
+NAV_HOST_VERSION = "10"
 STATIC_HOST_OPTION = "@codux-static-host"
 STATIC_HOST_VERSION = "1"
 CODEX_PANE_TITLE = "CODEX"
@@ -1141,6 +1141,8 @@ class TmuxController:
             "Right",
             "Enter",
             "C-m",
+            "C-a",
+            "C-d",
             "h",
             "l",
             "H",

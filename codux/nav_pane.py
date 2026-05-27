@@ -83,7 +83,7 @@ class NavPane:
                 subprocess.run(
                     ["tmux", "detach-client", "-s", self.config.tmux_session], check=False
                 )
-            elif key == "C-a":
+            elif key == "C-d":
                 self.focus_codex()
             elif key == "Left":
                 self.select_grid(delta_column=-1)
@@ -154,10 +154,11 @@ class NavPane:
             )
 
         self.state = self.store.update(mutate)
-        self.render_snapshot(self.state)
-        self.tmux.resize_nav_frame_for_window(self.config, self.state, target.tmux_window_id)
+        self.tmux.refresh_window_frame_panes(self.config, self.state, target.tmux_window_id)
+        self.render(force=True)
         self.select_nav_for_window(target.tmux_window_id)
         self.refresh_static_panes_async()
+        self.skip_next_render = True
 
     def focus_codex(self) -> None:
         state = self.store.update(lambda current: replace(current, focus="codex"))
@@ -395,7 +396,7 @@ def nav_keys(data: bytes) -> list[str]:
         b"\x1b[1;2C": "S-Right",
         b"\x1b[1;2A": "S-Up",
         b"\x1b[1;2B": "S-Down",
-        b"\x01": "C-a",
+        b"\x04": "C-d",
         b"\x11": "C-q",
         b"\r": "Enter",
         b"\n": "Enter",

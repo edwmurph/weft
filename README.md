@@ -29,10 +29,10 @@ Default nav shortcuts, active when the nav region is focused:
 | `r` | rename active tab |
 | `x` | close active tab |
 | `?` | help popup |
-| `C-a` | toggle focus between nav and Codex |
+| `C-d` | toggle focus between nav and Codex |
 | `C-q` | detach dashboard and leave sessions running |
 
-`C-a` is session-scoped to the `codux` tmux session and configurable because it is intercepted before it reaches Codex.
+`C-d` is session-scoped to the `codux` tmux session and configurable because it is intercepted before it reaches Codex.
 
 ## Config And State
 
@@ -57,7 +57,7 @@ move_right = "S-Right"
 rename = "r"
 close = "x"
 help = "?"
-focus_toggle = "C-a"
+focus_toggle = "C-d"
 quit = "C-q"
 ```
 

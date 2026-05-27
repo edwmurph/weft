@@ -80,9 +80,9 @@ def test_render_top_border_draws_rounded_title_line():
 
 
 def test_render_bottom_border_draws_shortcuts_in_edge():
-    rendered = render_bottom_border(20, active=True, label="C-a nav  C-q quit")
+    rendered = render_bottom_border(20, active=True, label="C-d nav  C-q quit")
 
-    assert rendered == "\033[38;5;117mC-a nav  C-q quit ─╴\033[0m"
+    assert rendered == "\033[38;5;117mC-d nav  C-q quit ─╴\033[0m"
 
 
 def test_render_side_border_draws_requested_height():

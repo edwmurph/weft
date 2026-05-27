@@ -146,9 +146,9 @@ class DashboardHost:
         if b"\x11" in data:
             subprocess.run(["tmux", "detach-client", "-s", self.config.tmux_session], check=False)
             return
-        if b"\x01" in data:
+        if b"\x04" in data:
             self.set_focus("codex" if focus == "nav" else "nav")
-            chunks = [chunk for chunk in data.split(b"\x01") if chunk]
+            chunks = [chunk for chunk in data.split(b"\x04") if chunk]
             if focus == "codex":
                 return
             for chunk in chunks:

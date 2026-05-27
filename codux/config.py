@@ -26,7 +26,7 @@ class KeyBindings:
     rename: str = "r"
     close: str = "x"
     help: str = "?"
-    focus_toggle: str = "C-a"
+    focus_toggle: str = "C-d"
     quit: str = "C-q"
 
     @classmethod
@@ -120,7 +120,7 @@ move_right = "S-Right"
 rename = "r"
 close = "x"
 help = "?"
-focus_toggle = "C-a"
+focus_toggle = "C-d"
 quit = "C-q"
 """
 
@@ -141,13 +141,21 @@ def migrate_default_config(path: Path) -> None:
         'columns = ["Backlog", "Active", "Review", "Done"]',
         'columns = ["inbox", "implement", "ship"]',
     )
-    if "[key_bindings]" in updated and "\nquit =" not in updated:
-        updated = updated.replace('focus_toggle = "C-a"\n', 'focus_toggle = "C-a"\nquit = "C-q"\n')
     if "[key_bindings]" in updated:
+        if "\nquit =" not in updated:
+            updated = updated.replace(
+                'focus_toggle = "C-a"\n',
+                'focus_toggle = "C-a"\nquit = "C-q"\n',
+            )
+            updated = updated.replace(
+                'focus_toggle = "C-d"\n',
+                'focus_toggle = "C-d"\nquit = "C-q"\n',
+            )
         updated = updated.replace('prev = "h"\n', 'prev = "Left"\n')
         updated = updated.replace('next = "l"\n', 'next = "Right"\n')
         updated = updated.replace('move_left = "H"\n', 'move_left = "S-Left"\n')
         updated = updated.replace('move_right = "L"\n', 'move_right = "S-Right"\n')
+        updated = updated.replace('focus_toggle = "C-a"\n', 'focus_toggle = "C-d"\n')
     if updated != text:
         path.write_text(updated, encoding="utf-8")
 
