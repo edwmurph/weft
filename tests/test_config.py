@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import codux.config as config_module
 from codux.config import (
     APP_DIR_ENV,
     ConfigError,
@@ -29,19 +28,14 @@ def test_ensure_config_creates_default(tmp_path):
     assert config.key_bindings.focus_toggle == "C-d"
 
 
-def test_source_checkout_runtime_defaults_are_worktree_isolated(monkeypatch, tmp_path):
-    source_root = tmp_path / "repo" / ".worktrees" / "feature-a"
-    source_root.mkdir(parents=True)
-    (source_root / ".git").write_text("gitdir: ../../.git/worktrees/feature-a\n", encoding="utf-8")
+def test_runtime_defaults_are_singleton(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.delenv(APP_DIR_ENV, raising=False)
-    monkeypatch.setattr(config_module, "SOURCE_ROOT", source_root)
 
     runtime_dir = app_dir()
 
-    assert runtime_dir.parent == tmp_path / "home" / ".codux" / "worktrees"
-    assert runtime_dir.name.startswith("feature-a-")
-    assert default_tmux_session().startswith(f"codux-{runtime_dir.name}")
+    assert runtime_dir == tmp_path / "home" / ".codux"
+    assert default_tmux_session() == "codux"
 
 
 def test_codux_home_override_preserves_global_session_default(monkeypatch, tmp_path):
@@ -79,6 +73,15 @@ focus_toggle = "C-b"
     assert config.codex_command == "codex --foo"
     assert config.columns == ["One", "Two"]
     assert config.key_bindings.prev == "b"
+
+
+def test_load_config_trims_custom_columns(tmp_path):
+    path = config_path(tmp_path)
+    path.write_text('columns = [" inbox ", "implement"]\n', encoding="utf-8")
+
+    config = load_config(path)
+
+    assert config.columns == ["inbox", "implement"]
 
 
 def test_load_config_rejects_duplicate_columns(tmp_path):

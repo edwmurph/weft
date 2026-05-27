@@ -10,6 +10,10 @@ from codux.titles import render_display_title
 
 
 NAV_HORIZONTAL_PADDING = 2
+HELP_POPUP_WIDTH = 84
+HELP_POPUP_VERTICAL_PADDING = 2
+HELP_DOCS_URL = "https://github.com/edwmurph/codux"
+HELP_ISSUES_URL = "https://github.com/edwmurph/codux/issues"
 DEFAULT_THEME = Theme()
 
 
@@ -165,33 +169,40 @@ def render_help(config: CoduxConfig) -> str:
     bindings = config.key_bindings
     return textwrap.dedent(
         f"""
-        Codux shortcuts
+        Manage multiple Codex agents across parallel workflows in a shared workspace.
 
-        {bindings.new}        New Codex session
-        Arrow keys     Move through the visible nav grid
-        Shift + arrow keys    Move active tab left / right
-        {bindings.rename}        Rename active tab
-        {bindings.close}        Close active tab
-        {bindings.help}        Show this help
-        Esc      Close this help popup
-        Enter    Focus the active Codex pane
-        {bindings.focus_toggle}      Toggle focus between nav and Codex
-        {bindings.quit}      Detach dashboard and leave sessions running
+        Docs: {HELP_DOCS_URL}
 
-        Shell commands
+        Nav Pane Shortcuts
+        {bindings.new}        New session
+        ←/→/↑/↓  Select session
+        ⇧←/⇧→    Move active session between columns
+        {bindings.rename}        Rename tab
+        {bindings.close}        Close tab
+        {bindings.help}        Help
+        Esc      Close help
+        Enter/{bindings.focus_toggle}  Focus the active Codex pane
+        {bindings.quit}      Detach Codux and leave sessions running
 
-        codux start
-        codux new [TITLE]
-        codux rename TITLE
-        codux close
-        codux status
-        codux doctor
-        codux quit
+        Codex Pane Shortcuts
+        {bindings.focus_toggle}      Focus the nav pane
+        {bindings.quit}      Detach Codux and leave sessions running
+
+        Shell Commands: codux start | codux doctor | codux quit [--kill]
+
+        Feature requests: {HELP_ISSUES_URL}
         """
     ).strip()
 
 
+def help_popup_height(config: CoduxConfig) -> int:
+    return len(render_help(config).splitlines()) + HELP_POPUP_VERTICAL_PADDING
+
+
 __all__ = [
+    "HELP_DOCS_URL",
+    "HELP_ISSUES_URL",
+    "HELP_POPUP_WIDTH",
     "render_nav",
     "nav_content_height",
     "render_empty_state",
@@ -203,4 +214,5 @@ __all__ = [
     "nav_shortcuts",
     "codex_shortcuts",
     "render_help",
+    "help_popup_height",
 ]

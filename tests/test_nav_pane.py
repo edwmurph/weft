@@ -109,6 +109,41 @@ def test_rename_popup_runs_from_project_root(monkeypatch):
     assert "cd " not in command
 
 
+def test_help_popup_sizes_to_rendered_help(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+
+    monkeypatch.setattr(nav_pane_module.subprocess, "run", fake_run)
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = CoduxConfig()
+    pane.help_popup()
+
+    command = calls[0][-1]
+    assert calls[0] == [
+        "tmux",
+        "display-popup",
+        "-E",
+        "-d",
+        str(nav_pane_module.PROJECT_ROOT),
+        "-w",
+        str(nav_pane_module.HELP_POPUP_WIDTH),
+        "-h",
+        str(nav_pane_module.help_popup_height(pane.config)),
+        "-s",
+        "fg=default,bg=default",
+        "-S",
+        "fg=default,bg=default",
+        "-T",
+        "Codux",
+        command,
+    ]
+    root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
+    assert command == f"uv --directory {root} --project {root} run codux _popup-help"
+
+
 def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
     config = CoduxConfig()
     active = tab("active")

@@ -19,7 +19,7 @@ from rich.console import Console
 from rich.table import Table
 
 from codux.config import ConfigError, CoduxConfig, config_path, ensure_config
-from codux.launcher import codux_cli_args, codux_cli_shell_command
+from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.nav_pane import run_nav_pane
 from codux.render import render_empty_state, render_help, render_nav
@@ -27,6 +27,7 @@ from codux.state import (
     AppState,
     FocusTarget,
     StateError,
+    StateLockTimeout,
     StateStore,
     Tab,
     now_iso,
@@ -45,12 +46,14 @@ from codux.titles import (
 from codux.tmux import FRAME_HOST_OPTION, FRAME_HOST_VERSION, TmuxController
 
 
-app = typer.Typer(help="Manage Codex sessions in a tmux-native tab UI.")
+app = typer.Typer(help="Start, inspect, or detach the singleton Codux dashboard.")
 console = Console()
 RENAME_INPUT_PREFIX = "> "
 RENAME_INPUT_BACKGROUND = "\033[48;2;30;35;45m"
 RESET_TERMINAL_STYLE = "\033[0m"
 CLEAR_TO_LINE_END = "\033[K"
+ENABLE_MOUSE_CAPTURE = "\033[?1000h\033[?1002h\033[?1006h"
+DISABLE_MOUSE_CAPTURE = "\033[?1006l\033[?1002l\033[?1000l"
 ESCAPE_SEQUENCE_TIMEOUT_SECONDS = 0.12
 MAX_ESCAPE_SEQUENCE_BYTES = 8
 
@@ -68,10 +71,29 @@ def start_entrypoint() -> None:
 
 
 def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
-    config = ensure_config()
+    config, tmux = load_config_and_tmux()
     store = StateStore()
     store.ensure()
-    return config, store, TmuxController(config.tmux_session)
+    return config, store, tmux
+
+
+def load_config_and_tmux() -> tuple[CoduxConfig, TmuxController]:
+    config = ensure_config()
+    return config, TmuxController(config.tmux_session)
+
+
+def exit_for_busy_state_lock(exc: StateLockTimeout) -> None:
+    console.print(f"[red]error[/red] Codux state is busy: {exc}")
+    console.print("If the dashboard is already running, attach with `tmux attach -t codux`.")
+    raise typer.Exit(1) from exc
+
+
+def exit_for_foreign_session(project_root: str) -> None:
+    console.print("[red]error[/red] Codux singleton session is already running elsewhere.")
+    console.print(f"existing session: {project_root}")
+    console.print(f"current command:  {PROJECT_ROOT}")
+    console.print("Close or kill the existing `codux` tmux session before starting this checkout.")
+    raise typer.Exit(1)
 
 
 def _with_runtime_lock(fn):
@@ -211,7 +233,23 @@ def start(
     ),
 ) -> None:
     """Create or attach to the Codux tmux session."""
-    config, store, tmux = load_runtime()
+    config, tmux = load_config_and_tmux()
+    if tmux.has_session():
+        project_root = tmux.project_root()
+        if project_root and project_root != str(PROJECT_ROOT):
+            exit_for_foreign_session(project_root)
+        tmux.install_look_and_keys(config, codux_command())
+        if attach:
+            tmux.attach()
+            return
+    store = StateStore()
+    try:
+        store.ensure()
+    except StateLockTimeout as exc:
+        if attach and tmux.has_session():
+            tmux.attach()
+            return
+        exit_for_busy_state_lock(exc)
     tmux.ensure_session(config)
     tmux.install_look_and_keys(config, codux_command())
     state = repair_and_render(config, store, tmux)
@@ -223,7 +261,6 @@ def start(
         console.print(f"Prepared tmux session [bold]{config.tmux_session}[/bold].")
 
 
-@app.command()
 def new(title: str | None = typer.Argument(None, help="Optional tab title.")) -> None:
     """Create a new Codex tab."""
     config, store, tmux = load_runtime()
@@ -264,7 +301,6 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
     console.print(f"Created [bold]{tab.title}[/bold].")
 
 
-@app.command()
 def close(
     tab_id: str | None = typer.Argument(None, help="Tab id to close. Defaults to active."),
 ) -> None:
@@ -293,7 +329,6 @@ def close(
     console.print(f"Closed [bold]{target.title}[/bold].")
 
 
-@app.command()
 def rename(title: str = typer.Argument(..., help="New active tab title.")) -> None:
     """Rename the active Codex tab."""
     rename_active_tab(title)
@@ -320,22 +355,29 @@ def rename_active_tab(title: str) -> AppState:
 
 
 @app.command()
-def quit() -> None:
-    """Detach the dashboard and leave Codex sessions running."""
-    config, _, tmux = load_runtime()
-    if tmux.has_session():
-        tmux.detach_clients()
-    else:
+def quit(
+    kill: bool = typer.Option(
+        False,
+        "--kill",
+        help="Kill the Codux tmux session instead of detaching clients.",
+    ),
+) -> None:
+    """Detach or stop the Codux dashboard."""
+    config, tmux = load_config_and_tmux()
+    if not tmux.has_session():
         console.print(f"tmux session is not running: {config.tmux_session}")
+        return
+    if kill is True:
+        tmux.kill_session()
+    else:
+        tmux.detach_clients()
 
 
-@app.command("move-left")
 def move_left() -> None:
     """Move the active tab one column left."""
     move_active_column(-1)
 
 
-@app.command("move-right")
 def move_right() -> None:
     """Move the active tab one column right."""
     move_active_column(1)
@@ -362,37 +404,31 @@ def move_active_column(delta: int) -> None:
     console.print(f"Moved [bold]{target.title}[/bold] to {next_column}.")
 
 
-@app.command("next")
 def next_tab() -> None:
     """Select the next tab."""
     select_relative(1)
 
 
-@app.command("prev")
 def prev_tab() -> None:
     """Select the previous tab."""
     select_relative(-1)
 
 
-@app.command("nav-up", hidden=True)
 def nav_up() -> None:
     """Select the visible tab above the active tab."""
     select_grid(delta_row=-1)
 
 
-@app.command("nav-down", hidden=True)
 def nav_down() -> None:
     """Select the visible tab below the active tab."""
     select_grid(delta_row=1)
 
 
-@app.command("nav-left", hidden=True)
 def nav_left() -> None:
     """Select the visible tab to the left of the active tab."""
     select_grid(delta_column=-1)
 
 
-@app.command("nav-right", hidden=True)
 def nav_right() -> None:
     """Select the visible tab to the right of the active tab."""
     select_grid(delta_column=1)
@@ -432,19 +468,16 @@ def select_grid(delta_column: int = 0, delta_row: int = 0) -> None:
     select_active_or_empty(config, state, tmux)
 
 
-@app.command("focus-nav")
 def focus_nav() -> None:
     """Focus the nav pane."""
     set_focus("nav")
 
 
-@app.command("focus-codex")
 def focus_codex() -> None:
     """Focus the Codex pane."""
     set_focus("codex")
 
 
-@app.command("toggle-focus")
 def toggle_focus() -> None:
     """Toggle focus between the nav and Codex panes."""
     config, store, tmux = load_runtime()
@@ -468,7 +501,6 @@ def set_focus(focus: FocusTarget) -> None:
     select_active_or_empty(config, state, tmux)
 
 
-@app.command()
 def status() -> None:
     """Print Codux state."""
     config, store, tmux = load_runtime()
@@ -565,10 +597,9 @@ def render_help_command() -> None:
 @app.command("_popup-help", hidden=True)
 def popup_help_command() -> None:
     config = ensure_config()
-    write_terminal_control("\033[?25l\033[2J\033[H")
+    write_terminal_control(f"\033[?25l{ENABLE_MOUSE_CAPTURE}\033[2J\033[H")
     try:
         console.print(render_help(config))
-        console.print("\nPress Esc to close.", end="")
         while True:
             key = read_single_key()
             if key in {"\x1b", ""}:
@@ -576,7 +607,7 @@ def popup_help_command() -> None:
     except EOFError:
         pass
     finally:
-        write_terminal_control("\033[?25h")
+        write_terminal_control(f"{DISABLE_MOUSE_CAPTURE}\033[?25h")
 
 
 @app.command("_popup-rename", hidden=True)

@@ -4,12 +4,17 @@ import re
 
 from codux.config import CoduxConfig
 from codux.render import (
+    HELP_DOCS_URL,
+    HELP_ISSUES_URL,
+    HELP_POPUP_WIDTH,
     codex_shortcuts,
+    help_popup_height,
     nav_column_widths,
     nav_content_height,
     nav_shortcuts,
     render_bottom_border,
     render_empty_state,
+    render_help,
     render_left_border,
     render_nav,
     render_right_border,
@@ -234,3 +239,38 @@ def test_shortcut_labels_are_pane_specific():
 
     assert "new" in nav_shortcuts(config)
     assert "new" not in codex_shortcuts(config)
+
+
+def test_help_orients_user_and_lists_mvp_shell_commands():
+    rendered = render_help(CoduxConfig())
+
+    assert rendered.startswith(
+        "Manage multiple Codex agents across parallel workflows in a shared workspace.\n\nDocs:"
+    )
+    assert "Config:" not in rendered
+    assert "Controls:" not in rendered
+    assert "Current columns:" not in rendered
+    assert f"Docs: {HELP_DOCS_URL}" in rendered
+    assert "#config-and-state" not in rendered
+    assert "Nav Pane Shortcuts" in rendered
+    assert "Codex Pane Shortcuts" in rendered
+    assert "Shell Commands" in rendered
+    assert "Shell Commands (MVP)" not in rendered
+    assert "←/→/↑/↓" in rendered
+    assert "⇧←/⇧→" in rendered
+    assert "Shift+Left/Right" not in rendered
+    assert "Other keys pass through to Codex." not in rendered
+    assert "codux start" in rendered
+    assert "codux doctor" in rendered
+    assert "codux quit [--kill]" in rendered
+    assert "codux new" not in rendered
+    assert "codux rename" not in rendered
+    assert "codux status" not in rendered
+    assert f"Feature requests: {HELP_ISSUES_URL}" in rendered
+
+
+def test_help_popup_height_covers_rendered_help():
+    config = CoduxConfig()
+
+    assert HELP_POPUP_WIDTH == 84
+    assert help_popup_height(config) > len(render_help(config).splitlines())

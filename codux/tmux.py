@@ -12,7 +12,9 @@ from codux.config import CoduxConfig
 from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.render import (
+    HELP_POPUP_WIDTH,
     codex_shortcuts,
+    help_popup_height,
     nav_content_height,
     nav_shortcuts,
     render_bottom_border,
@@ -34,6 +36,7 @@ NAV_HOST_OPTION = "@codux-nav-host"
 NAV_HOST_VERSION = "16"
 FRAME_HOST_OPTION = "@codux-frame-host"
 FRAME_HOST_VERSION = "6"
+PROJECT_ROOT_OPTION = "@codux-project-root"
 CODEX_PANE_TITLE = "CODEX"
 NAV_PANE_TITLE = "NAV"
 FRAME_EDGE_SIZE = 1
@@ -104,6 +107,7 @@ class TmuxController:
     def install_look_and_keys(self, config: CoduxConfig, codux_command: str) -> None:
         self._install_terminal_options()
         self._install_session_environment()
+        self.set_project_root(str(PROJECT_ROOT))
         self._tmux(["set-option", "-t", self.session_name, "status", "off"])
         snapshot = self._snapshot()
         for window_id, _ in self._codux_windows(snapshot):
@@ -111,6 +115,25 @@ class TmuxController:
         self.repair_window_sizes()
         self._install_hooks(codux_command)
         self._install_bindings(config, codux_command)
+
+    def set_project_root(self, project_root: str) -> None:
+        self._set_session_option(PROJECT_ROOT_OPTION, project_root)
+
+    def project_root(self) -> str | None:
+        if not self.has_session():
+            return None
+        value = self._session_option(PROJECT_ROOT_OPTION)
+        if value:
+            return value
+        return self._project_root_from_hooks()
+
+    def _project_root_from_hooks(self) -> str | None:
+        raw = self._tmux(["show-hooks", "-t", self.session_name], check=False)
+        for line in raw.splitlines():
+            project_root = _project_root_from_hook_line(line)
+            if project_root:
+                return project_root
+        return None
 
     def create_tab_window(
         self,
@@ -361,6 +384,9 @@ class TmuxController:
 
     def detach_clients(self) -> None:
         self._tmux(["detach-client", "-s", self.session_name], check=False)
+
+    def kill_session(self) -> None:
+        self._tmux(["kill-session", "-t", self.session_name], check=False)
 
     def active_pane_id(self) -> str | None:
         result = run_tmux(
@@ -1423,7 +1449,8 @@ class TmuxController:
     def _help_popup_command(self, command: str) -> str:
         return (
             f"display-popup -E -d {shlex.quote(str(PROJECT_ROOT))} "
-            f"-w 72 -h 22 -s fg=default,bg=default -S fg=default,bg=default "
+            f"-w {HELP_POPUP_WIDTH} -h {help_popup_height(CoduxConfig())} "
+            f"-s fg=default,bg=default -S fg=default,bg=default "
             f"-T Codux {shlex.quote(f'{command} _popup-help')}"
         )
 
@@ -1433,6 +1460,14 @@ class TmuxController:
     def _window_option(self, window_id: str, option: str) -> str:
         return self._tmux(
             ["show-option", "-w", "-qv", "-t", window_id, option], check=False
+        ).strip()
+
+    def _set_session_option(self, option: str, value: str) -> None:
+        self._tmux(["set-option", "-t", self.session_name, option, value], check=False)
+
+    def _session_option(self, option: str) -> str:
+        return self._tmux(
+            ["show-option", "-qv", "-t", self.session_name, option], check=False
         ).strip()
 
     def _set_pane_title(self, pane_id: str, title: str) -> None:
@@ -1479,3 +1514,31 @@ class TmuxController:
 
 def _run_tmux(args: list[str], check: bool = True):
     return run_tmux(args, check=check)
+
+
+def _project_root_from_hook_line(line: str) -> str | None:
+    try:
+        fields = shlex.split(line)
+    except ValueError:
+        return None
+    for field in fields:
+        project_root = _project_root_from_codux_command(field)
+        if project_root:
+            return project_root
+    return None
+
+
+def _project_root_from_codux_command(command: str) -> str | None:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    if "codux" not in tokens:
+        return None
+    for option in ("--directory", "--project"):
+        if option not in tokens:
+            continue
+        index = tokens.index(option)
+        if index + 1 < len(tokens):
+            return tokens[index + 1]
+    return None

@@ -16,7 +16,7 @@ from dataclasses import replace
 from codux.config import ensure_config
 from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
-from codux.render import nav_content_height, render_nav
+from codux.render import HELP_POPUP_WIDTH, help_popup_height, nav_content_height, render_nav
 from codux.state import (
     AppState,
     StateLockTimeout,
@@ -401,9 +401,9 @@ class NavPane:
                 "-d",
                 str(PROJECT_ROOT),
                 "-w",
-                "72",
+                str(HELP_POPUP_WIDTH),
                 "-h",
-                "22",
+                str(help_popup_height(self.config)),
                 "-s",
                 POPUP_STYLE,
                 "-S",

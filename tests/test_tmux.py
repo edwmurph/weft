@@ -76,6 +76,21 @@ def test_respawn_codex_pane_preserves_terminal_title(monkeypatch):
     assert not any(event[0] == "title" for event in events)
 
 
+def test_kill_session_targets_codux_session(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        controller,
+        "_tmux",
+        lambda args, check=True: commands.append(tuple(args)) or "",
+    )
+
+    controller.kill_session()
+
+    assert commands == [("kill-session", "-t", "codux")]
+
+
 def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
     controller = TmuxController("codux")
     root = shlex.quote(str(tmux_module.PROJECT_ROOT))
@@ -95,6 +110,53 @@ def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
         codux_command,
     ]
     assert all("cd " not in command for command in commands)
+
+
+def test_project_root_falls_back_to_legacy_refresh_hook(monkeypatch):
+    controller = TmuxController("codux")
+    old_root = "/Users/me/codux/.worktrees/old"
+    hook = (
+        'client-attached[0] run-shell -b "uv --directory '
+        f'{old_root} --project {old_root} run codux _refresh >/dev/null 2>&1"'
+    )
+
+    def fake_tmux(args, check=True):
+        if args[:2] == ["show-option", "-qv"]:
+            return ""
+        if args[:2] == ["show-hooks", "-t"]:
+            return hook
+        raise AssertionError(args)
+
+    monkeypatch.setattr(controller, "has_session", lambda: True)
+    monkeypatch.setattr(controller, "_tmux", fake_tmux)
+
+    assert controller.project_root() == old_root
+
+
+def test_install_records_current_project_root(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[tuple[str, ...]] = []
+
+    def fake_tmux(args, check=True):
+        commands.append(tuple(args))
+        if args and args[0] == "show-options":
+            return ""
+        return ""
+
+    monkeypatch.setattr(controller, "_tmux", fake_tmux)
+    monkeypatch.setattr(controller, "_snapshot", lambda: SimpleNamespace())
+    monkeypatch.setattr(controller, "_codux_windows", lambda snapshot: [])
+    monkeypatch.setattr(controller, "repair_window_sizes", lambda: None)
+
+    controller.install_look_and_keys(CoduxConfig(), "uv run codux")
+
+    assert (
+        "set-option",
+        "-t",
+        "codux",
+        tmux_module.PROJECT_ROOT_OPTION,
+        str(tmux_module.PROJECT_ROOT),
+    ) in commands
 
 
 def test_direct_nav_arrow_activates_state_after_selecting_window(monkeypatch):
