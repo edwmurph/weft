@@ -22,6 +22,7 @@ from codux.state import (
 from codux.titles import CODEX_TITLE_TEMPLATE, normalize_codex_title
 from codux.tmux import TmuxError
 from rich.console import Console
+from typer.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)
@@ -101,10 +102,18 @@ def test_public_shell_commands_stay_limited():
         name for name, command in root_command.commands.items() if not command.hidden
     }
 
-    assert visible_commands == {"delete-session", "doctor", "quit", "sessions", "start"}
+    assert visible_commands == {"config", "delete-session", "doctor", "quit", "sessions", "start"}
     assert "new" not in root_command.commands
     assert "rename" not in root_command.commands
     assert "status" not in root_command.commands
+
+
+def test_root_help_explains_workdir_scoped_runtime():
+    result = CliRunner().invoke(cli_module.app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "Codux is scoped to the directory where you run it" in result.output
+    assert "codux config info" in result.output
 
 
 def test_start_attaches_existing_workdir_session_without_state_lock(monkeypatch):
@@ -328,6 +337,81 @@ def test_delete_session_command_reports_missing_session(monkeypatch):
 
     assert exc.value.exit_code == 1
     assert "tmux session not found: missing" in output.getvalue()
+
+
+def test_config_info_reports_workdir_runtime_without_creating_config(monkeypatch, tmp_path):
+    output = io.StringIO()
+    home = tmp_path / "home"
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(cli_module, "console", Console(file=output, width=200))
+
+    cli_module.config_info_command()
+
+    rendered = output.getvalue()
+    assert str(workdir) in rendered
+    assert str(home / ".codux" / "workdirs") in rendered
+    assert "config.toml" in rendered
+    assert "state.json" in rendered
+    assert "codux-" in rendered
+    assert not cli_module.config_path().exists()
+
+
+def test_config_path_command_prints_workdir_scoped_config(monkeypatch, tmp_path):
+    output = io.StringIO()
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(cli_module, "console", Console(file=output, width=200))
+
+    cli_module.config_path_command()
+
+    rendered = output.getvalue().strip()
+    assert rendered.endswith("config.toml")
+    assert ".codux/workdirs/" in rendered
+
+
+def test_config_show_creates_and_prints_default_config(monkeypatch, tmp_path):
+    output = io.StringIO()
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.config_show_command()
+
+    rendered = output.getvalue()
+    assert cli_module.config_path().exists()
+    assert "Codux runtime configuration for one launch directory" in rendered
+    assert 'columns = ["inbox", "implement", "ship"]' in rendered
+
+
+def test_config_init_refuses_existing_config_without_force(monkeypatch, tmp_path):
+    output = io.StringIO()
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.config_init_command()
+    with pytest.raises(cli_module.typer.Exit) as exc:
+        cli_module.config_init_command()
+
+    assert exc.value.exit_code == 1
+    assert "config already exists" in output.getvalue()
 
 
 def test_sessions_popup_requires_confirmation_before_delete(monkeypatch):
@@ -834,8 +918,8 @@ def test_help_popup_captures_mouse_until_escape(monkeypatch):
         f"\033[?25l{cli_module.ENABLE_MOUSE_CAPTURE}\033[2J\033[H",
         f"{cli_module.DISABLE_MOUSE_CAPTURE}\033[?25h",
     ]
-    assert output.getvalue().startswith(
-        "  Manage multiple Codex agents across parallel workflows in a shared workspace."
+    assert output.getvalue().splitlines()[1].strip() == (
+        "Codux runs one tmux workspace per launch directory. Same directory reattaches."
     )
     assert not output.getvalue().endswith("\n")
 

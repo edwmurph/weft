@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from textwrap import shorten
+from textwrap import shorten, wrap
 
 from codux.config import CoduxConfig
 from codux.state import AppState
@@ -11,7 +11,10 @@ from codux.titles import render_display_title
 NAV_HORIZONTAL_PADDING = 2
 HELP_POPUP_WIDTH = 84
 HELP_POPUP_VERTICAL_PADDING = 2
-HELP_POPUP_INDENT = "  "
+HELP_POPUP_CONTENT_WIDTH = HELP_POPUP_WIDTH - 2
+HELP_POPUP_HORIZONTAL_PADDING = 2
+HELP_POPUP_INDENT = " " * HELP_POPUP_HORIZONTAL_PADDING
+HELP_POPUP_TEXT_WIDTH = HELP_POPUP_CONTENT_WIDTH - (HELP_POPUP_HORIZONTAL_PADDING * 2)
 HELP_SHORTCUT_KEY_WIDTH = 13
 HELP_DOCS_URL = "https://github.com/edwmurph/codux"
 HELP_ISSUES_URL = "https://github.com/edwmurph/codux/issues"
@@ -170,7 +173,8 @@ def _underlined_header(text: str, width: int) -> str:
 def render_help(config: CoduxConfig) -> str:
     bindings = config.key_bindings
     lines = [
-        "Manage multiple Codex agents across parallel workflows in a shared workspace.",
+        "Codux runs one tmux workspace per launch directory. Same directory reattaches.",
+        "Another directory gets its own config, state, and session.",
         "",
         f"Docs: {HELP_DOCS_URL}",
         f"Feature requests: {HELP_ISSUES_URL}",
@@ -191,7 +195,37 @@ def render_help(config: CoduxConfig) -> str:
         _help_shortcut_row(bindings.focus_toggle, "Focus the nav pane"),
         _help_shortcut_row(bindings.quit, "Detach dashboard and leave Codex tabs running"),
     ]
-    return "\n".join(f"{HELP_POPUP_INDENT}{line}" if line else "" for line in lines)
+    return "\n".join(_padded_help_lines(lines))
+
+
+def _padded_help_lines(lines: list[str]) -> list[str]:
+    padded = [_help_blank_line()]
+    for line in lines:
+        wrapped_lines = _wrap_help_line(line)
+        padded.extend(_pad_help_line(wrapped_line) for wrapped_line in wrapped_lines)
+    padded.append(_help_blank_line())
+    return padded
+
+
+def _wrap_help_line(line: str) -> list[str]:
+    if not line or len(line) <= HELP_POPUP_TEXT_WIDTH:
+        return [line]
+    return wrap(
+        line,
+        width=HELP_POPUP_TEXT_WIDTH,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+
+
+def _pad_help_line(line: str) -> str:
+    clipped = line[:HELP_POPUP_TEXT_WIDTH]
+    right_padding = " " * (HELP_POPUP_TEXT_WIDTH - len(clipped))
+    return f"{HELP_POPUP_INDENT}{clipped}{right_padding}{HELP_POPUP_INDENT}"
+
+
+def _help_blank_line() -> str:
+    return " " * HELP_POPUP_CONTENT_WIDTH
 
 
 def _help_shortcut_row(key: str, description: str) -> str:
@@ -205,6 +239,7 @@ def help_popup_height(config: CoduxConfig) -> int:
 __all__ = [
     "HELP_DOCS_URL",
     "HELP_ISSUES_URL",
+    "HELP_POPUP_CONTENT_WIDTH",
     "HELP_POPUP_WIDTH",
     "render_nav",
     "nav_content_height",

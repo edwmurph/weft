@@ -6,6 +6,7 @@ from codux.config import CoduxConfig
 from codux.render import (
     HELP_DOCS_URL,
     HELP_ISSUES_URL,
+    HELP_POPUP_CONTENT_WIDTH,
     HELP_POPUP_WIDTH,
     codex_shortcuts,
     help_popup_height,
@@ -253,10 +254,19 @@ def test_shortcut_labels_are_pane_specific():
 
 def test_help_orients_user_and_lists_shortcuts():
     rendered = render_help(CoduxConfig())
+    lines = rendered.splitlines()
 
-    assert rendered.startswith(
-        "  Manage multiple Codex agents across parallel workflows in a shared workspace.\n\n  Docs:"
+    assert lines[0] == " " * HELP_POPUP_CONTENT_WIDTH
+    assert lines[-1] == " " * HELP_POPUP_CONTENT_WIDTH
+    assert {len(line) for line in lines} == {HELP_POPUP_CONTENT_WIDTH}
+    assert lines[1].strip() == (
+        "Codux runs one tmux workspace per launch directory. Same directory reattaches."
     )
+    assert lines[2].strip() == "Another directory gets its own config, state, and session."
+    assert ";" not in lines[1]
+    assert ";" not in lines[2]
+    assert "—" not in lines[1]
+    assert "—" not in lines[2]
     assert "Config:" not in rendered
     assert "Controls:" not in rendered
     assert "Current columns:" not in rendered

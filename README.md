@@ -13,8 +13,13 @@ uv run codux doctor
 
 ```sh
 uv run start
+uv run codux --help
 uv run codux start
 uv run codux doctor
+uv run codux config info
+uv run codux config path
+uv run codux config show
+uv run codux config init
 uv run codux sessions
 uv run codux delete-session SESSION
 uv run codux quit
@@ -24,6 +29,10 @@ uv run codux quit --kill
 `uv run start` is the shortest local start command; it is equivalent to `uv run codux start`. User-facing shell commands are:
 
 - `codux start`: create or attach to the dashboard for the current workdir
+- `codux config info`: show the active workdir, runtime directory, config, state, and tmux session
+- `codux config path`: print the current workdir's config path
+- `codux config show`: create the config if needed, then print it
+- `codux config init`: create the default config without starting the dashboard
 - `codux doctor`: check local dependencies and runtime files
 - `codux sessions`: list active Codux dashboard sessions
 - `codux delete-session SESSION`: delete a tmux session without confirmation
@@ -60,15 +69,36 @@ The nav footer shows `s sessions (N)`, where `N` is the count of other active Co
 
 ## Config And State
 
-On first run, Codux creates:
+Codux is scoped to the directory where you launch it. On first run from a directory, Codux creates:
 
-- workdir-scoped runtime: `~/.codux/workdirs/<workdir-id>/config.toml` and `~/.codux/workdirs/<workdir-id>/state.json`
+- tmux workspace: one session named `codux-<workdir-id>`
+- runtime directory: `~/.codux/workdirs/<workdir-id>/`
+- config file: `~/.codux/workdirs/<workdir-id>/config.toml`
+- state file: `~/.codux/workdirs/<workdir-id>/state.json`
+
+Starting Codux again from the same directory reattaches to the same tmux workspace. Starting it from a different directory creates a different runtime directory, config, state file, and tmux session.
+
+Use these commands to inspect the current launch directory's runtime:
+
+```sh
+codux config info
+codux config path
+codux config show
+codux config init
+codux config init --force
+```
 
 The default config:
 
 ```toml
+# Codux runtime configuration for one launch directory.
+# Run `codux config info` to see the workdir, runtime directory, state file,
+# and tmux session this file controls.
 tmux_session = "codux-<workdir-id>"
+
+# Command launched directly inside each CODEX tmux pane.
 codex_command = "codex"
+
 # Ordered columns shown in the nav pane.
 columns = ["inbox", "implement", "ship"]
 
@@ -88,9 +118,14 @@ quit = "C-q"
 
 Set `columns` to change the nav columns and their order. Existing tabs in removed columns are moved to the first configured column the next time Codux repairs runtime state.
 
-The config file also controls `codex_command`, `key_bindings`, and `tmux_session`. See https://github.com/edwmurph/codux for details.
+The config file controls:
 
-By default, `codux start` maps the current workdir to a stable runtime directory and tmux session, so starting Codux again from the same workdir reattaches to that dashboard. Separate workdirs get separate dashboards. Set `CODUX_HOME` only when you intentionally need a separate runtime directory for development or tests.
+- `tmux_session`: tmux session name for this workdir's workspace
+- `codex_command`: shell command launched directly in each CODEX pane
+- `columns`: nav columns and their left-to-right order
+- `[key_bindings]`: nav and pane-focus shortcuts
+
+`CODUX_WORKDIR` overrides the directory used for workdir scoping. `CODUX_HOME` overrides the runtime directory directly; use it only when you intentionally need isolated state for development or tests.
 
 State writes are atomic and guarded by `state.lock` so rapid tmux keybindings do not corrupt the JSON file.
 

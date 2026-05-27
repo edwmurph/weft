@@ -142,9 +142,14 @@ def render_dir(base_dir: Path | None = None) -> Path:
 def default_config_text(tmux_session: str | None = None) -> str:
     columns = ", ".join(f'"{column}"' for column in DEFAULT_COLUMNS)
     tmux_session = tmux_session or default_tmux_session()
-    return f"""# Codux runtime configuration.
+    return f"""# Codux runtime configuration for one launch directory.
+# Run `codux config info` to see the workdir, runtime directory, state file,
+# and tmux session this file controls.
 tmux_session = "{tmux_session}"
+
+# Command launched directly inside each CODEX tmux pane.
 codex_command = "codex"
+
 # Ordered columns shown in the nav pane.
 columns = [{columns}]
 

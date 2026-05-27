@@ -21,9 +21,14 @@ from rich.table import Table
 from codux.config import (
     ConfigError,
     CoduxConfig,
+    app_dir,
     config_path,
+    current_workdir,
+    default_config_text,
+    default_tmux_session,
     ensure_config,
     ensure_runtime_environment,
+    load_config,
 )
 from codux.launcher import codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
@@ -59,7 +64,32 @@ from codux.titles import (
 from codux.tmux import FRAME_HOST_OPTION, FRAME_HOST_VERSION, TmuxController
 
 
-app = typer.Typer(help="Start, inspect, or detach Codux dashboards.")
+APP_HELP = """
+Start, inspect, or detach Codux tmux workspaces for Codex.
+
+Codux is scoped to the directory where you run it. Each launch directory gets:
+- a stable runtime directory under ~/.codux/workdirs/<workdir-id>
+- config.toml and state.json files
+- a tmux session
+
+Starting again from the same directory reattaches to that workspace. Starting
+from a different directory creates a separate one.
+
+Use `codux config info` to see the active workdir, runtime directory, config
+file, state file, and tmux session.
+"""
+CONFIG_HELP = """
+Inspect or initialize the config.toml for the current Codux workdir.
+
+The config file is workdir-scoped by default. It controls:
+- tmux session name
+- Codex pane command
+- nav columns and key bindings
+"""
+
+app = typer.Typer(help=APP_HELP, no_args_is_help=True)
+config_app = typer.Typer(help=CONFIG_HELP, no_args_is_help=True)
+app.add_typer(config_app, name="config")
 console = Console()
 RENAME_INPUT_PREFIX = "> "
 RENAME_INPUT_BACKGROUND = "\033[48;2;30;35;45m"
@@ -234,15 +264,19 @@ def current_tab_or_exit(state: AppState) -> Tab:
     return tab
 
 
+def default_config_for_current_workdir() -> CoduxConfig:
+    return CoduxConfig.from_mapping({}, tmux_session_default=default_tmux_session())
+
+
 @app.command()
 def start(
     attach: bool = typer.Option(
         True,
         "--attach/--no-attach",
-        help="Attach to the tmux session after preparing it.",
+        help="Attach to this workdir's tmux session after preparing it.",
     ),
 ) -> None:
-    """Create or attach to the Codux tmux session."""
+    """Create or attach to this workdir's Codux tmux workspace."""
     config, tmux = load_config_and_tmux()
     if tmux.has_session():
         tmux.install_look_and_keys(config, codux_command())
@@ -265,7 +299,10 @@ def start(
     if attach:
         tmux.attach()
     else:
-        console.print(f"Prepared tmux session [bold]{config.tmux_session}[/bold].")
+        console.print(
+            f"Prepared tmux session [bold]{config.tmux_session}[/bold] for {current_workdir()}."
+        )
+        console.print(f"Config: {config_path()}")
 
 
 def new(title: str | None = typer.Argument(None, help="Optional tab title.")) -> None:
@@ -414,6 +451,60 @@ def delete_session_command(
         console.print(f"tmux session not found: {session_name}")
         raise typer.Exit(1)
     console.print(f"Deleted tmux session: {session_name}")
+
+
+@config_app.command("info")
+def config_info_command() -> None:
+    """Show the workdir-scoped runtime paths and tmux session."""
+    ensure_runtime_environment()
+    path = config_path()
+    config = load_config(path) if path.exists() else default_config_for_current_workdir()
+    config_status = "exists" if path.exists() else "missing; run codux config init"
+    console.out("Codux workdir runtime")
+    console.out(f"Workdir: {current_workdir()}")
+    console.out(f"Runtime dir: {app_dir()}")
+    console.out(f"Config: {path} ({config_status})")
+    console.out(f"State: {state_path()}")
+    console.out(f"tmux session: {config.tmux_session}")
+    console.out(f"Codex command: {config.codex_command}")
+
+
+@config_app.command("path")
+def config_path_command() -> None:
+    """Print this workdir's config.toml path."""
+    ensure_runtime_environment()
+    console.out(str(config_path()))
+
+
+@config_app.command("show")
+def config_show_command() -> None:
+    """Create the config if needed, then print config.toml."""
+    ensure_runtime_environment()
+    ensure_config()
+    console.print(config_path().read_text(encoding="utf-8"), end="", markup=False)
+
+
+@config_app.command("init")
+def config_init_command(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Replace an existing config.toml with the generated default.",
+    ),
+) -> None:
+    """Create the default config.toml for this workdir."""
+    ensure_runtime_environment()
+    path = config_path()
+    force_enabled = force is True
+    if path.exists() and not force_enabled:
+        console.print(f"config already exists: {path}")
+        console.print("Use `codux config show` to inspect it or `codux config init --force`.")
+        raise typer.Exit(1)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(default_config_text(tmux_session=default_tmux_session()), encoding="utf-8")
+    action = "Rewrote" if force_enabled else "Wrote"
+    console.print(f"{action} config: {path}")
 
 
 def move_left() -> None:
@@ -595,8 +686,14 @@ def doctor() -> None:
         console.print(f"[green]ok[/green] Codex command: {config.codex_command}")
     if TmuxController.available():
         state = repair_and_render(config, store, tmux)
+    console.print(f"[blue]info[/blue] workdir: {current_workdir()}")
+    console.print(f"[blue]info[/blue] runtime dir: {app_dir()}")
     console.print(f"[green]ok[/green] config: {config_path()}")
     console.print(f"[green]ok[/green] state: {state_path()} ({len(state.tabs)} tabs)")
+    console.print(
+        "[blue]info[/blue] same workdir reattaches to this workspace; another "
+        "workdir gets its own config, state, and tmux session."
+    )
     console.print(
         "[blue]info[/blue] native tmux panes are used for NAV and direct Codex content; "
         "rounded frame panes provide the visible boxes."
