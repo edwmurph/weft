@@ -1,4 +1,4 @@
-<h1 align="center"><img src="assets/codux-logo.svg" alt="" width="46" valign="middle"> Codux</h1>
+<h1 align="center"><img src="assets/codux-logo.svg" alt="" width="70" valign="middle"> Codux</h1>
 
 <p align="center">
   <strong>Coordinate multiple Codex sessions from a single tmux workspace.</strong>
@@ -21,7 +21,7 @@
 
 ## Why Codux
 
-- **One tmux workspace, many Codex threads.** Keep related agents grouped without leaving the terminal.
+- **One tmux workspace, many Codex threads.** Keep related agents organized without leaving the terminal.
 - **Kanban-style workflow state.** Move sessions through customizable columns as work progresses.
 - **Native Codex panes.** Codux coordinates tmux layout, state, and focus without proxying Codex IO.
 
@@ -40,86 +40,66 @@ uv run codux --install-completion
 
 Run the completion command from the shell you want to configure.
 
-## Usage
+Then start the dashboard from the project directory you want Codux to manage:
 
 ```sh
-uv --quiet --no-progress run start
-uv run codux --help
 uv run codux start
-uv run codux doctor
-uv run codux config info
-uv run codux config path
-uv run codux config show
-uv run codux config init
-uv run codux sessions
-uv run codux delete-session SESSION
-uv run codux clear
-uv run codux quit
-uv run codux quit --kill
 ```
 
-`uv --quiet --no-progress run start` starts the dashboard without first-run `uv` setup chatter in fresh worktrees. It is equivalent to `uv run codux start`. User-facing shell commands are:
+## Usage
 
-- `codux start`: create or attach to the dashboard for the current workdir
-- `codux config info`: show the active workdir, runtime directory, config, state, and tmux session
-- `codux config path`: print the current workdir's config path
-- `codux config show`: create the config if needed, then print it
-- `codux config init`: create the default config without starting the dashboard
-- `codux doctor`: check local dependencies and runtime files
-- `codux sessions`: list active Codux dashboard sessions
-- `codux delete-session SESSION`: delete a tmux session without confirmation
-- `codux clear`: delete all Codux tmux sessions and saved workspaces after confirmation
-- `codux quit`: detach the dashboard and leave Codex tabs running
-- `codux quit --kill`: stop the current dashboard tmux session
+Start Codux from the project directory whose Codex sessions you want to manage:
 
-Create, rename, close, focus, move Codex tabs, and manage other dashboard sessions from inside Codux with the nav shortcuts below.
+```sh
+uv run codux start
+```
 
-New tabs store their title as `{codex}` by default. In the nav pane, Codux replaces
-that placeholder with the live terminal title from the Codex tmux pane, so Codex
-`/title` updates appear without Codux proxying Codex IO. Until a live title is
-available, the placeholder segment shows `...`. Manual titles can also include
-the placeholder, for example by pressing `r` and entering `Task {codex}`; titles
-without `{codex}` render exactly as entered.
+This launches a tmux workspace with a navigator pane above a native Codex pane.
+Use the navigator to create, rename, close, focus, and move Codex sessions across
+columns; press `?` inside Codux for the current shortcuts. Codux tracks live
+Codex pane titles without proxying Codex input or output.
 
-Default nav shortcuts, active when the nav region is focused:
+```text
+Usage: codux [OPTIONS] COMMAND [ARGS]...
 
-| Key | Action |
-| --- | --- |
-| `n` | new Codex tab |
-| `r` | rename active tab |
-| `c` | close active tab |
-| `←`/`→`/`↑`/`↓` | switch tabs |
-| `shift + ←`/`→` | move active tab left / right across columns |
-| `s` | view and close other dashboard sessions |
-| `Enter` | focus the active Codex pane |
-| `?` | help popup |
-| `C-d` | focus the other pane |
-| `C-q` | detach dashboard and leave Codex tabs running |
+Start, inspect, or detach Codux tmux workspaces for Codex.
 
-The active pane footer shows its available shortcuts on the left. Inactive pane footers show `C-d focus` on the left.
+Codux is scoped to the directory where you run it. Each launch directory gets:
+- a stable runtime directory under ~/.codux/workdirs/<workdir-id>
+- config.toml and state.json files
+- a tmux session
 
-`C-d` is scoped to the current Codux tmux session and configurable because it is intercepted before it reaches Codex.
+Starting again from the same directory reattaches to that workspace. Starting
+from a different directory creates a separate one.
+
+Use `codux config info` to see the active workdir, runtime directory, config
+file, state file, and tmux session.
+
+Options:
+  --help          Show this message and exit.
+
+Commands:
+  start           Create or attach to this workdir's Codux tmux workspace.
+  quit            Detach or stop the Codux dashboard.
+  sessions        List active Codux dashboard sessions.
+  delete-session  Delete a Codux dashboard session without confirmation.
+  clear           Delete all Codux tmux sessions and saved workspaces after
+                  confirmation.
+  doctor          Check local Codux dependencies and runtime files.
+  config          Inspect or initialize the config.toml for the current Codux
+                  workdir.
+```
 
 ## Config And State
 
-Codux is scoped to the directory where you launch it. On first `codux start` from a directory, Codux creates:
+Codux scopes runtime state to the directory where it starts. The first
+`codux start` for a directory creates one tmux session named
+`codux-<workdir-id>`, plus `config.toml` and `state.json` under
+`~/.codux/workdirs/<workdir-id>/`. Starting from that directory again reattaches
+to the same workspace; starting from another directory creates a separate one.
 
-- tmux workspace: one session named `codux-<workdir-id>`
-- runtime directory: `~/.codux/workdirs/<workdir-id>/`
-- config file: `~/.codux/workdirs/<workdir-id>/config.toml`
-- state file: `~/.codux/workdirs/<workdir-id>/state.json`
-
-Starting Codux again from the same directory reattaches to the same tmux workspace. Starting it from a different directory creates a different runtime directory, config, state file, and tmux session.
-
-Use these commands to inspect the current launch directory's runtime:
-
-```sh
-codux config info
-codux config path
-codux config show
-codux config init
-codux config init --force
-```
+Use `codux config info`, `codux config path`, `codux config show`, and
+`codux config init` to inspect or initialize the current directory's runtime.
 
 The default config:
 
@@ -148,44 +128,16 @@ focus_toggle = "C-d"
 quit = "C-q"
 ```
 
-Set `columns` to change the nav columns and their order. Existing tabs in removed columns are moved to the first configured column the next time Codux repairs runtime state.
+Set `columns` to change the nav columns and their order. Existing tabs in
+removed columns are moved to the first configured column the next time Codux
+repairs runtime state.
 
-The config file controls:
+Codux computes the default tmux session name from the launch directory. Set
+`tmux_session` only when you need an explicit override.
 
-- `codex_command`: shell command launched directly in each CODEX pane
-- `columns`: nav columns and their left-to-right order
-- `[key_bindings]`: nav and pane-focus shortcuts
+`CODUX_WORKDIR` overrides the directory used for workdir scoping. `CODUX_HOME`
+overrides the runtime directory directly; use it only when you intentionally
+need isolated state for development or tests.
 
-Codux computes the default tmux session name from the launch directory. Set `tmux_session` only when you need an explicit override.
-
-`CODUX_WORKDIR` overrides the directory used for workdir scoping. `CODUX_HOME` overrides the runtime directory directly; use it only when you intentionally need isolated state for development or tests.
-
-State writes are atomic and guarded by `state.lock` so rapid tmux keybindings do not corrupt the JSON file.
-
-## tmux Notes
-
-Each Codux dashboard uses one tmux session, one tmux window per Codex tab, and two native content panes per tab window:
-
-- top pane: `NAV`, an interactive Kanban tab navigator
-- lower pane: `CODEX`, the Codex process launched directly from `codex_command`
-
-When no tabs exist, Codux keeps an empty dashboard window open with:
-
-```text
-No Codex tabs open
-Press n to create one.
-```
-
-Codux keeps the same rounded `NAV` and `CODEX` frame boxes around those panes. The frames are lightweight tmux panes, while the NAV and CODEX interiors remain real interactive panes. The nav frame height follows the tallest configured column. The NAV top edge shows the workdir, the CODEX top edge shows the live Codex title, and the focused pane's bottom edge shows a `●` marker.
-
-Codex runs as the tmux pane command. Codux does not proxy Codex IO, re-render Codex output, inject Codex hooks, or force a Codex theme. Terminal color and theme behavior stays with the real tmux PTY and the user's `codex_command`; Codux clears stale `CODUX_*` color hints left by older versions, keeps its runtime env out of Codex panes, and neutralizes inherited tmux pane/window color styles for Codux windows.
-
-## Development
-
-```sh
-uv run ruff format
-uv run ruff check
-uv run pytest
-```
-
-Repo-specific Codex maintenance guidance lives in `AGENTS.md`. Broad refactor work should use the repo-local `$codux-refactor` skill in `skills/codux-refactor/`.
+State writes are atomic and guarded by `state.lock` so rapid tmux keybindings do
+not corrupt the JSON file.
