@@ -134,7 +134,7 @@ def test_root_help_hides_shell_completion_options():
     assert result.exit_code == 0
     assert "--install-completion" not in result.output
     assert "--show-completion" not in result.output
-    assert "--help" in result.output
+    assert "Show this message and exit" in result.output
 
 
 def test_root_completion_options_remain_registered():
