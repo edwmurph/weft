@@ -37,9 +37,12 @@ from codux.nav_pane import run_nav_pane
 from codux.render import render_empty_state, render_help, render_nav
 from codux.sessions import (
     CoduxSession,
+    current_tmux_session,
+    delete_codux_workspace,
     display_path,
     kill_codux_session,
     list_codux_sessions,
+    list_codux_workspaces,
     other_codux_sessions,
 )
 from codux.state import (
@@ -475,6 +478,48 @@ def delete_session_command(
         console.print(f"tmux session not found: {session_name}")
         raise typer.Exit(1)
     console.print(f"Deleted tmux session: {session_name}")
+
+
+@app.command("clear")
+def clear_command() -> None:
+    """Delete all Codux tmux sessions and saved workspaces after confirmation."""
+    current_session = current_tmux_session()
+    sessions = list_codux_sessions(current_session)
+    workspaces = list_codux_workspaces()
+    if not sessions and not workspaces:
+        console.print("No Codux workspaces or sessions found.")
+        return
+
+    console.print("This will delete all Codux tmux sessions and workspace runtimes:")
+    for session in sessions:
+        current = " (current)" if session.current else ""
+        console.print(f"- tmux session: {session.name}{current} {display_path(session.workdir)}")
+    for workspace in workspaces:
+        console.print(f"- workspace: {display_path(str(workspace))}")
+
+    if not typer.confirm("Delete all Codux workspaces and sessions?", default=False):
+        console.print("Delete canceled.")
+        return
+
+    failed_workspaces = [
+        str(workspace) for workspace in workspaces if not delete_codux_workspace(workspace)
+    ]
+    failed_sessions = [
+        session.name
+        for session in sorted(sessions, key=lambda item: item.current)
+        if not kill_codux_session(session.name)
+    ]
+    deleted_workspaces = len(workspaces) - len(failed_workspaces)
+    deleted_sessions = len(sessions) - len(failed_sessions)
+    console.print(
+        f"Deleted {deleted_sessions} tmux session(s) and {deleted_workspaces} workspace(s)."
+    )
+    if failed_sessions or failed_workspaces:
+        for name in failed_sessions:
+            console.print(f"[red]failed[/red] tmux session: {name}")
+        for path in failed_workspaces:
+            console.print(f"[red]failed[/red] workspace: {path}")
+        raise typer.Exit(1)
 
 
 @config_app.command("info")

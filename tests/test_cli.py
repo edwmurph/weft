@@ -103,7 +103,15 @@ def test_public_shell_commands_stay_limited():
         name for name, command in root_command.commands.items() if not command.hidden
     }
 
-    assert visible_commands == {"config", "delete-session", "doctor", "quit", "sessions", "start"}
+    assert visible_commands == {
+        "clear",
+        "config",
+        "delete-session",
+        "doctor",
+        "quit",
+        "sessions",
+        "start",
+    }
     assert "new" not in root_command.commands
     assert "rename" not in root_command.commands
     assert "status" not in root_command.commands
@@ -356,6 +364,94 @@ def test_delete_session_command_reports_missing_session(monkeypatch):
 
     assert exc.value.exit_code == 1
     assert "tmux session not found: missing" in output.getvalue()
+
+
+def test_clear_command_reports_nothing_to_delete(monkeypatch):
+    output = io.StringIO()
+
+    monkeypatch.setattr(cli_module, "current_tmux_session", lambda: None)
+    monkeypatch.setattr(cli_module, "list_codux_sessions", lambda current: [])
+    monkeypatch.setattr(cli_module, "list_codux_workspaces", lambda: [])
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.clear_command()
+
+    assert "No Codux workspaces or sessions found." in output.getvalue()
+
+
+def test_clear_command_requires_confirmation(monkeypatch, tmp_path):
+    output = io.StringIO()
+    killed: list[str] = []
+    deleted: list[object] = []
+    session = cli_module.CoduxSession(
+        name="codux-old",
+        workdir="/Users/me/old",
+        runtime_dir="/tmp/old",
+        project_root="/repo",
+        window_count=1,
+        created_at=1,
+        attached_clients=0,
+    )
+
+    monkeypatch.setattr(cli_module, "current_tmux_session", lambda: None)
+    monkeypatch.setattr(cli_module, "list_codux_sessions", lambda current: [session])
+    monkeypatch.setattr(cli_module, "list_codux_workspaces", lambda: [tmp_path / "old"])
+    monkeypatch.setattr(cli_module, "kill_codux_session", killed.append)
+    monkeypatch.setattr(cli_module, "delete_codux_workspace", deleted.append)
+    monkeypatch.setattr(cli_module.typer, "confirm", lambda *args, **kwargs: False)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.clear_command()
+
+    assert killed == []
+    assert deleted == []
+    rendered = output.getvalue()
+    assert "Delete canceled." in rendered
+    assert "codux-old" in rendered
+
+
+def test_clear_command_deletes_workspaces_and_sessions_after_confirmation(monkeypatch, tmp_path):
+    output = io.StringIO()
+    killed: list[str] = []
+    deleted: list[object] = []
+    current_session = cli_module.CoduxSession(
+        name="codux-current",
+        workdir="/Users/me/current",
+        runtime_dir="/tmp/current",
+        project_root="/repo",
+        window_count=2,
+        created_at=1,
+        attached_clients=1,
+        current=True,
+    )
+    other = cli_module.CoduxSession(
+        name="codux-other",
+        workdir="/Users/me/other",
+        runtime_dir="/tmp/other",
+        project_root="/repo",
+        window_count=1,
+        created_at=2,
+        attached_clients=0,
+    )
+    workspace = tmp_path / "current"
+
+    monkeypatch.setattr(cli_module, "current_tmux_session", lambda: "codux-current")
+    monkeypatch.setattr(cli_module, "list_codux_sessions", lambda current: [current_session, other])
+    monkeypatch.setattr(cli_module, "list_codux_workspaces", lambda: [workspace])
+    monkeypatch.setattr(
+        cli_module, "delete_codux_workspace", lambda path: deleted.append(path) or True
+    )
+    monkeypatch.setattr(cli_module, "kill_codux_session", lambda name: killed.append(name) or True)
+    monkeypatch.setattr(cli_module.typer, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.clear_command()
+
+    assert deleted == [workspace]
+    assert killed == ["codux-other", "codux-current"]
+    rendered = output.getvalue()
+    assert "codux-current (current)" in rendered
+    assert "Deleted 2 tmux session(s) and 1 workspace(s)." in rendered
 
 
 def test_config_info_reports_workdir_runtime_without_creating_config(monkeypatch, tmp_path):

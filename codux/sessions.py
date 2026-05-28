@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,12 +70,49 @@ def other_codux_session_count(current_session: str) -> int:
     return len(other_codux_sessions(current_session))
 
 
+def current_tmux_session() -> str | None:
+    try:
+        result = run_tmux(["display-message", "-p", "#{session_name}"], check=False)
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    name = result.stdout.strip()
+    return name or None
+
+
 def kill_codux_session(session_name: str) -> bool:
     try:
         result = run_tmux(["kill-session", "-t", session_name], check=False)
     except OSError:
         return False
     return result.returncode == 0
+
+
+def codux_workspaces_dir() -> Path:
+    return Path.home() / ".codux" / "workdirs"
+
+
+def list_codux_workspaces() -> list[Path]:
+    root = codux_workspaces_dir()
+    try:
+        return sorted(path for path in root.iterdir() if path.is_dir() and not path.is_symlink())
+    except OSError:
+        return []
+
+
+def delete_codux_workspace(path: Path) -> bool:
+    try:
+        root = codux_workspaces_dir().resolve()
+        path.resolve().relative_to(root)
+        if path.is_symlink():
+            return False
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return True
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def display_path(path: str) -> str:

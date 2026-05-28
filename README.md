@@ -30,6 +30,7 @@ uv run codux config show
 uv run codux config init
 uv run codux sessions
 uv run codux delete-session SESSION
+uv run codux clear
 uv run codux quit
 uv run codux quit --kill
 ```
@@ -44,6 +45,7 @@ uv run codux quit --kill
 - `codux doctor`: check local dependencies and runtime files
 - `codux sessions`: list active Codux dashboard sessions
 - `codux delete-session SESSION`: delete a tmux session without confirmation
+- `codux clear`: delete all Codux tmux sessions and saved workspaces after confirmation
 - `codux quit`: detach the dashboard and leave Codex tabs running
 - `codux quit --kill`: stop the current dashboard tmux session
 
