@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-28 - Homebrew dependency wheelhouse
+
+- Request: Diagnose work-network failures downloading Homebrew Python dependency resources.
+- Suggestions: Stop publishing one Homebrew resource per PyPI dependency; publish a single dependency wheelhouse on the Codux GitHub release and have the tap install all dependency wheels from that archive.
+- Outcome: Implemented in `.worktrees/homebrew-wheelhouse`; awaiting ship to publish a new release.
+- Evidence: `.github/workflows/publish-homebrew.yml`, `scripts/render_homebrew_formula.py`, `tests/test_release_scripts.py`.
+
 ## 2026-05-28 - Homebrew publishing workflow
 
 - Request: Publish Codux through a custom Homebrew tap and make brew the only README getting-started install path.

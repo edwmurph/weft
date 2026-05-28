@@ -37,8 +37,8 @@ pytest, and the live tmux integration command above.
 
 Pushes to `main` run the `Publish Homebrew` workflow. The workflow infers a
 semantic version bump from the shipped commit, updates `pyproject.toml` and
-`uv.lock`, tags `vX.Y.Z`, creates a GitHub release tarball, and writes
-`Formula/codux.rb` to `edwmurph/homebrew-tap`.
+`uv.lock`, tags `vX.Y.Z`, creates GitHub release artifacts, including a
+dependency wheelhouse, and writes `Formula/codux.rb` to `edwmurph/homebrew-tap`.
 
 One-time publishing prerequisites:
 

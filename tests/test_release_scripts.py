@@ -31,61 +31,18 @@ def test_next_version_infers_major_minor_patch() -> None:
     assert next_version.bump_version("1.2.3", "patch") == "1.2.4"
 
 
-def test_homebrew_formula_renders_runtime_resources() -> None:
+def test_homebrew_formula_uses_github_release_wheelhouse() -> None:
     formula_script = load_script("render_homebrew_formula")
-    lock_data = {
-        "package": [
-            {
-                "name": "codux",
-                "dependencies": [{"name": "rich"}, {"name": "typer"}],
-            },
-            {
-                "name": "rich",
-                "dependencies": [{"name": "markdown-it-py"}],
-                "wheels": [
-                    {
-                        "url": "https://example.test/rich-py3-none-any.whl",
-                        "hash": "sha256:richwheelhash",
-                    }
-                ],
-                "sdist": {
-                    "url": "https://example.test/rich.tar.gz",
-                    "hash": "sha256:richhash",
-                },
-            },
-            {
-                "name": "markdown-it-py",
-                "sdist": {
-                    "url": "https://example.test/markdown.tar.gz",
-                    "hash": "sha256:markdownhash",
-                },
-            },
-            {
-                "name": "typer",
-                "dependencies": [{"name": "colorama", "marker": "sys_platform == 'win32'"}],
-                "sdist": {
-                    "url": "https://example.test/typer.tar.gz",
-                    "hash": "sha256:typerhash",
-                },
-            },
-            {
-                "name": "colorama",
-                "sdist": {
-                    "url": "https://example.test/colorama.tar.gz",
-                    "hash": "sha256:coloramahash",
-                },
-            },
-        ]
-    }
 
     formula = formula_script.render_formula(
         formula_name="codux",
-        version_url="https://example.test/codux.tar.gz",
+        version_url="https://github.com/edwmurph/codux/releases/download/v1.2.3/codux.tar.gz",
         sha256="coduxhash",
-        wheel_url="https://example.test/codux-1.2.3-py3-none-any.whl",
+        wheel_url="https://github.com/edwmurph/codux/releases/download/v1.2.3/codux-1.2.3-py3-none-any.whl",
         wheel_sha256="coduxwheelhash",
+        wheelhouse_url="https://github.com/edwmurph/codux/releases/download/v1.2.3/codux-1.2.3-wheelhouse.tar.gz",
+        wheelhouse_sha256="wheelhousehash",
         python_formula="python@3.13",
-        lock_data=lock_data,
     )
 
     assert "class Codux < Formula" in formula
@@ -93,11 +50,11 @@ def test_homebrew_formula_renders_runtime_resources() -> None:
     assert 'depends_on "tmux"' in formula
     assert 'resource "codux-wheel"' in formula
     assert "coduxwheelhash" in formula
-    assert "rich-py3-none-any.whl" in formula
-    assert "rich.tar.gz" not in formula
-    assert 'resource "markdown-it-py"' in formula
-    assert 'resource "rich"' in formula
-    assert 'resource "typer"' in formula
-    assert "colorama" not in formula
+    assert 'resource "codux-wheelhouse"' in formula
+    assert "wheelhousehash" in formula
+    assert "pythonhosted.org" not in formula
+    assert 'resource "rich"' not in formula
+    assert 'resource "typer"' not in formula
+    assert 'venv.pip_install Dir["*.whl"].sort' in formula
     assert 'virtualenv_create(libexec, "python3.13")' in formula
     assert 'rm bin/"start"' in formula

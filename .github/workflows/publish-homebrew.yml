@@ -99,8 +99,30 @@ jobs:
           uv build
           sdist="dist/codux-${VERSION}.tar.gz"
           wheel="dist/codux-${VERSION}-py3-none-any.whl"
+          runtime_requirements="dist/runtime-requirements.txt"
+          wheelhouse_dir="dist/wheelhouse"
+          wheelhouse="dist/codux-${VERSION}-wheelhouse.tar.gz"
+
+          uv export \
+            --no-dev \
+            --locked \
+            --format requirements-txt \
+            --no-hashes \
+            --no-header \
+            --no-annotate \
+            --no-emit-project \
+            --output-file "$runtime_requirements"
+          mkdir -p "$wheelhouse_dir"
+          uv run python -m ensurepip --upgrade
+          uv run python -m pip download \
+            --only-binary=:all: \
+            --dest "$wheelhouse_dir" \
+            --requirement "$runtime_requirements"
+          tar -C "$wheelhouse_dir" -czf "$wheelhouse" .
+
           sdist_sha256="$(shasum -a 256 "$sdist" | awk '{print $1}')"
           wheel_sha256="$(shasum -a 256 "$wheel" | awk '{print $1}')"
+          wheelhouse_sha256="$(shasum -a 256 "$wheelhouse" | awk '{print $1}')"
           release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
 
           echo "sdist_path=$sdist" >> "$GITHUB_OUTPUT"
@@ -109,6 +131,9 @@ jobs:
           echo "wheel_path=$wheel" >> "$GITHUB_OUTPUT"
           echo "wheel_sha256=$wheel_sha256" >> "$GITHUB_OUTPUT"
           echo "wheel_url=${release_url}/codux-${VERSION}-py3-none-any.whl" >> "$GITHUB_OUTPUT"
+          echo "wheelhouse_path=$wheelhouse" >> "$GITHUB_OUTPUT"
+          echo "wheelhouse_sha256=$wheelhouse_sha256" >> "$GITHUB_OUTPUT"
+          echo "wheelhouse_url=${release_url}/codux-${VERSION}-wheelhouse.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Smoke test wheel install
         env:
@@ -122,13 +147,14 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           SDIST_PATH: ${{ steps.dist.outputs.sdist_path }}
           WHEEL_PATH: ${{ steps.dist.outputs.wheel_path }}
+          WHEELHOUSE_PATH: ${{ steps.dist.outputs.wheelhouse_path }}
         run: |
           set -euo pipefail
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$SDIST_PATH" "$WHEEL_PATH" --clobber
+            gh release upload "$TAG" "$SDIST_PATH" "$WHEEL_PATH" "$WHEELHOUSE_PATH" --clobber
           else
-            gh release create "$TAG" "$SDIST_PATH" "$WHEEL_PATH" \
+            gh release create "$TAG" "$SDIST_PATH" "$WHEEL_PATH" "$WHEELHOUSE_PATH" \
               --verify-tag \
               --title "$TAG" \
               --notes "Automated Codux release ${TAG}."
@@ -155,6 +181,8 @@ jobs:
           RELEASE_SHA256: ${{ steps.dist.outputs.sdist_sha256 }}
           WHEEL_URL: ${{ steps.dist.outputs.wheel_url }}
           WHEEL_SHA256: ${{ steps.dist.outputs.wheel_sha256 }}
+          WHEELHOUSE_URL: ${{ steps.dist.outputs.wheelhouse_url }}
+          WHEELHOUSE_SHA256: ${{ steps.dist.outputs.wheelhouse_sha256 }}
         run: |
           python scripts/render_homebrew_formula.py \
             --formula-name "$FORMULA_NAME" \
@@ -162,6 +190,8 @@ jobs:
             --sha256 "$RELEASE_SHA256" \
             --wheel-url "$WHEEL_URL" \
             --wheel-sha256 "$WHEEL_SHA256" \
+            --wheelhouse-url "$WHEELHOUSE_URL" \
+            --wheelhouse-sha256 "$WHEELHOUSE_SHA256" \
             --python-formula "$PYTHON_FORMULA" \
             --output "$HOMEBREW_TAP_DIR/Formula/${FORMULA_NAME}.rb"
 
