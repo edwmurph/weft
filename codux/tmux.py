@@ -523,20 +523,7 @@ class TmuxController:
                 ):
                     self._respawn_codex_pane(config, content_pane_id)
             if config is not None and state is not None:
-                for pane_id, role in self._border_panes(window_id, snapshot).items():
-                    pane = snapshot.panes.get(pane_id)
-                    if pane is None:
-                        continue
-                    self._refresh_border_pane(
-                        config,
-                        window_id,
-                        pane_id,
-                        role,
-                        state,
-                        width=pane.width,
-                        height=pane.height,
-                        snapshot=snapshot,
-                    )
+                self._refresh_window_border_group(config, window_id, state, snapshot)
 
     def refresh_frame_panes(self, config: CoduxConfig, state: AppState) -> None:
         self.refresh_static_panes(config, state)
@@ -579,20 +566,7 @@ class TmuxController:
                 self._empty_content(content_pane_id, snapshot),
                 snapshot,
             )
-        for pane_id, role in self._border_panes(window_id, snapshot).items():
-            pane = snapshot.panes.get(pane_id)
-            if pane is None:
-                continue
-            self._refresh_border_pane(
-                config,
-                window_id,
-                pane_id,
-                role,
-                state,
-                width=pane.width,
-                height=pane.height,
-                snapshot=snapshot,
-            )
+        self._refresh_window_border_group(config, window_id, state, snapshot)
 
     def resize_nav_frame_for_window(
         self,
@@ -614,16 +588,60 @@ class TmuxController:
         config: CoduxConfig,
         state: AppState,
         window_id: str,
+        *,
+        repair_frame: bool = False,
     ) -> None:
         if not self.has_session() or not self.window_exists(window_id):
             return
         snapshot = self._snapshot()
-        for pane_id, role in self._border_panes(window_id, snapshot).items():
+        if repair_frame:
+            nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
+            snapshot = self._snapshot()
+            if nav_pane_id and content_pane_id and self._ensure_window_frame(window_id, snapshot):
+                snapshot = self._snapshot()
+            if nav_pane_id:
+                self._resize_nav_frame(
+                    window_id,
+                    nav_pane_id,
+                    nav_content_height(config, state),
+                    snapshot,
+                )
+                snapshot = self._snapshot()
+        if not self._refresh_window_border_group(config, window_id, state, snapshot):
+            if not repair_frame:
+                return
+            self._ensure_window_frame(window_id, snapshot)
+            snapshot = self._snapshot()
+            self._refresh_window_border_group(config, window_id, state, snapshot)
+
+    def _refresh_window_border_group(
+        self,
+        config: CoduxConfig,
+        window_id: str,
+        state: AppState,
+        snapshot: TmuxSnapshot,
+    ) -> bool:
+        role_to_pane = self._role_to_pane(window_id, snapshot)
+        if not set(BORDER_ROLES).issubset(role_to_pane):
+            return False
+        for role in self._border_roles_for_focus(state.focus):
+            pane_id = role_to_pane[role]
             pane = snapshot.panes.get(pane_id)
             if pane is None:
-                continue
+                return False
             content = self._border_content(config, window_id, role, state, pane.width, pane.height)
             self._render_frame_pane(pane_id, content, snapshot)
+        return True
+
+    def _border_roles_for_focus(self, focus: str) -> list[str]:
+        inactive_role = CODEX_PANE_TITLE if focus == "nav" else NAV_PANE_TITLE
+        active_role = NAV_PANE_TITLE if focus == "nav" else CODEX_PANE_TITLE
+        inactive_suffixes = ("TOP", "BOTTOM", "LEFT", "RIGHT")
+        active_suffixes = ("TOP", "LEFT", "RIGHT", "BOTTOM")
+        return [
+            *(f"{inactive_role}_{suffix}" for suffix in inactive_suffixes),
+            *(f"{active_role}_{suffix}" for suffix in active_suffixes),
+        ]
 
     def request_nav_repaint(self) -> None:
         if not self.has_session():

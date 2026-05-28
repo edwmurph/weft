@@ -17,6 +17,7 @@ from codux.config import ensure_config
 from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.render import HELP_POPUP_WIDTH, help_popup_height, nav_content_height, render_nav
+from codux.runtime_lock import runtime_lock
 from codux.state import (
     AppState,
     StateLockTimeout,
@@ -181,24 +182,28 @@ class NavPane:
         self.state = self.store.update(mutate)
         next_height = nav_content_height(self.config, self.state)
         pinned_height = max(previous_height, next_height)
-        if next_height > previous_height:
-            self.tmux.refresh_window_frame_panes(
-                self.config,
-                self.state,
-                target.tmux_window_id,
-                min_nav_content_height=pinned_height,
-            )
+        with runtime_lock(state_file=self.store.path, wait=True) as acquired:
+            if not acquired:
+                return
+            if next_height > previous_height:
+                self.tmux.refresh_window_frame_panes(
+                    self.config,
+                    self.state,
+                    target.tmux_window_id,
+                    min_nav_content_height=pinned_height,
+                )
+                self.render_snapshot(self.state)
+            else:
+                self.render_snapshot(self.state)
+                self.tmux.refresh_window_frame_panes(
+                    self.config,
+                    self.state,
+                    target.tmux_window_id,
+                    min_nav_content_height=pinned_height,
+                )
             self.render_snapshot(self.state)
-        else:
-            self.render_snapshot(self.state)
-            self.tmux.refresh_window_frame_panes(
-                self.config,
-                self.state,
-                target.tmux_window_id,
-                min_nav_content_height=pinned_height,
-            )
-        self.render_snapshot(self.state)
-        self.select_nav_for_window(target.tmux_window_id)
+            self.select_nav_for_window(target.tmux_window_id)
+            self.tmux.refresh_window_frame_colors(self.config, self.state, target.tmux_window_id)
         self.skip_next_render = True
 
     def focus_codex(self) -> None:
@@ -250,29 +255,31 @@ class NavPane:
             AppState(tabs=[*current.tabs, pending_tab], active_tab_id=tab_id, focus="codex")
         )
 
-        created = self.tmux.claim_spare_tab_window(self.config, current, title, tab_id)
-        tab = Tab(
-            id=tab_id,
-            title=title,
-            column=self.config.columns[0],
-            tmux_session=self.config.tmux_session,
-            tmux_window_id=created.window_id,
-            tmux_pane_id=created.content_pane_id,
-            created_at=created_at,
-            updated_at=created_at,
-        )
+        with runtime_lock(state_file=self.store.path, wait=True) as acquired:
+            if not acquired:
+                return
+            created = self.tmux.claim_spare_tab_window(self.config, current, title, tab_id)
+            tab = Tab(
+                id=tab_id,
+                title=title,
+                column=self.config.columns[0],
+                tmux_session=self.config.tmux_session,
+                tmux_window_id=created.window_id,
+                tmux_pane_id=created.content_pane_id,
+                created_at=created_at,
+                updated_at=created_at,
+            )
 
-        def mutate(current: AppState) -> AppState:
-            return AppState(tabs=[*current.tabs, tab], active_tab_id=tab.id, focus="codex")
+            def mutate(current: AppState) -> AppState:
+                return AppState(tabs=[*current.tabs, tab], active_tab_id=tab.id, focus="codex")
 
-        self.state = self.store.update(mutate)
-        self.tmux.refresh_window_frame_panes(self.config, self.state, tab.tmux_window_id)
-        self.refresh_nav_pane_cache()
-        self.tmux.select_window(tab.tmux_window_id)
-        self.tmux.select_pane(created.content_pane_id)
-        self.tmux.refresh_window_frame_colors(self.config, self.state, tab.tmux_window_id)
+            self.state = self.store.update(mutate)
+            self.tmux.refresh_window_frame_panes(self.config, self.state, tab.tmux_window_id)
+            self.refresh_nav_pane_cache()
+            self.tmux.select_window(tab.tmux_window_id)
+            self.tmux.select_pane(created.content_pane_id)
+            self.tmux.refresh_window_frame_colors(self.config, self.state, tab.tmux_window_id)
         self.tmux.prepare_spare_window_async()
-        self.refresh_static_panes_async()
         self.tmux.remove_empty_windows()
 
     def select_nav_for_window(self, window_id: str) -> None:
@@ -485,11 +492,31 @@ class NavPane:
 
     def refresh_title_frames(self, previous: AppState, current: AppState) -> None:
         previous_by_id = {tab.id: tab for tab in previous.tabs}
-        for tab in current.tabs:
-            previous_tab = previous_by_id.get(tab.id)
-            if previous_tab is None or previous_tab.codex_title == tab.codex_title:
-                continue
-            self.tmux.refresh_window_frame_colors(self.config, current, tab.tmux_window_id)
+        changed_ids = [
+            tab.id
+            for tab in current.tabs
+            if (previous_tab := previous_by_id.get(tab.id)) is not None
+            and previous_tab.codex_title != tab.codex_title
+        ]
+        if not changed_ids:
+            return
+        with runtime_lock(state_file=self.store.path, wait=True) as acquired:
+            if not acquired:
+                return
+            try:
+                latest = self.store.read()
+            except StateLockTimeout:
+                latest = current
+            self.state = latest
+            latest_by_id = {tab.id: tab for tab in latest.tabs}
+            for tab_id in changed_ids:
+                tab = latest_by_id.get(tab_id)
+                if tab is not None:
+                    self.tmux.refresh_window_frame_colors(
+                        self.config,
+                        latest,
+                        tab.tmux_window_id,
+                    )
 
     def render(self, force: bool = False) -> None:
         now = time.monotonic()

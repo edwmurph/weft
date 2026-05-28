@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import inspect
 import io
 import shlex
+import threading
+import time
 import zlib
 from types import SimpleNamespace
 
@@ -876,7 +879,13 @@ def test_new_defaults_stored_title_to_codex_template(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
-    monkeypatch.setattr(cli_module, "refresh_runtime_async", lambda: None)
+    monkeypatch.setattr(
+        cli_module,
+        "refresh_runtime_async",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("new tab should not run a broad async refresh")
+        ),
+    )
 
     cli_module.new(None)
 
@@ -926,7 +935,13 @@ def test_new_focuses_codex_pane(monkeypatch, tmp_path):
 
     fake_tmux = FakeTmux()
     monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, fake_tmux))
-    monkeypatch.setattr(cli_module, "refresh_runtime_async", lambda: None)
+    monkeypatch.setattr(
+        cli_module,
+        "refresh_runtime_async",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("new tab should not run a broad async refresh")
+        ),
+    )
 
     cli_module.new("Test")
 
@@ -944,6 +959,30 @@ def test_new_focuses_codex_pane(monkeypatch, tmp_path):
     ]
 
 
+def test_prepare_spare_window_does_not_refresh_all_windows(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    state = AppState()
+    store.write(state)
+    events: list[tuple[str, AppState]] = []
+
+    class FakeTmux:
+        def ensure_spare_window(self, config, state_arg):
+            events.append(("spare", state_arg))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+    monkeypatch.setattr(
+        cli_module,
+        "repair_and_render",
+        lambda config, store, tmux: (_ for _ in ()).throw(
+            AssertionError("spare prep should not refresh every window")
+        ),
+    )
+
+    cli_module.prepare_spare_window_command()
+
+    assert events == [("spare", state)]
+
+
 def test_focus_window_ignores_frame_refresh_race(monkeypatch, tmp_path):
     store = StateStore(tmp_path / "state.json")
     active = tab("active")
@@ -953,7 +992,7 @@ def test_focus_window_ignores_frame_refresh_race(monkeypatch, tmp_path):
         def active_window_id(self):
             return active.tmux_window_id
 
-        def refresh_window_frame_colors(self, config, state, window_id):
+        def refresh_window_frame_colors(self, config, state, window_id, **kwargs):
             raise TmuxError("pane went away")
 
     monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
@@ -963,6 +1002,42 @@ def test_focus_window_ignores_frame_refresh_race(monkeypatch, tmp_path):
     state = store.read()
     assert state.active_tab_id == active.id
     assert state.focus == "nav"
+
+
+def test_focus_window_waits_for_runtime_refresh_lock(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    active = tab("active")
+    store.write(AppState(tabs=[active], active_tab_id=active.id, focus="codex"))
+    events: list[object] = []
+
+    class FakeTmux:
+        def active_window_id(self):
+            return active.tmux_window_id
+
+        def refresh_window_frame_colors(self, config, state, window_id, **kwargs):
+            events.append(("refresh", state.focus, window_id, kwargs))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+
+    lock_path = cli_module.runtime_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = lock_path.open("w", encoding="utf-8")
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def release_lock():
+        time.sleep(0.05)
+        events.append("released")
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
+
+    thread = threading.Thread(target=release_lock)
+    thread.start()
+    cli_module.focus_window_command(active.tmux_window_id, "nav")
+    thread.join()
+
+    state = store.read()
+    assert state.focus == "nav"
+    assert events == ["released", ("refresh", "nav", active.tmux_window_id, {"repair_frame": True})]
 
 
 def test_focus_window_is_best_effort_when_runtime_is_unavailable(monkeypatch):
@@ -985,8 +1060,8 @@ def test_activate_window_updates_state_without_runtime_lock(monkeypatch, tmp_pat
         def active_window_id(self):
             return first.tmux_window_id
 
-        def refresh_window_frame_colors(self, config, state, window_id):
-            refreshed.append((state, window_id))
+        def refresh_window_frame_colors(self, config, state, window_id, **kwargs):
+            refreshed.append((state, window_id, kwargs))
 
     monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
 
@@ -995,7 +1070,7 @@ def test_activate_window_updates_state_without_runtime_lock(monkeypatch, tmp_pat
     state = store.read()
     assert state.active_tab_id == first.id
     assert state.focus == "nav"
-    assert refreshed == [(state, first.tmux_window_id)]
+    assert refreshed == [(state, first.tmux_window_id, {"repair_frame": True})]
 
 
 def test_stale_activate_window_does_not_override_newer_focus(monkeypatch, tmp_path):

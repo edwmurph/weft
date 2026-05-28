@@ -311,6 +311,140 @@ def test_bottom_borders_show_focus_marker(monkeypatch):
     assert "focus nav pane" not in codex_content
 
 
+def test_border_roles_for_focus_paints_complete_groups():
+    controller = TmuxController("codux")
+
+    assert controller._border_roles_for_focus("nav") == [
+        "CODEX_TOP",
+        "CODEX_BOTTOM",
+        "CODEX_LEFT",
+        "CODEX_RIGHT",
+        "NAV_TOP",
+        "NAV_LEFT",
+        "NAV_RIGHT",
+        "NAV_BOTTOM",
+    ]
+    assert controller._border_roles_for_focus("codex") == [
+        "NAV_TOP",
+        "NAV_BOTTOM",
+        "NAV_LEFT",
+        "NAV_RIGHT",
+        "CODEX_TOP",
+        "CODEX_LEFT",
+        "CODEX_RIGHT",
+        "CODEX_BOTTOM",
+    ]
+
+
+def test_refresh_window_frame_colors_repairs_then_repaints_complete_group(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[tuple[str, object]] = []
+
+    def pane(pane_id: str, role: str) -> PaneSnapshot:
+        return PaneSnapshot(
+            pane_id=pane_id,
+            window_id="@1",
+            role=role,
+            title=role,
+            top=0,
+            left=0,
+            width=40,
+            height=1,
+            current_command="python",
+            start_command="_frame-pane",
+            nav_host_version="",
+            frame_host_version=tmux_module.FRAME_HOST_VERSION,
+        )
+
+    complete_panes = {
+        f"%{role.lower()}": pane(f"%{role.lower()}", role)
+        for role in sorted(tmux_module.BORDER_ROLES)
+    }
+    complete_snapshot = TmuxSnapshot(
+        windows={},
+        panes=complete_panes,
+        panes_by_window={"@1": list(complete_panes.values())},
+    )
+    empty_snapshot = TmuxSnapshot(windows={}, panes={}, panes_by_window={"@1": []})
+    snapshots = iter([empty_snapshot, empty_snapshot, empty_snapshot, complete_snapshot])
+
+    monkeypatch.setattr(controller, "has_session", lambda: True)
+    monkeypatch.setattr(controller, "window_exists", lambda window_id: True)
+    monkeypatch.setattr(controller, "_snapshot", lambda: next(snapshots))
+    monkeypatch.setattr(
+        controller,
+        "_ensure_native_window",
+        lambda window_id, snapshot: events.append(("native", window_id)) or ("%nav", "%codex"),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_ensure_window_frame",
+        lambda window_id, snapshot: events.append(("frame", window_id)) or True,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_resize_nav_frame",
+        lambda window_id, pane_id, height, snapshot: events.append(("resize-nav", pane_id, height)),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_border_content",
+        lambda config, window_id, role, state, width, height: role,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_render_frame_pane",
+        lambda pane_id, content, snapshot: events.append(("render", content)),
+    )
+
+    controller.refresh_window_frame_colors(
+        CoduxConfig(), AppState(focus="nav"), "@1", repair_frame=True
+    )
+
+    assert events == [
+        ("native", "@1"),
+        ("frame", "@1"),
+        ("resize-nav", "%nav", 2),
+        ("render", "CODEX_TOP"),
+        ("render", "CODEX_BOTTOM"),
+        ("render", "CODEX_LEFT"),
+        ("render", "CODEX_RIGHT"),
+        ("render", "NAV_TOP"),
+        ("render", "NAV_LEFT"),
+        ("render", "NAV_RIGHT"),
+        ("render", "NAV_BOTTOM"),
+    ]
+
+
+def test_refresh_window_frame_colors_does_not_repair_layout_by_default(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[tuple[str, object]] = []
+    snapshot = TmuxSnapshot(windows={}, panes={}, panes_by_window={"@1": []})
+
+    monkeypatch.setattr(controller, "has_session", lambda: True)
+    monkeypatch.setattr(controller, "window_exists", lambda window_id: True)
+    monkeypatch.setattr(controller, "_snapshot", lambda: snapshot)
+    monkeypatch.setattr(
+        controller,
+        "_ensure_native_window",
+        lambda window_id, snapshot: events.append(("native", window_id)) or ("%nav", "%codex"),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_ensure_window_frame",
+        lambda window_id, snapshot: events.append(("frame", window_id)) or True,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_render_frame_pane",
+        lambda pane_id, content, snapshot: events.append(("render", pane_id)),
+    )
+
+    controller.refresh_window_frame_colors(CoduxConfig(), AppState(focus="nav"), "@1")
+
+    assert events == []
+
+
 def test_codex_top_border_shows_live_codex_title():
     controller = TmuxController("codux")
     active = tab("one", "@1").with_updates(codex_title="Implement auth flow")

@@ -214,6 +214,9 @@ def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
         ):
             events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
 
+        def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
+            events.append(("colors", state_arg.focus, window_id))
+
     pane = NavPane.__new__(NavPane)
     pane.config = config
     pane.store = store
@@ -231,6 +234,7 @@ def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
         ("frame", "implement", 2),
         ("render", "implement"),
         ("select", active.tmux_window_id),
+        ("colors", "nav", active.tmux_window_id),
     ]
     assert pane.skip_next_render
 
@@ -250,6 +254,9 @@ def test_move_column_expands_before_rendering_new_row(tmp_path):
         ):
             events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
 
+        def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
+            events.append(("colors", state_arg.focus, window_id))
+
     pane = NavPane.__new__(NavPane)
     pane.config = config
     pane.store = store
@@ -267,6 +274,7 @@ def test_move_column_expands_before_rendering_new_row(tmp_path):
         ("render", "inbox"),
         ("render", "inbox"),
         ("select", active.tmux_window_id),
+        ("colors", "nav", active.tmux_window_id),
     ]
 
 
@@ -285,6 +293,9 @@ def test_move_column_avoids_shrinking_nav_during_move(tmp_path):
         ):
             events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
 
+        def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
+            events.append(("colors", state_arg.focus, window_id))
+
     pane = NavPane.__new__(NavPane)
     pane.config = config
     pane.store = store
@@ -302,6 +313,45 @@ def test_move_column_avoids_shrinking_nav_during_move(tmp_path):
         ("frame", "implement", 3),
         ("render", "implement"),
         ("select", active.tmux_window_id),
+        ("colors", "nav", active.tmux_window_id),
+    ]
+
+
+def test_move_column_repaints_nav_focus_after_second_shift(tmp_path):
+    config = CoduxConfig()
+    first = tab("first", "implement")
+    second = tab("second", "implement")
+    active = tab("active", "inbox")
+    state = AppState(tabs=[first, second, active], active_tab_id=active.id, focus="nav")
+    store = StateStore(tmp_path / "state.json")
+    store.write(state)
+    events: list[tuple[str, object]] = []
+
+    class FakeTmux:
+        def refresh_window_frame_panes(
+            self, config_arg, state_arg, window_id, *, min_nav_content_height=None
+        ):
+            events.append(("frame", state_arg.active_tab.column, min_nav_content_height, window_id))
+
+        def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
+            events.append(("colors", state_arg.focus, state_arg.active_tab.column, window_id))
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = config
+    pane.store = store
+    pane.state = state
+    pane.tmux = FakeTmux()
+    pane.skip_next_render = False
+    pane.render_snapshot = lambda state_arg: events.append(("render", state_arg.active_tab.column))
+    pane.select_nav_for_window = lambda window_id: events.append(("select", window_id))
+
+    pane.move_column(1)
+    pane.move_column(1)
+
+    assert store.read().active_tab.column == "ship"
+    assert events[-2:] == [
+        ("select", active.tmux_window_id),
+        ("colors", "nav", "ship", active.tmux_window_id),
     ]
 
 
@@ -429,7 +479,9 @@ def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
     pane.pane_id = "%nav"
     pane.window_id = "@old"
     pane.refresh_nav_pane_cache = lambda: events.append(("refresh-cache", True))
-    pane.refresh_static_panes_async = lambda: events.append(("refresh-async", True))
+    pane.refresh_static_panes_async = lambda: (_ for _ in ()).throw(
+        AssertionError("new tab should not run a broad async refresh")
+    )
     pane.render_snapshot = lambda state: events.append(("snapshot-focus", state.focus))
 
     pane.new_tab()
@@ -449,7 +501,6 @@ def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
         ("pane", "%content"),
         ("colors", "@new"),
         ("prepare-spare", True),
-        ("refresh-async", True),
         ("remove-empty", True),
     ]
 
@@ -480,3 +531,38 @@ def test_nav_pane_polls_live_codex_titles(tmp_path):
     assert pane.poll_live_titles(now=1.0)
     assert store.read().active_tab.codex_title == "Ready | 019e"
     assert events == [(active.tmux_window_id, "Ready | 019e")]
+
+
+def test_title_frame_refresh_uses_latest_focus_state(tmp_path):
+    previous_tab = tab("active").with_updates(
+        title=CODEX_TITLE_TEMPLATE,
+        codex_title="Working | 019e",
+    )
+    current_tab = previous_tab.with_updates(codex_title="Ready | 019e")
+    previous = AppState(tabs=[previous_tab], active_tab_id=previous_tab.id, focus="codex")
+    current = AppState(tabs=[current_tab], active_tab_id=current_tab.id, focus="codex")
+    latest = AppState(tabs=[current_tab], active_tab_id=current_tab.id, focus="nav")
+    store = StateStore(tmp_path / "state.json")
+    store.write(latest)
+    events: list[tuple[str, str, str | None]] = []
+
+    class FakeTmux:
+        def refresh_window_frame_colors(self, config, state_arg, window_id):
+            active_tab = state_arg.active_tab
+            events.append(
+                (
+                    window_id,
+                    state_arg.focus,
+                    active_tab.codex_title if active_tab else None,
+                )
+            )
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = CoduxConfig()
+    pane.store = store
+    pane.tmux = FakeTmux()
+    pane.state = current
+
+    pane.refresh_title_frames(previous, current)
+
+    assert events == [(current_tab.tmux_window_id, "nav", "Ready | 019e")]

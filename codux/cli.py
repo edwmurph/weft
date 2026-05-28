@@ -7,7 +7,6 @@ import sys
 import time
 import uuid
 import base64
-import fcntl
 import os
 import select
 import termios
@@ -35,6 +34,8 @@ from codux.launcher import codux_cli_args, codux_cli_shell_command
 from codux.navigation import select_grid_tab
 from codux.nav_pane import run_nav_pane
 from codux.render import render_empty_state, render_help, render_nav
+from codux.runtime_lock import runtime_lock
+from codux.runtime_lock import runtime_lock_path as default_runtime_lock_path
 from codux.sessions import (
     CoduxSession,
     current_tmux_session,
@@ -159,23 +160,22 @@ def exit_for_busy_state_lock(exc: StateLockTimeout, session_name: str) -> None:
     raise typer.Exit(1)
 
 
-def _with_runtime_lock(fn):
-    @wraps(fn)
-    def wrapped(*args, **kwargs):
-        lock_path = runtime_lock_path()
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, "w", encoding="utf-8") as lock_file:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return None
-            return fn(*args, **kwargs)
+def _with_runtime_lock(fn=None, *, wait: bool = False):
+    def decorator(inner):
+        @wraps(inner)
+        def wrapped(*args, **kwargs):
+            with runtime_lock(path=runtime_lock_path(), wait=wait) as acquired:
+                if not acquired:
+                    return None
+                return inner(*args, **kwargs)
 
-    return wrapped
+        return wrapped
+
+    return decorator if fn is None else decorator(fn)
 
 
 def runtime_lock_path():
-    return state_path().with_suffix(".runtime.lock")
+    return default_runtime_lock_path(state_path())
 
 
 def repair_and_render(
@@ -367,7 +367,6 @@ def new(title: str | None = typer.Argument(None, help="Optional tab title.")) ->
     tmux.select_pane(created.content_pane_id)
     tmux.refresh_window_frame_colors(config, state, tab.tmux_window_id)
     tmux.prepare_spare_window_async()
-    refresh_runtime_async()
     tmux.remove_empty_windows()
     console.print(f"Created [bold]{tab.title}[/bold].")
 
@@ -1102,13 +1101,13 @@ def activate_window_command(window_id: str) -> None:
 
     state = store.update(mutate)
     try:
-        tmux.refresh_window_frame_colors(config, state, window_id)
+        tmux.refresh_window_frame_colors(config, state, window_id, repair_frame=True)
     except Exception:
         pass
 
 
 @app.command("_focus-window", hidden=True)
-@_with_runtime_lock
+@_with_runtime_lock(wait=True)
 def focus_window_command(window_id: str, focus: FocusTarget) -> None:
     try:
         config, store, tmux = load_runtime()
@@ -1121,7 +1120,7 @@ def focus_window_command(window_id: str, focus: FocusTarget) -> None:
             return replace(current, active_tab_id=active_tab_id, focus=focus)
 
         state = store.update(mutate)
-        tmux.refresh_window_frame_colors(config, state, window_id)
+        tmux.refresh_window_frame_colors(config, state, window_id, repair_frame=True)
     except Exception:
         pass
 
@@ -1153,7 +1152,7 @@ def finish_close_window_command(window_id: str) -> None:
 @app.command("_prepare-spare-window", hidden=True)
 def prepare_spare_window_command() -> None:
     config, store, tmux = load_runtime()
-    state = repair_and_render(config, store, tmux)
+    state = store.read()
     tmux.ensure_spare_window(config, state)
 
 
