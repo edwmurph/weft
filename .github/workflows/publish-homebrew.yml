@@ -1,0 +1,188 @@
+name: Publish Homebrew
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Optional semver bump override"
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-homebrew
+  cancel-in-progress: false
+
+env:
+  FORMULA_NAME: codux
+  HOMEBREW_TAP_REPOSITORY: edwmurph/homebrew-tap
+  PYTHON_FORMULA: python@3.13
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Configure Git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine release version
+        id: version
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          RELEASE_BUMP: ${{ github.event.inputs.bump || 'auto' }}
+        run: |
+          set -euo pipefail
+
+          args=(--base "${BASE_SHA:-}" --head HEAD --write --github-output "$GITHUB_OUTPUT")
+          if [[ "$RELEASE_BUMP" != "auto" ]]; then
+            args+=(--bump "$RELEASE_BUMP")
+          fi
+
+          python scripts/next_version.py "${args[@]}"
+          uv lock
+
+      - name: Verify release tree
+        run: |
+          uv sync --locked --dev
+          uv run ruff format --check
+          uv run ruff check
+          uv run pytest
+
+      - name: Commit release metadata
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --tags
+          if git rev-parse --verify "$TAG" >/dev/null 2>&1; then
+            git checkout --force "$TAG"
+            exit 0
+          fi
+
+          git add pyproject.toml uv.lock
+          git commit -m "Release v${VERSION} [skip ci]"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin HEAD:main --follow-tags
+
+      - name: Build release distributions
+        id: dist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          uv build
+          sdist="dist/codux-${VERSION}.tar.gz"
+          wheel="dist/codux-${VERSION}-py3-none-any.whl"
+          sdist_sha256="$(shasum -a 256 "$sdist" | awk '{print $1}')"
+          wheel_sha256="$(shasum -a 256 "$wheel" | awk '{print $1}')"
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+
+          echo "sdist_path=$sdist" >> "$GITHUB_OUTPUT"
+          echo "sdist_sha256=$sdist_sha256" >> "$GITHUB_OUTPUT"
+          echo "sdist_url=${release_url}/codux-${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "wheel_path=$wheel" >> "$GITHUB_OUTPUT"
+          echo "wheel_sha256=$wheel_sha256" >> "$GITHUB_OUTPUT"
+          echo "wheel_url=${release_url}/codux-${VERSION}-py3-none-any.whl" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test wheel install
+        env:
+          WHEEL_PATH: ${{ steps.dist.outputs.wheel_path }}
+        run: uv tool run --from "$WHEEL_PATH" codux --help >/dev/null
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SDIST_PATH: ${{ steps.dist.outputs.sdist_path }}
+          WHEEL_PATH: ${{ steps.dist.outputs.wheel_path }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$SDIST_PATH" "$WHEEL_PATH" --clobber
+          else
+            gh release create "$TAG" "$SDIST_PATH" "$WHEEL_PATH" \
+              --target HEAD \
+              --title "$TAG" \
+              --notes "Automated Codux release ${TAG}."
+          fi
+
+      - name: Checkout Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${HOMEBREW_TAP_TOKEN:-}" ]]; then
+            echo "::error::Set HOMEBREW_TAP_TOKEN with write access to ${HOMEBREW_TAP_REPOSITORY}."
+            exit 1
+          fi
+
+          tap_dir="${RUNNER_TEMP}/homebrew-tap"
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPOSITORY}.git" "$tap_dir"
+          echo "HOMEBREW_TAP_DIR=$tap_dir" >> "$GITHUB_ENV"
+
+      - name: Render Homebrew formula
+        env:
+          RELEASE_URL: ${{ steps.dist.outputs.sdist_url }}
+          RELEASE_SHA256: ${{ steps.dist.outputs.sdist_sha256 }}
+          WHEEL_URL: ${{ steps.dist.outputs.wheel_url }}
+          WHEEL_SHA256: ${{ steps.dist.outputs.wheel_sha256 }}
+        run: |
+          python scripts/render_homebrew_formula.py \
+            --formula-name "$FORMULA_NAME" \
+            --url "$RELEASE_URL" \
+            --sha256 "$RELEASE_SHA256" \
+            --wheel-url "$WHEEL_URL" \
+            --wheel-sha256 "$WHEEL_SHA256" \
+            --python-formula "$PYTHON_FORMULA" \
+            --output "$HOMEBREW_TAP_DIR/Formula/${FORMULA_NAME}.rb"
+
+      - name: Push Homebrew tap update
+        run: |
+          set -euo pipefail
+
+          cd "$HOMEBREW_TAP_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tap_branch="$(git branch --show-current)"
+          if [[ -z "$tap_branch" ]]; then
+            tap_branch="main"
+            git checkout --orphan "$tap_branch"
+          fi
+
+          git add "Formula/${FORMULA_NAME}.rb"
+          if git diff --cached --quiet; then
+            echo "Homebrew formula already up to date."
+            exit 0
+          fi
+
+          git commit -m "Update ${FORMULA_NAME} to v${{ steps.version.outputs.version }}"
+          git push origin "HEAD:${tap_branch}"

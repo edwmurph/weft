@@ -27,31 +27,33 @@
 
 ## Getting Started
 
+Install Codux with Homebrew:
+
 ```sh
-uv sync
-uv run codux doctor
+brew install edwmurph/tap/codux
+```
+
+Then run Codux directly from the project directory you want to manage:
+
+```sh
+codux doctor
+codux start
 ```
 
 Optional shell completion:
 
 ```sh
-uv run codux --install-completion
+codux --install-completion
 ```
 
 Run the completion command from the shell you want to configure.
-
-Then start the dashboard from the project directory you want Codux to manage:
-
-```sh
-uv run codux start
-```
 
 ## Usage
 
 Start Codux from the project directory whose Codex sessions you want to manage:
 
 ```sh
-uv run codux start
+codux start
 ```
 
 This launches a tmux workspace with a navigator pane above a native Codex pane.

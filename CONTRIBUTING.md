@@ -33,6 +33,25 @@ multiple worktrees can run them at the same time without sharing runtime state.
 Before offering to ship an implementation change, run format, lint, regular
 pytest, and the live tmux integration command above.
 
+## Homebrew Publishing
+
+Pushes to `main` run the `Publish Homebrew` workflow. The workflow infers a
+semantic version bump from the shipped commit, updates `pyproject.toml` and
+`uv.lock`, tags `vX.Y.Z`, creates a GitHub release tarball, and writes
+`Formula/codux.rb` to `edwmurph/homebrew-tap`.
+
+One-time publishing prerequisites:
+
+- Create the public `edwmurph/homebrew-tap` repository.
+- Add a `HOMEBREW_TAP_TOKEN` repository secret in `edwmurph/codux` with write
+  access to that tap.
+
+The tap install command is:
+
+```sh
+brew install edwmurph/tap/codux
+```
+
 ## Agent Guidance
 
 Codex-agent workflow and maintenance instructions live in `AGENTS.md`. They are

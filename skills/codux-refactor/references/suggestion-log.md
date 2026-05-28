@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-28 - Homebrew publishing workflow
+
+- Request: Publish Codux through a custom Homebrew tap and make brew the only README getting-started install path.
+- Suggestions: Add a `Publish Homebrew` workflow, infer semver bumps from shipped commit text with an explicit trailer override, render the tap formula from `uv.lock`, and update ship-it instructions so publish success is part of the landing gate.
+- Outcome: Implemented in `.worktrees/homebrew-publish`.
+- Evidence: `.github/workflows/publish-homebrew.yml`, `scripts/next_version.py`, `scripts/render_homebrew_formula.py`, `README.md`, `CONTRIBUTING.md`, `AGENTS.md`.
+
 ## 2026-05-27 - Native Codex pane refactor
 
 - Request: Replace the Codex PTY proxy/host renderer with native tmux panes.
