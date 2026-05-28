@@ -129,7 +129,7 @@ jobs:
             gh release upload "$TAG" "$SDIST_PATH" "$WHEEL_PATH" --clobber
           else
             gh release create "$TAG" "$SDIST_PATH" "$WHEEL_PATH" \
-              --target HEAD \
+              --verify-tag \
               --title "$TAG" \
               --notes "Automated Codux release ${TAG}."
           fi
