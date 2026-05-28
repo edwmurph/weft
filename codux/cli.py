@@ -703,6 +703,35 @@ def set_focus(focus: FocusTarget) -> None:
     select_active_or_empty(config, state, tmux)
 
 
+@app.command("refresh")
+@_with_runtime_lock(wait=True)
+def refresh_dashboard_command() -> None:
+    """Redraw the Codux dashboard and focus the nav pane."""
+    config, store, tmux = load_runtime()
+    if not tmux.has_session():
+        console.print(f"tmux session is not running: {config.tmux_session}")
+        return
+    refresh_and_focus_nav(config, store, tmux)
+    console.print("Refreshed Codux dashboard and focused nav.")
+
+
+def refresh_and_focus_nav(
+    config: CoduxConfig,
+    store: StateStore,
+    tmux: TmuxController,
+) -> AppState:
+    initial = store.read()
+    repaired = repaired_runtime_state(config, initial, tmux)
+    focused = replace(repaired, focus="nav")
+    state = store.update(
+        lambda current: focused if current == initial else replace(current, focus="nav")
+    )
+    render_runtime(config, state, tmux)
+    select_active_or_empty(config, state, tmux)
+    tmux.request_nav_repaint()
+    return state
+
+
 def status() -> None:
     """Print Codux state."""
     config, store, tmux = load_runtime()

@@ -112,6 +112,7 @@ def test_public_shell_commands_stay_limited():
         "delete-session",
         "doctor",
         "quit",
+        "refresh",
         "sessions",
         "start",
     }
@@ -455,6 +456,86 @@ def test_clear_command_deletes_workspaces_and_sessions_after_confirmation(monkey
     rendered = output.getvalue()
     assert "codux-current (current)" in rendered
     assert "Deleted 2 tmux session(s) and 1 workspace(s)." in rendered
+
+
+def test_refresh_command_reports_missing_session(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState())
+    output = io.StringIO()
+
+    class FakeTmux:
+        def has_session(self):
+            return False
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.refresh_dashboard_command()
+
+    assert "tmux session is not running: codux" in output.getvalue()
+
+
+def test_refresh_command_focuses_nav_and_repaints(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    active = tab("active")
+    store.write(AppState(tabs=[active], active_tab_id=active.id, focus="codex"))
+    output = io.StringIO()
+    events: list[tuple[str, str]] = []
+
+    class FakeTmux:
+        def has_session(self):
+            return True
+
+        def window_exists(self, window_id):
+            return True
+
+        def pane_exists(self, pane_id):
+            return True
+
+        def pane_title(self, pane_id):
+            return None
+
+        def recoverable_tabs(self, config):
+            return []
+
+        def active_tab_id_from_tmux(self):
+            return active.id
+
+        def refresh_static_panes(self, config, state):
+            events.append(("render", state.focus))
+
+        def remove_empty_windows(self):
+            events.append(("remove-empty", ""))
+
+        def select_window(self, window_id):
+            events.append(("window", window_id))
+
+        def nav_pane_for_window(self, window_id):
+            events.append(("nav-pane", window_id))
+            return "%nav"
+
+        def select_pane(self, pane_id):
+            events.append(("pane", pane_id))
+
+        def request_nav_repaint(self):
+            events.append(("repaint", ""))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.refresh_dashboard_command()
+
+    state = store.read()
+    assert state.focus == "nav"
+    assert events == [
+        ("render", "nav"),
+        ("remove-empty", ""),
+        ("window", active.tmux_window_id),
+        ("nav-pane", active.tmux_window_id),
+        ("pane", "%nav"),
+        ("repaint", ""),
+    ]
+    assert "Refreshed Codux dashboard and focused nav." in output.getvalue()
 
 
 def test_config_info_reports_workdir_runtime_without_creating_config(monkeypatch, tmp_path):

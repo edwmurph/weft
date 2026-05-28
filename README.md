@@ -61,6 +61,9 @@ Use the navigator to create, rename, close, focus, and move Codex sessions acros
 columns; press `?` inside Codux for the current shortcuts. Codux tracks live
 Codex pane titles without proxying Codex input or output.
 
+If tmux leaves the dashboard in a stale visual state, run `codux refresh` from
+the same project directory to redraw the dashboard and focus the nav pane.
+
 ```text
 Usage: codux [OPTIONS] COMMAND [ARGS]...
 
@@ -87,6 +90,7 @@ Commands:
   delete-session  Delete a Codux dashboard session without confirmation.
   clear           Delete all Codux tmux sessions and saved workspaces after
                   confirmation.
+  refresh         Redraw the Codux dashboard and focus the nav pane.
   doctor          Check local Codux dependencies and runtime files.
   config          Inspect or initialize the config.toml for the current Codux
                   workdir.
