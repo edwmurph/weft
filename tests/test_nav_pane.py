@@ -459,12 +459,19 @@ def test_nav_pane_polls_live_codex_titles(tmp_path):
     state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
     store = StateStore(tmp_path / "state.json")
     store.write(state)
+    events: list[tuple[str, str | None]] = []
 
     class FakeTmux:
         def pane_title(self, pane_id):
             return "Ready | 019e"
 
+        def refresh_window_frame_colors(self, config, state_arg, window_id):
+            events.append(
+                (window_id, state_arg.active_tab.codex_title if state_arg.active_tab else None)
+            )
+
     pane = NavPane.__new__(NavPane)
+    pane.config = CoduxConfig()
     pane.store = store
     pane.tmux = FakeTmux()
     pane.state = state
@@ -472,3 +479,4 @@ def test_nav_pane_polls_live_codex_titles(tmp_path):
 
     assert pane.poll_live_titles(now=1.0)
     assert store.read().active_tab.codex_title == "Ready | 019e"
+    assert events == [(active.tmux_window_id, "Ready | 019e")]

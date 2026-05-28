@@ -92,8 +92,11 @@ def render_top_border(width: int, title: str, active: bool, right_label: str = "
     )
 
 
-def render_bottom_border(width: int, active: bool, label: str = "") -> str:
-    return DEFAULT_THEME.paint_border(_horizontal_border(width, label=label), active)
+def render_bottom_border(width: int, active: bool, label: str = "", right_label: str = "") -> str:
+    return DEFAULT_THEME.paint_border(
+        _horizontal_border(width, label=label, right_label=right_label),
+        active,
+    )
 
 
 def render_side_border(height: int, active: bool) -> str:
@@ -119,14 +122,14 @@ def nav_shortcuts(config: CoduxConfig, other_session_count: int = 0) -> str:
     return (
         f"{bindings.new} new tab  {bindings.rename} rename tab  "
         f"{bindings.close} close tab  ←/→/↑/↓ switch tab  shift + ←/→ move tab  "
-        f"{bindings.sessions} sessions ({other_session_count})  "
-        f"{bindings.focus_toggle} focus codex pane  {bindings.quit} quit  {bindings.help} help"
+        f"{bindings.sessions} sessions ({other_session_count})  {bindings.quit} quit  "
+        f"{bindings.help} help"
     )
 
 
 def codex_shortcuts(config: CoduxConfig) -> str:
     bindings = config.key_bindings
-    return f"{bindings.focus_toggle} focus nav pane  {bindings.quit} quit"
+    return f"{bindings.quit} quit"
 
 
 def _horizontal_border(width: int, label: str, right_label: str = "") -> str:
@@ -135,10 +138,8 @@ def _horizontal_border(width: int, label: str, right_label: str = "") -> str:
         return "─"
 
     if right_label:
-        left_text = f"{label} " if label else "╶"
-        right_text = f" {_ellipsize(right_label, max(0, width - len(left_text) - 2))} "
-        if len(left_text) + len(right_text) > width:
-            return _horizontal_border(width, label=label)
+        right_text = _right_border_text(right_label, width)
+        left_text = _left_border_text(label, max(0, width - len(right_text) - 1))
         return left_text + ("─" * max(0, width - len(left_text) - len(right_text))) + right_text
 
     if label:
@@ -148,6 +149,29 @@ def _horizontal_border(width: int, label: str, right_label: str = "") -> str:
             text = text[: max(0, max_text_width - 3)].rstrip() + "..." if width > 4 else ""
         return text + ("─" * max(0, width - len(text) - 1)) + "╴"
     return "╶" + ("─" * max(0, width - 2)) + "╴"
+
+
+def _left_border_text(label: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    if not label:
+        return "╶"
+    text = f"{label} "
+    if len(text) <= width:
+        return text
+    if width <= 4:
+        return text[:width]
+    return text[: max(0, width - 3)].rstrip() + "..."
+
+
+def _right_border_text(label: str, width: int) -> str:
+    value = label.strip()
+    if not value or width <= 0:
+        return ""
+    max_value_width = max(0, width - 1)
+    if max_value_width <= 0:
+        return ""
+    return f" {_ellipsize(value, max_value_width)}"
 
 
 def _ellipsize(text: str, width: int) -> str:

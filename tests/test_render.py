@@ -183,13 +183,28 @@ def test_render_top_border_draws_rounded_title_line():
 def test_render_top_border_draws_right_label_before_corner():
     rendered = render_top_border(30, "NAV", active=False, right_label="~/code/configs")
 
-    assert rendered == "\033[38;5;244mNAV ────────── ~/code/configs \033[0m"
+    assert rendered == "\033[38;5;244mNAV ─────────── ~/code/configs\033[0m"
 
 
 def test_render_bottom_border_draws_shortcuts_in_edge():
     rendered = render_bottom_border(20, active=True, label="C-d nav  C-q quit")
 
     assert rendered == "\033[38;5;117mC-d nav  C-q quit ─╴\033[0m"
+
+
+def test_render_bottom_border_draws_right_label_flush():
+    rendered = render_bottom_border(
+        80,
+        active=True,
+        label="C-d nav  C-q quit",
+        right_label="●",
+    )
+
+    assert rendered == (
+        "\033[38;5;117m"
+        "C-d nav  C-q quit ──────────────────────────────────────────────────────────── ●"
+        "\033[0m"
+    )
 
 
 def test_render_side_border_draws_requested_height():
@@ -253,9 +268,11 @@ def test_shortcut_labels_are_pane_specific():
     assert shortcuts.index("r rename tab") < shortcuts.index("c close tab")
     assert shortcuts.index("c close tab") < shortcuts.index("←/→/↑/↓ switch tab")
     assert shortcuts.index("shift + ←/→ move tab") < shortcuts.index("s sessions (2)")
-    assert shortcuts.endswith("C-d focus codex pane  C-q quit  ? help")
+    assert shortcuts.endswith("s sessions (2)  C-q quit  ? help")
+    assert "focus codex pane" not in shortcuts
     assert "new" not in codex_shortcuts(config)
-    assert codex_shortcuts(config).startswith("C-d focus nav pane")
+    assert codex_shortcuts(config) == "C-q quit"
+    assert "focus nav pane" not in codex_shortcuts(config)
 
 
 def test_help_orients_user_and_lists_shortcuts():

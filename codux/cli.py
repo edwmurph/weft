@@ -11,6 +11,7 @@ import fcntl
 import os
 import select
 import termios
+import zlib
 from dataclasses import replace
 from functools import wraps
 
@@ -1144,8 +1145,15 @@ def frame_pane_command() -> None:
                 continue
             payload = line.removeprefix("CODUX_FRAME:")
             try:
-                decoded = base64.b64decode(payload.encode("ascii"), validate=False)
-                content = decoded.decode("utf-8", errors="replace")
+                length_text, checksum_text, encoded_payload = payload.split(":", 2)
+                expected_length = int(length_text)
+                expected_checksum = int(checksum_text, 16)
+                decoded = base64.b64decode(encoded_payload.encode("ascii"), validate=True)
+                if len(decoded) != expected_length:
+                    continue
+                if (zlib.crc32(decoded) & 0xFFFFFFFF) != expected_checksum:
+                    continue
+                content = decoded.decode("utf-8")
             except Exception:
                 continue
             console.file.write("\033[?25l\033[2J\033[H")

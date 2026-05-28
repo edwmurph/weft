@@ -6,6 +6,7 @@ import shlex
 import shutil
 import subprocess
 import time
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,7 +25,12 @@ from codux.render import (
     render_top_border,
 )
 from codux.state import AppState, Tab, now_iso
-from codux.titles import recovered_tab_title, title_uses_codex_placeholder
+from codux.titles import (
+    CODEX_TITLE_PENDING,
+    normalize_codex_title,
+    recovered_tab_title,
+    title_uses_codex_placeholder,
+)
 from codux.tmux_api import TmuxError  # noqa: F401
 from codux.tmux_api import run_tmux
 from codux.tmux_snapshot import TmuxSnapshot, fetch_snapshot
@@ -36,7 +42,7 @@ TAB_ID_OPTION = "@codux-tab-id"
 NAV_HOST_OPTION = "@codux-nav-host"
 NAV_HOST_VERSION = "16"
 FRAME_HOST_OPTION = "@codux-frame-host"
-FRAME_HOST_VERSION = "6"
+FRAME_HOST_VERSION = "7"
 PROJECT_ROOT_OPTION = "@codux-project-root"
 WORKDIR_OPTION = "@codux-workdir"
 RUNTIME_DIR_OPTION = "@codux-runtime-dir"
@@ -1042,10 +1048,15 @@ class TmuxController:
         active = self._border_is_active(window_id, role, state)
         logical_role, _, suffix = role.partition("_")
         if suffix == "TOP":
-            right_label = self._workdir_label() if logical_role == NAV_PANE_TITLE else ""
+            right_label = self._top_right_label(logical_role, window_id, state)
             return render_top_border(width, logical_role, active, right_label=right_label)
         elif suffix == "BOTTOM":
-            return render_bottom_border(width, active, self._shortcut_label(config, logical_role))
+            return render_bottom_border(
+                width,
+                active,
+                self._shortcut_label(config, logical_role),
+                right_label=self._focus_hint_label(config, active),
+            )
         elif suffix == "LEFT":
             return render_left_border(width, height, active)
         elif suffix == "RIGHT":
@@ -1070,6 +1081,22 @@ class TmuxController:
         if role == CODEX_PANE_TITLE:
             return codex_shortcuts(config)
         return ""
+
+    def _top_right_label(self, role: str, window_id: str, state: AppState) -> str:
+        if role == NAV_PANE_TITLE:
+            return self._workdir_label()
+        if role == CODEX_PANE_TITLE:
+            return self._codex_title_label(window_id, state)
+        return ""
+
+    def _codex_title_label(self, window_id: str, state: AppState) -> str:
+        tab = next((tab for tab in state.tabs if tab.tmux_window_id == window_id), None)
+        if tab is None:
+            return ""
+        return normalize_codex_title(tab.codex_title) or CODEX_TITLE_PENDING
+
+    def _focus_hint_label(self, config: CoduxConfig, active: bool) -> str:
+        return "●" if active else f"{config.key_bindings.focus_toggle} focus"
 
     def _pane_current_command(self, pane_id: str) -> str:
         return self._tmux(
@@ -1148,8 +1175,11 @@ class TmuxController:
 
     def _render_frame_pane(self, pane_id: str, content: str, snapshot: TmuxSnapshot) -> None:
         self._ensure_frame_pane(pane_id, snapshot)
-        payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
-        self._tmux(["send-keys", "-l", "-t", pane_id, f"CODUX_FRAME:{payload}"], check=False)
+        content_bytes = content.encode("utf-8")
+        payload = base64.b64encode(content_bytes).decode("ascii")
+        checksum = zlib.crc32(content_bytes) & 0xFFFFFFFF
+        frame = f"CODUX_FRAME:{len(content_bytes)}:{checksum:08x}:{payload}"
+        self._tmux(["send-keys", "-l", "-t", pane_id, frame], check=False)
         self._tmux(["send-keys", "-t", pane_id, "Enter"], check=False)
 
     def _new_session_empty_window(self, config: CoduxConfig) -> CreatedWindow:

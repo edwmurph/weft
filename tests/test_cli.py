@@ -4,6 +4,7 @@ import base64
 import inspect
 import io
 import shlex
+import zlib
 from types import SimpleNamespace
 
 import pytest
@@ -568,7 +569,7 @@ def test_frame_pane_does_not_append_trailing_newline(monkeypatch):
             return False
 
     output = io.StringIO()
-    payload = base64.b64encode(b"abc").decode("ascii")
+    payload = _frame_payload(b"abc")
 
     monkeypatch.setattr(cli_module.sys, "stdin", FakeStdin(f"CODUX_FRAME:{payload}\n".encode()))
     monkeypatch.setattr(cli_module, "console", Console(file=output))
@@ -576,6 +577,57 @@ def test_frame_pane_does_not_append_trailing_newline(monkeypatch):
     cli_module.frame_pane_command()
 
     assert output.getvalue() == "\033[?25l\033[2J\033[Habc"
+
+
+def _frame_payload(content: bytes) -> str:
+    encoded = base64.b64encode(content).decode("ascii")
+    checksum = zlib.crc32(content) & 0xFFFFFFFF
+    return f"{len(content)}:{checksum:08x}:{encoded}"
+
+
+def test_frame_pane_ignores_invalid_payload(monkeypatch):
+    class FakeStdin:
+        def __init__(self, data: bytes) -> None:
+            self.buffer = io.BytesIO(data)
+
+        def fileno(self) -> int:
+            return 0
+
+        def isatty(self) -> bool:
+            return False
+
+    output = io.StringIO()
+
+    monkeypatch.setattr(cli_module.sys, "stdin", FakeStdin(b"CODUX_FRAME:not-base64\n"))
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.frame_pane_command()
+
+    assert output.getvalue() == ""
+
+
+def test_frame_pane_ignores_checksum_mismatch(monkeypatch):
+    class FakeStdin:
+        def __init__(self, data: bytes) -> None:
+            self.buffer = io.BytesIO(data)
+
+        def fileno(self) -> int:
+            return 0
+
+        def isatty(self) -> bool:
+            return False
+
+    output = io.StringIO()
+    encoded = base64.b64encode(b"abc").decode("ascii")
+
+    monkeypatch.setattr(
+        cli_module.sys, "stdin", FakeStdin(f"CODUX_FRAME:3:00000000:{encoded}\n".encode())
+    )
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.frame_pane_command()
+
+    assert output.getvalue() == ""
 
 
 def test_frame_pane_disables_terminal_echo(monkeypatch):

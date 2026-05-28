@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import shlex
+import zlib
 from types import SimpleNamespace
 
 import codux.sessions as sessions_module
@@ -263,7 +265,8 @@ def test_nav_top_border_shows_session_workdir(monkeypatch, tmp_path):
     )
 
     assert "NAV " in content
-    assert " ~/code/configs " in content
+    assert " ~/code/configs" in content
+    assert " ~/code/configs " not in content
 
 
 def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused(monkeypatch):
@@ -278,8 +281,66 @@ def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused(monkeypatch):
     assert "r rename tab" in content
     assert "c close tab" in content
     assert "s sessions (2)" in content
-    assert "C-d focus codex pane" in content
+    assert "focus codex pane" not in content
     assert "\033[38;5;244m" in content
+
+
+def test_bottom_borders_show_focus_marker(monkeypatch):
+    controller = TmuxController("codux")
+    config = CoduxConfig()
+    first = tab("one", "@1")
+    second = tab("two", "@2")
+    state = AppState(tabs=[first, second], active_tab_id=second.id, focus="codex")
+    monkeypatch.setattr(sessions_module, "other_codux_session_count", lambda current: 0)
+
+    nav_content = controller._border_content(config, "@1", "NAV_BOTTOM", state, width=120, height=1)
+    codex_content = controller._border_content(
+        config,
+        "@1",
+        "CODEX_BOTTOM",
+        state,
+        width=80,
+        height=1,
+    )
+
+    assert nav_content.endswith(" C-d focus\033[0m")
+    assert codex_content.endswith(" ●\033[0m")
+    assert "focus nav pane" not in codex_content
+
+
+def test_codex_top_border_shows_live_codex_title():
+    controller = TmuxController("codux")
+    active = tab("one", "@1").with_updates(codex_title="Implement auth flow")
+    state = AppState(tabs=[active], active_tab_id=active.id, focus="codex")
+
+    content = controller._border_content(
+        CoduxConfig(),
+        "@1",
+        "CODEX_TOP",
+        state,
+        width=80,
+        height=1,
+    )
+
+    assert "CODEX " in content
+    assert " Implement auth flow" in content
+
+
+def test_codex_top_border_uses_pending_title_until_live_title_arrives():
+    controller = TmuxController("codux")
+    active = tab("one", "@1")
+    state = AppState(tabs=[active], active_tab_id=active.id, focus="codex")
+
+    content = controller._border_content(
+        CoduxConfig(),
+        "@1",
+        "CODEX_TOP",
+        state,
+        width=80,
+        height=1,
+    )
+
+    assert " ..." in content
 
 
 def test_create_tab_window_uses_native_nav_and_codex_panes(monkeypatch):
@@ -1131,6 +1192,11 @@ def test_render_frame_pane_sends_base64_payload(monkeypatch):
     assert calls[0][:3] == ("send-keys", "-l", "-t")
     assert calls[0][3] == "%1"
     assert calls[0][4].startswith("CODUX_FRAME:")
+    length_text, checksum_text, payload = calls[0][4].removeprefix("CODUX_FRAME:").split(":", 2)
+    decoded = base64.b64decode(payload.encode("ascii"), validate=True)
+    assert int(length_text) == len(decoded)
+    assert int(checksum_text, 16) == zlib.crc32(decoded) & 0xFFFFFFFF
+    assert decoded == b"hello\nworld\n"
     assert calls[1] == ("send-keys", "-t", "%1", "Enter")
 
 

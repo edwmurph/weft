@@ -479,7 +479,17 @@ class NavPane:
         except StateLockTimeout:
             return False
         self.state = written
+        if written == updated:
+            self.refresh_title_frames(current, written)
         return written == updated
+
+    def refresh_title_frames(self, previous: AppState, current: AppState) -> None:
+        previous_by_id = {tab.id: tab for tab in previous.tabs}
+        for tab in current.tabs:
+            previous_tab = previous_by_id.get(tab.id)
+            if previous_tab is None or previous_tab.codex_title == tab.codex_title:
+                continue
+            self.tmux.refresh_window_frame_colors(self.config, current, tab.tmux_window_id)
 
     def render(self, force: bool = False) -> None:
         now = time.monotonic()
