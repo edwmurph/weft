@@ -21,6 +21,18 @@ uv run ruff check
 uv run pytest
 ```
 
+Live tmux integration tests are opt-in because they start real tmux servers:
+
+```sh
+CODUX_RUN_INTEGRATION=1 uv run pytest -m integration
+```
+
+Each integration test uses a temporary `CODUX_HOME`, temporary `CODUX_WORKDIR`,
+unique tmux session name, isolated tmux socket, and fake `codex_command`, so
+multiple worktrees can run them at the same time without sharing runtime state.
+Before offering to ship an implementation change, run format, lint, regular
+pytest, and the live tmux integration command above.
+
 ## Agent Guidance
 
 Codex-agent workflow and maintenance instructions live in `AGENTS.md`. They are

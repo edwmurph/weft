@@ -36,3 +36,6 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: live tmux runtime tests; set CODUX_RUN_INTEGRATION=1 to run",
+]

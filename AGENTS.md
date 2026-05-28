@@ -2,7 +2,7 @@
 
 ## Workflow
 
-- For any requested change: implement it, run the full test/lint workflow, confirm it passes, then pause for user review.
+- For any requested change: implement it, run the full verification workflow, confirm it passes, then pause for user review.
 - After implementing a change and completing verification, re-explain what changed and what changed functionality the user can verify before pausing for review.
 - For implementation plans, explicitly include creating or using a detached worktree under `./.worktrees/<slug>` unless the user says otherwise.
 - If an implementation change causes drift with docs or agent instructions, update the docs/instructions in the same change to keep them accurate.
@@ -15,7 +15,7 @@
 - Use the fast path. Do one preflight on the main checkout: confirm branch is `main`, check `git status --short`, and compare `main...origin/main`.
 - If the reviewed change lives in a detached worktree, copy that exact diff onto the main checkout, preferably with `git diff --binary ... > /tmp/<slug>.patch` and `git apply --check` before `git apply`.
 - Do not re-run broad exploratory diffs or repeated status checks unless a command fails or the repo state changes unexpectedly.
-- Do not re-run the full test/lint workflow during ship if the exact final diff was already verified after the user's last requested change. Re-run full verification only when verification is stale, missing, failed, or the landing step changes content.
+- Do not re-run the full verification workflow during ship if the exact final diff was already verified after the user's last requested change. Re-run full verification only when verification is stale, missing, failed, or the landing step changes content.
 - Commit only the relevant files as one squash commit on `main`, then push to `origin/main` over SSH.
 - After pushing, verify `main...origin/main` is `0 0`, then report the commit hash, push result, and whether verification was reused or rerun.
 
@@ -32,6 +32,16 @@
 - Format: `uv run ruff format`
 - Lint: `uv run ruff check`
 - Tests: `uv run pytest`
+- Live tmux integration tests: `CODUX_RUN_INTEGRATION=1 uv run pytest -m integration`
+
+## Verification Workflow
+
+- Before asking the user whether to ship an implementation change, run `uv run ruff format`, `uv run ruff check`, `uv run pytest`, and `CODUX_RUN_INTEGRATION=1 uv run pytest -m integration`.
+- If live tmux integration tests cannot run because `tmux` or `uv` is unavailable, call that out explicitly instead of treating skipped integration tests as full verification.
+- Keep live integration coverage focused on primary operator flows that need real tmux/process/state behavior; prefer adding coverage to existing integration scenarios over creating one new live test per edge case.
+- Use mocked unit tests for broad branches, formatting details, parser cases, and deterministic command construction unless the bug only reproduces across a real tmux boundary.
+- The live integration suite may grow to roughly 2 minutes of wall time as part of normal verification. As it approaches that budget, regularly reassess whether new coverage should be added, consolidated into existing flows, or kept in faster unit tests.
+- If integration coverage starts repeating the same setup/action path, consolidate assertions into a primary-flow scenario instead of accumulating many nearly identical live tmux tests.
 
 ## Dashboard Runtime Commands
 
