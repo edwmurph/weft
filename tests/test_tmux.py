@@ -96,7 +96,7 @@ def test_kill_session_targets_codux_session(monkeypatch):
 def test_tmux_internal_shell_commands_use_uv_project_root_without_cd():
     controller = TmuxController("codux")
     root = shlex.quote(str(tmux_module.PROJECT_ROOT))
-    codux_command = f"uv --directory {root} --project {root} run codux"
+    codux_command = f"uv --quiet --no-progress --directory {root} --project {root} run codux"
 
     commands = [
         controller._nav_shell_command("%1"),

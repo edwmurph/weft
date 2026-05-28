@@ -74,6 +74,8 @@ def test_nav_pane_cli_helpers_run_from_project_root(monkeypatch):
         (
             [
                 "uv",
+                "--quiet",
+                "--no-progress",
                 "--directory",
                 str(nav_pane_module.PROJECT_ROOT),
                 "--project",
@@ -119,7 +121,9 @@ def test_rename_popup_runs_from_project_root(monkeypatch):
         command,
     ]
     root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
-    assert command == f"uv --directory {root} --project {root} run codux _popup-rename"
+    assert command == (
+        f"uv --quiet --no-progress --directory {root} --project {root} run codux _popup-rename"
+    )
     assert "cd " not in command
 
 
@@ -155,7 +159,9 @@ def test_help_popup_sizes_to_rendered_help(monkeypatch):
         command,
     ]
     root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
-    assert command == f"uv --directory {root} --project {root} run codux _popup-help"
+    assert command == (
+        f"uv --quiet --no-progress --directory {root} --project {root} run codux _popup-help"
+    )
 
 
 def test_sessions_popup_runs_from_project_root(monkeypatch):
@@ -189,7 +195,9 @@ def test_sessions_popup_runs_from_project_root(monkeypatch):
         command,
     ]
     root = shlex.quote(str(nav_pane_module.PROJECT_ROOT))
-    assert command == f"uv --directory {root} --project {root} run codux _popup-sessions"
+    assert command == (
+        f"uv --quiet --no-progress --directory {root} --project {root} run codux _popup-sessions"
+    )
 
 
 def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):

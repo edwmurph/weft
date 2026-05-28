@@ -12,7 +12,7 @@ uv run codux doctor
 ## Usage
 
 ```sh
-uv run start
+uv --quiet --no-progress run start
 uv run codux --help
 uv run codux start
 uv run codux doctor
@@ -26,7 +26,7 @@ uv run codux quit
 uv run codux quit --kill
 ```
 
-`uv run start` is the shortest local start command; it is equivalent to `uv run codux start`. User-facing shell commands are:
+`uv --quiet --no-progress run start` starts the dashboard without first-run `uv` setup chatter in fresh worktrees. It is equivalent to `uv run codux start`. User-facing shell commands are:
 
 - `codux start`: create or attach to the dashboard for the current workdir
 - `codux config info`: show the active workdir, runtime directory, config, state, and tmux session

@@ -50,7 +50,7 @@ def test_codux_command_uses_uv_project_root_without_cd(monkeypatch):
     command = cli_module.codux_command()
     root = shlex.quote(str(launcher_module.PROJECT_ROOT))
 
-    assert command == f"uv --directory {root} --project {root} run codux"
+    assert command == (f"uv --quiet --no-progress --directory {root} --project {root} run codux")
     assert "cd " not in command
 
 
@@ -66,7 +66,7 @@ def test_codux_command_preserves_runtime_environment(monkeypatch, tmp_path):
     assert command == (
         f"env CODUX_HOME={shlex.quote(str(runtime_dir))} "
         f"CODUX_WORKDIR={shlex.quote(str(workdir))} "
-        f"uv --directory {root} --project {root} run codux"
+        f"uv --quiet --no-progress --directory {root} --project {root} run codux"
     )
 
 

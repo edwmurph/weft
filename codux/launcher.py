@@ -8,11 +8,13 @@ from codux.config import APP_DIR_ENV, WORKDIR_ENV
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+UV_QUIET_ARGS = ["--quiet", "--no-progress"]
 
 
 def codux_cli_args(*args: str) -> list[str]:
     command = [
         "uv",
+        *UV_QUIET_ARGS,
         "--directory",
         str(PROJECT_ROOT),
         "--project",
