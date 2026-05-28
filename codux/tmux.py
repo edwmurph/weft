@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from codux.config import APP_DIR_ENV, WORKDIR_ENV, CoduxConfig, app_dir, current_workdir
 from codux.launcher import PROJECT_ROOT, codux_cli_args, codux_cli_shell_command
@@ -1008,7 +1009,8 @@ class TmuxController:
         active = self._border_is_active(window_id, role, state)
         logical_role, _, suffix = role.partition("_")
         if suffix == "TOP":
-            return render_top_border(width, logical_role, active)
+            right_label = self._workdir_label() if logical_role == NAV_PANE_TITLE else ""
+            return render_top_border(width, logical_role, active, right_label=right_label)
         elif suffix == "BOTTOM":
             return render_bottom_border(width, active, self._shortcut_label(config, logical_role))
         elif suffix == "LEFT":
@@ -1486,6 +1488,10 @@ class TmuxController:
             ["show-option", "-qv", "-t", self.session_name, option], check=False
         ).strip()
 
+    def _workdir_label(self) -> str:
+        workdir = self._session_option(WORKDIR_OPTION) or str(current_workdir())
+        return _display_path(workdir)
+
     def _set_pane_title(self, pane_id: str, title: str) -> None:
         self._tmux(["select-pane", "-t", pane_id, "-T", title], check=False)
 
@@ -1530,6 +1536,17 @@ class TmuxController:
 
 def _run_tmux(args: list[str], check: bool = True):
     return run_tmux(args, check=check)
+
+
+def _display_path(path: str) -> str:
+    if not path:
+        return ""
+    try:
+        path_obj = Path(path).expanduser().resolve()
+        home = Path.home().resolve()
+        return f"~/{path_obj.relative_to(home)}"
+    except (OSError, ValueError):
+        return path
 
 
 def _project_root_from_hook_line(line: str) -> str | None:

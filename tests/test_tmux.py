@@ -215,6 +215,31 @@ def test_codex_border_stays_active_across_tab_windows_when_focus_is_codex():
     assert not controller._border_is_active(second.tmux_window_id, "NAV_TOP", state)
 
 
+def test_nav_top_border_shows_session_workdir(monkeypatch, tmp_path):
+    controller = TmuxController("codux")
+    home = tmp_path / "home"
+    workdir = home / "code" / "configs"
+    workdir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        controller,
+        "_session_option",
+        lambda option: str(workdir) if option == tmux_module.WORKDIR_OPTION else "",
+    )
+
+    content = controller._border_content(
+        CoduxConfig(),
+        "@1",
+        "NAV_TOP",
+        AppState(focus="nav"),
+        width=60,
+        height=1,
+    )
+
+    assert "NAV " in content
+    assert " ~/code/configs " in content
+
+
 def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused(monkeypatch):
     controller = TmuxController("codux")
     config = CoduxConfig()

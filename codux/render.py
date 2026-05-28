@@ -85,8 +85,11 @@ def render_empty_state(width: int | None = None, height: int | None = None) -> s
     return "\n".join([*([""] * top_padding), *lines])
 
 
-def render_top_border(width: int, title: str, active: bool) -> str:
-    return DEFAULT_THEME.paint_border(_horizontal_border(width, label=title), active)
+def render_top_border(width: int, title: str, active: bool, right_label: str = "") -> str:
+    return DEFAULT_THEME.paint_border(
+        _horizontal_border(width, label=title, right_label=right_label),
+        active,
+    )
 
 
 def render_bottom_border(width: int, active: bool, label: str = "") -> str:
@@ -126,10 +129,17 @@ def codex_shortcuts(config: CoduxConfig) -> str:
     return f"{bindings.focus_toggle} focus nav pane  {bindings.quit} quit"
 
 
-def _horizontal_border(width: int, label: str) -> str:
+def _horizontal_border(width: int, label: str, right_label: str = "") -> str:
     width = max(1, width)
     if width == 1:
         return "─"
+
+    if right_label:
+        left_text = f"{label} " if label else "╶"
+        right_text = f" {_ellipsize(right_label, max(0, width - len(left_text) - 2))} "
+        if len(left_text) + len(right_text) > width:
+            return _horizontal_border(width, label=label)
+        return left_text + ("─" * max(0, width - len(left_text) - len(right_text))) + right_text
 
     if label:
         text = f"{label} "
@@ -138,6 +148,16 @@ def _horizontal_border(width: int, label: str) -> str:
             text = text[: max(0, max_text_width - 3)].rstrip() + "..." if width > 4 else ""
         return text + ("─" * max(0, width - len(text) - 1)) + "╴"
     return "╶" + ("─" * max(0, width - 2)) + "╴"
+
+
+def _ellipsize(text: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width <= 3:
+        return text[:width]
+    return text[: width - 3].rstrip() + "..."
 
 
 def _vertical_border(width: int, height: int, top: str, bottom: str, align: str) -> str:

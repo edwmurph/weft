@@ -180,6 +180,12 @@ def test_render_top_border_draws_rounded_title_line():
     assert rendered == "\033[38;5;244mNAV ───────╴\033[0m"
 
 
+def test_render_top_border_draws_right_label_before_corner():
+    rendered = render_top_border(30, "NAV", active=False, right_label="~/code/configs")
+
+    assert rendered == "\033[38;5;244mNAV ────────── ~/code/configs \033[0m"
+
+
 def test_render_bottom_border_draws_shortcuts_in_edge():
     rendered = render_bottom_border(20, active=True, label="C-d nav  C-q quit")
 
