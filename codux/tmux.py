@@ -48,6 +48,7 @@ FRAME_LAYOUT_VERSION = "6"
 FRAME_VERSION_OPTION = "@codux-frame-version"
 NAV_FRAME_EXTRA_HEIGHT = 4
 DEFAULT_NAV_FRAME_HEIGHT = "7"
+RESIZE_REFRESH_DELAY_SECONDS = 0.02
 BORDER_SUFFIXES = ("TOP", "BOTTOM", "LEFT", "RIGHT")
 BORDER_ROLES = {
     f"{logical_role}_{suffix}"
@@ -618,6 +619,23 @@ class TmuxController:
             content = self._border_content(config, window_id, role, state, pane.width, pane.height)
             self._render_frame_pane(pane_id, content, snapshot)
 
+    def request_nav_repaint(self) -> None:
+        if not self.has_session():
+            return
+        snapshot = self._snapshot()
+        for pane_id in self._nav_pane_ids_from_snapshot(snapshot):
+            self._tmux(["send-keys", "-t", pane_id, "C-l"], check=False)
+
+    def _nav_pane_ids_from_snapshot(self, snapshot: TmuxSnapshot) -> list[str]:
+        pane_ids: set[str] = set()
+        for window in snapshot.windows.values():
+            if window.nav_pane_configured:
+                pane_ids.add(window.nav_pane_configured)
+        for pane in snapshot.panes.values():
+            if pane.role == NAV_PANE_TITLE or pane.title == NAV_PANE_TITLE:
+                pane_ids.add(pane.pane_id)
+        return sorted(pane_ids)
+
     def _codux_windows(self, snapshot: TmuxSnapshot) -> list[tuple[str, bool]]:
         windows: list[tuple[str, bool]] = []
         for window in snapshot.windows.values():
@@ -854,6 +872,7 @@ class TmuxController:
                 self._ensure_pane_frame(window_id, content_pane_id, CODEX_PANE_TITLE, snapshot)
                 or changed
             )
+        changed = self._normalize_frame_edges(window_id, snapshot) or changed
         return changed
 
     def _resize_nav_frame(
@@ -894,13 +913,27 @@ class TmuxController:
     def _role_to_pane(self, window_id: str, snapshot: TmuxSnapshot) -> dict[str, str]:
         return {role: pane_id for pane_id, role in self._border_panes(window_id, snapshot).items()}
 
-    def _normalize_frame_edges(self, window_id: str, snapshot: TmuxSnapshot) -> None:
+    def _normalize_frame_edges(self, window_id: str, snapshot: TmuxSnapshot) -> bool:
+        changed = False
         for role, pane_id in self._role_to_pane(window_id, snapshot).items():
+            pane = snapshot.panes.get(pane_id)
             if role.endswith(("_TOP", "_BOTTOM")):
+                if pane and pane.height == FRAME_EDGE_SIZE:
+                    continue
                 self._tmux(
                     ["resize-pane", "-t", pane_id, "-y", str(FRAME_EDGE_SIZE)],
                     check=False,
                 )
+                changed = True
+            elif role.endswith(("_LEFT", "_RIGHT")):
+                if pane and pane.width == FRAME_SIDE_WIDTH:
+                    continue
+                self._tmux(
+                    ["resize-pane", "-t", pane_id, "-x", str(FRAME_SIDE_WIDTH)],
+                    check=False,
+                )
+                changed = True
+        return changed
 
     def _ensure_pane_frame(
         self, window_id: str, content_pane_id: str, role: str, snapshot: TmuxSnapshot
@@ -1222,7 +1255,7 @@ class TmuxController:
             self._sync_window_to_attached_client(window_id)
 
     def _sync_window_to_attached_client(self, window_id: str) -> None:
-        size = self.attached_client_size() or self.largest_window_size()
+        size = self.attached_client_size() or launch_terminal_size() or self.largest_window_size()
         if size is None:
             return
         width, height = size
@@ -1447,15 +1480,40 @@ class TmuxController:
         return f"run-shell -bC {shlex.quote(tmux_command)}"
 
     def _install_hooks(self, codux_command: str) -> None:
-        refresh_command = self._run_shell_command(f"{codux_command} _refresh")
-        for hook_name in ("client-attached", "client-resized", "window-resized"):
+        attach_refresh_command = self._run_shell_command(f"{codux_command} _refresh --nav-repaint")
+        resize_refresh_command = self._run_shell_command(
+            (
+                f"{self._resize_frame_edges_shell_command()}; "
+                f"sleep {RESIZE_REFRESH_DELAY_SECONDS}; "
+                f"{codux_command} _refresh --nav-repaint"
+            )
+        )
+        self._tmux(
+            ["set-hook", "-t", self.session_name, "client-attached", attach_refresh_command],
+            check=False,
+        )
+        for hook_name in ("client-resized", "window-resized"):
             self._tmux(
-                ["set-hook", "-t", self.session_name, hook_name, refresh_command],
+                ["set-hook", "-t", self.session_name, hook_name, resize_refresh_command],
                 check=False,
             )
 
     def _run_shell_command(self, command: str) -> str:
         return f"run-shell -b {shlex.quote(f'{command} >/dev/null 2>&1')}"
+
+    def _resize_frame_edges_shell_command(self) -> str:
+        return (
+            f"tmux list-panes -a -t {shlex.quote(self.session_name)} "
+            "-F '##{pane_id}\t##{@codux-role}' | "
+            "while IFS=\"$(printf '\\t')\" read -r pane_id role; do "
+            'case "$role" in '
+            f'*_LEFT|*_RIGHT) tmux resize-pane -t "$pane_id" -x {FRAME_SIDE_WIDTH} '
+            ">/dev/null 2>&1 || true ;; "
+            f'*_TOP|*_BOTTOM) tmux resize-pane -t "$pane_id" -y {FRAME_EDGE_SIZE} '
+            ">/dev/null 2>&1 || true ;; "
+            "esac; "
+            "done"
+        )
 
     def _rename_prompt_command(self, command: str) -> str:
         return (
@@ -1536,6 +1594,15 @@ class TmuxController:
 
 def _run_tmux(args: list[str], check: bool = True):
     return run_tmux(args, check=check)
+
+
+def launch_terminal_size() -> tuple[int, int] | None:
+    if not os.isatty(1):
+        return None
+    size = shutil.get_terminal_size((0, 0))
+    if size.columns <= 0 or size.lines <= 0:
+        return None
+    return size.columns, size.lines
 
 
 def _display_path(path: str) -> str:

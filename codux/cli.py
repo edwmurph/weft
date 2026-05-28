@@ -178,12 +178,16 @@ def repair_and_render(
     config: CoduxConfig,
     store: StateStore,
     tmux: TmuxController,
+    *,
+    repaint_nav: bool = False,
 ) -> AppState:
     initial = store.read()
     repaired_state = repaired_runtime_state(config, initial, tmux)
 
     state = store.update(lambda current: repaired_state if current == initial else current)
     render_runtime(config, state, tmux)
+    if repaint_nav:
+        tmux.request_nav_repaint()
     return state
 
 
@@ -1242,9 +1246,15 @@ def _escape_sequence_complete(sequence: bytes) -> bool:
 
 @app.command("_refresh", hidden=True)
 @_with_runtime_lock
-def refresh_command() -> None:
+def refresh_command(
+    nav_repaint: bool = typer.Option(
+        False,
+        "--nav-repaint",
+        help="Ask long-running nav panes to repaint after tmux layout refresh.",
+    ),
+) -> None:
     config, store, tmux = load_runtime()
-    repair_and_render(config, store, tmux)
+    repair_and_render(config, store, tmux, repaint_nav=nav_repaint)
 
 
 if __name__ == "__main__":

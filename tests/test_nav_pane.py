@@ -375,6 +375,14 @@ def test_nav_render_skips_busy_state_lock(tmp_path):
     assert events == []
 
 
+def test_nav_resize_waits_for_settle_period():
+    pane = NavPane.__new__(NavPane)
+    pane.resize_pending_at = 10.0
+
+    assert not pane.resize_ready(10.0 + nav_pane_module.RESIZE_RENDER_DELAY - 0.001)
+    assert pane.resize_ready(10.0 + nav_pane_module.RESIZE_RENDER_DELAY + 0.001)
+
+
 def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
     config = CoduxConfig()
     store = StateStore(tmp_path / "state.json")

@@ -135,6 +135,32 @@ def test_project_root_falls_back_to_legacy_refresh_hook(monkeypatch):
     assert controller.project_root() == old_root
 
 
+def test_resize_hooks_debounce_and_repaint_nav(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(controller, "_tmux", lambda args, check=True: commands.append(tuple(args)))
+
+    controller._install_hooks("uv run codux")
+
+    hooks = {
+        command[3]: command[4] for command in commands if command[:3] == ("set-hook", "-t", "codux")
+    }
+    assert "_refresh --nav-repaint" in hooks["client-attached"]
+    assert "list-panes -a -t codux" in hooks["client-resized"]
+    assert "##{pane_id}" in hooks["client-resized"]
+    assert "##{@codux-role}" in hooks["client-resized"]
+    assert 'resize-pane -t "$pane_id" -x 3' in hooks["client-resized"]
+    assert 'resize-pane -t "$pane_id" -y 1' in hooks["client-resized"]
+    assert f"sleep {tmux_module.RESIZE_REFRESH_DELAY_SECONDS}" in hooks["client-resized"]
+    assert "_refresh --nav-repaint" in hooks["client-resized"]
+    assert "list-panes -a -t codux" in hooks["window-resized"]
+    assert 'resize-pane -t "$pane_id" -x 3' in hooks["window-resized"]
+    assert 'resize-pane -t "$pane_id" -y 1' in hooks["window-resized"]
+    assert f"sleep {tmux_module.RESIZE_REFRESH_DELAY_SECONDS}" in hooks["window-resized"]
+    assert "_refresh --nav-repaint" in hooks["window-resized"]
+
+
 def test_install_records_current_project_root(monkeypatch):
     controller = TmuxController("codux")
     commands: list[tuple[str, ...]] = []
@@ -450,6 +476,74 @@ def test_refresh_window_frame_panes_respects_minimum_nav_height(monkeypatch):
     assert events == ["resize:5"]
 
 
+def test_ensure_window_frame_normalizes_expanded_side_edges(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[tuple[str, ...]] = []
+
+    def pane(pane_id: str, role: str, width: int, height: int) -> PaneSnapshot:
+        return PaneSnapshot(
+            pane_id=pane_id,
+            window_id="@1",
+            role=role,
+            title=role,
+            top=0,
+            left=0,
+            width=width,
+            height=height,
+            current_command="python",
+            start_command="",
+            nav_host_version="",
+            frame_host_version=tmux_module.FRAME_HOST_VERSION,
+        )
+
+    panes = {
+        "%nav": pane("%nav", tmux_module.NAV_PANE_TITLE, 131, 2),
+        "%codex": pane("%codex", tmux_module.CODEX_PANE_TITLE, 131, 35),
+        "%nav-left": pane("%nav-left", "NAV_LEFT", 36, 6),
+        "%nav-right": pane("%nav-right", "NAV_RIGHT", 35, 6),
+        "%nav-top": pane("%nav-top", "NAV_TOP", 131, 1),
+        "%nav-bottom": pane("%nav-bottom", "NAV_BOTTOM", 131, 1),
+        "%codex-left": pane("%codex-left", "CODEX_LEFT", 36, 39),
+        "%codex-right": pane("%codex-right", "CODEX_RIGHT", 35, 39),
+        "%codex-top": pane("%codex-top", "CODEX_TOP", 131, 1),
+        "%codex-bottom": pane("%codex-bottom", "CODEX_BOTTOM", 131, 1),
+    }
+    snapshot = TmuxSnapshot(
+        windows={
+            "@1": WindowSnapshot(
+                window_id="@1",
+                name="codux",
+                width=204,
+                height=46,
+                empty="1",
+                spare="0",
+                tab_id="",
+                nav_pane_configured="%nav",
+                codex_pane_configured="%codex",
+                frame_version=tmux_module.FRAME_LAYOUT_VERSION,
+            )
+        },
+        panes=panes,
+        panes_by_window={"@1": list(panes.values())},
+    )
+
+    monkeypatch.setattr(controller, "_install_window_options", lambda window_id: None)
+    monkeypatch.setattr(controller, "_tmux", lambda args, check=True: commands.append(tuple(args)))
+
+    assert controller._ensure_window_frame("@1", snapshot)
+    assert ("resize-pane", "-t", "%nav-left", "-x", str(tmux_module.FRAME_SIDE_WIDTH)) in commands
+    assert ("resize-pane", "-t", "%nav-right", "-x", str(tmux_module.FRAME_SIDE_WIDTH)) in commands
+    assert ("resize-pane", "-t", "%codex-left", "-x", str(tmux_module.FRAME_SIDE_WIDTH)) in commands
+    assert (
+        "resize-pane",
+        "-t",
+        "%codex-right",
+        "-x",
+        str(tmux_module.FRAME_SIDE_WIDTH),
+    ) in commands
+    assert not any(command[0] == "split-window" for command in commands)
+
+
 def test_missing_codex_pane_rebuilds_from_existing_nav_after_killing_frames(monkeypatch):
     controller = TmuxController("codux")
     events: list[tuple[str, object]] = []
@@ -756,6 +850,89 @@ def test_repair_window_sizes_skips_windows_already_at_target(monkeypatch):
     controller.repair_window_sizes()
 
     assert not any(command[0] == "resize-window" for command in commands)
+
+
+def test_repair_window_sizes_uses_launch_terminal_before_attached_client(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(controller, "_tmux", lambda args, check=True: commands.append(tuple(args)))
+    monkeypatch.setattr(controller, "attached_client_size", lambda: None)
+    monkeypatch.setattr(tmux_module, "launch_terminal_size", lambda: (132, 40))
+    monkeypatch.setattr(
+        controller,
+        "largest_window_size",
+        lambda: (_ for _ in ()).throw(AssertionError("used detached tmux size")),
+    )
+    monkeypatch.setattr(controller, "window_size", lambda window_id: (80, 24))
+
+    controller._sync_window_to_attached_client("@1")
+
+    assert ("resize-window", "-t", "@1", "-x", "132", "-y", "40") in commands
+    assert ("set-window-option", "-t", "@1", "window-size", "latest") in commands
+
+
+def test_request_nav_repaint_sends_ctrl_l_to_configured_nav_panes(monkeypatch):
+    controller = TmuxController("codux")
+    commands: list[tuple[str, ...]] = []
+    snapshot = TmuxSnapshot(
+        windows={
+            "@1": WindowSnapshot(
+                window_id="@1",
+                name="one",
+                width=120,
+                height=30,
+                empty="0",
+                spare="0",
+                tab_id="one",
+                nav_pane_configured="%nav",
+                codex_pane_configured="%codex",
+                frame_version=tmux_module.FRAME_LAYOUT_VERSION,
+            )
+        },
+        panes={
+            "%nav": PaneSnapshot(
+                pane_id="%nav",
+                window_id="@1",
+                role="",
+                title="",
+                top=0,
+                left=0,
+                width=120,
+                height=3,
+                current_command="python",
+                start_command="_nav-pane",
+                nav_host_version=tmux_module.NAV_HOST_VERSION,
+                frame_host_version="",
+            ),
+            "%role-nav": PaneSnapshot(
+                pane_id="%role-nav",
+                window_id="@1",
+                role=tmux_module.NAV_PANE_TITLE,
+                title=tmux_module.NAV_PANE_TITLE,
+                top=0,
+                left=0,
+                width=120,
+                height=3,
+                current_command="python",
+                start_command="_nav-pane",
+                nav_host_version=tmux_module.NAV_HOST_VERSION,
+                frame_host_version="",
+            ),
+        },
+        panes_by_window={"@1": []},
+    )
+
+    monkeypatch.setattr(controller, "has_session", lambda: True)
+    monkeypatch.setattr(controller, "_snapshot", lambda: snapshot)
+    monkeypatch.setattr(controller, "_tmux", lambda args, check=True: commands.append(tuple(args)))
+
+    controller.request_nav_repaint()
+
+    assert commands == [
+        ("send-keys", "-t", "%nav", "C-l"),
+        ("send-keys", "-t", "%role-nav", "C-l"),
+    ]
 
 
 def test_rename_prompt_uses_popup():

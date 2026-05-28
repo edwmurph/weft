@@ -515,7 +515,7 @@ def test_sessions_popup_requires_confirmation_before_delete(monkeypatch):
 
 
 def test_hidden_command_signatures_are_preserved():
-    assert list(inspect.signature(cli_module.refresh_command).parameters) == []
+    assert list(inspect.signature(cli_module.refresh_command).parameters) == ["nav_repaint"]
     assert list(inspect.signature(cli_module.activate_window_command).parameters) == ["window_id"]
     assert list(inspect.signature(cli_module.focus_window_command).parameters) == [
         "window_id",
@@ -628,6 +628,32 @@ def test_repair_and_render_recovers_live_tmux_tabs(monkeypatch, tmp_path):
     assert state.tabs == [recovered]
     assert state.active_tab_id == recovered.id
     assert refreshed[-1].active_tab_id == recovered.id
+
+
+def test_repair_and_render_can_request_nav_repaint(tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState())
+    events: list[str] = []
+
+    class FakeTmux:
+        def has_session(self):
+            return True
+
+        def recoverable_tabs(self, config):
+            return []
+
+        def active_tab_id_from_tmux(self):
+            return None
+
+        def refresh_static_panes(self, config, state):
+            events.append("render")
+
+        def request_nav_repaint(self):
+            events.append("repaint")
+
+    repair_and_render(CoduxConfig(), store, FakeTmux(), repaint_nav=True)
+
+    assert events == ["render", "repaint"]
 
 
 def test_repair_and_render_reads_live_codex_title(monkeypatch, tmp_path):

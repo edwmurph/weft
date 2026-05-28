@@ -7,7 +7,7 @@
 - For implementation plans, explicitly include creating or using a detached worktree under `./.worktrees/<slug>` unless the user says otherwise.
 - If an implementation change causes drift with docs or agent instructions, update the docs/instructions in the same change to keep them accurate.
 - For broad refactor requests, use the repo-local `$codux-refactor` skill in `skills/codux-refactor/` and update its suggestion log.
-- After verified implementation work, summarize what changed, what verification passed, and exactly how the user can test it locally. Then stop for review unless the user explicitly says **"ship it"**.
+- After verified implementation work, summarize what changed, what verification passed, exactly how the user can test it locally, and offer to ship it. Then stop for review unless the user explicitly says **"ship it"**.
 - When the user says **"ship it"**, interpret it as: squash-merge the already-reviewed change to `main`, push `main` to `origin/main`, and report the commit plus verification status.
 
 ## Ship It Flow

@@ -38,6 +38,7 @@ POPUP_BORDER_STYLE = "fg=default,bg=default"
 SESSIONS_POPUP_WIDTH = 96
 SESSIONS_POPUP_HEIGHT = 18
 TITLE_POLL_INTERVAL = 0.5
+RESIZE_RENDER_DELAY = 0.01
 
 
 def run_nav_pane() -> int:
@@ -60,7 +61,7 @@ class NavPane:
         self.last_state_mtime = 0.0
         self.last_title_poll = 0.0
         self.skip_next_render = False
-        self.resize_pending = False
+        self.resize_pending_at: float | None = None
         self.refresh_nav_pane_cache()
 
     def run(self) -> int:
@@ -73,7 +74,7 @@ class NavPane:
         old_winch = signal.getsignal(signal.SIGWINCH)
 
         def handle_winch(_signum, _frame) -> None:
-            self.resize_pending = True
+            self.resize_pending_at = time.monotonic()
 
         signal.signal(signal.SIGWINCH, handle_winch)
         try:
@@ -86,8 +87,8 @@ class NavPane:
                     if not data:
                         break
                     self.handle_input(data)
-                if self.resize_pending:
-                    self.resize_pending = False
+                if self.resize_ready(time.monotonic()):
+                    self.resize_pending_at = None
                     self.render(force=True)
                 self.render_if_state_changed()
         finally:
@@ -454,6 +455,12 @@ class NavPane:
         titles_changed = self.poll_live_titles(now)
         if mtime != self.last_state_mtime or titles_changed:
             self.render(force=True)
+
+    def resize_ready(self, now: float) -> bool:
+        return (
+            self.resize_pending_at is not None
+            and now - self.resize_pending_at >= RESIZE_RENDER_DELAY
+        )
 
     def poll_live_titles(self, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
