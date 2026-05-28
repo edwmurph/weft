@@ -1,6 +1,29 @@
-# codux
+<h1 align="center"><img src="assets/codux-logo.svg" alt="" width="46" valign="middle"> Codux</h1>
 
-`codux` is a small Python CLI that manages multiple Codex agents across parallel workflows in tmux. It keeps a lightweight Kanban-style nav pane above a native Codex pane, with one tmux window per Codex tab.
+<p align="center">
+  <strong>Coordinate multiple Codex sessions from a single tmux workspace.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-4b5563?style=flat-square" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/license-MIT-4b5563?style=flat-square" alt="MIT license">
+  <img src="https://img.shields.io/badge/status-active%20development-4b5563?style=flat-square" alt="Active development">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
+</p>
+
+<table align="center">
+  <tr>
+    <td width="680" align="center">
+      Codux manages parallel Codex workflows inside tmux using a lightweight kanban-style workspace. It keeps agent sessions organized as you scale to multiple threads.
+    </td>
+  </tr>
+</table>
+
+## Why Codux
+
+- **One tmux workspace, many Codex threads.** Keep related agents grouped without leaving the terminal.
+- **Kanban-style workflow state.** Move sessions through customizable columns as work progresses.
+- **Native Codex panes.** Codux coordinates tmux layout, state, and focus without proxying Codex IO.
 
 ## Getting Started
 
