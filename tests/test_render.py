@@ -260,15 +260,7 @@ def test_shortcut_labels_are_pane_specific():
     config = CoduxConfig()
     shortcuts = nav_shortcuts(config, other_session_count=2)
 
-    assert "n new tab" in shortcuts
-    assert "r rename tab" in shortcuts
-    assert "c close tab" in shortcuts
-    assert "sessions (2)" in shortcuts
-    assert shortcuts.index("n new tab") < shortcuts.index("r rename tab")
-    assert shortcuts.index("r rename tab") < shortcuts.index("c close tab")
-    assert shortcuts.index("c close tab") < shortcuts.index("←/→/↑/↓ switch tab")
-    assert shortcuts.index("shift + ←/→ move tab") < shortcuts.index("s sessions (2)")
-    assert shortcuts.endswith("s sessions (2)  C-q quit  ? help")
+    assert shortcuts == "C-q quit  ? help"
     assert "focus codex pane" not in shortcuts
     assert "new" not in codex_shortcuts(config)
     assert codex_shortcuts(config) == "C-q quit"
@@ -306,7 +298,7 @@ def test_help_orients_user_and_lists_shortcuts():
     assert "New tab" in rendered
     assert "Switch tab" in rendered
     assert "Move tab between columns" in rendered
-    assert "Other dashboard sessions" in rendered
+    assert "Other dashboard sessions" not in rendered
     assert "Detach dashboard and leave Codex tabs running" in rendered
     assert "New session" not in rendered
     assert "Select session" not in rendered

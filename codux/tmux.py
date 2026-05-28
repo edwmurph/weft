@@ -1054,8 +1054,10 @@ class TmuxController:
             return render_bottom_border(
                 width,
                 active,
-                self._shortcut_label(config, logical_role),
-                right_label=self._focus_hint_label(config, active),
+                self._shortcut_label(config, logical_role)
+                if active
+                else self._focus_hint_label(config),
+                right_label="●" if active else "",
             )
         elif suffix == "LEFT":
             return render_left_border(width, height, active)
@@ -1095,8 +1097,8 @@ class TmuxController:
             return ""
         return normalize_codex_title(tab.codex_title) or CODEX_TITLE_PENDING
 
-    def _focus_hint_label(self, config: CoduxConfig, active: bool) -> str:
-        return "●" if active else f"{config.key_bindings.focus_toggle} focus"
+    def _focus_hint_label(self, config: CoduxConfig) -> str:
+        return f"{config.key_bindings.focus_toggle} focus"
 
     def _pane_current_command(self, pane_id: str) -> str:
         return self._tmux(

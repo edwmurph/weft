@@ -119,12 +119,7 @@ def render_right_border(width: int, height: int, active: bool) -> str:
 
 def nav_shortcuts(config: CoduxConfig, other_session_count: int = 0) -> str:
     bindings = config.key_bindings
-    return (
-        f"{bindings.new} new tab  {bindings.rename} rename tab  "
-        f"{bindings.close} close tab  ←/→/↑/↓ switch tab  shift + ←/→ move tab  "
-        f"{bindings.sessions} sessions ({other_session_count})  {bindings.quit} quit  "
-        f"{bindings.help} help"
-    )
+    return f"{bindings.quit} quit  {bindings.help} help"
 
 
 def codex_shortcuts(config: CoduxConfig) -> str:
@@ -229,7 +224,6 @@ def render_help(config: CoduxConfig) -> str:
         _help_shortcut_row(bindings.close, "Close tab"),
         _help_shortcut_row("←/→/↑/↓", "Switch tab"),
         _help_shortcut_row("shift + ←/→", "Move tab between columns"),
-        _help_shortcut_row(bindings.sessions, "Other dashboard sessions"),
         _help_shortcut_row(f"Enter/{bindings.focus_toggle}", "Focus the active Codex pane"),
         _help_shortcut_row(bindings.quit, "Detach dashboard and leave Codex tabs running"),
         _help_shortcut_row(bindings.help, "Help"),

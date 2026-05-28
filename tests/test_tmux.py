@@ -269,7 +269,7 @@ def test_nav_top_border_shows_session_workdir(monkeypatch, tmp_path):
     assert " ~/code/configs " not in content
 
 
-def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused(monkeypatch):
+def test_inactive_nav_bottom_border_shows_focus_hint_on_left(monkeypatch):
     controller = TmuxController("codux")
     config = CoduxConfig()
     state = AppState(focus="codex")
@@ -277,10 +277,11 @@ def test_nav_bottom_border_keeps_shortcuts_when_codex_is_focused(monkeypatch):
 
     content = controller._border_content(config, "@1", "NAV_BOTTOM", state, width=180, height=1)
 
-    assert "n new tab" in content
-    assert "r rename tab" in content
-    assert "c close tab" in content
-    assert "s sessions (2)" in content
+    assert content.startswith("\033[38;5;244mC-d focus ")
+    assert "C-q quit" not in content
+    assert "? help" not in content
+    assert "new tab" not in content
+    assert "sessions (2)" not in content
     assert "focus codex pane" not in content
     assert "\033[38;5;244m" in content
 
@@ -303,8 +304,10 @@ def test_bottom_borders_show_focus_marker(monkeypatch):
         height=1,
     )
 
-    assert nav_content.endswith(" C-d focus\033[0m")
+    assert nav_content.startswith("\033[38;5;244mC-d focus ")
+    assert codex_content.startswith("\033[38;5;117mC-q quit ")
     assert codex_content.endswith(" ●\033[0m")
+    assert "C-d focus" not in codex_content
     assert "focus nav pane" not in codex_content
 
 

@@ -73,7 +73,7 @@ Default nav shortcuts, active when the nav region is focused:
 | `C-d` | focus the other pane |
 | `C-q` | detach dashboard and leave Codex tabs running |
 
-The nav footer shows `s sessions (N)`, where `N` is the count of other active Codux dashboards.
+The active pane footer shows its available shortcuts on the left. Inactive pane footers show `C-d focus` on the left.
 
 `C-d` is scoped to the current Codux tmux session and configurable because it is intercepted before it reaches Codex.
 
