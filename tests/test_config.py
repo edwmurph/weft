@@ -18,6 +18,7 @@ from codux.config import (
 
 def test_ensure_config_creates_default(tmp_path):
     config = ensure_config(tmp_path)
+    text = config_path(tmp_path).read_text(encoding="utf-8")
 
     assert config_path(tmp_path).exists()
     assert config.tmux_session == "codux"
@@ -29,6 +30,7 @@ def test_ensure_config_creates_default(tmp_path):
     assert config.key_bindings.close == "c"
     assert config.key_bindings.sessions == "s"
     assert config.key_bindings.focus_toggle == "C-d"
+    assert "tmux_session =" not in text
 
 
 def test_runtime_defaults_are_scoped_to_current_workdir(monkeypatch, tmp_path):
@@ -95,6 +97,16 @@ focus_toggle = "C-b"
     assert config.codex_command == "codex --foo"
     assert config.columns == ["One", "Two"]
     assert config.key_bindings.prev == "b"
+
+
+def test_load_config_without_tmux_session_uses_default(tmp_path):
+    path = config_path(tmp_path)
+    path.write_text('codex_command = "codex --foo"\n', encoding="utf-8")
+
+    config = load_config(path, tmux_session_default="codux-generated")
+
+    assert config.tmux_session == "codux-generated"
+    assert config.codex_command == "codex --foo"
 
 
 def test_load_config_trims_custom_columns(tmp_path):

@@ -64,6 +64,7 @@ from codux.titles import (
 from codux.tmux import FRAME_HOST_OPTION, FRAME_HOST_VERSION, TmuxController
 
 
+COMPLETION_OPTION_NAMES = {"--install-completion", "--show-completion"}
 APP_HELP = """
 Start, inspect, or detach Codux tmux workspaces for Codex.
 
@@ -87,7 +88,25 @@ The config file is workdir-scoped by default. It controls:
 - nav columns and key bindings
 """
 
-app = typer.Typer(help=APP_HELP, no_args_is_help=True)
+
+class CoduxTyperGroup(typer.core.TyperGroup):
+    def format_help(self, ctx, formatter) -> None:
+        completion_options = [
+            param
+            for param in self.params
+            if any(option in COMPLETION_OPTION_NAMES for option in getattr(param, "opts", ()))
+        ]
+        original_hidden = [option.hidden for option in completion_options]
+        for option in completion_options:
+            option.hidden = True
+        try:
+            super().format_help(ctx, formatter)
+        finally:
+            for option, hidden in zip(completion_options, original_hidden, strict=True):
+                option.hidden = hidden
+
+
+app = typer.Typer(cls=CoduxTyperGroup, help=APP_HELP, no_args_is_help=True)
 config_app = typer.Typer(help=CONFIG_HELP, no_args_is_help=True)
 app.add_typer(config_app, name="config")
 console = Console()
@@ -502,7 +521,7 @@ def config_init_command(
         console.print("Use `codux config show` to inspect it or `codux config init --force`.")
         raise typer.Exit(1)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(default_config_text(tmux_session=default_tmux_session()), encoding="utf-8")
+    path.write_text(default_config_text(), encoding="utf-8")
     action = "Rewrote" if force_enabled else "Wrote"
     console.print(f"{action} config: {path}")
 
@@ -667,15 +686,17 @@ def doctor() -> None:
     warnings: list[str] = []
     try:
         ensure_runtime_environment()
-        config = ensure_config()
+        path = config_path()
+        config = load_config(path) if path.exists() else default_config_for_current_workdir()
         store = StateStore()
-        state = store.ensure()
+        state = store.read() if state_path().exists() else AppState()
         tmux = TmuxController(config.tmux_session)
     except (ConfigError, StateError) as exc:
         console.print(f"[red]error[/red] {exc}")
         raise typer.Exit(1) from exc
 
-    if not TmuxController.available():
+    tmux_available = TmuxController.available()
+    if not tmux_available:
         problems.append("tmux is not installed or not on PATH")
     else:
         console.print(f"[green]ok[/green] tmux: {TmuxController.version_text()}")
@@ -684,12 +705,18 @@ def doctor() -> None:
         warnings.append(f"Codex command is not on PATH: {config.codex_command}")
     else:
         console.print(f"[green]ok[/green] Codex command: {config.codex_command}")
-    if TmuxController.available():
+    if tmux_available and state_path().exists():
         state = repair_and_render(config, store, tmux)
     console.print(f"[blue]info[/blue] workdir: {current_workdir()}")
     console.print(f"[blue]info[/blue] runtime dir: {app_dir()}")
-    console.print(f"[green]ok[/green] config: {config_path()}")
-    console.print(f"[green]ok[/green] state: {state_path()} ({len(state.tabs)} tabs)")
+    if path.exists():
+        console.print(f"[green]ok[/green] config: {path}")
+    else:
+        console.print(f"[blue]info[/blue] config: {path} (created by `codux start`)")
+    if state_path().exists():
+        console.print(f"[green]ok[/green] state: {state_path()} ({len(state.tabs)} tabs)")
+    else:
+        console.print(f"[blue]info[/blue] state: {state_path()} (created by `codux start`)")
     console.print(
         "[blue]info[/blue] same workdir reattaches to this workspace; another "
         "workdir gets its own config, state, and tmux session."
@@ -703,7 +730,7 @@ def doctor() -> None:
         "not force a Codex theme or color palette."
     )
     console.print("[blue]info[/blue] Codux windows reset native tmux pane styles to default.")
-    if not TmuxController.available():
+    if not tmux_available:
         pass
     elif tmux.has_session():
         console.print(f"[green]ok[/green] tmux session: {config.tmux_session}")

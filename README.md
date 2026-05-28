@@ -2,12 +2,20 @@
 
 `codux` is a small Python CLI that manages multiple Codex agents across parallel workflows in tmux. It keeps a lightweight Kanban-style nav pane above a native Codex pane, with one tmux window per Codex tab.
 
-## Install
+## Getting Started
 
 ```sh
 uv sync
 uv run codux doctor
 ```
+
+Optional shell completion:
+
+```sh
+uv run codux --install-completion
+```
+
+Run the completion command from the shell you want to configure.
 
 ## Usage
 
@@ -69,7 +77,7 @@ The nav footer shows `s sessions (N)`, where `N` is the count of other active Co
 
 ## Config And State
 
-Codux is scoped to the directory where you launch it. On first run from a directory, Codux creates:
+Codux is scoped to the directory where you launch it. On first `codux start` from a directory, Codux creates:
 
 - tmux workspace: one session named `codux-<workdir-id>`
 - runtime directory: `~/.codux/workdirs/<workdir-id>/`
@@ -92,9 +100,8 @@ The default config:
 
 ```toml
 # Codux runtime configuration for one launch directory.
-# Run `codux config info` to see the workdir, runtime directory, state file,
-# and tmux session this file controls.
-tmux_session = "codux-<workdir-id>"
+# Run `codux config info` to see the workdir, runtime directory, state file, and
+# generated tmux session. Set tmux_session only when you need to override it.
 
 # Command launched directly inside each CODEX tmux pane.
 codex_command = "codex"
@@ -120,10 +127,11 @@ Set `columns` to change the nav columns and their order. Existing tabs in remove
 
 The config file controls:
 
-- `tmux_session`: tmux session name for this workdir's workspace
 - `codex_command`: shell command launched directly in each CODEX pane
 - `columns`: nav columns and their left-to-right order
 - `[key_bindings]`: nav and pane-focus shortcuts
+
+Codux computes the default tmux session name from the launch directory. Set `tmux_session` only when you need an explicit override.
 
 `CODUX_WORKDIR` overrides the directory used for workdir scoping. `CODUX_HOME` overrides the runtime directory directly; use it only when you intentionally need isolated state for development or tests.
 

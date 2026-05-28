@@ -116,6 +116,24 @@ def test_root_help_explains_workdir_scoped_runtime():
     assert "codux config info" in result.output
 
 
+def test_root_help_hides_shell_completion_options():
+    result = CliRunner().invoke(cli_module.app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "--install-completion" not in result.output
+    assert "--show-completion" not in result.output
+    assert "--help" in result.output
+
+
+def test_root_completion_options_remain_registered():
+    root_command = cli_module.typer.main.get_command(cli_module.app)
+    option_names = {
+        option for param in root_command.params for option in getattr(param, "opts", ())
+    }
+
+    assert cli_module.COMPLETION_OPTION_NAMES <= option_names
+
+
 def test_start_attaches_existing_workdir_session_without_state_lock(monkeypatch):
     events: list[tuple[str, str]] = []
 
@@ -393,7 +411,45 @@ def test_config_show_creates_and_prints_default_config(monkeypatch, tmp_path):
     rendered = output.getvalue()
     assert cli_module.config_path().exists()
     assert "Codux runtime configuration for one launch directory" in rendered
+    assert "tmux_session =" not in rendered
     assert 'columns = ["inbox", "implement", "ship"]' in rendered
+
+
+def test_doctor_does_not_create_new_workspace_files(monkeypatch, tmp_path):
+    output = io.StringIO()
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+
+    class FakeTmux:
+        def __init__(self, session_name):
+            self.session_name = session_name
+
+        @staticmethod
+        def available():
+            return True
+
+        @staticmethod
+        def version_text():
+            return "tmux 3.5"
+
+        def has_session(self):
+            return False
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(APP_DIR_ENV, raising=False)
+    monkeypatch.delenv(WORKDIR_ENV, raising=False)
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(cli_module, "TmuxController", FakeTmux)
+    monkeypatch.setattr(cli_module.shutil, "which", lambda binary: f"/bin/{binary}")
+    monkeypatch.setattr(cli_module, "console", Console(file=output))
+
+    cli_module.doctor()
+
+    rendered = output.getvalue()
+    assert "config:" in rendered
+    assert "created by `codux start`" in rendered
+    assert not cli_module.config_path().exists()
+    assert not cli_module.state_path().exists()
 
 
 def test_config_init_refuses_existing_config_without_force(monkeypatch, tmp_path):
