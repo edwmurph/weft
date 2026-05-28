@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 import pytest
@@ -286,6 +288,78 @@ def test_nav_focus_borders_stay_grouped_across_three_tabs(
     assert [tab["column"] for tab in final_state["tabs"]] == ["implement"] * 3
 
 
+def test_nav_column_move_snappiness_reports_timing(
+    live_codux_runtime: LiveCoduxRuntime,
+) -> None:
+    run_codux(live_codux_runtime, "start", "--no-attach")
+    empty_nav_pane = wait_for(
+        "empty window nav pane",
+        lambda: next(
+            (
+                window["nav_pane"]
+                for window in ready_window_rows(live_codux_runtime)
+                if window["empty"] == "1"
+            ),
+            None,
+        ),
+    )
+
+    run_tmux(live_codux_runtime, ["send-keys", "-t", empty_nav_pane, "n"])
+    state = wait_for("active fake Codex tab", lambda: active_fake_codex_state(live_codux_runtime))
+    active_tab = active_state_tab(state)
+    active_window = wait_for(
+        "active fake Codex tmux window",
+        lambda: window_for_tab(live_codux_runtime, active_tab["id"]),
+    )
+    run_tmux(live_codux_runtime, ["select-window", "-t", active_window["window_id"]])
+    run_tmux(live_codux_runtime, ["select-pane", "-t", active_window["nav_pane"]])
+    run_codux(live_codux_runtime, "_focus-window", active_window["window_id"], "nav")
+
+    title = "PerfTarget"
+    run_python(
+        live_codux_runtime,
+        f"from codux.cli import rename_active_tab; rename_active_tab({json.dumps(title)})",
+    )
+    wait_for(
+        "PerfTarget rendered in inbox",
+        lambda: nav_capture_has_title_in_column(
+            live_codux_runtime,
+            active_window["nav_pane"],
+            title,
+            "inbox",
+        ),
+        interval=0.01,
+    )
+
+    samples: list[float] = []
+    moves = [("S-Right", "implement"), ("S-Left", "inbox")] * 8
+    for key, expected_column in moves:
+        started_at = time.perf_counter()
+        run_tmux(live_codux_runtime, ["send-keys", "-t", active_window["nav_pane"], key])
+        wait_for(
+            f"{key} repaint to {expected_column}",
+            lambda column=expected_column: nav_capture_has_title_in_column(
+                live_codux_runtime,
+                active_window["nav_pane"],
+                title,
+                column,
+            ),
+            timeout=4,
+            interval=0.01,
+        )
+        samples.append(time.perf_counter() - started_at)
+
+    median_ms = median(samples) * 1000
+    p95_ms = percentile(samples, 95) * 1000
+    print(
+        "codux_perf nav_column_move "
+        f"samples={len(samples)} median_ms={median_ms:.1f} p95_ms={p95_ms:.1f}"
+    )
+
+    assert median_ms < 1500
+    assert p95_ms < 2500
+
+
 def run_codux(
     runtime: LiveCoduxRuntime,
     *args: str,
@@ -477,6 +551,63 @@ def assert_nav_frame_active(runtime: LiveCoduxRuntime, window: dict[str, str]) -
     assert "C-d focus" in borders["CODEX_BOTTOM"]
     assert "●" not in borders["CODEX_BOTTOM"]
     return True
+
+
+def nav_capture_has_title_in_column(
+    runtime: LiveCoduxRuntime,
+    nav_pane_id: str,
+    title: str,
+    column: str,
+) -> bool:
+    state = runtime_state_with_tab_count(runtime, tab_count=1)
+    active_tab = active_state_tab(state)
+    assert active_tab["title"] == title
+    assert active_tab["column"] == column
+    assert active_tab["tmux_pane_id"]
+
+    rendered_column = nav_capture_title_column(runtime, nav_pane_id, title)
+    assert rendered_column == column
+    return True
+
+
+def nav_capture_title_column(runtime: LiveCoduxRuntime, nav_pane_id: str, title: str) -> str | None:
+    text = strip_ansi(run_tmux(runtime, ["capture-pane", "-pe", "-t", nav_pane_id]).stdout)
+    lines = text.splitlines()
+    header = next(
+        (
+            line
+            for line in lines
+            if all(column.upper() in line for column in ("inbox", "implement", "ship"))
+        ),
+        "",
+    )
+    title_line = next((line for line in lines if title in line), "")
+    if not header or not title_line:
+        return None
+
+    column_offsets = [
+        (column, header.index(column.upper()))
+        for column in ("inbox", "implement", "ship")
+        if column.upper() in header
+    ]
+    title_offset = title_line.index(title)
+    selected = None
+    for column, offset in column_offsets:
+        if title_offset >= offset:
+            selected = column
+    return selected
+
+
+def strip_ansi(value: str) -> str:
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
+
+
+def percentile(samples: list[float], percent: int) -> float:
+    if not samples:
+        raise AssertionError("cannot compute percentile without samples")
+    ordered = sorted(samples)
+    index = min(len(ordered) - 1, round((percent / 100) * (len(ordered) - 1)))
+    return ordered[index]
 
 
 def border_contents(runtime: LiveCoduxRuntime, window_id: str) -> dict[str, str]:

@@ -215,7 +215,7 @@ def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
             events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
 
         def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
-            events.append(("colors", state_arg.focus, window_id))
+            raise AssertionError("move_column should not repaint borders twice")
 
     pane = NavPane.__new__(NavPane)
     pane.config = config
@@ -234,7 +234,6 @@ def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
         ("frame", "implement", 2),
         ("render", "implement"),
         ("select", active.tmux_window_id),
-        ("colors", "nav", active.tmux_window_id),
     ]
     assert pane.skip_next_render
 
@@ -255,7 +254,7 @@ def test_move_column_expands_before_rendering_new_row(tmp_path):
             events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
 
         def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
-            events.append(("colors", state_arg.focus, window_id))
+            raise AssertionError("move_column should not repaint borders twice")
 
     pane = NavPane.__new__(NavPane)
     pane.config = config
@@ -274,7 +273,6 @@ def test_move_column_expands_before_rendering_new_row(tmp_path):
         ("render", "inbox"),
         ("render", "inbox"),
         ("select", active.tmux_window_id),
-        ("colors", "nav", active.tmux_window_id),
     ]
 
 
@@ -294,7 +292,7 @@ def test_move_column_avoids_shrinking_nav_during_move(tmp_path):
             events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
 
         def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
-            events.append(("colors", state_arg.focus, window_id))
+            raise AssertionError("move_column should not repaint borders twice")
 
     pane = NavPane.__new__(NavPane)
     pane.config = config
@@ -313,11 +311,10 @@ def test_move_column_avoids_shrinking_nav_during_move(tmp_path):
         ("frame", "implement", 3),
         ("render", "implement"),
         ("select", active.tmux_window_id),
-        ("colors", "nav", active.tmux_window_id),
     ]
 
 
-def test_move_column_repaints_nav_focus_after_second_shift(tmp_path):
+def test_move_column_uses_frame_refresh_as_nav_focus_repaint(tmp_path):
     config = CoduxConfig()
     first = tab("first", "implement")
     second = tab("second", "implement")
@@ -334,7 +331,7 @@ def test_move_column_repaints_nav_focus_after_second_shift(tmp_path):
             events.append(("frame", state_arg.active_tab.column, min_nav_content_height, window_id))
 
         def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
-            events.append(("colors", state_arg.focus, state_arg.active_tab.column, window_id))
+            raise AssertionError("move_column should not repaint borders twice")
 
     pane = NavPane.__new__(NavPane)
     pane.config = config
@@ -349,9 +346,10 @@ def test_move_column_repaints_nav_focus_after_second_shift(tmp_path):
     pane.move_column(1)
 
     assert store.read().active_tab.column == "ship"
-    assert events[-2:] == [
+    assert events[-3:] == [
+        ("frame", "ship", 4, active.tmux_window_id),
+        ("render", "ship"),
         ("select", active.tmux_window_id),
-        ("colors", "nav", "ship", active.tmux_window_id),
     ]
 
 

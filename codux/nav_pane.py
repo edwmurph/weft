@@ -203,7 +203,6 @@ class NavPane:
                 )
             self.render_snapshot(self.state)
             self.select_nav_for_window(target.tmux_window_id)
-            self.tmux.refresh_window_frame_colors(self.config, self.state, target.tmux_window_id)
         self.skip_next_render = True
 
     def focus_codex(self) -> None:
