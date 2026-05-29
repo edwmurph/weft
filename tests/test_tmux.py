@@ -445,6 +445,63 @@ def test_refresh_window_frame_colors_does_not_repair_layout_by_default(monkeypat
     assert events == []
 
 
+def test_refresh_window_title_frame_repaints_only_codex_top(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[tuple[str, object]] = []
+    codex_top = PaneSnapshot(
+        pane_id="%codex-top",
+        window_id="@1",
+        role="CODEX_TOP",
+        title="CODEX_TOP",
+        top=0,
+        left=0,
+        width=80,
+        height=1,
+        current_command="python",
+        start_command="_frame-pane",
+        nav_host_version="",
+        frame_host_version=tmux_module.FRAME_HOST_VERSION,
+    )
+    nav_bottom = PaneSnapshot(
+        pane_id="%nav-bottom",
+        window_id="@1",
+        role="NAV_BOTTOM",
+        title="NAV_BOTTOM",
+        top=0,
+        left=0,
+        width=80,
+        height=1,
+        current_command="python",
+        start_command="_frame-pane",
+        nav_host_version="",
+        frame_host_version=tmux_module.FRAME_HOST_VERSION,
+    )
+    snapshot = TmuxSnapshot(
+        windows={},
+        panes={pane.pane_id: pane for pane in (codex_top, nav_bottom)},
+        panes_by_window={"@1": [codex_top, nav_bottom]},
+    )
+
+    monkeypatch.setattr(controller, "has_session", lambda: True)
+    monkeypatch.setattr(controller, "window_exists", lambda window_id: True)
+    monkeypatch.setattr(controller, "_snapshot", lambda: snapshot)
+    monkeypatch.setattr(
+        controller,
+        "_border_content",
+        lambda config, window_id, role, state, width, height: f"{role}:{width}",
+    )
+    monkeypatch.setattr(
+        controller,
+        "_render_frame_pane",
+        lambda pane_id, content, snapshot: events.append((pane_id, content)),
+    )
+
+    refreshed = controller.refresh_window_title_frame(CoduxConfig(), AppState(focus="nav"), "@1")
+
+    assert refreshed is True
+    assert events == [("%codex-top", "CODEX_TOP:80")]
+
+
 def test_codex_top_border_shows_live_codex_title():
     controller = TmuxController("codux")
     active = tab("one", "@1").with_updates(codex_title="Implement auth flow")

@@ -200,7 +200,7 @@ def test_sessions_popup_runs_from_project_root(monkeypatch):
     )
 
 
-def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
+def test_move_column_skips_frame_refresh_when_height_is_stable(tmp_path):
     config = CoduxConfig()
     active = tab("active")
     state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
@@ -212,7 +212,7 @@ def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
         def refresh_window_frame_panes(
             self, config_arg, state_arg, window_id, *, min_nav_content_height=None
         ):
-            events.append(("frame", state_arg.active_tab.column, min_nav_content_height))
+            raise AssertionError("stable-height moves should only repaint the nav pane")
 
         def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
             raise AssertionError("move_column should not repaint borders twice")
@@ -230,8 +230,6 @@ def test_move_column_pins_nav_height_when_move_does_not_grow(tmp_path):
 
     assert store.read().active_tab.column == "implement"
     assert events == [
-        ("render", "implement"),
-        ("frame", "implement", 2),
         ("render", "implement"),
         ("select", active.tmux_window_id),
     ]
@@ -503,6 +501,47 @@ def test_new_tab_refreshes_codex_frame_colors_after_selecting_codex(tmp_path):
     ]
 
 
+def test_focus_codex_repaints_active_window_without_broad_refresh(tmp_path):
+    config = CoduxConfig()
+    active = tab("active")
+    state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
+    store = StateStore(tmp_path / "state.json")
+    store.write(state)
+    events: list[tuple[str, object]] = []
+
+    class FakeTmux:
+        def empty_window_id(self):
+            raise AssertionError("active tab should provide the focus target")
+
+        def content_pane_for_window(self, window_id):
+            events.append(("content", window_id))
+            return "%content"
+
+        def select_pane(self, pane_id):
+            events.append(("pane", pane_id))
+
+        def refresh_window_frame_colors(self, config_arg, state_arg, window_id):
+            events.append(("colors", state_arg.focus, window_id))
+            return True
+
+    pane = NavPane.__new__(NavPane)
+    pane.config = config
+    pane.store = store
+    pane.tmux = FakeTmux()
+    pane.refresh_static_panes_async = lambda: (_ for _ in ()).throw(
+        AssertionError("focus should not run a broad async refresh when the frame is ready")
+    )
+
+    pane.focus_codex()
+
+    assert store.read().focus == "codex"
+    assert events == [
+        ("content", active.tmux_window_id),
+        ("pane", "%content"),
+        ("colors", "codex", active.tmux_window_id),
+    ]
+
+
 def test_nav_pane_polls_live_codex_titles(tmp_path):
     active = tab("active").with_updates(title=CODEX_TITLE_TEMPLATE, codex_title="Working | 019e")
     state = AppState(tabs=[active], active_tab_id=active.id, focus="nav")
@@ -514,10 +553,11 @@ def test_nav_pane_polls_live_codex_titles(tmp_path):
         def pane_title(self, pane_id):
             return "Ready | 019e"
 
-        def refresh_window_frame_colors(self, config, state_arg, window_id):
+        def refresh_window_title_frame(self, config, state_arg, window_id):
             events.append(
                 (window_id, state_arg.active_tab.codex_title if state_arg.active_tab else None)
             )
+            return True
 
     pane = NavPane.__new__(NavPane)
     pane.config = CoduxConfig()
@@ -545,7 +585,7 @@ def test_title_frame_refresh_uses_latest_focus_state(tmp_path):
     events: list[tuple[str, str, str | None]] = []
 
     class FakeTmux:
-        def refresh_window_frame_colors(self, config, state_arg, window_id):
+        def refresh_window_title_frame(self, config, state_arg, window_id):
             active_tab = state_arg.active_tab
             events.append(
                 (
@@ -554,6 +594,7 @@ def test_title_frame_refresh_uses_latest_focus_state(tmp_path):
                     active_tab.codex_title if active_tab else None,
                 )
             )
+            return True
 
     pane = NavPane.__new__(NavPane)
     pane.config = CoduxConfig()

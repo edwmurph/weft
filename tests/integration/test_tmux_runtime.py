@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -288,76 +289,210 @@ def test_nav_focus_borders_stay_grouped_across_three_tabs(
     assert [tab["column"] for tab in final_state["tabs"]] == ["implement"] * 3
 
 
-def test_nav_column_move_snappiness_reports_timing(
+def test_dashboard_user_journeys_snappiness_reports_timing(
     live_codux_runtime: LiveCoduxRuntime,
 ) -> None:
-    run_codux(live_codux_runtime, "start", "--no-attach")
-    empty_nav_pane = wait_for(
-        "empty window nav pane",
-        lambda: next(
-            (
-                window["nav_pane"]
-                for window in ready_window_rows(live_codux_runtime)
-                if window["empty"] == "1"
-            ),
-            None,
-        ),
-    )
+    timings: dict[str, list[float]] = {}
 
-    run_tmux(live_codux_runtime, ["send-keys", "-t", empty_nav_pane, "n"])
-    state = wait_for("active fake Codex tab", lambda: active_fake_codex_state(live_codux_runtime))
-    active_tab = active_state_tab(state)
-    active_window = wait_for(
-        "active fake Codex tmux window",
-        lambda: window_for_tab(live_codux_runtime, active_tab["id"]),
-    )
-    run_tmux(live_codux_runtime, ["select-window", "-t", active_window["window_id"]])
-    run_tmux(live_codux_runtime, ["select-pane", "-t", active_window["nav_pane"]])
-    run_codux(live_codux_runtime, "_focus-window", active_window["window_id"], "nav")
-
-    title = "PerfTarget"
-    run_python(
-        live_codux_runtime,
-        f"from codux.cli import rename_active_tab; rename_active_tab({json.dumps(title)})",
-    )
-    wait_for(
-        "PerfTarget rendered in inbox",
-        lambda: nav_capture_has_title_in_column(
-            live_codux_runtime,
-            active_window["nav_pane"],
-            title,
-            "inbox",
-        ),
-        interval=0.01,
-    )
-
-    samples: list[float] = []
-    moves = [("S-Right", "implement"), ("S-Left", "inbox")] * 8
-    for key, expected_column in moves:
-        started_at = time.perf_counter()
-        run_tmux(live_codux_runtime, ["send-keys", "-t", active_window["nav_pane"], key])
+    def measure(name: str, action: Callable[[], Any]) -> Any:
         wait_for(
-            f"{key} repaint to {expected_column}",
-            lambda column=expected_column: nav_capture_has_title_in_column(
+            f"idle runtime before {name}",
+            lambda: runtime_lock_available(live_codux_runtime),
+            timeout=5,
+            interval=0.01,
+        )
+        started_at = time.perf_counter()
+        result = action()
+        timings.setdefault(name, []).append(time.perf_counter() - started_at)
+        return result
+
+    def current_tab_and_window(tab_count: int) -> tuple[dict[str, Any], dict[str, str]]:
+        state = runtime_state_with_tab_count(live_codux_runtime, tab_count=tab_count)
+        tab = active_state_tab(state)
+        window = wait_for(
+            f"active tab {tab_count} tmux window",
+            lambda: window_for_tab(live_codux_runtime, tab["id"]),
+        )
+        return tab, window
+
+    def focus_nav(window: dict[str, str], tab_count: int) -> None:
+        run_tmux(live_codux_runtime, ["select-window", "-t", window["window_id"]])
+        run_tmux(live_codux_runtime, ["select-pane", "-t", window["nav_pane"]])
+        run_codux(live_codux_runtime, "_focus-window", window["window_id"], "nav")
+        wait_for(
+            "nav focus border repaint",
+            lambda: assert_nav_frame_active(live_codux_runtime, window),
+            interval=0.01,
+        )
+        state_with_active_focus(live_codux_runtime, "nav", tab_count=tab_count)
+
+    def create_tab(tab_count: int) -> tuple[dict[str, Any], dict[str, str]]:
+        nav_pane = active_or_empty_nav_pane(live_codux_runtime)
+        run_tmux(live_codux_runtime, ["send-keys", "-t", nav_pane, "n"])
+        state = wait_for(
+            f"active fake Codex tab {tab_count}",
+            lambda: active_fake_codex_state(live_codux_runtime, tab_count=tab_count),
+        )
+        active_tab = active_state_tab(state)
+        active_window = wait_for(
+            f"active fake Codex window {tab_count}",
+            lambda: window_for_tab(live_codux_runtime, active_tab["id"]),
+        )
+        wait_for("spare window ready", lambda: spare_window_ready(live_codux_runtime))
+        return active_tab, active_window
+
+    def rename_tab(title: str, tab_count: int, window: dict[str, str]) -> dict[str, Any]:
+        run_codux_with_input(live_codux_runtime, "\x15" + title + "\n", "_popup-rename")
+        state = wait_for(
+            f"{title} renamed",
+            lambda: state_with_active_title(live_codux_runtime, title, tab_count=tab_count),
+        )
+        wait_for(
+            f"{title} rendered",
+            lambda: nav_capture_has_title(live_codux_runtime, window["nav_pane"], title),
+            interval=0.01,
+        )
+        return active_state_tab(state)
+
+    def move_active(
+        title: str,
+        key: str,
+        column: str,
+        window: dict[str, str],
+        tab_count: int,
+    ) -> None:
+        run_tmux(live_codux_runtime, ["send-keys", "-t", window["nav_pane"], key])
+        wait_for(
+            f"{title} moved to {column}",
+            lambda: nav_capture_has_title_in_column(
                 live_codux_runtime,
-                active_window["nav_pane"],
+                window["nav_pane"],
                 title,
                 column,
+                tab_count=tab_count,
             ),
             timeout=4,
             interval=0.01,
         )
-        samples.append(time.perf_counter() - started_at)
 
-    median_ms = median(samples) * 1000
-    p95_ms = percentile(samples, 95) * 1000
-    print(
-        "codux_perf nav_column_move "
-        f"samples={len(samples)} median_ms={median_ms:.1f} p95_ms={p95_ms:.1f}"
+    def select_active(
+        key: str,
+        expected_tab_id: str,
+        tab_count: int,
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        _, window = current_tab_and_window(tab_count)
+        run_tmux(live_codux_runtime, ["send-keys", "-t", window["nav_pane"], key])
+        state = wait_for(
+            f"{key} selected target tab",
+            lambda: state_with_active_tab(live_codux_runtime, expected_tab_id, tab_count),
+            interval=0.01,
+        )
+        tab = active_state_tab(state)
+        selected_window = wait_for(
+            f"{key} selected target window",
+            lambda: window_for_tab(live_codux_runtime, tab["id"]),
+        )
+        wait_for(
+            f"{key} nav border repaint",
+            lambda: assert_nav_frame_active(live_codux_runtime, selected_window),
+            interval=0.01,
+        )
+        return tab, selected_window
+
+    def popup(name: str) -> None:
+        run_codux_with_input(live_codux_runtime, "\x1b", name)
+
+    def close_active(tab_count: int) -> None:
+        _, window = current_tab_and_window(tab_count)
+        run_tmux(live_codux_runtime, ["send-keys", "-t", window["nav_pane"], "c"])
+        wait_for(
+            f"closed tab leaving {tab_count - 1}",
+            lambda: runtime_state_with_tab_count(live_codux_runtime, tab_count=tab_count - 1),
+            timeout=5,
+            interval=0.01,
+        )
+
+    measure(
+        "start_dashboard",
+        lambda: (
+            run_codux(live_codux_runtime, "start", "--no-attach"),
+            wait_for("ready dashboard windows", lambda: ready_window_rows(live_codux_runtime)),
+        ),
     )
 
-    assert median_ms < 1500
-    assert p95_ms < 2500
+    alpha, alpha_window = measure("new_tab", lambda: create_tab(1))
+    measure("focus_nav", lambda: focus_nav(alpha_window, 1))
+    alpha = measure("rename_tab", lambda: rename_tab("Perf Alpha", 1, alpha_window))
+    measure(
+        "move_column",
+        lambda: move_active("Perf Alpha", "S-Right", "implement", alpha_window, 1),
+    )
+    measure(
+        "move_column",
+        lambda: move_active("Perf Alpha", "S-Left", "inbox", alpha_window, 1),
+    )
+    measure(
+        "focus_codex",
+        lambda: (
+            run_tmux(live_codux_runtime, ["send-keys", "-t", alpha_window["nav_pane"], "Enter"]),
+            wait_for(
+                "codex focus state",
+                lambda: state_with_active_focus(live_codux_runtime, "codex", tab_count=1),
+                interval=0.01,
+            ),
+        ),
+    )
+    measure("focus_nav", lambda: focus_nav(alpha_window, 1))
+    measure("help_popup", lambda: popup("_popup-help"))
+    measure("sessions_popup", lambda: popup("_popup-sessions"))
+
+    beta, beta_window = measure("new_tab", lambda: create_tab(2))
+    measure("focus_nav", lambda: focus_nav(beta_window, 2))
+    beta = measure("rename_tab", lambda: rename_tab("Perf Beta", 2, beta_window))
+    measure(
+        "move_column",
+        lambda: move_active("Perf Beta", "S-Right", "implement", beta_window, 2),
+    )
+
+    select_active("Right", beta["id"], 2)
+    measure("select_tab", lambda: select_active("Left", alpha["id"], 2))
+    measure("select_tab", lambda: select_active("Right", beta["id"], 2))
+
+    gamma, gamma_window = measure("new_tab", lambda: create_tab(3))
+    measure("focus_nav", lambda: focus_nav(gamma_window, 3))
+    gamma = measure("rename_tab", lambda: rename_tab("Perf Gamma", 3, gamma_window))
+    measure("select_tab", lambda: select_active("Up", alpha["id"], 3))
+    measure("select_tab", lambda: select_active("Down", gamma["id"], 3))
+    measure("close_tab", lambda: close_active(3))
+
+    thresholds_ms = {
+        "start_dashboard": 7000,
+        "new_tab": 5000,
+        "focus_nav": 3000,
+        "focus_codex": 3000,
+        "rename_tab": 3000,
+        "move_column": 3000,
+        "select_tab": 3000,
+        "help_popup": 3000,
+        "sessions_popup": 3000,
+        "close_tab": 5000,
+    }
+    all_samples = [sample for samples in timings.values() for sample in samples]
+    for name in sorted(timings):
+        samples = timings[name]
+        median_ms = median(samples) * 1000
+        p95_ms = percentile(samples, 95) * 1000
+        print(
+            "codux_perf dashboard_journey "
+            f"journey={name} samples={len(samples)} median_ms={median_ms:.1f} p95_ms={p95_ms:.1f}"
+        )
+        assert p95_ms < thresholds_ms[name]
+    print(
+        "codux_perf dashboard_journey "
+        f"journey=overall samples={len(all_samples)} "
+        f"median_ms={median(all_samples) * 1000:.1f} "
+        f"p95_ms={percentile(all_samples, 95) * 1000:.1f}"
+    )
 
 
 def run_codux(
@@ -378,6 +513,27 @@ def run_codux(
         *args,
     ]
     return run_command(command, runtime.env, timeout=timeout)
+
+
+def run_codux_with_input(
+    runtime: LiveCoduxRuntime,
+    input_text: str,
+    *args: str,
+    timeout: float = 20,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        "uv",
+        "--quiet",
+        "--no-progress",
+        "--directory",
+        str(PROJECT_ROOT),
+        "--project",
+        str(PROJECT_ROOT),
+        "run",
+        "codux",
+        *args,
+    ]
+    return run_command(command, runtime.env, timeout=timeout, input_text=input_text)
 
 
 def run_python(
@@ -421,12 +577,14 @@ def run_command(
     env: dict[str, str],
     *,
     timeout: float,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         command,
         cwd=PROJECT_ROOT,
         env=env,
         text=True,
+        input=input_text,
         capture_output=True,
         check=False,
         timeout=timeout,
@@ -451,6 +609,31 @@ def ready_window_rows(runtime: LiveCoduxRuntime) -> list[dict[str, str]]:
         assert row["nav_pane"]
         assert row["codex_pane"]
     return rows
+
+
+def runtime_lock_available(runtime: LiveCoduxRuntime) -> bool:
+    lock_path = (runtime.runtime_dir / "state.json").with_suffix(".runtime.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        acquired = False
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except BlockingIOError:
+            return False
+        finally:
+            if acquired:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return True
+
+
+def spare_window_ready(runtime: LiveCoduxRuntime) -> bool:
+    rows = window_rows(runtime)
+    assert any(row["spare"] == "1" for row in rows)
+    for row in rows:
+        assert row["nav_pane"]
+        assert row["codex_pane"]
+    return True
 
 
 def active_fake_codex_state(runtime: LiveCoduxRuntime, *, tab_count: int = 1) -> dict[str, Any]:
@@ -496,6 +679,16 @@ def state_with_active_column(
     state = state_with_active_focus(runtime, "nav", tab_count=tab_count)
     active_tab = active_state_tab(state)
     assert active_tab.get("column") == column
+    return state
+
+
+def state_with_active_tab(
+    runtime: LiveCoduxRuntime,
+    tab_id: str,
+    tab_count: int,
+) -> dict[str, Any]:
+    state = state_with_active_focus(runtime, "nav", tab_count=tab_count)
+    assert state.get("active_tab_id") == tab_id
     return state
 
 
@@ -553,13 +746,39 @@ def assert_nav_frame_active(runtime: LiveCoduxRuntime, window: dict[str, str]) -
     return True
 
 
+def active_or_empty_nav_pane(runtime: LiveCoduxRuntime) -> str:
+    state_path = runtime.runtime_dir / "state.json"
+    if state_path.exists():
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        active_tab_id = state.get("active_tab_id")
+        if active_tab_id:
+            window = window_for_tab(runtime, active_tab_id)
+            if window is not None:
+                return window["nav_pane"]
+    return wait_for(
+        "empty window nav pane",
+        lambda: next(
+            (window["nav_pane"] for window in ready_window_rows(runtime) if window["empty"] == "1"),
+            None,
+        ),
+    )
+
+
+def nav_capture_has_title(runtime: LiveCoduxRuntime, nav_pane_id: str, title: str) -> bool:
+    text = strip_ansi(run_tmux(runtime, ["capture-pane", "-pe", "-t", nav_pane_id]).stdout)
+    assert title in text
+    return True
+
+
 def nav_capture_has_title_in_column(
     runtime: LiveCoduxRuntime,
     nav_pane_id: str,
     title: str,
     column: str,
+    *,
+    tab_count: int = 1,
 ) -> bool:
-    state = runtime_state_with_tab_count(runtime, tab_count=1)
+    state = runtime_state_with_tab_count(runtime, tab_count=tab_count)
     active_tab = active_state_tab(state)
     assert active_tab["title"] == title
     assert active_tab["column"] == column

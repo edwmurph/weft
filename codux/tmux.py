@@ -590,9 +590,9 @@ class TmuxController:
         window_id: str,
         *,
         repair_frame: bool = False,
-    ) -> None:
+    ) -> bool:
         if not self.has_session() or not self.window_exists(window_id):
-            return
+            return False
         snapshot = self._snapshot()
         if repair_frame:
             nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
@@ -609,10 +609,36 @@ class TmuxController:
                 snapshot = self._snapshot()
         if not self._refresh_window_border_group(config, window_id, state, snapshot):
             if not repair_frame:
-                return
+                return False
             self._ensure_window_frame(window_id, snapshot)
             snapshot = self._snapshot()
-            self._refresh_window_border_group(config, window_id, state, snapshot)
+            return self._refresh_window_border_group(config, window_id, state, snapshot)
+        return True
+
+    def refresh_window_title_frame(
+        self,
+        config: CoduxConfig,
+        state: AppState,
+        window_id: str,
+    ) -> bool:
+        if not self.has_session() or not self.window_exists(window_id):
+            return False
+        snapshot = self._snapshot()
+        role_to_pane = self._role_to_pane(window_id, snapshot)
+        pane_id = role_to_pane.get(f"{CODEX_PANE_TITLE}_TOP")
+        pane = snapshot.panes.get(pane_id or "")
+        if pane_id is None or pane is None:
+            return False
+        content = self._border_content(
+            config,
+            window_id,
+            f"{CODEX_PANE_TITLE}_TOP",
+            state,
+            pane.width,
+            pane.height,
+        )
+        self._render_frame_pane(pane_id, content, snapshot)
+        return True
 
     def _refresh_window_border_group(
         self,

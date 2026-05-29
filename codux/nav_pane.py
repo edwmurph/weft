@@ -182,6 +182,12 @@ class NavPane:
         self.state = self.store.update(mutate)
         next_height = nav_content_height(self.config, self.state)
         pinned_height = max(previous_height, next_height)
+        if state.focus == "nav" and next_height == previous_height:
+            self.render_snapshot(self.state)
+            self.select_nav_for_window(target.tmux_window_id)
+            self.skip_next_render = True
+            return
+
         with runtime_lock(state_file=self.store.path, wait=True) as acquired:
             if not acquired:
                 return
@@ -215,7 +221,11 @@ class NavPane:
         pane_id = self.tmux.content_pane_for_window(active_window)
         if pane_id:
             self.tmux.select_pane(pane_id)
-        self.refresh_static_panes_async()
+        with runtime_lock(state_file=self.store.path, wait=True) as acquired:
+            if not acquired:
+                return
+            if self.tmux.refresh_window_frame_colors(self.config, state, active_window) is False:
+                self.refresh_static_panes_async()
 
     def close_active_tab(self) -> None:
         state = self.current_state_for_input()
@@ -511,11 +521,19 @@ class NavPane:
             for tab_id in changed_ids:
                 tab = latest_by_id.get(tab_id)
                 if tab is not None:
-                    self.tmux.refresh_window_frame_colors(
-                        self.config,
-                        latest,
-                        tab.tmux_window_id,
-                    )
+                    if (
+                        self.tmux.refresh_window_title_frame(
+                            self.config,
+                            latest,
+                            tab.tmux_window_id,
+                        )
+                        is False
+                    ):
+                        self.tmux.refresh_window_frame_colors(
+                            self.config,
+                            latest,
+                            tab.tmux_window_id,
+                        )
 
     def render(self, force: bool = False) -> None:
         now = time.monotonic()

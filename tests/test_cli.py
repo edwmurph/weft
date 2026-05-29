@@ -1118,7 +1118,29 @@ def test_focus_window_waits_for_runtime_refresh_lock(monkeypatch, tmp_path):
 
     state = store.read()
     assert state.focus == "nav"
-    assert events == ["released", ("refresh", "nav", active.tmux_window_id, {"repair_frame": True})]
+    assert events == ["released", ("refresh", "nav", active.tmux_window_id, {})]
+
+
+def test_focus_window_repairs_frame_when_fast_repaint_misses(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    active = tab("active")
+    store.write(AppState(tabs=[active], active_tab_id=active.id, focus="codex"))
+    refreshed: list[dict[str, object]] = []
+
+    class FakeTmux:
+        def active_window_id(self):
+            return active.tmux_window_id
+
+        def refresh_window_frame_colors(self, config, state, window_id, **kwargs):
+            refreshed.append(kwargs)
+            return kwargs.get("repair_frame") is True
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+
+    cli_module.focus_window_command(active.tmux_window_id, "nav")
+
+    assert store.read().focus == "nav"
+    assert refreshed == [{}, {"repair_frame": True}]
 
 
 def test_focus_window_is_best_effort_when_runtime_is_unavailable(monkeypatch):
@@ -1151,7 +1173,7 @@ def test_activate_window_updates_state_without_runtime_lock(monkeypatch, tmp_pat
     state = store.read()
     assert state.active_tab_id == first.id
     assert state.focus == "nav"
-    assert refreshed == [(state, first.tmux_window_id, {"repair_frame": True})]
+    assert refreshed == [(state, first.tmux_window_id, {})]
 
 
 def test_stale_activate_window_does_not_override_newer_focus(monkeypatch, tmp_path):

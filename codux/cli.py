@@ -1130,7 +1130,8 @@ def activate_window_command(window_id: str) -> None:
 
     state = store.update(mutate)
     try:
-        tmux.refresh_window_frame_colors(config, state, window_id, repair_frame=True)
+        if tmux.refresh_window_frame_colors(config, state, window_id) is False:
+            tmux.refresh_window_frame_colors(config, state, window_id, repair_frame=True)
     except Exception:
         pass
 
@@ -1149,7 +1150,8 @@ def focus_window_command(window_id: str, focus: FocusTarget) -> None:
             return replace(current, active_tab_id=active_tab_id, focus=focus)
 
         state = store.update(mutate)
-        tmux.refresh_window_frame_colors(config, state, window_id, repair_frame=True)
+        if tmux.refresh_window_frame_colors(config, state, window_id) is False:
+            tmux.refresh_window_frame_colors(config, state, window_id, repair_frame=True)
     except Exception:
         pass
 
