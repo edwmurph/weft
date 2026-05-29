@@ -192,13 +192,18 @@ class NavPane:
             if not acquired:
                 return
             if next_height > previous_height:
+                self.tmux.resize_nav_frame_for_window(
+                    self.config,
+                    self.state,
+                    target.tmux_window_id,
+                )
+                self.render_snapshot(self.state)
                 self.tmux.refresh_window_frame_panes(
                     self.config,
                     self.state,
                     target.tmux_window_id,
                     min_nav_content_height=pinned_height,
                 )
-                self.render_snapshot(self.state)
             else:
                 self.render_snapshot(self.state)
                 self.tmux.refresh_window_frame_panes(

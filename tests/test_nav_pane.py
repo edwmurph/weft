@@ -209,6 +209,9 @@ def test_move_column_skips_frame_refresh_when_height_is_stable(tmp_path):
     events: list[tuple[str, object]] = []
 
     class FakeTmux:
+        def resize_nav_frame_for_window(self, config_arg, state_arg, window_id):
+            raise AssertionError("stable-height moves should only repaint the nav pane")
+
         def refresh_window_frame_panes(
             self, config_arg, state_arg, window_id, *, min_nav_content_height=None
         ):
@@ -236,7 +239,7 @@ def test_move_column_skips_frame_refresh_when_height_is_stable(tmp_path):
     assert pane.skip_next_render
 
 
-def test_move_column_expands_before_rendering_new_row(tmp_path):
+def test_move_column_resizes_before_rendering_new_row(tmp_path):
     config = CoduxConfig()
     left = tab("left", "inbox")
     active = tab("active", "implement")
@@ -246,6 +249,9 @@ def test_move_column_expands_before_rendering_new_row(tmp_path):
     events: list[tuple[str, object]] = []
 
     class FakeTmux:
+        def resize_nav_frame_for_window(self, config_arg, state_arg, window_id):
+            events.append(("resize", state_arg.active_tab.column, window_id))
+
         def refresh_window_frame_panes(
             self, config_arg, state_arg, window_id, *, min_nav_content_height=None
         ):
@@ -267,8 +273,9 @@ def test_move_column_expands_before_rendering_new_row(tmp_path):
 
     assert store.read().active_tab.column == "inbox"
     assert events == [
-        ("frame", "inbox", 3),
+        ("resize", "inbox", active.tmux_window_id),
         ("render", "inbox"),
+        ("frame", "inbox", 3),
         ("render", "inbox"),
         ("select", active.tmux_window_id),
     ]
@@ -284,6 +291,9 @@ def test_move_column_avoids_shrinking_nav_during_move(tmp_path):
     events: list[tuple[str, object]] = []
 
     class FakeTmux:
+        def resize_nav_frame_for_window(self, config_arg, state_arg, window_id):
+            raise AssertionError("shrinking moves should render before resizing")
+
         def refresh_window_frame_panes(
             self, config_arg, state_arg, window_id, *, min_nav_content_height=None
         ):
@@ -323,6 +333,9 @@ def test_move_column_uses_frame_refresh_as_nav_focus_repaint(tmp_path):
     events: list[tuple[str, object]] = []
 
     class FakeTmux:
+        def resize_nav_frame_for_window(self, config_arg, state_arg, window_id):
+            events.append(("resize", state_arg.active_tab.column, window_id))
+
         def refresh_window_frame_panes(
             self, config_arg, state_arg, window_id, *, min_nav_content_height=None
         ):

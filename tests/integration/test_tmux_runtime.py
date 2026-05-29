@@ -375,6 +375,26 @@ def test_dashboard_user_journeys_snappiness_reports_timing(
             interval=0.01,
         )
 
+    def move_active_end_to_middle(
+        title: str,
+        window: dict[str, str],
+        *,
+        tab_count: int,
+    ) -> None:
+        run_tmux(live_codux_runtime, ["send-keys", "-t", window["nav_pane"], "S-Left"])
+        wait_for(
+            f"{title} shifted from end to middle",
+            lambda: nav_capture_has_title_in_column(
+                live_codux_runtime,
+                window["nav_pane"],
+                title,
+                "implement",
+                tab_count=tab_count,
+            ),
+            timeout=4,
+            interval=0.01,
+        )
+
     def select_active(
         key: str,
         expected_tab_id: str,
@@ -453,10 +473,26 @@ def test_dashboard_user_journeys_snappiness_reports_timing(
         "move_column",
         lambda: move_active("Perf Beta", "S-Right", "implement", beta_window, 2),
     )
-
-    select_active("Right", beta["id"], 2)
-    measure("select_tab", lambda: select_active("Left", alpha["id"], 2))
-    measure("select_tab", lambda: select_active("Right", beta["id"], 2))
+    measure(
+        "move_column",
+        lambda: move_active("Perf Beta", "S-Right", "ship", beta_window, 2),
+    )
+    alpha, alpha_window = measure("select_tab", lambda: select_active("Left", alpha["id"], 2))
+    measure(
+        "move_column",
+        lambda: move_active("Perf Alpha", "S-Right", "implement", alpha_window, 2),
+    )
+    beta, beta_window = measure("select_tab", lambda: select_active("Right", beta["id"], 2))
+    measure(
+        "move_end_to_middle",
+        lambda: move_active_end_to_middle("Perf Beta", beta_window, tab_count=2),
+    )
+    alpha, alpha_window = measure("select_tab", lambda: select_active("Up", alpha["id"], 2))
+    measure(
+        "move_column",
+        lambda: move_active("Perf Alpha", "S-Left", "inbox", alpha_window, 2),
+    )
+    beta, beta_window = measure("select_tab", lambda: select_active("Right", beta["id"], 2))
 
     gamma, gamma_window = measure("new_tab", lambda: create_tab(3))
     measure("focus_nav", lambda: focus_nav(gamma_window, 3))
@@ -472,6 +508,7 @@ def test_dashboard_user_journeys_snappiness_reports_timing(
         "focus_codex": 3000,
         "rename_tab": 3000,
         "move_column": 3000,
+        "move_end_to_middle": 3000,
         "select_tab": 3000,
         "help_popup": 3000,
         "sessions_popup": 3000,

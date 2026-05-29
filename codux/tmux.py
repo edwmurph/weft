@@ -577,7 +577,7 @@ class TmuxController:
         if not self.has_session() or not self.window_exists(window_id):
             return
         snapshot = self._snapshot()
-        nav_pane_id = self.nav_pane_for_window(window_id)
+        nav_pane_id = self._nav_pane_for_window_from_snapshot(window_id, snapshot)
         if nav_pane_id:
             self._resize_nav_frame(
                 window_id, nav_pane_id, nav_content_height(config, state), snapshot
