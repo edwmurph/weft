@@ -74,29 +74,47 @@ def test_codux_command_preserves_runtime_environment(monkeypatch, tmp_path):
     )
 
 
-def test_start_entrypoint_dispatches_start_command(monkeypatch):
-    calls: list[tuple[str, object]] = []
-    original_argv = ["start", "--no-attach"]
+def test_root_command_starts_dashboard_without_subcommand(monkeypatch):
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        cli_module,
+        "start_dashboard",
+        lambda *, attach=True: calls.append(attach),
+    )
 
-    class FakeStartCommand:
-        def main(self, *, args, prog_name):
-            calls.append(("main", (list(args), prog_name)))
+    result = CliRunner().invoke(cli_module.app, [])
 
-    class FakeRootCommand:
-        def get_command(self, ctx, name):
-            calls.append(("get", (ctx, name)))
-            return FakeStartCommand()
+    assert result.exit_code == 0
+    assert calls == [True]
 
-    monkeypatch.setattr(cli_module.sys, "argv", [*original_argv])
-    monkeypatch.setattr(cli_module.typer.main, "get_command", lambda app: FakeRootCommand())
 
-    cli_module.start_entrypoint()
+def test_root_command_forwards_no_attach_to_dashboard(monkeypatch):
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        cli_module,
+        "start_dashboard",
+        lambda *, attach=True: calls.append(attach),
+    )
 
-    assert calls == [
-        ("get", (None, "start")),
-        ("main", (["--no-attach"], "start")),
-    ]
-    assert cli_module.sys.argv == original_argv
+    result = CliRunner().invoke(cli_module.app, ["--no-attach"])
+
+    assert result.exit_code == 0
+    assert calls == [False]
+
+
+def test_start_subcommand_is_not_registered(monkeypatch):
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        cli_module,
+        "start_dashboard",
+        lambda *, attach=True: calls.append(attach),
+    )
+
+    result = CliRunner().invoke(cli_module.app, ["start"])
+
+    assert result.exit_code == 2
+    assert "No such command 'start'" in result.output
+    assert calls == []
 
 
 def test_public_shell_commands_stay_limited():
@@ -114,8 +132,8 @@ def test_public_shell_commands_stay_limited():
         "quit",
         "refresh",
         "sessions",
-        "start",
     }
+    assert "start" not in root_command.commands
     assert "new" not in root_command.commands
     assert "rename" not in root_command.commands
     assert "status" not in root_command.commands
@@ -172,7 +190,7 @@ def test_start_attaches_existing_workdir_session_without_state_lock(monkeypatch)
         lambda: (_ for _ in ()).throw(AssertionError("state should not be opened")),
     )
 
-    cli_module.start()
+    cli_module.start_dashboard()
 
     assert events == [
         ("init", "codux"),
@@ -210,7 +228,7 @@ def test_start_repairs_existing_workdir_session_even_if_project_root_differs(mon
         lambda: (_ for _ in ()).throw(AssertionError("state should not be opened")),
     )
 
-    cli_module.start()
+    cli_module.start_dashboard()
 
     assert events == [
         ("init", "codux"),
@@ -240,7 +258,7 @@ def test_start_reports_busy_state_when_no_workdir_session(monkeypatch):
     monkeypatch.setattr(cli_module, "console", Console(file=output))
 
     with pytest.raises(cli_module.typer.Exit) as exc:
-        cli_module.start()
+        cli_module.start_dashboard()
 
     assert exc.value.exit_code == 1
     assert "Codux state is busy" in output.getvalue()
@@ -628,7 +646,7 @@ def test_doctor_does_not_create_new_workspace_files(monkeypatch, tmp_path):
 
     rendered = output.getvalue()
     assert "config:" in rendered
-    assert "created by `codux start`" in rendered
+    assert "created by running `codux`" in rendered
     assert not cli_module.config_path().exists()
     assert not cli_module.state_path().exists()
 

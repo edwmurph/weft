@@ -57,4 +57,4 @@ def test_homebrew_formula_uses_github_release_wheelhouse() -> None:
     assert 'resource "typer"' not in formula
     assert 'venv.pip_install Dir["*.whl"].sort' in formula
     assert 'virtualenv_create(libexec, "python3.13")' in formula
-    assert 'rm bin/"start"' in formula
+    assert 'rm bin/"start"' not in formula

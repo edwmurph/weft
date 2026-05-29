@@ -130,7 +130,7 @@ def live_codux_runtime(tmp_path: Path) -> LiveCoduxRuntime:
 def test_start_no_attach_creates_isolated_tmux_workspace(
     live_codux_runtime: LiveCoduxRuntime,
 ) -> None:
-    result = run_codux(live_codux_runtime, "start", "--no-attach")
+    result = run_codux(live_codux_runtime, "--no-attach")
 
     assert live_codux_runtime.session_name in result.stdout
     assert session_option(live_codux_runtime, WORKDIR_OPTION) == str(live_codux_runtime.workdir)
@@ -151,7 +151,7 @@ def test_start_no_attach_creates_isolated_tmux_workspace(
 def test_nav_new_tab_launches_fake_codex_in_isolated_tmux_runtime(
     live_codux_runtime: LiveCoduxRuntime,
 ) -> None:
-    run_codux(live_codux_runtime, "start", "--no-attach")
+    run_codux(live_codux_runtime, "--no-attach")
     empty_nav_pane = wait_for(
         "empty window nav pane",
         lambda: next(
@@ -203,7 +203,7 @@ def test_nav_new_tab_launches_fake_codex_in_isolated_tmux_runtime(
 def test_nav_focus_borders_stay_grouped_across_three_tabs(
     live_codux_runtime: LiveCoduxRuntime,
 ) -> None:
-    run_codux(live_codux_runtime, "start", "--no-attach")
+    run_codux(live_codux_runtime, "--no-attach")
     nav_pane = wait_for(
         "empty window nav pane",
         lambda: next(
@@ -415,7 +415,7 @@ def test_dashboard_user_journeys_snappiness_reports_timing(
     measure(
         "start_dashboard",
         lambda: (
-            run_codux(live_codux_runtime, "start", "--no-attach"),
+            run_codux(live_codux_runtime, "--no-attach"),
             wait_for("ready dashboard windows", lambda: ready_window_rows(live_codux_runtime)),
         ),
     )

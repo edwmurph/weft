@@ -37,7 +37,7 @@ Then run Codux directly from the project directory you want to manage:
 
 ```sh
 codux doctor
-codux start
+codux
 ```
 
 Optional shell completion:
@@ -53,7 +53,7 @@ Run the completion command from the shell you want to configure.
 Start Codux from the project directory whose Codex sessions you want to manage:
 
 ```sh
-codux start
+codux
 ```
 
 This launches a tmux workspace with a navigator pane above a native Codex pane.
@@ -65,7 +65,7 @@ If tmux leaves the dashboard in a stale visual state, run `codux refresh` from
 the same project directory to redraw the dashboard and focus the nav pane.
 
 ```text
-Usage: codux [OPTIONS] COMMAND [ARGS]...
+Usage: codux [OPTIONS] [COMMAND]
 
 Start, inspect, or detach Codux tmux workspaces for Codex.
 
@@ -74,17 +74,18 @@ Codux is scoped to the directory where you run it. Each launch directory gets:
 - config.toml and state.json files
 - a tmux session
 
-Starting again from the same directory reattaches to that workspace. Starting
-from a different directory creates a separate one.
+Running Codux again from the same directory reattaches to that workspace.
+Running Codux from a different directory creates a separate one.
 
 Use `codux config info` to see the active workdir, runtime directory, config
 file, state file, and tmux session.
 
 Options:
-  --help          Show this message and exit.
+  --attach / --no-attach  Attach to this workdir's tmux session after preparing
+                          it.
+  --help                  Show this message and exit.
 
 Commands:
-  start           Create or attach to this workdir's Codux tmux workspace.
   quit            Detach or stop the Codux dashboard.
   sessions        List active Codux dashboard sessions.
   delete-session  Delete a Codux dashboard session without confirmation.
@@ -99,10 +100,11 @@ Commands:
 ## Config And State
 
 Codux scopes runtime state to the directory where it starts. The first
-`codux start` for a directory creates one tmux session named
+`codux` run for a directory creates one tmux session named
 `codux-<workdir-id>`, plus `config.toml` and `state.json` under
-`~/.codux/workdirs/<workdir-id>/`. Starting from that directory again reattaches
-to the same workspace; starting from another directory creates a separate one.
+`~/.codux/workdirs/<workdir-id>/`. Running Codux from that directory again
+reattaches to the same workspace; running it from another directory creates a
+separate one.
 
 Use `codux config info`, `codux config path`, `codux config show`, and
 `codux config init` to inspect or initialize the current directory's runtime.

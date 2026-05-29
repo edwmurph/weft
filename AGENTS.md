@@ -23,7 +23,7 @@
 ## Git / Worktrees
 
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
-- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `uv --quiet --no-progress --directory /abs/path/to/repo/.worktrees/<slug> --project /abs/path/to/repo/.worktrees/<slug> run start`; a `git diff` command alone is not enough. Do not use root-relative `--project .worktrees/<slug>` together with `--directory .worktrees/<slug>` because uv resolves `--project` after applying `--directory`.
+- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `uv --quiet --no-progress --directory /abs/path/to/repo/.worktrees/<slug> --project /abs/path/to/repo/.worktrees/<slug> run codux`; a `git diff` command alone is not enough. Do not use root-relative `--project .worktrees/<slug>` together with `--directory .worktrees/<slug>` because uv resolves `--project` after applying `--directory`.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".
 
@@ -47,5 +47,5 @@
 ## Dashboard Runtime Commands
 
 - Dashboard/internal Codux commands must not shell through `cd`; keep the repo root and uv project path explicit with `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree ...` so commands are valid from any current directory and do not show first-run uv progress before the dashboard attaches.
-- Prefer `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run start` when giving the user a dashboard launch command.
-- Use `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run codux ...` for non-start Codux subcommands.
+- Prefer `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run codux` when giving the user a dashboard launch command.
+- Use `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run codux ...` for Codux subcommands.

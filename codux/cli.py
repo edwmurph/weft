@@ -78,8 +78,8 @@ Codux is scoped to the directory where you run it. Each launch directory gets:
 - config.toml and state.json files
 - a tmux session
 
-Starting again from the same directory reattaches to that workspace. Starting
-from a different directory creates a separate one.
+Running Codux again from the same directory reattaches to that workspace.
+Running Codux from a different directory creates a separate one.
 
 Use `codux config info` to see the active workdir, runtime directory, config
 file, state file, and tmux session.
@@ -111,7 +111,13 @@ class CoduxTyperGroup(typer.core.TyperGroup):
                 option.hidden = hidden
 
 
-app = typer.Typer(cls=CoduxTyperGroup, help=APP_HELP, no_args_is_help=True)
+app = typer.Typer(
+    cls=CoduxTyperGroup,
+    help=APP_HELP,
+    invoke_without_command=True,
+    no_args_is_help=False,
+    subcommand_metavar="[COMMAND]",
+)
 config_app = typer.Typer(help=CONFIG_HELP, no_args_is_help=True)
 app.add_typer(config_app, name="config")
 console = Console()
@@ -131,12 +137,17 @@ def codux_command() -> str:
     return codux_cli_shell_command()
 
 
-def start_entrypoint() -> None:
-    root_command = typer.main.get_command(app)
-    start_command = root_command.get_command(None, "start")
-    if start_command is None:
-        raise RuntimeError("start command is not registered")
-    start_command.main(args=sys.argv[1:], prog_name="start")
+@app.callback(invoke_without_command=True)
+def root_command(
+    ctx: typer.Context,
+    attach: bool = typer.Option(
+        True,
+        "--attach/--no-attach",
+        help="Attach to this workdir's tmux session after preparing it.",
+    ),
+) -> None:
+    if ctx.invoked_subcommand is None:
+        start_dashboard(attach=attach)
 
 
 def load_runtime() -> tuple[CoduxConfig, StateStore, TmuxController]:
@@ -295,15 +306,7 @@ def default_config_for_current_workdir() -> CoduxConfig:
     return CoduxConfig.from_mapping({}, tmux_session_default=default_tmux_session())
 
 
-@app.command()
-def start(
-    attach: bool = typer.Option(
-        True,
-        "--attach/--no-attach",
-        help="Attach to this workdir's tmux session after preparing it.",
-    ),
-) -> None:
-    """Create or attach to this workdir's Codux tmux workspace."""
+def start_dashboard(*, attach: bool = True) -> None:
     config, tmux = load_config_and_tmux()
     if tmux.has_session():
         tmux.install_look_and_keys(config, codux_command())
@@ -790,11 +793,11 @@ def doctor() -> None:
     if path.exists():
         console.print(f"[green]ok[/green] config: {path}")
     else:
-        console.print(f"[blue]info[/blue] config: {path} (created by `codux start`)")
+        console.print(f"[blue]info[/blue] config: {path} (created by running `codux`)")
     if state_path().exists():
         console.print(f"[green]ok[/green] state: {state_path()} ({len(state.tabs)} tabs)")
     else:
-        console.print(f"[blue]info[/blue] state: {state_path()} (created by `codux start`)")
+        console.print(f"[blue]info[/blue] state: {state_path()} (created by running `codux`)")
     console.print(
         "[blue]info[/blue] same workdir reattaches to this workspace; another "
         "workdir gets its own config, state, and tmux session."

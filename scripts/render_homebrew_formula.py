@@ -50,7 +50,6 @@ def render_formula(
         + f'    resource("{formula_name}-wheel").stage do\n'
         + f'      venv.pip_install_and_link Pathname.pwd/"{formula_name}-#{{version}}-py3-none-any.whl"\n'
         + "    end\n"
-        + '    rm bin/"start" if (bin/"start").exist?\n'
         + "  end\n\n"
         + "  test do\n"
         + '    assert_match "Start, inspect, or detach Codux tmux workspaces", shell_output("#{bin}/codux --help")\n'
