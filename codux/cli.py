@@ -277,8 +277,18 @@ def select_active_or_empty(config: CoduxConfig, state: AppState, tmux: TmuxContr
         focus_content_for_window(tmux, empty_window_id)
 
 
-def prepare_empty_dashboard(config: CoduxConfig, state: AppState, tmux: TmuxController) -> str:
-    empty_window_id = tmux.ensure_empty_window(config)
+def prepare_empty_dashboard(
+    config: CoduxConfig,
+    state: AppState,
+    tmux: TmuxController,
+    *,
+    preferred_window_id: str | None = None,
+) -> str:
+    empty_window_id = (
+        tmux.reuse_window_as_empty(preferred_window_id) if preferred_window_id else None
+    )
+    if empty_window_id is None:
+        empty_window_id = tmux.ensure_empty_window(config)
     tmux.refresh_window_frame_panes(config, state, empty_window_id)
     return empty_window_id
 
@@ -1169,7 +1179,12 @@ def finish_close_window_command(window_id: str) -> None:
     config, store, tmux = load_runtime()
     state = store.read()
     if not state.tabs:
-        empty_window_id = prepare_empty_dashboard(config, state, tmux)
+        empty_window_id = prepare_empty_dashboard(
+            config,
+            state,
+            tmux,
+            preferred_window_id=window_id,
+        )
         tmux.select_window(empty_window_id)
         if state.focus == "nav":
             focus_nav_for_window(tmux, empty_window_id)

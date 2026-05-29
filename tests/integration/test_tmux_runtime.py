@@ -200,6 +200,45 @@ def test_nav_new_tab_launches_fake_codex_in_isolated_tmux_runtime(
     assert "unset NO_COLOR CODUX_HOME CODUX_WORKDIR; exec" in active_pane["start_command"]
 
 
+def test_nav_close_last_tab_leaves_empty_dashboard_open(
+    live_codux_runtime: LiveCoduxRuntime,
+) -> None:
+    run_codux(live_codux_runtime, "--no-attach")
+    nav_pane = active_or_empty_nav_pane(live_codux_runtime)
+
+    run_tmux(live_codux_runtime, ["send-keys", "-t", nav_pane, "n"])
+    state = wait_for(
+        "active fake Codex tab",
+        lambda: active_fake_codex_state(live_codux_runtime),
+    )
+    active_tab = active_state_tab(state)
+    active_window = wait_for(
+        "active fake Codex window",
+        lambda: window_for_tab(live_codux_runtime, active_tab["id"]),
+    )
+    wait_for("spare window ready", lambda: spare_window_ready(live_codux_runtime))
+
+    run_tmux(live_codux_runtime, ["send-keys", "-t", active_window["nav_pane"], "c"])
+
+    wait_for("empty dashboard state", lambda: empty_dashboard_state(live_codux_runtime))
+    windows = wait_for(
+        "empty dashboard window",
+        lambda: empty_dashboard_window_rows(live_codux_runtime),
+    )
+    empty_window = next(window for window in windows if window["empty"] == "1")
+
+    assert empty_window["window_id"] == active_window["window_id"]
+    assert selected_window_id(live_codux_runtime) == empty_window["window_id"]
+    wait_for(
+        "empty dashboard render",
+        lambda: nav_capture_has_title(
+            live_codux_runtime,
+            empty_window["codex_pane"],
+            "No Codex tabs open",
+        ),
+    )
+
+
 def test_nav_focus_borders_stay_grouped_across_three_tabs(
     live_codux_runtime: LiveCoduxRuntime,
 ) -> None:
@@ -729,6 +768,16 @@ def state_with_active_tab(
     return state
 
 
+def empty_dashboard_state(runtime: LiveCoduxRuntime) -> dict[str, Any]:
+    state_path = runtime.runtime_dir / "state.json"
+    assert state_path.exists()
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state.get("tabs") == []
+    assert state.get("active_tab_id") is None
+    assert state.get("focus") == "nav"
+    return state
+
+
 def active_state_tab(state: dict[str, Any]) -> dict[str, Any]:
     tabs = state.get("tabs", [])
     active_tab = next((tab for tab in tabs if tab["id"] == state.get("active_tab_id")), None)
@@ -799,6 +848,24 @@ def active_or_empty_nav_pane(runtime: LiveCoduxRuntime) -> str:
             None,
         ),
     )
+
+
+def empty_dashboard_window_rows(runtime: LiveCoduxRuntime) -> list[dict[str, str]]:
+    rows = window_rows(runtime)
+    assert rows
+    assert sum(1 for row in rows if row["empty"] == "1") == 1
+    assert not any(row["tab_id"] for row in rows)
+    for row in rows:
+        assert row["nav_pane"]
+        assert row["codex_pane"]
+    return rows
+
+
+def selected_window_id(runtime: LiveCoduxRuntime) -> str:
+    return run_tmux(
+        runtime,
+        ["display-message", "-p", "-t", runtime.session_name, "#{window_id}"],
+    ).stdout.strip()
 
 
 def nav_capture_has_title(runtime: LiveCoduxRuntime, nav_pane_id: str, title: str) -> bool:

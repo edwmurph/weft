@@ -323,6 +323,17 @@ class TmuxController:
         self._mark_empty_window(created)
         return created.window_id
 
+    def reuse_window_as_empty(self, window_id: str) -> str | None:
+        if not self.window_exists(window_id):
+            return None
+        snapshot = self._snapshot()
+        nav_pane_id, content_pane_id = self._ensure_native_window(window_id, snapshot)
+        if nav_pane_id is None or content_pane_id is None:
+            return None
+        self.rename_window(window_id, "codux")
+        self._mark_empty_window(CreatedWindow(window_id, content_pane_id, nav_pane_id))
+        return window_id
+
     def _mark_empty_window(self, created: CreatedWindow) -> None:
         self._set_window_option(created.window_id, EMPTY_WINDOW_OPTION, "1")
         self._set_window_option(created.window_id, SPARE_WINDOW_OPTION, "0")

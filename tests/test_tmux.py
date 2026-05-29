@@ -646,6 +646,53 @@ def test_ensure_empty_window_converts_spare_loading_window(monkeypatch):
     ]
 
 
+def test_reuse_window_as_empty_marks_existing_window(monkeypatch):
+    controller = TmuxController("codux")
+    snapshot = object()
+    events: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(controller, "window_exists", lambda window_id: window_id == "@1")
+    monkeypatch.setattr(controller, "_snapshot", lambda: snapshot)
+    monkeypatch.setattr(
+        controller,
+        "_ensure_native_window",
+        lambda window_id, current: (
+            events.append(("ensure-native", window_id, current is snapshot)) or ("%nav", "%codex")
+        ),
+    )
+    monkeypatch.setattr(
+        controller,
+        "rename_window",
+        lambda window_id, title: events.append(("rename", window_id, title)),
+    )
+    monkeypatch.setattr(
+        controller,
+        "_mark_empty_window",
+        lambda created: events.append(
+            ("mark-empty", created.window_id, created.content_pane_id, created.nav_pane_id)
+        ),
+    )
+
+    assert controller.reuse_window_as_empty("@1") == "@1"
+
+    assert events == [
+        ("ensure-native", "@1", True),
+        ("rename", "@1", "codux"),
+        ("mark-empty", "@1", "%codex", "%nav"),
+    ]
+
+
+def test_reuse_window_as_empty_ignores_missing_window(monkeypatch):
+    controller = TmuxController("codux")
+    events: list[str] = []
+
+    monkeypatch.setattr(controller, "window_exists", lambda window_id: False)
+    monkeypatch.setattr(controller, "_snapshot", lambda: events.append("snapshot"))
+
+    assert controller.reuse_window_as_empty("@missing") is None
+    assert events == []
+
+
 def test_refresh_window_frame_panes_resizes_nav_before_writing_render(monkeypatch):
     controller = TmuxController("codux")
     events: list[str] = []

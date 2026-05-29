@@ -1216,12 +1216,58 @@ def test_stale_activate_window_does_not_override_newer_focus(monkeypatch, tmp_pa
     assert state.focus == "codex"
 
 
-def test_finish_close_last_tab_renders_empty_before_killing_old_window(monkeypatch, tmp_path):
+def test_finish_close_last_tab_reuses_closing_window_as_empty_dashboard(monkeypatch, tmp_path):
     store = StateStore(tmp_path / "state.json")
     store.write(AppState(focus="nav"))
     events: list[tuple[str, object]] = []
 
     class FakeTmux:
+        def reuse_window_as_empty(self, window_id):
+            events.append(("reuse-empty", window_id))
+            return window_id
+
+        def ensure_empty_window(self, config):
+            raise AssertionError("created a separate empty window")
+
+        def refresh_window_frame_panes(self, config, state, window_id):
+            events.append(("refresh-window", window_id))
+
+        def select_window(self, window_id):
+            events.append(("select-window", window_id))
+
+        def nav_pane_for_window(self, window_id):
+            events.append(("nav-pane", window_id))
+            return "%nav"
+
+        def select_pane(self, pane_id):
+            events.append(("select-pane", pane_id))
+
+        def kill_window(self, window_id):
+            events.append(("kill-window", window_id))
+
+    monkeypatch.setattr(cli_module, "load_runtime", lambda: (CoduxConfig(), store, FakeTmux()))
+
+    cli_module.finish_close_window_command("@old")
+
+    assert events == [
+        ("reuse-empty", "@old"),
+        ("refresh-window", "@old"),
+        ("select-window", "@old"),
+        ("nav-pane", "@old"),
+        ("select-pane", "%nav"),
+    ]
+
+
+def test_finish_close_last_tab_falls_back_when_closing_window_is_gone(monkeypatch, tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    store.write(AppState(focus="nav"))
+    events: list[tuple[str, object]] = []
+
+    class FakeTmux:
+        def reuse_window_as_empty(self, window_id):
+            events.append(("reuse-empty", window_id))
+            return None
+
         def ensure_empty_window(self, config):
             events.append(("ensure-empty", None))
             return "@empty"
@@ -1247,6 +1293,7 @@ def test_finish_close_last_tab_renders_empty_before_killing_old_window(monkeypat
     cli_module.finish_close_window_command("@old")
 
     assert events == [
+        ("reuse-empty", "@old"),
         ("ensure-empty", None),
         ("refresh-window", "@empty"),
         ("select-window", "@empty"),
