@@ -88,6 +88,17 @@ func (s *TerminalScreen) ANSIString() string {
 	return strings.Join(lines, "\n")
 }
 
+func (s *TerminalScreen) HasVisibleContent() bool {
+	for _, row := range s.cells {
+		for _, cell := range row {
+			if cell.r != 0 && cell.r != ' ' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *TerminalScreen) print(r rune) {
 	if r == 0 || r == '\uFFFD' {
 		return

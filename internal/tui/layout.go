@@ -89,6 +89,35 @@ func renderWorkspaceWithNavHeight(
 	workdir string,
 	navHeight int,
 ) string {
+	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, workdir, navHeight, "")
+}
+
+func renderLoadingWorkspaceWithNavHeight(
+	cfg config.Config,
+	st state.State,
+	codexTitle string,
+	loadingText string,
+	width int,
+	height int,
+	message string,
+	workdir string,
+	navHeight int,
+) string {
+	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, workdir, navHeight, loadingText)
+}
+
+func renderWorkspaceView(
+	cfg config.Config,
+	st state.State,
+	codexTitle string,
+	codexContent string,
+	width int,
+	height int,
+	message string,
+	workdir string,
+	navHeight int,
+	loadingText string,
+) string {
 	if width <= 0 || height <= 0 {
 		return ""
 	}
@@ -106,7 +135,7 @@ func renderWorkspaceWithNavHeight(
 	if navHeight > 0 {
 		lines = append(lines, renderNavFrame(cfg, st, width, navHeight, st.Focus == state.FocusNav, workdir)...)
 	}
-	lines = append(lines, renderCodexFrame(cfg, st, codexTitle, codexContent, width, codexHeight, st.Focus == state.FocusCodex, message, navHeight == 0, workdir)...)
+	lines = append(lines, renderCodexFrame(cfg, st, codexTitle, codexContent, width, codexHeight, st.Focus == state.FocusCodex, message, navHeight == 0, workdir, loadingText)...)
 	if len(lines) > height {
 		lines = lines[:height]
 	}
@@ -151,6 +180,7 @@ func renderCodexFrame(
 	message string,
 	navCollapsed bool,
 	workdir string,
+	loadingText string,
 ) []string {
 	if width < 2 || height <= 0 {
 		return nil
@@ -169,7 +199,7 @@ func renderCodexFrame(
 	if topLabel != "" {
 		lines = append(lines, palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, sessions.DisplayPath(workdir), max(0, innerWidth-2)), innerWidth)))
 	}
-	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, len(st.Tabs) == 0)
+	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, len(st.Tabs) == 0, loadingText)
 	for len(contentLines) < contentHeight {
 		contentLines = append(contentLines, "")
 	}
@@ -281,9 +311,12 @@ func navColumnWidths(count int, width int, gap int) []int {
 	return widths
 }
 
-func renderCodexContent(content string, width int, height int, empty bool) []string {
+func renderCodexContent(content string, width int, height int, empty bool, loadingText string) []string {
 	if height <= 0 {
 		return nil
+	}
+	if strings.TrimSpace(loadingText) != "" {
+		return renderCenteredCodexContent([]string{loadingText}, width, height)
 	}
 	if empty {
 		return renderEmptyCodexContent(width, height)
@@ -299,7 +332,10 @@ func renderCodexContent(content string, width int, height int, empty bool) []str
 }
 
 func renderEmptyCodexContent(width int, height int) []string {
-	content := []string{"No Codex tabs open", "Press n to create one."}
+	return renderCenteredCodexContent([]string{"No Codex tabs open", "Press n to create one."}, width, height)
+}
+
+func renderCenteredCodexContent(content []string, width int, height int) []string {
 	topPadding := max(0, (height-len(content))/2)
 	lines := make([]string, 0, height)
 	for len(lines) < topPadding {

@@ -56,15 +56,19 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	if err := os.Mkdir(workdir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	startupMarker := filepath.Join(tmp, "fake-codex-color-only")
 	fakeCodex := filepath.Join(tmp, "fake-codex.sh")
 	if err := os.WriteFile(fakeCodex, []byte(
 		"#!/bin/sh\n"+
+			"startup_delay=${STARTUP_DELAY:-1.2}\n"+
 			"printf '\\033]2;Fake Codex Ready\\007'\n"+
 			"stty raw -echo\n"+
 			"printf '\\033]10;?\\033\\\\'\n"+
 			"printf '\\033]11;?\\033\\\\'\n"+
 			"dd bs=1 count=50 >/dev/null 2>/dev/null\n"+
 			"stty sane\n"+
+			"if [ -n \"${STARTUP_MARKER:-}\" ]; then : > \"$STARTUP_MARKER\"; fi\n"+
+			"sleep \"$startup_delay\"\n"+
 			"printf '\\033[?1049h\\033[2J\\033[H'\n"+
 			"printf '╭──────────────────────────────────────────────────────────╮\\n'\n"+
 			"printf '│ >_ OpenAI Codex (v0.fake.0)                               │\\n'\n"+
@@ -101,6 +105,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		"CODUX_HOME="+runtimeDir,
 		"CODUX_WORKDIR="+workdir,
 		"CODUX_EXECUTABLE="+bin,
+		"STARTUP_DELAY=1.2",
+		"STARTUP_MARKER="+startupMarker,
 		"PATH="+wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"TERM=xterm-256color",
 	)
@@ -174,17 +180,50 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	var firstID string
 	timedStep(t, "keyboard n creates tab", func() {
+		started := time.Now()
 		tmuxRun(t, env, "send-keys", "-t", pane, "n")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Starting Codex") &&
+				strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "No Codex tabs open")
+		})
+		placeholderDuration := time.Since(started)
+		t.Logf("dashboard_e2e metric=%q duration=%s", "new tab startup placeholder visible", placeholderDuration.Round(time.Millisecond))
+		if placeholderDuration > 500*time.Millisecond {
+			t.Fatalf("startup placeholder took too long: %s", placeholderDuration.Round(time.Millisecond))
+		}
 		st := waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Tabs) == 1 && st.Tabs[0].Status == state.StatusRunning && st.Focus == state.FocusCodex
 		})
 		firstID = st.Tabs[0].ID
+		if !waitForBool(2*time.Second, func() bool {
+			_, err := os.Stat(startupMarker)
+			return err == nil
+		}) {
+			t.Fatalf("fake Codex never reached color-only startup point")
+		}
+		time.Sleep(150 * time.Millisecond)
+		colorOnlyCapture := clientOutput()
+		if strings.Contains(colorOnlyCapture, ">_ OpenAI Codex") {
+			t.Fatalf("fake Codex rendered visible content before delayed startup completed:\n%s", colorOnlyCapture)
+		}
+		if !strings.Contains(colorOnlyCapture, "Starting Codex") {
+			t.Fatalf("dashboard should keep startup loading state during color-only Codex output:\n%s", colorOnlyCapture)
+		}
+		if strings.Contains(colorOnlyCapture, "Codex PTY is starting...") {
+			t.Fatalf("dashboard should not render old startup text:\n%s", colorOnlyCapture)
+		}
+		if !loadingLineIsCentered(colorOnlyCapture) {
+			t.Fatalf("dashboard should center startup loading state:\n%s", colorOnlyCapture)
+		}
+		t.Logf("dashboard_e2e metric=%q duration=%s", "new tab color-only startup covered", time.Since(started).Round(time.Millisecond))
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, ">_ OpenAI Codex") &&
 				!strings.Contains(capture, "No Codex tabs open") &&
 				!strings.Contains(capture, "INBOX") &&
 				strings.Contains(capture, collapsedCodexToolbar)
 		})
+		t.Logf("dashboard_e2e metric=%q duration=%s", "new tab first Codex content visible", time.Since(started).Round(time.Millisecond))
 		waitForEscapedCapture(t, env, pane, func(capture string) bool {
 			return strings.Contains(capture, "38;2;237;239;241") &&
 				strings.Contains(capture, "48;2;40;49;56") &&
@@ -437,6 +476,16 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	if !empty && strings.Contains(capture, "No Codex tabs open") {
 		t.Fatalf("dashboard kept empty state after tab was created:\n%s", capture)
 	}
+}
+
+func loadingLineIsCentered(capture string) bool {
+	for _, line := range strings.Split(capture, "\n") {
+		index := strings.Index(line, "Starting Codex")
+		if index >= 0 {
+			return index > 40
+		}
+	}
+	return false
 }
 
 func assertCodexBoxNotDrifted(t *testing.T, capture string) {

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"syscall"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/edwmurph/codux/internal/config"
 	"github.com/edwmurph/codux/internal/ipc"
 	"github.com/edwmurph/codux/internal/state"
@@ -27,8 +28,9 @@ func RunHeadless(rt config.Runtime, cfg config.Config, st state.State, migration
 			return ipc.Response{OK: true, Message: "Codux TUI stopped"}
 		}
 		mu.Lock()
-		defer mu.Unlock()
-		response, _ := model.handleIPC(request)
+		response, cmd := model.handleIPC(request)
+		mu.Unlock()
+		runHeadlessCmd(cmd, &model, &mu)
 		return response
 	})
 	if err != nil {
@@ -54,5 +56,29 @@ func RunHeadless(rt config.Runtime, cfg config.Config, st state.State, migration
 		case <-ctx.Done():
 			return nil
 		}
+	}
+}
+
+func runHeadlessCmd(cmd tea.Cmd, model *Model, mu *sync.Mutex) {
+	if cmd == nil {
+		return
+	}
+	go func() {
+		applyHeadlessMsg(cmd(), model, mu)
+	}()
+}
+
+func applyHeadlessMsg(msg tea.Msg, model *Model, mu *sync.Mutex) {
+	switch typed := msg.(type) {
+	case nil:
+		return
+	case tea.BatchMsg:
+		for _, cmd := range typed {
+			runHeadlessCmd(cmd, model, mu)
+		}
+	case ptyStartedMsg:
+		mu.Lock()
+		model.applyPTYStarted(typed)
+		mu.Unlock()
 	}
 }

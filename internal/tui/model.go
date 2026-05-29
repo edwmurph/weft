@@ -27,6 +27,12 @@ type ipcEnvelope struct {
 	reply   chan ipc.Response
 }
 
+type ptyStartedMsg struct {
+	tabID   string
+	session *ptyx.Session
+	err     error
+}
+
 type mode string
 
 const (
@@ -40,9 +46,13 @@ const (
 const (
 	navAnimationInterval = 12 * time.Millisecond
 	navAnimationStep     = 2
+	loadingInterval      = 90 * time.Millisecond
 )
 
 type navAnimationTick struct{}
+type loadingTick struct{}
+
+var loadingFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 type Model struct {
 	cfg       config.Config
@@ -55,9 +65,11 @@ type Model struct {
 	mode      mode
 	message   string
 	navHeight int
+	loading   int
 
 	screens map[string]*TerminalScreen
 	ptys    map[string]*ptyx.Session
+	visible map[string]bool
 	dataCh  chan ptyx.Data
 	ipcCh   chan ipcEnvelope
 	stopIPC func() error
@@ -107,7 +119,8 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	model := Model{
 		cfg: cfg, runtime: rt, store: state.NewStore(rt.StatePath), state: st,
 		width: 100, height: 32, screens: map[string]*TerminalScreen{}, ptys: map[string]*ptyx.Session{},
-		dataCh: make(chan ptyx.Data, 64), ipcCh: make(chan ipcEnvelope, 16),
+		visible: map[string]bool{},
+		dataCh:  make(chan ptyx.Data, 64), ipcCh: make(chan ipcEnvelope, 16),
 		ctx: ctx, cancel: cancel, renameInput: input, viewport: vp,
 		other: sessions.List(cfg.TmuxSession),
 	}
@@ -130,7 +143,7 @@ func (m Model) Init() tea.Cmd {
 	} else {
 		m.message = fmt.Sprintf("IPC unavailable: %v", err)
 	}
-	return tea.Batch(waitPTY(m.dataCh), waitIPC(m.ipcCh), tickSessions())
+	return tea.Batch(waitPTY(m.dataCh), waitIPC(m.ipcCh), tickSessions(), tickLoading())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -144,9 +157,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case navAnimationTick:
 		return m, m.stepNavAnimation()
+	case loadingTick:
+		if !m.codexLoading() {
+			return m, nil
+		}
+		m.loading++
+		return m, tickLoading()
 	case ptyx.Data:
 		m.applyPTYData(typed)
 		return m, waitPTY(m.dataCh)
+	case ptyStartedMsg:
+		m.applyPTYStarted(typed)
+		return m, nil
 	case ipcEnvelope:
 		response, cmd := m.handleIPC(typed.request)
 		typed.reply <- response
@@ -179,15 +201,18 @@ func (m Model) View() string {
 	}
 
 	content := m.activeOutput()
-	if content == "" {
+	loadingText := ""
+	if content == "" && m.codexLoading() {
+		loadingText = m.loadingLabel()
+	} else if content == "" {
 		content = "No Codex tabs open."
-		if state.ActiveTab(m.state) != nil {
-			content = "Codex PTY is starting..."
-		}
 	}
 	title := "Codex"
 	if active := state.ActiveTab(m.state); active != nil {
 		title = titles.Render(*active)
+	}
+	if loadingText != "" {
+		return renderLoadingWorkspaceWithNavHeight(m.cfg, m.state, title, loadingText, m.width, m.height, m.message, m.runtime.Workdir, m.navHeight)
 	}
 	return renderWorkspaceWithNavHeight(m.cfg, m.state, title, content, m.width, m.height, m.message, m.runtime.Workdir, m.navHeight)
 }
@@ -338,8 +363,7 @@ func (m *Model) newTab(title string) tea.Cmd {
 	m.state.ActiveTabID = tab.ID
 	m.state.Focus = state.FocusCodex
 	m.save()
-	m.startPTY(tab.ID)
-	return m.startNavAnimation()
+	return tea.Batch(m.startPTYCmd(tab.ID), m.startNavAnimation(), tickLoading())
 }
 
 func (m *Model) closeTab(tabID string) tea.Cmd {
@@ -351,6 +375,7 @@ func (m *Model) closeTab(tabID string) tea.Cmd {
 		delete(m.ptys, tabID)
 	}
 	delete(m.screens, tabID)
+	delete(m.visible, tabID)
 	m.state = state.CloseTab(m.state, tabID)
 	if state.ActiveTab(m.state) == nil {
 		m.state.Focus = state.FocusNav
@@ -425,7 +450,66 @@ func (m *Model) startPTY(tabID string) {
 	m.save()
 }
 
+func (m *Model) startPTYCmd(tabID string) tea.Cmd {
+	if m.ptys[tabID] != nil {
+		return nil
+	}
+	ctx := m.ctx
+	command := m.cfg.CodexCommand
+	workdir := m.runtime.Workdir
+	cols := m.ptyWidth()
+	rows := m.ptyHeight()
+	dataCh := m.dataCh
+	return func() tea.Msg {
+		ptySession, err := ptyx.Start(ctx, tabID, command, workdir, cols, rows, func(data ptyx.Data) {
+			dataCh <- data
+		})
+		return ptyStartedMsg{tabID: tabID, session: ptySession, err: err}
+	}
+}
+
+func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
+	if msg.err != nil {
+		m.state = state.WithUpdatedTab(m.state, msg.tabID, func(tab state.Tab) state.Tab {
+			tab.Status = state.StatusError
+			tab.CodexTitle = msg.err.Error()
+			return tab
+		})
+		m.save()
+		return
+	}
+	if !tabExists(m.state, msg.tabID) {
+		msg.session.Kill()
+		return
+	}
+	if m.ptys[msg.tabID] != nil {
+		msg.session.Kill()
+		return
+	}
+	if m.screens[msg.tabID] == nil {
+		m.screens[msg.tabID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
+	}
+	m.ptys[msg.tabID] = msg.session
+	m.state = state.WithUpdatedTab(m.state, msg.tabID, func(tab state.Tab) state.Tab {
+		tab.Status = state.StatusRunning
+		return tab
+	})
+	m.save()
+}
+
+func tabExists(st state.State, tabID string) bool {
+	for _, tab := range st.Tabs {
+		if tab.ID == tabID {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) applyPTYData(data ptyx.Data) {
+	if !tabExists(m.state, data.TabID) {
+		return
+	}
 	if data.Err != nil {
 		m.state = state.WithUpdatedTab(m.state, data.TabID, func(tab state.Tab) state.Tab {
 			if tab.Status != state.StatusError {
@@ -443,6 +527,9 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 			m.screens[data.TabID] = screen
 		}
 		screen.Write(data.Text)
+		if screen.HasVisibleContent() {
+			m.visible[data.TabID] = true
+		}
 	}
 	if data.Title != "" {
 		m.state = state.WithUpdatedTab(m.state, data.TabID, func(tab state.Tab) state.Tab {
@@ -460,9 +547,26 @@ func (m *Model) activeOutput() string {
 		return ""
 	}
 	if screen := m.screens[active.ID]; screen != nil {
+		if !screen.HasVisibleContent() && !m.visible[active.ID] {
+			return ""
+		}
 		return screen.ANSIString()
 	}
 	return ""
+}
+
+func (m Model) codexLoading() bool {
+	active := state.ActiveTab(m.state)
+	if active == nil || active.Status == state.StatusError || active.Status == state.StatusStopped {
+		return false
+	}
+	screen := m.screens[active.ID]
+	return screen == nil || (!screen.HasVisibleContent() && !m.visible[active.ID])
+}
+
+func (m Model) loadingLabel() string {
+	frame := loadingFrames[m.loading%len(loadingFrames)]
+	return frame + " Starting Codex"
 }
 
 func (m *Model) save() {
@@ -636,6 +740,10 @@ func tickSessions() tea.Cmd {
 
 func tickNavAnimation() tea.Cmd {
 	return tea.Tick(navAnimationInterval, func(time.Time) tea.Msg { return navAnimationTick{} })
+}
+
+func tickLoading() tea.Cmd {
+	return tea.Tick(loadingInterval, func(time.Time) tea.Msg { return loadingTick{} })
 }
 
 func renderHelp(cfg config.Config, migration string) string {

@@ -109,6 +109,29 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	}
 }
 
+func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
+	cfg := config.DefaultConfig("codux-test")
+	st := state.State{
+		Version: state.Version, ActiveTabID: "a", Focus: state.FocusCodex,
+		Tabs: []state.Tab{{ID: "a", Title: "alpha", Column: "inbox", Status: state.StatusStarting}},
+	}
+
+	got := renderLoadingWorkspaceWithNavHeight(cfg, st, "alpha", "⠋ Starting Codex", 80, 24, "", "/tmp/project", 0)
+	lines := strings.Split(ansi.Strip(got), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Starting Codex") {
+			if strings.HasPrefix(line, "│ ⠋ Starting Codex") {
+				t.Fatalf("loading state should not render against the left edge:\n%s", got)
+			}
+			if !strings.Contains(line, "                              ⠋ Starting Codex") {
+				t.Fatalf("loading state should be visually centered, got line %q:\n%s", line, got)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing loading state:\n%s", got)
+}
+
 func TestActiveCodexFooterDoesNotRenderDotIndicator(t *testing.T) {
 	cfg := config.DefaultConfig("codux-test")
 	st := state.State{

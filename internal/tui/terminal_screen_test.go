@@ -118,6 +118,25 @@ func TestTerminalScreenOSCDefaultColorsFillBlankPane(t *testing.T) {
 	if stripped := ansi.Strip(styled); stripped != strings.Repeat(" ", 6)+"\n"+strings.Repeat(" ", 6) {
 		t.Fatalf("default background should fill blank pane, got %q", stripped)
 	}
+	if screen.HasVisibleContent() {
+		t.Fatalf("color-only terminal output should not count as visible content:\n%q", styled)
+	}
+}
+
+func TestTerminalScreenDetectsVisibleContent(t *testing.T) {
+	screen := NewTerminalScreen(6, 2)
+
+	if screen.HasVisibleContent() {
+		t.Fatal("empty screen should not have visible content")
+	}
+	screen.Write("\x1b[48;2;1;2;3m  \x1b[0m")
+	if screen.HasVisibleContent() {
+		t.Fatal("styled spaces should not count as visible content")
+	}
+	screen.Write("x")
+	if !screen.HasVisibleContent() {
+		t.Fatal("printed glyph should count as visible content")
+	}
 }
 
 func TestTerminalScreenOSCDefaultBackgroundSurvivesResetAndClear(t *testing.T) {

@@ -112,6 +112,59 @@ func TestActiveOutputPreservesTerminalStyles(t *testing.T) {
 	}
 }
 
+func TestActiveOutputSuppressesColorOnlyStartupScreen(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig("codux-test")
+	model := NewModel(rt, cfg, state.State{
+		Version: state.Version,
+		Focus:   state.FocusCodex,
+		Tabs: []state.Tab{
+			{ID: "a", Title: "alpha", Column: "inbox", Status: state.StatusRunning},
+		},
+		ActiveTabID: "a",
+	})
+	screen := NewTerminalScreen(20, 3)
+	screen.Write("\x1b]10;rgb:eded/efef/f1f1\x1b\\")
+	screen.Write("\x1b]11;rgb:2828/3131/3838\x1b\\")
+	model.screens["a"] = screen
+
+	if output := model.activeOutput(); output != "" {
+		t.Fatalf("color-only startup screen should not replace placeholder:\n%q", output)
+	}
+	view := model.View()
+	if !strings.Contains(view, "Starting Codex") {
+		t.Fatalf("view should keep startup loading state for color-only screen:\n%s", view)
+	}
+	if strings.Contains(view, "Codex PTY is starting...") {
+		t.Fatalf("view should not render old startup text:\n%s", view)
+	}
+}
+
+func TestLoadingTickAnimatesStartupView(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig("codux-test")
+	model := NewModel(rt, cfg, state.State{
+		Version: state.Version,
+		Focus:   state.FocusCodex,
+		Tabs: []state.Tab{
+			{ID: "a", Title: "alpha", Column: "inbox", Status: state.StatusStarting},
+		},
+		ActiveTabID: "a",
+	})
+
+	before := model.loadingLabel()
+	updated, cmd := model.Update(loadingTick{})
+	model = updated.(Model)
+	after := model.loadingLabel()
+
+	if before == after {
+		t.Fatalf("loading label should animate, before=%q after=%q", before, after)
+	}
+	if cmd == nil {
+		t.Fatal("loading tick should continue while Codex is starting")
+	}
+}
+
 func TestNavHeightAnimatesOnFocusChanges(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig("codux-test")
