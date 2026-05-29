@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import codux.sessions as sessions_module
 import codux.tmux as tmux_module
-from codux.config import CoduxConfig
+from codux.config import CoduxConfig, KeyBindings
 from codux.state import AppState, Tab, now_iso
 from codux.tmux import TmuxController
 from codux.tmux_snapshot import PaneSnapshot, TmuxSnapshot, WindowSnapshot
@@ -277,7 +277,7 @@ def test_inactive_nav_bottom_border_shows_focus_hint_on_left(monkeypatch):
 
     content = controller._border_content(config, "@1", "NAV_BOTTOM", state, width=180, height=1)
 
-    assert content.startswith("\033[38;5;244mC-d focus ")
+    assert content.startswith("\033[38;5;244mC-g focus ")
     assert "C-q quit" not in content
     assert "? help" not in content
     assert "new tab" not in content
@@ -304,10 +304,10 @@ def test_bottom_borders_show_focus_marker(monkeypatch):
         height=1,
     )
 
-    assert nav_content.startswith("\033[38;5;244mC-d focus ")
+    assert nav_content.startswith("\033[38;5;244mC-g focus ")
     assert codex_content.startswith("\033[38;5;117mC-q quit ")
     assert codex_content.endswith(" ●\033[0m")
-    assert "C-d focus" not in codex_content
+    assert "C-g focus" not in codex_content
     assert "focus nav pane" not in codex_content
 
 
@@ -1648,3 +1648,20 @@ def test_new_key_is_left_for_native_nav_pane(monkeypatch):
 
     assert ("unbind-key", "-n", "n") in commands
     assert not any(command[:3] == ("bind-key", "-n", "n") for command in commands)
+
+
+def test_install_bindings_clears_previous_focus_defaults(monkeypatch):
+    controller = TmuxController("codux")
+    config = CoduxConfig(key_bindings=KeyBindings(focus_toggle="C-b"))
+    commands: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(controller, "_tmux", lambda args, check=True: commands.append(tuple(args)))
+
+    controller._install_bindings(config, "codux")
+
+    assert ("unbind-key", "-n", "C-b") in commands
+    assert ("unbind-key", "-n", "C-g") in commands
+    assert ("unbind-key", "-n", "C-d") in commands
+    assert ("unbind-key", "-n", "C-a") in commands
+    assert any(command[:3] == ("bind-key", "-n", "C-b") for command in commands)
+    assert not any(command[:3] == ("bind-key", "-n", "C-g") for command in commands)

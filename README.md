@@ -132,7 +132,7 @@ rename = "r"
 close = "c"
 sessions = "s"
 help = "?"
-focus_toggle = "C-d"
+focus_toggle = "C-g"
 quit = "C-q"
 ```
 

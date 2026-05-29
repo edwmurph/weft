@@ -25,7 +25,8 @@ def tab(tab_id: str, column: str = "inbox") -> Tab:
     )
 
 
-def test_nav_keys_use_ctrl_d_for_focus_toggle():
+def test_nav_keys_use_ctrl_g_for_focus_toggle():
+    assert nav_keys(b"\x07") == ["C-g"]
     assert nav_keys(b"\x04") == ["C-d"]
     assert nav_keys(b"\x01") == []
 

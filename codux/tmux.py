@@ -1457,6 +1457,7 @@ class TmuxController:
             "C-m",
             "C-a",
             "C-d",
+            "C-g",
             "h",
             "l",
             "H",

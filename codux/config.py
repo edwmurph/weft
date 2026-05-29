@@ -30,7 +30,7 @@ class KeyBindings:
     close: str = "c"
     sessions: str = "s"
     help: str = "?"
-    focus_toggle: str = "C-d"
+    focus_toggle: str = "C-g"
     quit: str = "C-q"
 
     @classmethod
@@ -161,7 +161,7 @@ rename = "r"
 close = "c"
 sessions = "s"
 help = "?"
-focus_toggle = "C-d"
+focus_toggle = "C-g"
 quit = "C-q"
 """
 
@@ -192,6 +192,10 @@ def migrate_default_config(path: Path) -> None:
                 'focus_toggle = "C-d"\n',
                 'focus_toggle = "C-d"\nquit = "C-q"\n',
             )
+            updated = updated.replace(
+                'focus_toggle = "C-g"\n',
+                'focus_toggle = "C-g"\nquit = "C-q"\n',
+            )
         updated = updated.replace('prev = "h"\n', 'prev = "Left"\n')
         updated = updated.replace('next = "l"\n', 'next = "Right"\n')
         updated = updated.replace('move_left = "H"\n', 'move_left = "S-Left"\n')
@@ -199,7 +203,8 @@ def migrate_default_config(path: Path) -> None:
         updated = updated.replace('close = "x"\n', 'close = "c"\n')
         if "\nsessions =" not in updated:
             updated = updated.replace('close = "c"\n', 'close = "c"\nsessions = "s"\n')
-        updated = updated.replace('focus_toggle = "C-a"\n', 'focus_toggle = "C-d"\n')
+        updated = updated.replace('focus_toggle = "C-a"\n', 'focus_toggle = "C-g"\n')
+        updated = updated.replace('focus_toggle = "C-d"\n', 'focus_toggle = "C-g"\n')
     if updated != text:
         path.write_text(updated, encoding="utf-8")
 

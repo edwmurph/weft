@@ -29,7 +29,7 @@ def test_ensure_config_creates_default(tmp_path):
     assert config.key_bindings.move_right == "S-Right"
     assert config.key_bindings.close == "c"
     assert config.key_bindings.sessions == "s"
-    assert config.key_bindings.focus_toggle == "C-d"
+    assert config.key_bindings.focus_toggle == "C-g"
     assert "tmux_session =" not in text
 
 
@@ -151,7 +151,7 @@ move_right = "L"
 rename = "r"
 close = "x"
 help = "?"
-focus_toggle = "C-a"
+focus_toggle = "C-d"
 """,
         encoding="utf-8",
     )
@@ -166,7 +166,7 @@ focus_toggle = "C-a"
     assert config.key_bindings.move_right == "S-Right"
     assert config.key_bindings.close == "c"
     assert config.key_bindings.sessions == "s"
-    assert config.key_bindings.focus_toggle == "C-d"
+    assert config.key_bindings.focus_toggle == "C-g"
     text = path.read_text(encoding="utf-8")
     assert 'columns = ["inbox", "implement", "ship"]' in text
     assert 'quit = "C-q"' in text
@@ -174,4 +174,4 @@ focus_toggle = "C-a"
     assert 'move_right = "S-Right"' in text
     assert 'close = "c"' in text
     assert 'sessions = "s"' in text
-    assert 'focus_toggle = "C-d"' in text
+    assert 'focus_toggle = "C-g"' in text

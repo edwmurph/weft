@@ -187,22 +187,22 @@ def test_render_top_border_draws_right_label_before_corner():
 
 
 def test_render_bottom_border_draws_shortcuts_in_edge():
-    rendered = render_bottom_border(20, active=True, label="C-d nav  C-q quit")
+    rendered = render_bottom_border(20, active=True, label="C-g nav  C-q quit")
 
-    assert rendered == "\033[38;5;117mC-d nav  C-q quit ─╴\033[0m"
+    assert rendered == "\033[38;5;117mC-g nav  C-q quit ─╴\033[0m"
 
 
 def test_render_bottom_border_draws_right_label_flush():
     rendered = render_bottom_border(
         80,
         active=True,
-        label="C-d nav  C-q quit",
+        label="C-g nav  C-q quit",
         right_label="●",
     )
 
     assert rendered == (
         "\033[38;5;117m"
-        "C-d nav  C-q quit ──────────────────────────────────────────────────────────── ●"
+        "C-g nav  C-q quit ──────────────────────────────────────────────────────────── ●"
         "\033[0m"
     )
 

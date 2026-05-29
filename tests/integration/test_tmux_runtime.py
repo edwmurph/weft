@@ -146,6 +146,9 @@ def test_start_no_attach_creates_isolated_tmux_workspace(
     assert {"NAV", "CODEX", "NAV_TOP", "NAV_BOTTOM", "CODEX_TOP", "CODEX_BOTTOM"} <= roles
     assert any(pane["role"] == "NAV" and pane["nav_host"] == NAV_HOST_VERSION for pane in panes)
     assert any(pane["role"] != "NAV" and pane["frame_host"] == FRAME_HOST_VERSION for pane in panes)
+    assert (
+        "_focus-window" in run_tmux(live_codux_runtime, ["list-keys", "-T", "root", "C-g"]).stdout
+    )
 
 
 def test_nav_new_tab_launches_fake_codex_in_isolated_tmux_runtime(
@@ -283,7 +286,7 @@ def test_nav_focus_borders_stay_grouped_across_three_tabs(
         active_window = window_for_tab(live_codux_runtime, active_tab["id"])
         assert active_window is not None
         wait_for(
-            f"tab {index} nav border focus after Ctrl-d",
+            f"tab {index} nav border focus after focus command",
             lambda: assert_tab_nav_frame_active(live_codux_runtime, active_tab["id"]),
         )
 
@@ -827,7 +830,7 @@ def assert_nav_frame_active(runtime: LiveCoduxRuntime, window: dict[str, str]) -
     assert "C-q quit" in borders["NAV_BOTTOM"]
     assert "? help" in borders["NAV_BOTTOM"]
     assert "●" in borders["NAV_BOTTOM"]
-    assert "C-d focus" in borders["CODEX_BOTTOM"]
+    assert "C-g focus" in borders["CODEX_BOTTOM"]
     assert "●" not in borders["CODEX_BOTTOM"]
     return True
 

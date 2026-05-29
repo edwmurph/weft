@@ -586,6 +586,7 @@ def nav_keys(data: bytes) -> list[str]:
         b"\x1b[1;2C": "S-Right",
         b"\x1b[1;2A": "S-Up",
         b"\x1b[1;2B": "S-Down",
+        b"\x07": "C-g",
         b"\x04": "C-d",
         b"\x11": "C-q",
         b"\r": "Enter",
