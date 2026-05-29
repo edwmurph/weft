@@ -1,29 +1,18 @@
 <h1 align="center"><img src="assets/codux-logo.svg" alt="" width="70" valign="middle"> Codux</h1>
 
 <p align="center">
-  <strong>Coordinate multiple Codex sessions from a single tmux workspace.</strong>
+  <strong>Coordinate multiple Codex sessions from a single tmux-hosted TUI.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.11%2B-4b5563?style=flat-square" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/go-1.23%2B-4b5563?style=flat-square" alt="Go 1.23+">
   <img src="https://img.shields.io/badge/license-MIT-4b5563?style=flat-square" alt="MIT license">
-  <img src="https://img.shields.io/badge/status-active%20development-4b5563?style=flat-square" alt="Active development">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-<table align="center">
-  <tr>
-    <td width="680" align="center">
-      Codux manages parallel Codex workflows inside tmux using a lightweight kanban-style workspace. It keeps agent sessions organized as you scale to multiple threads.
-    </td>
-  </tr>
-</table>
-
-## Why Codux
-
-- **One tmux workspace, many Codex threads.** Keep related agents organized without leaving the terminal.
-- **Kanban-style workflow state.** Move sessions through customizable columns as work progresses.
-- **Native Codex panes.** Codux coordinates tmux layout, state, and focus without proxying Codex IO.
+Codux runs one tmux session with one full-screen pane. That pane hosts a Go
+Bubble Tea dashboard, and the dashboard owns embedded Codex PTYs directly.
+Detaching tmux leaves the dashboard and Codex processes alive.
 
 ## Getting Started
 
@@ -33,95 +22,45 @@ Install Codux with Homebrew:
 brew install edwmurph/tap/codux
 ```
 
-Then run Codux directly from the project directory you want to manage:
+Then run Codux from the project directory you want to manage:
 
 ```sh
 codux doctor
 codux
 ```
 
-Optional shell completion:
+For local development from this repository:
 
 ```sh
-codux --install-completion
+go run ./cmd/codux doctor
+go run ./cmd/codux
 ```
 
-Run the completion command from the shell you want to configure.
+From another current directory, point Go at the worktree module first:
+
+```sh
+go -C /path/to/codux-or-worktree run ./cmd/codux
+```
 
 ## Usage
 
-Start Codux from the project directory whose Codex sessions you want to manage:
-
-```sh
-codux
-```
-
-This launches a tmux workspace with a navigator pane above a native Codex pane.
-Use the navigator to create, rename, close, focus, and move Codex sessions across
-columns; press `?` inside Codux for the current shortcuts. Codux tracks live
-Codex pane titles without proxying Codex input or output.
-
-If tmux leaves the dashboard in a stale visual state, run `codux refresh` from
-the same project directory to redraw the dashboard and focus the nav pane.
+`codux` and `codux start` create or reattach the workdir-scoped tmux session.
+`--no-attach` prepares the runtime without attaching.
 
 ```text
-Usage: codux [OPTIONS] [COMMAND]
-
-Start, inspect, or detach Codux tmux workspaces for Codex.
-
-Codux is scoped to the directory where you run it. Each launch directory gets:
-- a stable runtime directory under ~/.codux/workdirs/<workdir-id>
-- config.toml and state.json files
-- a tmux session
-
-Running Codux again from the same directory reattaches to that workspace.
-Running Codux from a different directory creates a separate one.
-
-Use `codux config info` to see the active workdir, runtime directory, config
-file, state file, and tmux session.
-
-Options:
-  --attach / --no-attach  Attach to this workdir's tmux session after preparing
-                          it.
-  --help                  Show this message and exit.
-
-Commands:
-  quit            Detach or stop the Codux dashboard.
-  sessions        List active Codux dashboard sessions.
-  delete-session  Delete a Codux dashboard session without confirmation.
-  clear           Delete all Codux tmux sessions and saved workspaces after
-                  confirmation.
-  refresh         Redraw the Codux dashboard and focus the nav pane.
-  doctor          Check local Codux dependencies and runtime files.
-  config          Inspect or initialize the config.toml for the current Codux
-                  workdir.
+codux [--attach|--no-attach]
+codux start [--attach|--no-attach]
+codux refresh
+codux status [--json]
+codux quit [--kill]
+codux sessions
+codux clear
+codux config info
 ```
 
-## Config And State
-
-Codux scopes runtime state to the directory where it starts. The first
-`codux` run for a directory creates one tmux session named
-`codux-<workdir-id>`, plus `config.toml` and `state.json` under
-`~/.codux/workdirs/<workdir-id>/`. Running Codux from that directory again
-reattaches to the same workspace; running it from another directory creates a
-separate one.
-
-Use `codux config info`, `codux config path`, `codux config show`, and
-`codux config init` to inspect or initialize the current directory's runtime.
-
-The default config:
+Inside the dashboard, press `?` for shortcuts. Defaults:
 
 ```toml
-# Codux runtime configuration for one launch directory.
-# Run `codux config info` to see the workdir, runtime directory, state file, and
-# generated tmux session. Set tmux_session only when you need to override it.
-
-# Command launched directly inside each CODEX tmux pane.
-codex_command = "codex"
-
-# Ordered columns shown in the nav pane.
-columns = ["inbox", "implement", "ship"]
-
 [key_bindings]
 new = "n"
 prev = "Left"
@@ -136,16 +75,34 @@ focus_toggle = "C-g"
 quit = "C-q"
 ```
 
-Set `columns` to change the nav columns and their order. Existing tabs in
-removed columns are moved to the first configured column the next time Codux
-repairs runtime state.
+In CODEX focus, normal input is forwarded to the active Codex PTY except
+Codux-reserved keys.
 
-Codux computes the default tmux session name from the launch directory. Set
-`tmux_session` only when you need an explicit override.
+## Config And State
+
+Codux scopes runtime files to the launch directory:
+
+- `~/.codux/workdirs/<workdir-id>/config.toml`
+- `~/.codux/workdirs/<workdir-id>/state.json`
+- `~/.codux/workdirs/<workdir-id>/codux.sock`
 
 `CODUX_WORKDIR` overrides the directory used for workdir scoping. `CODUX_HOME`
-overrides the runtime directory directly; use it only when you intentionally
-need isolated state for development or tests.
+overrides the runtime directory directly for development and tests.
 
-State writes are atomic and guarded by `state.lock` so rapid tmux keybindings do
-not corrupt the JSON file.
+The config keys are stable: `tmux_session`, `codex_command`, `columns`, and
+`key_bindings`. State is versioned. If Codux finds old tmux-pane state, it
+archives it to `state.v1-tmux.json` and starts clean because native tmux panes
+cannot be adopted into TUI-owned PTYs.
+
+## Development
+
+```sh
+go test ./...
+CODUX_RUN_INTEGRATION=1 go test ./...
+go build ./cmd/codux
+```
+
+Live integration tests use temporary `CODUX_HOME`, `CODUX_WORKDIR`, a unique
+tmux socket, and a fake `codex_command`. Use
+`CODUX_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
+to see per-step dashboard timing logs.

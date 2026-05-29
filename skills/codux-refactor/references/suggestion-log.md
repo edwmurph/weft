@@ -2,6 +2,20 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-28 - Refactor skill Go workflow alignment
+
+- Request: Update the repo-local refactor skill after the single-pane Go rewrite made the old Python workflow stale.
+- Suggestions: Replace `pyproject.toml`/Python guidance with `go.mod`/Go guidance and update verification to gofmt, unit tests, live tmux integration, and Go build.
+- Outcome: Implemented in `.worktrees/single-pane-tui-dashboard`.
+- Evidence: `skills/codux-refactor/SKILL.md`.
+
+## 2026-05-28 - Single-pane Go TUI rewrite
+
+- Request: Replace the Python/tmux pane-composition dashboard with a Go-first single-pane TUI.
+- Suggestions: Make tmux only the durable host, move Codex sessions into TUI-owned PTYs, migrate state to version 2 without tmux pane ids, add IPC for external commands, and publish Homebrew from Go source instead of Python wheels.
+- Outcome: Implemented in `.worktrees/single-pane-tui-dashboard`; follow-up restored the original framed NAV/CODEX visual model and fixed empty-dashboard nav key handling.
+- Evidence: `cmd/codux`, `internal/tui`, `internal/ptyx`, `internal/ipc`, `internal/state`, `.github/workflows/publish-homebrew.yml`, `tests/integration/tmux_runtime_test.go`.
+
 ## 2026-05-28 - Homebrew dependency wheelhouse
 
 - Request: Diagnose work-network failures downloading Homebrew Python dependency resources.

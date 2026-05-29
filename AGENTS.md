@@ -23,22 +23,21 @@
 ## Git / Worktrees
 
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
-- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `uv --quiet --no-progress --directory /abs/path/to/repo/.worktrees/<slug> --project /abs/path/to/repo/.worktrees/<slug> run codux`; a `git diff` command alone is not enough. Do not use root-relative `--project .worktrees/<slug>` together with `--directory .worktrees/<slug>` because uv resolves `--project` after applying `--directory`.
+- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux`; a `git diff` command alone is not enough.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".
 
 ## Development Commands
 
-- Install/sync: `uv sync`
-- Format: `uv run ruff format`
-- Lint: `uv run ruff check`
-- Tests: `uv run pytest`
-- Live tmux integration tests: `CODUX_RUN_INTEGRATION=1 uv run pytest -m integration`
+- Format: `gofmt -w cmd internal tests`
+- Tests: `go test ./...`
+- Live tmux integration tests: `CODUX_RUN_INTEGRATION=1 go test ./...`
+- Build: `go build ./cmd/codux`
 
 ## Verification Workflow
 
-- Before asking the user whether to ship an implementation change, run `uv run ruff format`, `uv run ruff check`, `uv run pytest`, and `CODUX_RUN_INTEGRATION=1 uv run pytest -m integration`.
-- If live tmux integration tests cannot run because `tmux` or `uv` is unavailable, call that out explicitly instead of treating skipped integration tests as full verification.
+- Before asking the user whether to ship an implementation change, run `gofmt -w cmd internal tests`, `go test ./...`, `CODUX_RUN_INTEGRATION=1 go test ./...`, and `go build ./cmd/codux`.
+- If live tmux integration tests cannot run because `tmux` or `go` is unavailable, call that out explicitly instead of treating skipped integration tests as full verification.
 - Keep live integration coverage focused on primary operator flows that need real tmux/process/state behavior; prefer adding coverage to existing integration scenarios over creating one new live test per edge case.
 - Use mocked unit tests for broad branches, formatting details, parser cases, and deterministic command construction unless the bug only reproduces across a real tmux boundary.
 - The live integration suite may grow to roughly 2 minutes of wall time as part of normal verification. As it approaches that budget, regularly reassess whether new coverage should be added, consolidated into existing flows, or kept in faster unit tests.
@@ -46,6 +45,6 @@
 
 ## Dashboard Runtime Commands
 
-- Dashboard/internal Codux commands must not shell through `cd`; keep the repo root and uv project path explicit with `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree ...` so commands are valid from any current directory and do not show first-run uv progress before the dashboard attaches.
-- Prefer `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run codux` when giving the user a dashboard launch command.
-- Use `uv --quiet --no-progress --directory /abs/path/to/repo-or-worktree --project /abs/path/to/repo-or-worktree run codux ...` for Codux subcommands.
+- Prefer `go -C /abs/path/to/repo-or-worktree run ./cmd/codux` when giving the user a worktree launch command before the binary is installed.
+- Use `go -C /abs/path/to/repo-or-worktree run ./cmd/codux ...` for Codux subcommands in a worktree.
+- Installed-user examples can use `codux ...` directly.

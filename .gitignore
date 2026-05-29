@@ -1,13 +1,12 @@
 .DS_Store
-.ruff_cache/
-.venv/
 .env
 .env.*
 !.env.example
 .codux/
-__pycache__/
-*.egg-info/
-.pytest_cache/
 .coverage
 htmlcov/
 *.log
+dist/
+bin/
+/codux
+/codux-release

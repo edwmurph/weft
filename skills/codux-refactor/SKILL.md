@@ -11,11 +11,11 @@ Refactor codux with a bias toward less code, clearer boundaries, accurate docs, 
 
 ## Workflow
 
-1. Read the applicable `AGENTS.md` files, `README.md`, `pyproject.toml`, relevant code/tests, and `references/suggestion-log.md`.
+1. Read the applicable `AGENTS.md` files, `README.md`, `go.mod`, relevant Go code/tests, and `references/suggestion-log.md`.
 2. For broad refactor asks, identify 1-3 concrete targets first: duplicated logic, dead or over-complex code, brittle boundaries, stale docs, weak tests, or slow/manual process steps.
 3. Prefer the smallest simplification that preserves behavior. Remove code before adding abstractions; add an abstraction only when it reduces real complexity.
 4. Update docs, examples, and AGENTS.md files in the same change when implementation behavior or workflow changes make them stale.
-5. Run the repo workflow after edits: `uv run ruff format`, `uv run ruff check`, and `uv run pytest`.
+5. Run the repo workflow after edits: `gofmt -w cmd internal tests`, `go test ./...`, `CODUX_RUN_INTEGRATION=1 go test ./...`, and `go build ./cmd/codux`.
 6. Before finishing, update `references/suggestion-log.md` with the suggestions made, outcome, evidence, and any deferred follow-up.
 
 ## Refactor Heuristics
@@ -35,7 +35,7 @@ Refactor codux with a bias toward less code, clearer boundaries, accurate docs, 
 ## Library Research
 
 - Use current primary sources when evaluating alternatives, especially for tmux, terminal rendering, CLI, config, and test tooling.
-- Compare fit by API surface, maintenance activity, dependency weight, license, Python version support, and how much codux code it can delete.
+- Compare fit by API surface, maintenance activity, dependency weight, license, Go version support, and how much codux code it can delete.
 - Recommend integration only when the library materially improves correctness or simplicity; otherwise log the idea as deferred or rejected.
 
 ## Suggestion Log

@@ -1,58 +1,39 @@
 # Contributing
 
-Codux is a small Python project built around `uv`, `tmux`, and the Codex CLI.
-Keep changes focused and preserve the core model: Codux coordinates native tmux
-panes instead of proxying Codex input or output.
+Codux is a Go project built around `tmux`, Bubble Tea, Lip Gloss, Bubbles, and
+PTY-owned Codex child processes.
 
 ## Local Setup
 
 ```sh
-uv sync
-uv run codux doctor
+go test ./...
+go run ./cmd/codux doctor
 ```
 
 ## Checks
 
-Run the full local workflow before opening a PR:
+Run the full local workflow before offering a change for review:
 
 ```sh
-uv run ruff format
-uv run ruff check
-uv run pytest
+go test ./...
+CODUX_RUN_INTEGRATION=1 go test ./...
+go build ./cmd/codux
 ```
 
-Live tmux integration tests are opt-in because they start real tmux servers:
-
-```sh
-CODUX_RUN_INTEGRATION=1 uv run pytest -m integration
-```
-
-Each integration test uses a temporary `CODUX_HOME`, temporary `CODUX_WORKDIR`,
-unique tmux session name, isolated tmux socket, and fake `codex_command`, so
-multiple worktrees can run them at the same time without sharing runtime state.
-Before offering to ship an implementation change, run format, lint, regular
-pytest, and the live tmux integration command above.
+Live tmux integration tests are opt-in because they start real tmux servers.
+Each test uses temporary `CODUX_HOME`, temporary `CODUX_WORKDIR`, a unique tmux
+socket, and a fake `codex_command`.
 
 ## Homebrew Publishing
 
-Pushes to `main` run the `Publish Homebrew` workflow. The workflow infers a
-semantic version bump from the shipped commit, updates `pyproject.toml` and
-`uv.lock`, tags `vX.Y.Z`, creates GitHub release artifacts, including a
-dependency wheelhouse, and writes `Formula/codux.rb` to `edwmurph/homebrew-tap`.
+Pushes to `main` run the `Publish Homebrew` workflow. The workflow infers the
+semantic version bump from the shipped commit, updates `VERSION` and
+`internal/version/version.go`, tags `vX.Y.Z`, creates a GitHub release, and
+writes `Formula/codux.rb` to `edwmurph/homebrew-tap`.
 
-One-time publishing prerequisites:
-
-- Create the public `edwmurph/homebrew-tap` repository.
-- Add a `HOMEBREW_TAP_TOKEN` repository secret in `edwmurph/codux` with write
-  access to that tap.
-
-The tap install command is:
-
-```sh
-brew install edwmurph/tap/codux
-```
+The formula builds the Go binary from source and depends on `tmux` at runtime
+and `go` at build time.
 
 ## Agent Guidance
 
-Codex-agent workflow and maintenance instructions live in `AGENTS.md`. They are
-intentionally centralized there rather than duplicated in this guide.
+Codex-agent workflow and maintenance instructions live in `AGENTS.md`.
