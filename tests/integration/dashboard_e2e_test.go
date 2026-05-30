@@ -703,21 +703,39 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-u")
 		directRun(t, env, "send-keys", "-l", "-t", pane, beta)
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "> beta") &&
+				strings.Contains(capture, "Enter choose")
+		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Enter add") ||
+				(strings.Contains(capture, "Workspaces") &&
+					strings.Contains(capture, "Agents") &&
+					!strings.Contains(capture, "Add workspace"))
+		})
+		if strings.Contains(capture, "Enter add") {
+			directRun(t, env, "send-keys", "-t", pane, "Enter")
+		}
 		waitState(t, env, bin, func(st state.State) bool {
-			workdir := state.WorkdirByPath(st, beta)
-			return len(st.Workdirs) == 2 && workdir != nil && st.SelectedWorkdirID == workdir.ID
+			return len(st.Workdirs) == 2 && state.WorkdirByPath(st, beta) != nil
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Left")
-		waitState(t, env, bin, func(st state.State) bool {
+		st := waitState(t, env, bin, func(st state.State) bool {
 			return st.Focus == state.FocusWorkdirs
 		})
-		directRun(t, env, "send-keys", "-t", pane, "k")
-		waitState(t, env, bin, func(st state.State) bool {
-			workdir := state.WorkdirByPath(st, alpha)
-			return workdir != nil && st.SelectedWorkdirID == workdir.ID
-		})
+		alphaWorkdir := state.WorkdirByPath(st, alpha)
+		if alphaWorkdir == nil {
+			t.Fatalf("alpha workspace missing after beta add: %#v", st.Workdirs)
+		}
+		if st.SelectedWorkdirID != alphaWorkdir.ID {
+			directRun(t, env, "send-keys", "-t", pane, "k")
+			waitState(t, env, bin, func(st state.State) bool {
+				workdir := state.WorkdirByPath(st, alpha)
+				return workdir != nil && st.SelectedWorkdirID == workdir.ID
+			})
+		}
 		directRun(t, env, "send-keys", "-t", pane, "r")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Rename workspace")
@@ -929,11 +947,109 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 	})
 }
 
+func TestDashboardPerformanceSmokeE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex := writeVisibleFakeCodex(t, tmp, "fake-codex-performance.sh")
+	runtimeDir, workdir := createRuntime(t, tmp, fakeCodex)
+	secondWorkdir := filepath.Join(tmp, "second-workspace")
+	if err := os.Mkdir(secondWorkdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := baseIntegrationEnv(runtimeDir, workdir, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "direct-client-performance"
+	started := time.Now()
+	clientOutput, firstClientDone := startDirectDashboardClient(t, env, bin, workdir, pane, 150, 36)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?") &&
+			strings.Contains(capture, "Y yes")
+	})
+	assertPerformanceBudget(t, "fresh dashboard prompt visible", time.Since(started), 8*time.Second)
+
+	started = time.Now()
+	directRun(t, env, "send-keys", "-t", pane, "y")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Agents") &&
+			strings.Contains(capture, "No Codex agent open")
+	})
+	assertPerformanceBudget(t, "initial workspace accepted", time.Since(started), 2*time.Second)
+
+	started = time.Now()
+	directRun(t, env, "send-keys", "-t", pane, "w")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add workspace")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-u")
+	directRun(t, env, "send-keys", "-l", "-t", pane, secondWorkdir)
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Workdirs) == 2 && state.WorkdirByPath(st, secondWorkdir) != nil
+	})
+	assertPerformanceBudget(t, "add workspace prompt completes", time.Since(started), 3*time.Second)
+
+	started = time.Now()
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Starting Codex") &&
+			strings.Contains(capture, collapsedCodexToolbar)
+	})
+	assertPerformanceBudget(t, "agent startup placeholder visible", time.Since(started), time.Second)
+
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return (strings.Contains(capture, "Fake Codex dashboard ready") ||
+			strings.Contains(capture, "ready waiting for first message")) &&
+			strings.Contains(capture, collapsedCodexToolbar)
+	})
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.Agents[0].Status == state.StatusRunning &&
+			st.Focus == state.FocusCodex
+	})
+	assertPerformanceBudget(t, "first agent content visible", time.Since(started), 4*time.Second)
+
+	started = time.Now()
+	out := runWeft(t, env, bin, "refresh")
+	if !strings.Contains(out, "refreshed Weft command center") {
+		t.Fatalf("refresh output missing message:\n%s", out)
+	}
+	assertPerformanceBudget(t, "refresh command returns", time.Since(started), 3*time.Second)
+
+	started = time.Now()
+	clientOutput, _ = startDirectDashboardClient(t, env, bin, workdir, pane+"-reattach", 150, 36)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar) ||
+			strings.Contains(capture, "Fake Codex dashboard ready")
+	})
+	assertPerformanceBudget(t, "reattach renders running agent", time.Since(started), 8*time.Second)
+	if !waitForBool(8*time.Second, func() bool { return clientExited(firstClientDone) }) {
+		t.Fatalf("first client did not detach after second attach")
+	}
+}
+
 func timedStep(t *testing.T, name string, fn func()) {
 	t.Helper()
 	start := time.Now()
 	fn()
 	t.Logf("dashboard_e2e step=%q duration=%s", name, time.Since(start).Round(time.Millisecond))
+}
+
+func assertPerformanceBudget(t *testing.T, metric string, elapsed time.Duration, budget time.Duration) {
+	t.Helper()
+	rounded := elapsed.Round(time.Millisecond)
+	t.Logf("dashboard_e2e perf metric=%q duration=%s budget=%s", metric, rounded, budget)
+	if elapsed > budget {
+		t.Fatalf("%s exceeded budget: duration=%s budget=%s", metric, rounded, budget)
+	}
 }
 
 func waitForCapture(t *testing.T, env []string, pane string, accept func(string) bool) string {

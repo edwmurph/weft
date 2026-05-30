@@ -752,6 +752,7 @@ Unit tests:
 Integration tests:
 
 - all dashboard-supported, user-facing functionality at the journey level
+- dashboard performance smoke checks with generous budgets for launch, prompt, agent startup, refresh, and reattach latency
 - launch with empty state
 - launch without tmux installed or on `PATH`
 - start supervisor with `weft --no-attach`
