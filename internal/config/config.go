@@ -52,12 +52,11 @@ type Config struct {
 }
 
 type Runtime struct {
-	Workdir          string
-	Dir              string
-	ConfigPath       string
-	StatePath        string
-	SocketPath       string
-	LegacySocketPath string
+	Workdir    string
+	Dir        string
+	ConfigPath string
+	StatePath  string
+	SocketPath string
 }
 
 type ConfigError struct {
@@ -108,20 +107,12 @@ func ResolveRuntime() (Runtime, error) {
 		return Runtime{}, err
 	}
 	return Runtime{
-		Workdir:          workdir,
-		Dir:              dir,
-		ConfigPath:       filepath.Join(dir, "config.toml"),
-		StatePath:        filepath.Join(dir, "state.json"),
-		SocketPath:       filepath.Join(dir, "weft.sock"),
-		LegacySocketPath: filepath.Join(dir, "weft-tui.sock"),
+		Workdir:    workdir,
+		Dir:        dir,
+		ConfigPath: filepath.Join(dir, "config.toml"),
+		StatePath:  filepath.Join(dir, "state.json"),
+		SocketPath: filepath.Join(dir, "weft.sock"),
 	}, nil
-}
-
-func (r Runtime) TUISocket() string {
-	if r.LegacySocketPath != "" {
-		return r.LegacySocketPath
-	}
-	return r.SocketPath
 }
 
 func CurrentWorkdir() (string, error) {

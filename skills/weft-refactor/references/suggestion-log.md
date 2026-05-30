@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-30 - Safe LOC refactor
+
+- Request: Safely reduce Weft LOC without changing CLI, TUI, supervisor, IPC, config, state, or spec behavior.
+- Suggestions: Remove the unused direct/headless TUI socket path, keep only the supervisor-driven engine command helpers, drop the legacy TUI socket from `config.Runtime` while still clearing `weft-tui.sock`, share duplicated model/client TUI selection and prompt rendering helpers, and delete unused private layout helpers.
+- Outcome: Implemented and verified in `.worktrees/safe-loc-refactor`; awaiting review.
+- Evidence: `internal/tui/model.go`, `internal/tui/client.go`, `internal/tui/model_shared.go`, `internal/tui/engine.go`, `internal/config/config.go`, `internal/app/app.go`, `skills/weft-refactor/references/suggestion-log.md`.
+
 ## 2026-05-30 - Dashboard form UX consistency
 
 - Request: Refactor dashboard prompts/forms so add workdir, rename, group, move, and delete confirmation flows share one consistent professional form UX.

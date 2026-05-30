@@ -592,21 +592,8 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 	return lines[:height]
 }
 
-func navShortcuts(cfg config.Config) string {
-	return cfg.KeyBindings.FocusLeft + "/" + cfg.KeyBindings.FocusRight + " panes  " +
-		cfg.KeyBindings.SelectPrev + "/" + cfg.KeyBindings.SelectNext + " select  " +
-		cfg.KeyBindings.Open + " open  " +
-		cfg.KeyBindings.NewWorkspace + " workspace  " +
-		cfg.KeyBindings.NewGroup + " group  " +
-		cfg.KeyBindings.NewAgent + " agent"
-}
-
 func codexCollapsedTopShortcuts(cfg config.Config) string {
 	return appTitle + "  " + cfg.KeyBindings.Drawer + " command center  " + cfg.KeyBindings.Quit + " to Codex"
-}
-
-func focusHintLabel(cfg config.Config) string {
-	return cfg.KeyBindings.Drawer + " command center"
 }
 
 func paletteFor(active bool) framePalette {
@@ -742,17 +729,4 @@ func fmtInt(value int) string {
 		digits[left], digits[right] = digits[right], digits[left]
 	}
 	return string(digits)
-}
-
-func desiredWorkdirPaneWidth(st state.State) int {
-	return fixedWorkdirPaneWidth
-}
-
-func workdirCardCountPreferredWidth(counts workdirCardCounts) int {
-	width := 1
-	for _, label := range workdirCardCountLabels(counts) {
-		width += lipgloss.Width(label)
-	}
-	width += 8
-	return width + 2
 }

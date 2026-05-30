@@ -33,15 +33,6 @@ func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	}
 }
 
-func TestDesiredWorkdirPaneWidthIsFixed(t *testing.T) {
-	st := layoutState("/tmp/a-very-long-project-name-that-should-fit-in-the-workdirs-pane")
-
-	got := desiredWorkdirPaneWidth(st)
-	if got != fixedWorkdirPaneWidth {
-		t.Fatalf("workdir pane width = %d, want fixed %d", got, fixedWorkdirPaneWidth)
-	}
-}
-
 func TestRenderWorkspaceShowsWorkspacesAgentsAndConsole(t *testing.T) {
 	cfg := config.DefaultConfig("weft-test")
 	cfg.TitleTemplate = "{title}"

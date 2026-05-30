@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -22,11 +21,6 @@ import (
 	"github.com/edwmurph/weft/internal/titlehook"
 	"github.com/edwmurph/weft/internal/titles"
 )
-
-type ipcEnvelope struct {
-	request ipc.Request
-	reply   chan ipc.Response
-}
 
 type ptyStartedMsg struct {
 	agentID string
@@ -94,25 +88,22 @@ type folderRow struct {
 }
 
 type Model struct {
-	cfg       config.Config
-	runtime   config.Runtime
-	store     *state.Store
-	state     state.State
-	migration string
-	width     int
-	height    int
-	mode      mode
-	message   string
-	navWidth  int
-	loading   int
+	cfg      config.Config
+	runtime  config.Runtime
+	store    *state.Store
+	state    state.State
+	width    int
+	height   int
+	mode     mode
+	message  string
+	navWidth int
+	loading  int
 
 	screens           map[string]*TerminalScreen
 	ptys              map[string]*ptyx.Session
 	visible           map[string]bool
 	codexInputBuffers map[string][]rune
 	dataCh            chan ptyx.Data
-	ipcCh             chan ipcEnvelope
-	stopIPC           func() error
 	ctx               context.Context
 	cancel            context.CancelFunc
 
@@ -123,30 +114,6 @@ type Model struct {
 	folderCursor         int
 	lastNavFocus         state.Focus
 	promptSuggestionOpen bool
-}
-
-func Run(rt config.Runtime, cfg config.Config, st state.State, migration *state.Migration) error {
-	enableTerminalKeyboardReporting()
-	defer disableTerminalKeyboardReporting()
-
-	model := NewModel(rt, cfg, st)
-	if migration != nil {
-		model.migration = migration.Message
-		model.message = "state migrated"
-	}
-	options := []tea.ProgramOption{
-		tea.WithInput(os.Stdin),
-		tea.WithOutput(os.Stdout),
-		tea.WithMouseCellMotion(),
-	}
-	if os.Getenv("WEFT_HEADLESS") == "1" {
-		options = append(options, tea.WithoutRenderer())
-	} else {
-		options = append(options, tea.WithAltScreen())
-	}
-	program := tea.NewProgram(model, options...)
-	_, err := program.Run()
-	return err
 }
 
 func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
@@ -175,7 +142,6 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
 		dataCh:            make(chan ptyx.Data, 64),
-		ipcCh:             make(chan ipcEnvelope, 16),
 		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
 	}
 	if next, ok := state.SelectWorkdirByPath(model.state, rt.Workdir); ok {
@@ -248,17 +214,7 @@ func (m Model) activeErrorText() string {
 }
 
 func (m Model) Init() tea.Cmd {
-	stop, err := ipc.Serve(m.runtime.TUISocket(), func(request ipc.Request) ipc.Response {
-		reply := make(chan ipc.Response, 1)
-		m.ipcCh <- ipcEnvelope{request: request, reply: reply}
-		return <-reply
-	})
-	if err == nil {
-		m.stopIPC = stop
-	} else {
-		m.message = fmt.Sprintf("IPC unavailable: %v", err)
-	}
-	return tea.Batch(waitPTY(m.dataCh), waitIPC(m.ipcCh), tickLoading())
+	return tea.Batch(waitPTY(m.dataCh), tickLoading())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -287,10 +243,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case titleHookMsg:
 		m.applyTitleHook(typed)
 		return m, nil
-	case ipcEnvelope:
-		response, cmd := m.handleIPC(typed.request)
-		typed.reply <- response
-		return m, tea.Batch(waitIPC(m.ipcCh), cmd)
 	case tea.KeyMsg:
 		return m.handleKey(typed)
 	}
@@ -302,7 +254,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	if m.mode == modeHelp {
-		return m.modalView(renderHelp(m.cfg, m.migration))
+		return m.modalView(renderHelp(m.cfg))
 	}
 	if m.mode == modeInput {
 		return m.modalView(m.renderInputModal())
@@ -339,40 +291,11 @@ func (m Model) renderInputModal() string {
 }
 
 func (m Model) promptContext() promptContext {
-	return promptContext{
-		prompt:        m.prompt,
-		pendingID:     m.pendingID,
-		state:         m.state,
-		selectedAgent: m.selectedAgent(),
-	}
+	return promptContextFor(m.prompt, m.pendingID, m.state, m.selectedAgent())
 }
 
 func (m Model) renderPromptExtra(input textinput.Model, width int) []string {
-	if m.prompt != promptRenameAgent {
-		return nil
-	}
-	lines := []string{"", modalLabelStyle.Render("Preview")}
-	if active := m.selectedAgent(); active != nil {
-		draft := *active
-		if value := strings.TrimSpace(input.Value()); value != "" {
-			draft.Title = value
-		}
-		lines = append(lines, modalValueStyle.Render(clip(m.renderAgentBaseTitle(draft), width)))
-		if notice := m.autoTitleNotice(*active, draft.Title); notice != "" {
-			lines = append(lines, mutedStyle.Render(clip(notice, width)))
-		}
-	}
-	lines = append(lines, "", modalLabelStyle.Render("Variables"))
-	lines = append(lines, m.renderTitleVariables(width)...)
-	return lines
-}
-
-func (m Model) renderTitleVariables(width int) []string {
-	var lines []string
-	for _, variable := range titles.TemplateVariables() {
-		lines = append(lines, mutedStyle.Render(clip(fmt.Sprintf("- %s: %s", variable.Name, variable.Description), width)))
-	}
-	return lines
+	return renderPromptExtraForState(m.cfg, m.state, m.prompt, m.selectedAgent(), input, width)
 }
 
 func (m Model) renderConfirmModal() string {
@@ -575,51 +498,19 @@ func (m *Model) startPrompt(prompt promptKind, value string) {
 }
 
 func (m *Model) startRenamePrompt() {
-	if m.state.Focus == state.FocusWorkdirs {
-		if workdir := state.WorkdirByID(m.state, m.state.SelectedWorkdirID); workdir != nil {
-			m.pendingID = workdir.ID
-			m.startPrompt(promptWorkdirTitle, workdir.Title)
-		}
-		return
-	}
-	row := m.currentFolderRow()
-	switch row.kind {
-	case folderRowFolder:
-		if folder := state.FolderByID(m.state, row.folderID); folder != nil {
-			m.pendingID = folder.ID
-			m.startPrompt(promptRenameGroup, folder.Path)
-		}
-	case folderRowAgent:
-		if agent := state.AgentByID(m.state, row.agentID); agent != nil {
-			m.pendingID = agent.ID
-			m.startPrompt(promptRenameAgent, agent.Title)
-		}
+	prompt, id, value, ok := renamePromptTargetForState(m.state, m.folderCursor)
+	if ok {
+		m.pendingID = id
+		m.startPrompt(prompt, value)
 	}
 }
 
 func (m *Model) startDeleteConfirm() {
-	if m.state.Focus == state.FocusWorkdirs {
-		if workdir := state.WorkdirByID(m.state, m.state.SelectedWorkdirID); workdir != nil {
-			m.confirm = confirmDeleteWorkdir
-			m.pendingID = workdir.ID
-			m.mode = modeConfirm
-		}
-		return
-	}
-	row := m.currentFolderRow()
-	switch row.kind {
-	case folderRowFolder:
-		if folder := state.FolderByID(m.state, row.folderID); folder != nil {
-			m.confirm = confirmDeleteGroup
-			m.pendingID = folder.ID
-			m.mode = modeConfirm
-		}
-	case folderRowAgent:
-		if agent := state.AgentByID(m.state, row.agentID); agent != nil {
-			m.confirm = confirmDeleteAgent
-			m.pendingID = agent.ID
-			m.mode = modeConfirm
-		}
+	confirm, id, ok := deleteConfirmTargetForState(m.state, m.folderCursor)
+	if ok {
+		m.confirm = confirm
+		m.pendingID = id
+		m.mode = modeConfirm
 	}
 }
 
@@ -801,39 +692,15 @@ func (m *Model) killAgentPTY(agentID string) {
 }
 
 func (m *Model) selectedAgent() *state.Agent {
-	row := m.currentFolderRow()
-	if row.kind == folderRowAgent {
-		return state.AgentByID(m.state, row.agentID)
-	}
-	return nil
+	return selectedAgentForState(m.state, m.folderCursor)
 }
 
 func (m Model) currentFolderRow() folderRow {
-	rows := m.folderRows()
-	if len(rows) == 0 {
-		return folderRow{}
-	}
-	if m.folderCursor < 0 || m.folderCursor >= len(rows) {
-		return rows[0]
-	}
-	return rows[m.folderCursor]
+	return currentFolderRowForState(m.state, m.folderCursor)
 }
 
 func (m Model) folderRows() []folderRow {
-	var rows []folderRow
-	for _, agent := range state.UngroupedAgentsForWorkdir(m.state, m.state.SelectedWorkdirID) {
-		rows = append(rows, folderRow{kind: folderRowAgent, agentID: agent.ID})
-	}
-	for _, folder := range state.FoldersForWorkdir(m.state, m.state.SelectedWorkdirID) {
-		rows = append(rows, folderRow{kind: folderRowFolder, folderID: folder.ID})
-		if state.IsGroupCollapsed(m.state, folder.ID) {
-			continue
-		}
-		for _, agent := range state.AgentsForFolder(m.state, folder.ID) {
-			rows = append(rows, folderRow{kind: folderRowAgent, folderID: folder.ID, agentID: agent.ID})
-		}
-	}
-	return rows
+	return folderRowsForState(m.state)
 }
 
 func (m Model) groupIDForNewAgent() string {
@@ -1057,25 +924,6 @@ func hookErrorText(err error) string {
 		return text[:137] + "..."
 	}
 	return text
-}
-
-func (m Model) autoTitleNotice(agent state.Agent, draftTitle string) string {
-	if !strings.Contains(m.cfg.TitleTemplate, titles.AutoTemplate) && !strings.Contains(draftTitle, titles.AutoTemplate) {
-		return ""
-	}
-	if strings.TrimSpace(agent.AutoTitle) != "" {
-		return "Auto title is ready."
-	}
-	if strings.TrimSpace(agent.AutoTitleError) != "" {
-		return "Auto title error: " + agent.AutoTitleError
-	}
-	if agent.AutoTitleAttempted {
-		return "Auto title is generating."
-	}
-	if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
-		return "Auto title unavailable: set title_hook_command."
-	}
-	return "Auto title will generate from the first submitted message."
 }
 
 func (m Model) autoTitleRenameMessage(agent state.Agent) string {
@@ -1732,27 +1580,7 @@ func (m Model) agentWorkdir(agentID string) string {
 }
 
 func (m Model) renderAgentTitle(agent state.Agent) string {
-	workdir := state.Workdir{}
-	folder := state.Folder{}
-	if w := state.WorkdirForAgent(m.state, agent); w != nil {
-		workdir = *w
-	}
-	if f := state.FolderForAgent(m.state, agent); f != nil {
-		folder = *f
-	}
-	return titles.RenderAgent(agent, workdir, folder, m.cfg.TitleTemplate)
-}
-
-func (m Model) renderAgentBaseTitle(agent state.Agent) string {
-	workdir := state.Workdir{}
-	folder := state.Folder{}
-	if w := state.WorkdirForAgent(m.state, agent); w != nil {
-		workdir = *w
-	}
-	if f := state.FolderForAgent(m.state, agent); f != nil {
-		folder = *f
-	}
-	return titles.RenderAgent(agent, workdir, folder, titles.TitleTemplate)
+	return renderAgentTitleForState(m.cfg, m.state, agent)
 }
 
 func (m Model) statusText() string {
@@ -1800,12 +1628,6 @@ func waitPTY(ch <-chan ptyx.Data) tea.Cmd {
 	}
 }
 
-func waitIPC(ch <-chan ipcEnvelope) tea.Cmd {
-	return func() tea.Msg {
-		return <-ch
-	}
-}
-
 func tickNavAnimation() tea.Cmd {
 	return tea.Tick(navAnimationInterval, func(time.Time) tea.Msg { return navAnimationTick{} })
 }
@@ -1814,7 +1636,7 @@ func tickLoading() tea.Cmd {
 	return tea.Tick(loadingInterval, func(time.Time) tea.Msg { return loadingTick{} })
 }
 
-func renderHelp(cfg config.Config, migration string) string {
+func renderHelp(cfg config.Config) string {
 	lines := []string{
 		"Weft shortcuts",
 		"",
@@ -1832,9 +1654,6 @@ func renderHelp(cfg config.Config, migration string) string {
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),
 		"",
 		"Esc close",
-	}
-	if migration != "" {
-		lines = append(lines, "", migration)
 	}
 	return strings.Join(lines, "\n")
 }

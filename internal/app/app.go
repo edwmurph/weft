@@ -630,7 +630,7 @@ func existingRuntimeFiles(rt config.Runtime) []string {
 		rt.StatePath,
 		rt.StatePath + ".lock",
 		rt.SocketPath,
-		rt.TUISocket(),
+		filepath.Join(rt.Dir, "weft-tui.sock"),
 		supervisor.PIDPath(rt),
 		supervisor.LockPath(rt),
 		supervisor.LogPath(rt),

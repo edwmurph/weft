@@ -229,12 +229,11 @@ func testRuntime(t *testing.T) (config.Runtime, config.Config, *state.Store) {
 		t.Fatal(err)
 	}
 	rt := config.Runtime{
-		Workdir:          workdir,
-		Dir:              runtimeDir,
-		ConfigPath:       filepath.Join(runtimeDir, "config.toml"),
-		StatePath:        filepath.Join(runtimeDir, "state.json"),
-		SocketPath:       filepath.Join(runtimeDir, "weft.sock"),
-		LegacySocketPath: filepath.Join(runtimeDir, "weft-tui.sock"),
+		Workdir:    workdir,
+		Dir:        runtimeDir,
+		ConfigPath: filepath.Join(runtimeDir, "config.toml"),
+		StatePath:  filepath.Join(runtimeDir, "state.json"),
+		SocketPath: filepath.Join(runtimeDir, "weft.sock"),
 	}
 	cfg, err := config.EnsureConfig(rt)
 	if err != nil {

@@ -123,7 +123,7 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ClientModel) View() string {
 	if m.mode == modeHelp {
-		return m.modalView(renderHelp(m.cfg, ""))
+		return m.modalView(renderHelp(m.cfg))
 	}
 	if m.mode == modeInput {
 		return m.modalView(m.renderInputModal())
@@ -243,53 +243,19 @@ func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 }
 
 func (m *ClientModel) startRenamePrompt() {
-	st := m.snapshot.State
-	if st.Focus == state.FocusWorkdirs {
-		if workdir := state.WorkdirByID(st, st.SelectedWorkdirID); workdir != nil {
-			m.pendingID = workdir.ID
-			m.startPrompt(promptWorkdirTitle, workdir.Title)
-		}
-		return
-	}
-	row := m.currentFolderRow()
-	switch row.kind {
-	case folderRowFolder:
-		if folder := state.FolderByID(st, row.folderID); folder != nil {
-			m.pendingID = folder.ID
-			m.startPrompt(promptRenameGroup, folder.Path)
-		}
-	case folderRowAgent:
-		if agent := state.AgentByID(st, row.agentID); agent != nil {
-			m.pendingID = agent.ID
-			m.startPrompt(promptRenameAgent, agent.Title)
-		}
+	prompt, id, value, ok := renamePromptTargetForState(m.snapshot.State, m.snapshot.FolderCursor)
+	if ok {
+		m.pendingID = id
+		m.startPrompt(prompt, value)
 	}
 }
 
 func (m *ClientModel) startDeleteConfirm() {
-	st := m.snapshot.State
-	if st.Focus == state.FocusWorkdirs {
-		if workdir := state.WorkdirByID(st, st.SelectedWorkdirID); workdir != nil {
-			m.confirm = confirmDeleteWorkdir
-			m.pendingID = workdir.ID
-			m.mode = modeConfirm
-		}
-		return
-	}
-	row := m.currentFolderRow()
-	switch row.kind {
-	case folderRowFolder:
-		if folder := state.FolderByID(st, row.folderID); folder != nil {
-			m.confirm = confirmDeleteGroup
-			m.pendingID = folder.ID
-			m.mode = modeConfirm
-		}
-	case folderRowAgent:
-		if agent := state.AgentByID(st, row.agentID); agent != nil {
-			m.confirm = confirmDeleteAgent
-			m.pendingID = agent.ID
-			m.mode = modeConfirm
-		}
+	confirm, id, ok := deleteConfirmTargetForState(m.snapshot.State, m.snapshot.FolderCursor)
+	if ok {
+		m.confirm = confirm
+		m.pendingID = id
+		m.mode = modeConfirm
 	}
 }
 
@@ -410,40 +376,11 @@ func (m ClientModel) renderInputModal() string {
 }
 
 func (m ClientModel) promptContext() promptContext {
-	return promptContext{
-		prompt:        m.prompt,
-		pendingID:     m.pendingID,
-		state:         m.snapshot.State,
-		selectedAgent: m.selectedAgent(),
-	}
+	return promptContextFor(m.prompt, m.pendingID, m.snapshot.State, m.selectedAgent())
 }
 
 func (m ClientModel) renderPromptExtra(input textinput.Model, width int) []string {
-	if m.prompt != promptRenameAgent {
-		return nil
-	}
-	lines := []string{"", modalLabelStyle.Render("Preview")}
-	if active := m.selectedAgent(); active != nil {
-		draft := *active
-		if value := strings.TrimSpace(input.Value()); value != "" {
-			draft.Title = value
-		}
-		lines = append(lines, modalValueStyle.Render(clip(m.renderAgentBaseTitle(draft), width)))
-		if notice := m.autoTitleNotice(*active, draft.Title); notice != "" {
-			lines = append(lines, mutedStyle.Render(clip(notice, width)))
-		}
-	}
-	lines = append(lines, "", modalLabelStyle.Render("Variables"))
-	lines = append(lines, m.renderTitleVariables(width)...)
-	return lines
-}
-
-func (m ClientModel) renderTitleVariables(width int) []string {
-	var lines []string
-	for _, variable := range titles.TemplateVariables() {
-		lines = append(lines, mutedStyle.Render(clip(fmt.Sprintf("- %s: %s", variable.Name, variable.Description), width)))
-	}
-	return lines
+	return renderPromptExtraForState(m.cfg, m.snapshot.State, m.prompt, m.selectedAgent(), input, width)
 }
 
 func (m ClientModel) renderConfirmModal() string {
@@ -463,68 +400,15 @@ func (m ClientModel) activeCodexReceivesQuitBinding() bool {
 }
 
 func (m ClientModel) selectedAgent() *state.Agent {
-	row := m.currentFolderRow()
-	if row.kind == folderRowAgent {
-		return state.AgentByID(m.snapshot.State, row.agentID)
-	}
-	return nil
+	return selectedAgentForState(m.snapshot.State, m.snapshot.FolderCursor)
 }
 
 func (m ClientModel) currentFolderRow() folderRow {
-	rows := m.folderRows()
-	if len(rows) == 0 {
-		return folderRow{}
-	}
-	if m.snapshot.FolderCursor < 0 || m.snapshot.FolderCursor >= len(rows) {
-		return rows[0]
-	}
-	return rows[m.snapshot.FolderCursor]
-}
-
-func (m ClientModel) folderRows() []folderRow {
-	st := m.snapshot.State
-	var rows []folderRow
-	for _, agent := range state.UngroupedAgentsForWorkdir(st, st.SelectedWorkdirID) {
-		rows = append(rows, folderRow{kind: folderRowAgent, agentID: agent.ID})
-	}
-	for _, folder := range state.FoldersForWorkdir(st, st.SelectedWorkdirID) {
-		rows = append(rows, folderRow{kind: folderRowFolder, folderID: folder.ID})
-		if state.IsGroupCollapsed(st, folder.ID) {
-			continue
-		}
-		for _, agent := range state.AgentsForFolder(st, folder.ID) {
-			rows = append(rows, folderRow{kind: folderRowAgent, folderID: folder.ID, agentID: agent.ID})
-		}
-	}
-	return rows
+	return currentFolderRowForState(m.snapshot.State, m.snapshot.FolderCursor)
 }
 
 func (m ClientModel) renderAgentTitle(agent state.Agent) string {
-	workdir := state.Workdir{}
-	folder := state.Folder{}
-	if w := state.WorkdirForAgent(m.snapshot.State, agent); w != nil {
-		workdir = *w
-	}
-	if f := state.FolderForAgent(m.snapshot.State, agent); f != nil {
-		folder = *f
-	}
-	return titles.RenderAgent(agent, workdir, folder, m.cfg.TitleTemplate)
-}
-
-func (m ClientModel) renderAgentBaseTitle(agent state.Agent) string {
-	workdir := state.Workdir{}
-	folder := state.Folder{}
-	if w := state.WorkdirForAgent(m.snapshot.State, agent); w != nil {
-		workdir = *w
-	}
-	if f := state.FolderForAgent(m.snapshot.State, agent); f != nil {
-		folder = *f
-	}
-	return titles.RenderAgent(agent, workdir, folder, titles.TitleTemplate)
-}
-
-func (m ClientModel) autoTitleNotice(agent state.Agent, draftTitle string) string {
-	return Model{cfg: m.cfg}.autoTitleNotice(agent, draftTitle)
+	return renderAgentTitleForState(m.cfg, m.snapshot.State, agent)
 }
 
 func (m ClientModel) messageText() string {
