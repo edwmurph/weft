@@ -11,17 +11,17 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/edwmurph/codux/internal/state"
-	"github.com/edwmurph/codux/internal/tui"
+	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tui"
 )
 
 const (
-	collapsedCodexToolbar = "CODUX  C-b command center  C-c interrupt/close"
+	collapsedCodexToolbar = "WEFT  C-b command center  C-c interrupt/close"
 )
 
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
-	if os.Getenv("CODUX_RUN_INTEGRATION") != "1" {
-		t.Skip("set CODUX_RUN_INTEGRATION=1 to run live tmux integration tests")
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live tmux integration tests")
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is required")
@@ -29,9 +29,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	root := repoRoot(t)
 	tmp := t.TempDir()
-	runID := "codux-e2e-" + fmt.Sprintf("%d", time.Now().UnixNano())
-	bin := filepath.Join(tmp, "codux")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/codux")
+	runID := "weft-e2e-" + fmt.Sprintf("%d", time.Now().UnixNano())
+	bin := filepath.Join(tmp, "weft")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/weft")
 	build.Dir = root
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
@@ -47,7 +47,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runtimeDir := filepath.Join(tmp, "codux-home")
+	runtimeDir := filepath.Join(tmp, "weft-home")
 	workdir := filepath.Join(tmp, "workspace")
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -82,10 +82,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"printf '│ >_ OpenAI Codex (v0.fake.0)                               │\\n'\n"+
 			"printf '│                                                          │\\n'\n"+
 			"printf '│ model:     gpt-5.5 xhigh   /model to change              │\\n'\n"+
-			"printf '│ directory: ~/code/personal/codux/.worktrees/single-pane… │\\n'\n"+
+			"printf '│ directory: ~/code/personal/weft/.worktrees/single-pane… │\\n'\n"+
 			"printf '╰──────────────────────────────────────────────────────────╯\\n'\n"+
 			"printf '\\n\\033[48;2;40;40;49m› Summarize recent commits                         \\033[0m\\n'\n"+
-			"printf '\\n  gpt-5.5 xhigh · ~/code/personal/codux/.worktrees/single-pane-tui-dashboard · Context 100%% left\\n'\n"+
+			"printf '\\n  gpt-5.5 xhigh · ~/code/personal/weft/.worktrees/single-pane-tui-dashboard · Context 100%% left\\n'\n"+
 			"i=0; while [ \"$i\" -lt 220 ]; do printf 'x'; i=$((i + 1)); done; printf '\\n'\n"+
 			"printf '\\033[20;8Hready'\n"+
 			"trap 'exit 0' HUP TERM\n"+
@@ -114,9 +114,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	}
 
 	env := append(os.Environ(),
-		"CODUX_HOME="+runtimeDir,
-		"CODUX_WORKDIR="+workdir,
-		"CODUX_EXECUTABLE="+bin,
+		"WEFT_HOME="+runtimeDir,
+		"WEFT_WORKDIR="+workdir,
+		"WEFT_EXECUTABLE="+bin,
 		"STARTUP_DELAY=1.2",
 		"STARTUP_MARKER="+startupMarker,
 		"PATH="+wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -131,9 +131,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	tuiCommand := strings.Join([]string{
 		"env",
-		"CODUX_HOME=" + shellQuote(runtimeDir),
-		"CODUX_WORKDIR=" + shellQuote(workdir),
-		"CODUX_EXECUTABLE=" + shellQuote(bin),
+		"WEFT_HOME=" + shellQuote(runtimeDir),
+		"WEFT_WORKDIR=" + shellQuote(workdir),
+		"WEFT_EXECUTABLE=" + shellQuote(bin),
 		"PATH=" + shellQuote(wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH")),
 		"TERM=xterm-256color",
 		shellQuote(bin),
@@ -142,7 +142,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	tmuxRun(t, env, "new-session", "-d", "-x", "160", "-y", "38", "-s", runID, "-c", workdir, tuiCommand)
 	pane := runID + ":0.0"
 	if !waitForBool(8*time.Second, func() bool {
-		_, err := os.Stat(filepath.Join(runtimeDir, "codux.sock"))
+		_, err := os.Stat(filepath.Join(runtimeDir, "weft.sock"))
 		return err == nil
 	}) {
 		t.Fatalf("timed out waiting for TUI socket; pane:\n%s\nlog:\n%s", paneInfo(t, env, pane), readLog(runtimeDir))
@@ -266,8 +266,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:ljs?n") &&
-				!strings.Contains(capture, "Codux shortcuts") &&
-				!strings.Contains(capture, "Other Codux sessions")
+				!strings.Contains(capture, "Weft shortcuts") &&
+				!strings.Contains(capture, "Other Weft sessions")
 		})
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
@@ -384,11 +384,11 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	timedStep(t, "help modal closes", func() {
 		tmuxRun(t, env, "send-keys", "-t", pane, "?")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codux shortcuts")
+			return strings.Contains(capture, "Weft shortcuts")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return !strings.Contains(capture, "Codux shortcuts")
+			return !strings.Contains(capture, "Weft shortcuts")
 		})
 	})
 
@@ -419,7 +419,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 	})
 
-	timedStep(t, "C-c interrupts working codex before ready codex closes codux", func() {
+	timedStep(t, "C-c interrupts working codex before ready codex closes weft", func() {
 		tmuxRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
@@ -451,7 +451,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			attached := tmuxLines(t, env, "display-message", "-p", "-t", runID+":", "#{session_attached}")
 			return len(attached) == 1 && attached[0] == "0"
 		}) {
-			t.Fatalf("C-c did not detach Codux clients")
+			t.Fatalf("C-c did not detach Weft clients")
 		}
 		if panes := tmuxLines(t, env, "list-panes", "-t", runID+":", "-F", "#{pane_id}"); len(panes) != 1 {
 			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
@@ -563,7 +563,7 @@ func paneInfo(t *testing.T, env []string, pane string) string {
 }
 
 func readLog(runtimeDir string) string {
-	data, _ := os.ReadFile(filepath.Join(runtimeDir, "codux.log"))
+	data, _ := os.ReadFile(filepath.Join(runtimeDir, "weft.log"))
 	return string(data)
 }
 
@@ -594,8 +594,8 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 			t.Fatalf("dashboard join should not use sideways T fragment %q:\n%s", forbidden, capture)
 		}
 	}
-	if count := strings.Count(capture, "CODUX"); count > 1 {
-		t.Fatalf("dashboard should render at most one CODUX frame label, got %d:\n%s", count, capture)
+	if count := strings.Count(capture, "WEFT"); count > 1 {
+		t.Fatalf("dashboard should render at most one WEFT frame label, got %d:\n%s", count, capture)
 	}
 	if count := strings.Count(capture, "C-c interrupt/close"); count > 1 {
 		t.Fatalf("dashboard rendered duplicate footer/header labels, got %d:\n%s", count, capture)

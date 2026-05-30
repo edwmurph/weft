@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestBindingMatchesCoduxConfigSpelling(t *testing.T) {
+func TestBindingMatchesWeftConfigSpelling(t *testing.T) {
 	if !bindingMatches("C-c", tea.KeyMsg{Type: tea.KeyCtrlC}) {
 		t.Fatal("C-c should match ctrl+c")
 	}

@@ -6,12 +6,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/edwmurph/codux/internal/release"
+	"github.com/edwmurph/weft/internal/release"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: codux-release <next-version|render-formula>")
+		fatal("usage: weft-release <next-version|render-formula>")
 	}
 	var err error
 	switch os.Args[1] {
@@ -100,7 +100,7 @@ func nextVersion(args []string) error {
 
 func renderFormula(args []string) error {
 	fs := flag.NewFlagSet("render-formula", flag.ContinueOnError)
-	formulaName := fs.String("formula-name", "codux", "formula name")
+	formulaName := fs.String("formula-name", "weft", "formula name")
 	url := fs.String("url", "", "source URL")
 	sha256 := fs.String("sha256", "", "source sha256")
 	output := fs.String("output", "", "output path")

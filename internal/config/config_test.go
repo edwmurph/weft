@@ -15,7 +15,7 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 		Workdir: dir, Dir: filepath.Join(dir, "runtime"),
 		ConfigPath: filepath.Join(dir, "runtime", "config.toml"),
 		StatePath:  filepath.Join(dir, "runtime", "state.json"),
-		SocketPath: filepath.Join(dir, "runtime", "codux.sock"),
+		SocketPath: filepath.Join(dir, "runtime", "weft.sock"),
 	}
 
 	cfg, err := EnsureConfig(rt)
@@ -79,7 +79,7 @@ quit = "C-q"
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadConfig(path, "codux-test")
+	cfg, err := LoadConfig(path, "weft-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestDefaultRuntimeIsGlobal(t *testing.T) {
 	if strings.HasSuffix(dir, "workdirs") || strings.Contains(dir, "project-") {
 		t.Fatalf("AppDir should be global, got %q", dir)
 	}
-	if got := DefaultTmuxSession("/tmp/project"); got != "codux" {
+	if got := DefaultTmuxSession("/tmp/project"); got != "weft" {
 		t.Fatalf("DefaultTmuxSession = %q", got)
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/edwmurph/codux/internal/app"
+	"github.com/edwmurph/weft/internal/app"
 )
 
 func main() {

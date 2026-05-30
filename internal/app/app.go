@@ -11,40 +11,40 @@ import (
 	"strings"
 	"time"
 
-	"github.com/edwmurph/codux/internal/config"
-	"github.com/edwmurph/codux/internal/ipc"
-	"github.com/edwmurph/codux/internal/sessions"
-	"github.com/edwmurph/codux/internal/state"
-	"github.com/edwmurph/codux/internal/tmuxhost"
-	"github.com/edwmurph/codux/internal/tui"
-	"github.com/edwmurph/codux/internal/version"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/sessions"
+	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tmuxhost"
+	"github.com/edwmurph/weft/internal/tui"
+	"github.com/edwmurph/weft/internal/version"
 )
 
-const helpText = `Start, inspect, or close Codux tmux workspaces for Codex.
+const helpText = `Start, inspect, or close Weft tmux workspaces for Codex.
 
 Usage:
-  codux [--attach|--no-attach]
-  codux start [--attach|--no-attach]
-  codux refresh
-  codux status [--json]
-  codux new [title]
-  codux group add <name>
-  codux workdir add <path>
-  codux rename [id] <title>
-  codux close [id]
-  codux close --kill
-  codux select <id>
-  codux move-left
-  codux move-right
-  codux sessions
-  codux delete-session <session>
-  codux clear
-  codux doctor
-  codux config <info|path|show|init>
+  weft [--attach|--no-attach]
+  weft start [--attach|--no-attach]
+  weft refresh
+  weft status [--json]
+  weft new [title]
+  weft group add <name>
+  weft workdir add <path>
+  weft rename [id] <title>
+  weft close [id]
+  weft close --kill
+  weft select <id>
+  weft move-left
+  weft move-right
+  weft sessions
+  weft delete-session <session>
+  weft clear
+  weft doctor
+  weft config <info|path|show|init>
 
-Codux runs one global command center. The launch directory is added as an
+Weft runs one global command center. The launch directory is added as an
 initial workdir, while config.toml, state.json, the IPC socket, and the tmux
-session live in the global Codux runtime. Agent rows use title_template and can
+session live in the global Weft runtime. Agent rows use title_template and can
 interpolate {title}, {auto}, {codex}, {status}, {workdir}, and {group}.
 `
 
@@ -64,7 +64,7 @@ func Run(args []string) error {
 	case "tui":
 		return runTUI()
 	case "quit":
-		return closeCodux("quit", args[1:])
+		return closeWeft("quit", args[1:])
 	case "refresh":
 		return callIPC("refresh", nil, false)
 	case "status":
@@ -142,7 +142,7 @@ func start(args []string) error {
 	if *attach {
 		return controller.Attach()
 	}
-	fmt.Printf("Prepared tmux session %s for global Codux.\n", cfg.TmuxSession)
+	fmt.Printf("Prepared tmux session %s for global Weft.\n", cfg.TmuxSession)
 	fmt.Printf("Config: %s\n", rt.ConfigPath)
 	fmt.Printf("State: %s\n", rt.StatePath)
 	return nil
@@ -153,13 +153,13 @@ func runTUI() error {
 	if err != nil {
 		return err
 	}
-	logPath := filepath.Join(rt.Dir, "codux.log")
+	logPath := filepath.Join(rt.Dir, "weft.log")
 	_ = os.WriteFile(logPath, []byte("starting TUI\n"), 0o600)
 	st, migration, err := store.Ensure()
 	if err != nil {
 		return err
 	}
-	if os.Getenv("CODUX_HEADLESS") == "1" {
+	if os.Getenv("WEFT_HEADLESS") == "1" {
 		if err := tui.RunHeadless(rt, cfg, st, migration); err != nil {
 			_ = os.WriteFile(logPath, []byte("headless error: "+err.Error()+"\n"), 0o600)
 			return err
@@ -177,7 +177,7 @@ func runTUI() error {
 
 func closeCommand(args []string) error {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return closeCodux("close", args)
+		return closeWeft("close", args)
 	}
 	if len(args) > 1 {
 		return errors.New("close accepts at most one agent id")
@@ -185,10 +185,10 @@ func closeCommand(args []string) error {
 	return callIPC("close", map[string]string{"id": args[0]}, false)
 }
 
-func closeCodux(command string, args []string) error {
+func closeWeft(command string, args []string) error {
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	kill := fs.Bool("kill", false, "kill the Codux tmux session")
+	kill := fs.Bool("kill", false, "kill the Weft tmux session")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -208,14 +208,14 @@ func closeCodux(command string, args []string) error {
 		_ = callIPC("shutdown", nil, true)
 		return controller.KillSession()
 	}
-	if err := callIPC("close_codux", nil, true); err == nil {
+	if err := callIPC("close_weft", nil, true); err == nil {
 		return nil
 	}
 	return controller.DetachClients()
 }
 
 func startHeadlessDaemon(rt config.Runtime) error {
-	exe := os.Getenv("CODUX_EXECUTABLE")
+	exe := os.Getenv("WEFT_EXECUTABLE")
 	if exe == "" {
 		var err error
 		exe, err = os.Executable()
@@ -223,7 +223,7 @@ func startHeadlessDaemon(rt config.Runtime) error {
 			return err
 		}
 	}
-	logFile, err := os.OpenFile(filepath.Join(rt.Dir, "codux.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	logFile, err := os.OpenFile(filepath.Join(rt.Dir, "weft.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -231,7 +231,7 @@ func startHeadlessDaemon(rt config.Runtime) error {
 	cmd.Env = append(os.Environ(),
 		config.AppDirEnv+"="+rt.Dir,
 		config.WorkdirEnv+"="+rt.Workdir,
-		"CODUX_HEADLESS=1",
+		"WEFT_HEADLESS=1",
 	)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -300,7 +300,7 @@ func listSessions() error {
 	current := sessions.CurrentSessionFromRuntime()
 	items := sessions.List(current)
 	if len(items) == 0 {
-		fmt.Println("No Codux sessions are running.")
+		fmt.Println("No Weft sessions are running.")
 		return nil
 	}
 	fmt.Printf("%-2s %-32s %7s %7s %s\n", "", "Session", "Clients", "Windows", "Workdir")
@@ -319,10 +319,10 @@ func clear() error {
 	items := sessions.List(current)
 	workspaces := sessions.Workspaces()
 	if len(items) == 0 && len(workspaces) == 0 {
-		fmt.Println("No Codux workspaces or sessions found.")
+		fmt.Println("No Weft workspaces or sessions found.")
 		return nil
 	}
-	fmt.Println("This will delete all Codux tmux sessions and workspace runtimes:")
+	fmt.Println("This will delete all Weft tmux sessions and workspace runtimes:")
 	for _, item := range items {
 		suffix := ""
 		if item.Current {
@@ -333,7 +333,7 @@ func clear() error {
 	for _, workspace := range workspaces {
 		fmt.Printf("- workspace: %s\n", sessions.DisplayPath(workspace))
 	}
-	fmt.Print("Delete all Codux workspaces and sessions? [y/N] ")
+	fmt.Print("Delete all Weft workspaces and sessions? [y/N] ")
 	var answer string
 	_, _ = fmt.Scanln(&answer)
 	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
@@ -381,7 +381,7 @@ func doctor() error {
 	fmt.Printf("info runtime dir: %s\n", rt.Dir)
 	fmt.Printf("ok config: %s\n", rt.ConfigPath)
 	fmt.Printf("ok state: %s (%d workdirs, %d groups, %d agents)\n", rt.StatePath, len(st.Workdirs), len(st.Folders), len(st.Agents))
-	fmt.Println("info tmux hosts one full-screen Codux TUI pane; Codex agents run as TUI-owned PTYs.")
+	fmt.Println("info tmux hosts one full-screen Weft TUI pane; Codex agents run as TUI-owned PTYs.")
 	if problems > 0 {
 		return errors.New("doctor found problems")
 	}
@@ -399,7 +399,7 @@ func configCommand(args []string) error {
 		}
 		force := len(args) > 1 && (args[1] == "--force" || args[1] == "-f")
 		if _, err := os.Stat(rt.ConfigPath); err == nil && !force {
-			return fmt.Errorf("config already exists: %s\nUse `codux config show` to inspect it or `codux config init --force`.", rt.ConfigPath)
+			return fmt.Errorf("config already exists: %s\nUse `weft config show` to inspect it or `weft config init --force`.", rt.ConfigPath)
 		}
 		if err := os.MkdirAll(filepath.Dir(rt.ConfigPath), 0o700); err != nil {
 			return err
@@ -416,7 +416,7 @@ func configCommand(args []string) error {
 	}
 	switch args[0] {
 	case "info":
-		fmt.Println("Codux global runtime")
+		fmt.Println("Weft global runtime")
 		fmt.Printf("Launch workdir: %s\n", rt.Workdir)
 		fmt.Printf("Runtime dir: %s\n", rt.Dir)
 		fmt.Printf("Config: %s\n", rt.ConfigPath)
@@ -446,7 +446,7 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 	}
 	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 	if err != nil {
-		return fmt.Errorf("Codux TUI is not accepting IPC requests; start it with `codux`: %w", err)
+		return fmt.Errorf("Weft TUI is not accepting IPC requests; start it with `weft`: %w", err)
 	}
 	if !quiet && response.Message != "" {
 		fmt.Println(response.Message)

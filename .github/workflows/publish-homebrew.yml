@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FORMULA_NAME: codux
+  FORMULA_NAME: weft
   HOMEBREW_TAP_REPOSITORY: edwmurph/homebrew-tap
 
 jobs:
@@ -60,15 +60,15 @@ jobs:
             args+=(--bump "$RELEASE_BUMP")
           fi
 
-          go run ./cmd/codux-release "${args[@]}"
+          go run ./cmd/weft-release "${args[@]}"
 
       - name: Verify release tree
         run: |
           brew install tmux
           go test ./...
-          go build -o dist/codux ./cmd/codux
-          ./dist/codux --help >/dev/null
-          ./dist/codux doctor
+          go build -o dist/weft ./cmd/weft
+          ./dist/weft --help >/dev/null
+          ./dist/weft doctor
 
       - name: Commit release metadata
         env:
@@ -98,7 +98,7 @@ jobs:
 
           mkdir -p dist
           source_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
-          source_path="dist/codux-${VERSION}.tar.gz"
+          source_path="dist/weft-${VERSION}.tar.gz"
           curl -L "$source_url" -o "$source_path"
           source_sha256="$(shasum -a 256 "$source_path" | awk '{print $1}')"
 
@@ -113,12 +113,12 @@ jobs:
           set -euo pipefail
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --notes "Automated Codux release ${TAG}."
+            gh release edit "$TAG" --notes "Automated Weft release ${TAG}."
           else
             gh release create "$TAG" \
               --verify-tag \
               --title "$TAG" \
-              --notes "Automated Codux release ${TAG}."
+              --notes "Automated Weft release ${TAG}."
           fi
 
       - name: Checkout Homebrew tap
@@ -141,7 +141,7 @@ jobs:
           SOURCE_URL: ${{ steps.source.outputs.source_url }}
           SOURCE_SHA256: ${{ steps.source.outputs.source_sha256 }}
         run: |
-          go run ./cmd/codux-release render-formula \
+          go run ./cmd/weft-release render-formula \
             --formula-name "$FORMULA_NAME" \
             --url "$SOURCE_URL" \
             --sha256 "$SOURCE_SHA256" \

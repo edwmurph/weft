@@ -1,6 +1,13 @@
-# Codux Refactor Suggestion Log
+# Weft Refactor Suggestion Log
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
+
+## 2026-05-30 - Weft rebrand
+
+- Request: Rebrand the repo to Weft, update Homebrew publishing, GitHub remote metadata, code references, docs, and logo assets.
+- Suggestions: Treat the rename as a repo-wide product boundary change: update the Go module path, CLI command directories, runtime env vars and state paths, tmux metadata, release formula renderer, docs/spec/agent instructions, and the repo-local refactor skill in one verified change.
+- Outcome: Implemented in `.worktrees/rebrand-weft`; GitHub repo and local origin remote were renamed to `edwmurph/weft`.
+- Evidence: `go.mod`, `cmd/weft`, `cmd/weft-release`, `internal/config`, `internal/tmuxhost`, `internal/release`, `.github/workflows/publish-homebrew.yml`, `README.md`, `spec.md`, `AGENTS.md`, `assets/weft-logo.svg`.
 
 ## 2026-05-29 - Global command center layout
 
@@ -9,17 +16,17 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Outcome: Implemented in `.worktrees/spec-command-center`; awaiting review.
 - Evidence: `internal/state`, `internal/tui`, `internal/titles`, `internal/config`, `internal/tmuxhost`, `tests/integration`, `README.md`.
 
-## 2026-05-29 - Close-Codux shortcut rename
+## 2026-05-29 - Close-Weft shortcut rename
 
-- Request: Make `C-c` interrupt Codex first and close Codux on the next press, remove `C-q` from the shortcut surface, and merge the close-Codux CLI into `codux close`.
-- Suggestions: Rename the dashboard exit binding to `close_codux`, default it to `C-c`, forward the first `C-c` to a live Codex tab in CODEX focus, arm the next `C-c` to close Codux unless another key is pressed first, make `codux close` close Codux clients when no tab id is passed, and keep legacy command compatibility outside visible docs.
+- Request: Make `C-c` interrupt Codex first and close Weft on the next press, remove `C-q` from the shortcut surface, and merge the close-Weft CLI into `weft close`.
+- Suggestions: Rename the dashboard exit binding to `close_weft`, default it to `C-c`, forward the first `C-c` to a live Codex tab in CODEX focus, arm the next `C-c` to close Weft unless another key is pressed first, make `weft close` close Weft clients when no tab id is passed, and keep legacy command compatibility outside visible docs.
 - Outcome: Implemented on `main` as an unpushed pending ship commit; awaiting review after the latest behavior change.
 - Evidence: `internal/config/config.go`, `internal/tui/model.go`, `tests/integration/dashboard_e2e_test.go`, `README.md`.
 
 ## 2026-05-29 - Codex-focus shortcut simplification
 
-- Request: Stop dashboard `s` from overriding Codex input, keep only the focus toggle and close-Codux shortcut active in CODEX focus, and remove the dashboard sessions pane.
-- Suggestions: Treat the focus toggle and close-Codux shortcut as the only global CODEX-focus shortcuts, forward other active-tab input to the Codex PTY, remove the dashboard sessions modal/ticker/config key, and keep session management in the CLI.
+- Request: Stop dashboard `s` from overriding Codex input, keep only the focus toggle and close-Weft shortcut active in CODEX focus, and remove the dashboard sessions pane.
+- Suggestions: Treat the focus toggle and close-Weft shortcut as the only global CODEX-focus shortcuts, forward other active-tab input to the Codex PTY, remove the dashboard sessions modal/ticker/config key, and keep session management in the CLI.
 - Outcome: Implemented in `.worktrees/codex-focus-shortcuts`; awaiting review.
 - Evidence: `internal/tui/model.go`, `internal/config/config.go`, `tests/integration/dashboard_e2e_test.go`, `README.md`.
 
@@ -28,25 +35,25 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Request: Update the repo-local refactor skill after the single-pane Go rewrite made the old Python workflow stale.
 - Suggestions: Replace `pyproject.toml`/Python guidance with `go.mod`/Go guidance and update verification to gofmt, unit tests, live tmux integration, and Go build.
 - Outcome: Implemented in `.worktrees/single-pane-tui-dashboard`.
-- Evidence: `skills/codux-refactor/SKILL.md`.
+- Evidence: `skills/weft-refactor/SKILL.md`.
 
 ## 2026-05-28 - Single-pane Go TUI rewrite
 
 - Request: Replace the Python/tmux pane-composition dashboard with a Go-first single-pane TUI.
 - Suggestions: Make tmux only the durable host, move Codex sessions into TUI-owned PTYs, migrate state to version 2 without tmux pane ids, add IPC for external commands, and publish Homebrew from Go source instead of Python wheels.
 - Outcome: Implemented in `.worktrees/single-pane-tui-dashboard`; follow-up restored the original framed NAV/CODEX visual model and fixed empty-dashboard nav key handling.
-- Evidence: `cmd/codux`, `internal/tui`, `internal/ptyx`, `internal/ipc`, `internal/state`, `.github/workflows/publish-homebrew.yml`, `tests/integration/tmux_runtime_test.go`.
+- Evidence: `cmd/weft`, `internal/tui`, `internal/ptyx`, `internal/ipc`, `internal/state`, `.github/workflows/publish-homebrew.yml`, `tests/integration/tmux_runtime_test.go`.
 
 ## 2026-05-28 - Homebrew dependency wheelhouse
 
 - Request: Diagnose work-network failures downloading Homebrew Python dependency resources.
-- Suggestions: Stop publishing one Homebrew resource per PyPI dependency; publish a single dependency wheelhouse on the Codux GitHub release and have the tap install all dependency wheels from that archive.
+- Suggestions: Stop publishing one Homebrew resource per PyPI dependency; publish a single dependency wheelhouse on the Weft GitHub release and have the tap install all dependency wheels from that archive.
 - Outcome: Implemented in `.worktrees/homebrew-wheelhouse`; awaiting ship to publish a new release.
 - Evidence: `.github/workflows/publish-homebrew.yml`, `scripts/render_homebrew_formula.py`, `tests/test_release_scripts.py`.
 
 ## 2026-05-28 - Homebrew publishing workflow
 
-- Request: Publish Codux through a custom Homebrew tap and make brew the only README getting-started install path.
+- Request: Publish Weft through a custom Homebrew tap and make brew the only README getting-started install path.
 - Suggestions: Add a `Publish Homebrew` workflow, infer semver bumps from shipped commit text with an explicit trailer override, render the tap formula from `uv.lock`, and update ship-it instructions so publish success is part of the landing gate.
 - Outcome: Implemented in `.worktrees/homebrew-publish`.
 - Evidence: `.github/workflows/publish-homebrew.yml`, `scripts/next_version.py`, `scripts/render_homebrew_formula.py`, `README.md`, `CONTRIBUTING.md`, `AGENTS.md`.
@@ -56,11 +63,11 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Request: Replace the Codex PTY proxy/host renderer with native tmux panes.
 - Suggestions: Launch `codex_command` directly in the content pane, keep the Kanban nav as a top interactive pane, remove proxy/pyte code, keep the previous rounded frame boxes as lightweight tmux panes, and avoid forcing Codex theme or color hints so the CLI behaves like it does in a normal PTY.
 - Outcome: Implemented in `.worktrees/native-codex-pane`.
-- Evidence: `codux/tmux.py`, `README.md`, `tests/test_tmux.py`, `tests/test_render.py`.
+- Evidence: `weft/tmux.py`, `README.md`, `tests/test_tmux.py`, `tests/test_render.py`.
 
 ## 2026-05-27 - Repo-local refactor skill
 
-- Request: Create a codux refactor skill that minimizes code, simplifies implementation, updates docs/instructions, finds process inefficiencies, evaluates libraries, and learns over time.
-- Suggestions: Store the skill at `skills/codux-refactor`, include a durable suggestion log, and point repo agents at the skill.
+- Request: Create a weft refactor skill that minimizes code, simplifies implementation, updates docs/instructions, finds process inefficiencies, evaluates libraries, and learns over time.
+- Suggestions: Store the skill at `skills/weft-refactor`, include a durable suggestion log, and point repo agents at the skill.
 - Outcome: Implemented.
-- Evidence: `skills/codux-refactor/SKILL.md`, `skills/codux-refactor/agents/openai.yaml`, `skills/codux-refactor/references/suggestion-log.md`.
+- Evidence: `skills/weft-refactor/SKILL.md`, `skills/weft-refactor/agents/openai.yaml`, `skills/weft-refactor/references/suggestion-log.md`.

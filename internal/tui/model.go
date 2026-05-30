@@ -14,14 +14,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/edwmurph/codux/internal/config"
-	"github.com/edwmurph/codux/internal/ipc"
-	"github.com/edwmurph/codux/internal/navigation"
-	"github.com/edwmurph/codux/internal/ptyx"
-	"github.com/edwmurph/codux/internal/state"
-	"github.com/edwmurph/codux/internal/titlehook"
-	"github.com/edwmurph/codux/internal/titles"
-	"github.com/edwmurph/codux/internal/tmuxhost"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/navigation"
+	"github.com/edwmurph/weft/internal/ptyx"
+	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/titlehook"
+	"github.com/edwmurph/weft/internal/titles"
+	"github.com/edwmurph/weft/internal/tmuxhost"
 )
 
 type ipcEnvelope struct {
@@ -136,7 +136,7 @@ func Run(rt config.Runtime, cfg config.Config, st state.State, migration *state.
 		tea.WithOutput(os.Stdout),
 		tea.WithMouseCellMotion(),
 	}
-	if os.Getenv("CODUX_HEADLESS") == "1" {
+	if os.Getenv("WEFT_HEADLESS") == "1" {
 		options = append(options, tea.WithoutRenderer())
 	} else {
 		options = append(options, tea.WithAltScreen())
@@ -342,7 +342,7 @@ func (m Model) promptLabel() string {
 func (m Model) promptHint() string {
 	switch m.prompt {
 	case promptWorkdir:
-		return "Path must exist. Codux stores the absolute path and never deletes project files."
+		return "Path must exist. Weft stores the absolute path and never deletes project files."
 	case promptGroup:
 		return "Group names are flat and unique within the selected workdir."
 	case promptWorkdirTitle:
@@ -389,7 +389,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	quitPressed := bindingMatches(m.cfg.KeyBindings.Quit, msg)
 	if quitPressed && !m.activeCodexReceivesQuitBinding() {
-		m.closeCodux()
+		m.closeWeft()
 		return m, nil
 	}
 	if bindingMatches(m.cfg.KeyBindings.Drawer, msg) {
@@ -925,9 +925,9 @@ func (m *Model) setCodexFocus() tea.Cmd {
 	return m.startNavAnimation()
 }
 
-func (m *Model) closeCodux() {
+func (m *Model) closeWeft() {
 	_ = exec.Command("tmux", "detach-client", "-s", m.cfg.TmuxSession).Run()
-	m.message = "closed Codux clients"
+	m.message = "closed Weft clients"
 }
 
 func (m *Model) captureCodexInput(agent state.Agent, msg tea.KeyMsg) tea.Cmd {
@@ -1307,7 +1307,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	case "refresh":
 		m.message = "refreshed"
 		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "refreshed Codux command center"}, nil
+		return ipc.Response{OK: true, State: &st, Message: "refreshed Weft command center"}, nil
 	case "new":
 		title := request.Args["title"]
 		if title == "" {
@@ -1418,10 +1418,10 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		default:
 			return ipc.Response{OK: false, Message: "focus target must be workdirs, agents, or codex"}, nil
 		}
-	case "close_codux", "quit":
-		m.closeCodux()
+	case "close_weft", "quit":
+		m.closeWeft()
 		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "closed Codux clients"}, nil
+		return ipc.Response{OK: true, State: &st, Message: "closed Weft clients"}, nil
 	default:
 		return ipc.Response{OK: false, Message: "unknown command: " + request.Command}, nil
 	}
@@ -1583,7 +1583,7 @@ func tickLoading() tea.Cmd {
 
 func renderHelp(cfg config.Config, migration string) string {
 	lines := []string{
-		"Codux shortcuts",
+		"Weft shortcuts",
 		"",
 		fmt.Sprintf("%s command center", cfg.KeyBindings.Drawer),
 		fmt.Sprintf("%s/%s panes", cfg.KeyBindings.FocusLeft, cfg.KeyBindings.FocusRight),

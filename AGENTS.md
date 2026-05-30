@@ -1,4 +1,4 @@
-# Agent Instructions (codux repo)
+# Agent Instructions (weft repo)
 
 ## Workflow
 
@@ -9,7 +9,7 @@
 - If a requested change appears to contradict `spec.md`, pause before implementation. Propose the change, identify the specific spec item it deviates from, and confirm that the user wants both the product behavior to deviate and `spec.md` updated to match.
 - Treat `spec.md` as the living product contract. When accepted product behavior, UX, command semantics, state shape, or workflow expectations evolve, update `spec.md` in the same change.
 - If an implementation change causes drift with docs or agent instructions, update the docs/instructions in the same change to keep them accurate.
-- For broad refactor requests, use the repo-local `$codux-refactor` skill in `skills/codux-refactor/` and update its suggestion log.
+- For broad refactor requests, use the repo-local `$weft-refactor` skill in `skills/weft-refactor/` and update its suggestion log.
 - After verified implementation work, summarize what changed, what verification passed, exactly how the user can test it locally, include the exact command(s) to retest the changed behavior, and offer to ship it. Then stop for review unless the user explicitly says **"ship it"**.
 - When the user says **"ship it"**, interpret it as: squash-merge the already-reviewed change to `main`, push `main` to `origin/main`, watch the `Publish Homebrew` workflow, and report the commit, release, tap publish status, verification status, and a brief re-explanation of the shipped user-visible change in the same message.
 
@@ -29,8 +29,8 @@
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
 - After creating or entering a detached worktree, ensure local ignored env access works by symlinking `.env` back to the repo-root ignored file with `ln -sf ../../.env .env` from the worktree root. The repo-root `.env` stays untracked and stores local secrets such as `OPENAI_API_KEY`.
 - Keep all implementation follow-up work in a detached worktree until the user explicitly says `ship it`; do not continue editing `main` after a paused or interrupted ship attempt.
-- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux`; then include the specific retest command or sequence for the changed behavior, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux rename "Codex {status}"`. A `git diff` command alone is not enough.
-- Before sending a final response for verified implementation work in a worktree, check that the response includes a fenced `sh` block with the direct runnable `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux` command, followed by concrete behavior-specific retest steps. Do not rely on verification commands alone as the retest instructions.
+- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Weft runtime/UI changes, include the direct runnable command first, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/weft`; then include the specific retest command or sequence for the changed behavior, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/weft rename "Codex {status}"`. A `git diff` command alone is not enough.
+- Before sending a final response for verified implementation work in a worktree, check that the response includes a fenced `sh` block with the direct runnable `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/weft` command, followed by concrete behavior-specific retest steps. Do not rely on verification commands alone as the retest instructions.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".
 
@@ -38,12 +38,12 @@
 
 - Format: `gofmt -w cmd internal tests`
 - Tests: `go test ./...`
-- Live tmux integration tests: `CODUX_RUN_INTEGRATION=1 go test ./...`
-- Build: `go build ./cmd/codux`
+- Live tmux integration tests: `WEFT_RUN_INTEGRATION=1 go test ./...`
+- Build: `go build ./cmd/weft`
 
 ## Verification Workflow
 
-- Before asking the user whether to ship an implementation change, run `gofmt -w cmd internal tests`, `go test ./...`, `CODUX_RUN_INTEGRATION=1 go test ./...`, and `go build ./cmd/codux`.
+- Before asking the user whether to ship an implementation change, run `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, and `go build ./cmd/weft`.
 - If live tmux integration tests cannot run because `tmux` or `go` is unavailable, call that out explicitly instead of treating skipped integration tests as full verification.
 - Keep live integration coverage focused on primary operator flows that need real tmux/process/state behavior; prefer adding coverage to existing integration scenarios over creating one new live test per edge case.
 - Use mocked unit tests for broad branches, formatting details, parser cases, and deterministic command construction unless the bug only reproduces across a real tmux boundary.
@@ -52,6 +52,6 @@
 
 ## Dashboard Runtime Commands
 
-- Prefer `go -C /abs/path/to/repo-or-worktree run ./cmd/codux` when giving the user a worktree launch command before the binary is installed.
-- Use `go -C /abs/path/to/repo-or-worktree run ./cmd/codux ...` for Codux subcommands in a worktree.
-- Installed-user examples can use `codux ...` directly.
+- Prefer `go -C /abs/path/to/repo-or-worktree run ./cmd/weft` when giving the user a worktree launch command before the binary is installed.
+- Use `go -C /abs/path/to/repo-or-worktree run ./cmd/weft ...` for Weft subcommands in a worktree.
+- Installed-user examples can use `weft ...` directly.

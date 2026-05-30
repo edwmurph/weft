@@ -3,7 +3,7 @@ package titles
 import (
 	"testing"
 
-	"github.com/edwmurph/codux/internal/state"
+	"github.com/edwmurph/weft/internal/state"
 )
 
 func TestRenderAgentDefaultTemplateUsesConfiguredTitle(t *testing.T) {

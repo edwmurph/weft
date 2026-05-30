@@ -8,9 +8,9 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/edwmurph/codux/internal/config"
-	"github.com/edwmurph/codux/internal/ipc"
-	"github.com/edwmurph/codux/internal/state"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/state"
 )
 
 func RunHeadless(rt config.Runtime, cfg config.Config, st state.State, migration *state.Migration) error {
@@ -25,7 +25,7 @@ func RunHeadless(rt config.Runtime, cfg config.Config, st state.State, migration
 	stopIPC, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
 		if request.Command == "shutdown" {
 			cancel()
-			return ipc.Response{OK: true, Message: "Codux TUI stopped"}
+			return ipc.Response{OK: true, Message: "Weft TUI stopped"}
 		}
 		mu.Lock()
 		response, cmd := model.handleIPC(request)

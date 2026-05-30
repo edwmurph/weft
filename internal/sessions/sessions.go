@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/edwmurph/codux/internal/config"
-	"github.com/edwmurph/codux/internal/tmuxhost"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/tmuxhost"
 )
 
-type CoduxSession struct {
+type WeftSession struct {
 	Name       string
 	Workdir    string
 	RuntimeDir string
@@ -21,7 +21,7 @@ type CoduxSession struct {
 	Current    bool
 }
 
-func List(current string) []CoduxSession {
+func List(current string) []WeftSession {
 	out, err := exec.Command(
 		"tmux",
 		"list-sessions",
@@ -35,7 +35,7 @@ func List(current string) []CoduxSession {
 	if err != nil {
 		return nil
 	}
-	var sessions []CoduxSession
+	var sessions []WeftSession
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -44,12 +44,12 @@ func List(current string) []CoduxSession {
 		for len(parts) < 5 {
 			parts = append(parts, "")
 		}
-		if parts[3] == "" && !strings.HasPrefix(parts[0], "codux") {
+		if parts[3] == "" && !strings.HasPrefix(parts[0], "weft") {
 			continue
 		}
 		windows, _ := strconv.Atoi(parts[1])
 		clients, _ := strconv.Atoi(parts[2])
-		sessions = append(sessions, CoduxSession{
+		sessions = append(sessions, WeftSession{
 			Name: parts[0], Windows: windows, Clients: clients,
 			Workdir: parts[3], RuntimeDir: parts[4], Current: parts[0] == current,
 		})
@@ -62,7 +62,7 @@ func Workspaces() []string {
 	if err != nil {
 		return nil
 	}
-	root := filepath.Join(home, ".codux", "workdirs")
+	root := filepath.Join(home, ".weft", "workdirs")
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -82,7 +82,7 @@ func DeleteWorkspace(path string) bool {
 	if err != nil {
 		return false
 	}
-	root, err := filepath.Abs(filepath.Join(home, ".codux", "workdirs"))
+	root, err := filepath.Abs(filepath.Join(home, ".weft", "workdirs"))
 	if err != nil {
 		return false
 	}

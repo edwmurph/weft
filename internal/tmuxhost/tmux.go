@@ -6,13 +6,13 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/edwmurph/codux/internal/config"
+	"github.com/edwmurph/weft/internal/config"
 )
 
 const (
-	WorkdirOption     = "@codux-workdir"
-	RuntimeOption     = "@codux-runtime-dir"
-	HostVersionOption = "@codux-host-version"
+	WorkdirOption     = "@weft-workdir"
+	RuntimeOption     = "@weft-runtime-dir"
+	HostVersionOption = "@weft-host-version"
 	HostVersion       = "go-tui-v3"
 )
 
@@ -51,7 +51,7 @@ func (c Controller) EnsureSession(cfg config.Config, rt config.Runtime, headless
 			return err
 		}
 	}
-	exe := os.Getenv("CODUX_EXECUTABLE")
+	exe := os.Getenv("WEFT_EXECUTABLE")
 	if exe == "" {
 		var err error
 		exe, err = os.Executable()
@@ -61,7 +61,7 @@ func (c Controller) EnsureSession(cfg config.Config, rt config.Runtime, headless
 	}
 	headlessEnv := ""
 	if headless {
-		headlessEnv = " CODUX_HEADLESS=1"
+		headlessEnv = " WEFT_HEADLESS=1"
 	}
 	inner := fmt.Sprintf(
 		"env %s=%s %s=%s%s %s tui",
@@ -92,7 +92,7 @@ func (c Controller) EnsureSession(cfg config.Config, rt config.Runtime, headless
 		{"set-option", "-t", c.Session, WorkdirOption, rt.Workdir},
 		{"set-option", "-t", c.Session, RuntimeOption, rt.Dir},
 		{"set-option", "-t", c.Session, HostVersionOption, HostVersion},
-		{"rename-window", "-t", c.Session + ":0", "codux"},
+		{"rename-window", "-t", c.Session + ":0", "weft"},
 	} {
 		_ = run(args...)
 	}

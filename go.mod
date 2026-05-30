@@ -1,4 +1,4 @@
-module github.com/edwmurph/codux
+module github.com/edwmurph/weft
 
 go 1.24.2
 

@@ -4,14 +4,14 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/edwmurph/codux/internal/config"
-	"github.com/edwmurph/codux/internal/sessions"
-	"github.com/edwmurph/codux/internal/state"
-	"github.com/edwmurph/codux/internal/titles"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/sessions"
+	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/titles"
 )
 
 const (
-	appTitle             = "CODUX"
+	appTitle             = "WEFT"
 	codexLeftPadding     = 1
 	navHorizontalPadding = 1
 	maxWorkdirPaneWidth  = 78
@@ -42,6 +42,7 @@ var (
 	workdirCountMutedStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	workdirCountActiveStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	workdirCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	emptyLogoStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 )
 
 type framePalette struct {
@@ -51,6 +52,17 @@ type framePalette struct {
 var (
 	activePalette   = framePalette{border: lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)}
 	inactivePalette = framePalette{border: lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true)}
+)
+
+var (
+	emptyWeftLogo = []string{
+		`             ██╗    ██╗ ███████╗ ███████╗ █████████╗`,
+		`●──╮         ██║    ██║ ██╔════╝ ██╔════╝ ╚══██╔══╝`,
+		`●──┼──▶      ██║ █╗ ██║ █████╗   █████╗      ██║`,
+		`●──╯         ██║███╗██║ ██╔══╝   ██╔══╝      ██║`,
+		`             ╚███╔███╔╝ ███████╗ ██║         ██║`,
+		`              ╚══╝╚══╝  ╚══════╝ ╚═╝         ╚═╝`,
+	}
 )
 
 func workspaceNavFrameWidth(st state.State, width int) int {
@@ -460,7 +472,54 @@ func renderCodexContent(content string, width int, height int, empty bool, loadi
 }
 
 func renderEmptyCodexContent(width int, height int) []string {
-	return renderCenteredCodexContent([]string{"No Codex agent open", "Press n to create one."}, width, height)
+	content := []string{}
+	if logoFits(emptyWeftLogo, width, height) {
+		logoWidth := maxVisualWidth(emptyWeftLogo)
+		for _, line := range emptyWeftLogo {
+			content = append(content, emptyLogoStyle.Render(padVisual(line, logoWidth)))
+		}
+		content = append(content, "")
+		content = append(content, centerVisual("No Codex agent open", logoWidth), centerVisual("Press n to create one.", logoWidth))
+		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
+	}
+	content = append(content, "No Codex agent open", "Press n to create one.")
+	return renderCenteredCodexContent(content, width, height)
+}
+
+func logoFits(logo []string, width int, height int) bool {
+	if len(logo) == 0 || height < len(logo)+3 {
+		return false
+	}
+	for _, line := range logo {
+		if lipgloss.Width(line) > width {
+			return false
+		}
+	}
+	return true
+}
+
+func maxVisualWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		width = max(width, lipgloss.Width(line))
+	}
+	return width
+}
+
+func renderCenteredCodexBlockContent(content []string, width int, height int, blockWidth int) []string {
+	topPadding := max(0, (height-len(content))/2)
+	leftPadding := max(0, (width-blockWidth)/2)
+	lines := make([]string, 0, height)
+	for len(lines) < topPadding {
+		lines = append(lines, "")
+	}
+	for _, line := range content {
+		lines = append(lines, strings.Repeat(" ", leftPadding)+padVisual(clip(line, blockWidth), blockWidth))
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines[:height]
 }
 
 func renderCenteredCodexContent(content []string, width int, height int) []string {

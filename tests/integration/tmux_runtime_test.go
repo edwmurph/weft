@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/edwmurph/codux/internal/state"
+	"github.com/edwmurph/weft/internal/state"
 )
 
 func TestSinglePaneTUITmuxRuntime(t *testing.T) {
-	if os.Getenv("CODUX_RUN_INTEGRATION") != "1" {
-		t.Skip("set CODUX_RUN_INTEGRATION=1 to run live tmux integration tests")
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live tmux integration tests")
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is required")
@@ -24,9 +24,9 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 
 	root := repoRoot(t)
 	tmp := t.TempDir()
-	runID := "codux-it-" + strings.ReplaceAll(fmt.Sprintf("%d", time.Now().UnixNano()), "-", "")
-	bin := filepath.Join(tmp, "codux")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/codux")
+	runID := "weft-it-" + strings.ReplaceAll(fmt.Sprintf("%d", time.Now().UnixNano()), "-", "")
+	bin := filepath.Join(tmp, "weft")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/weft")
 	build.Dir = root
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
@@ -42,7 +42,7 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runtimeDir := filepath.Join(tmp, "codux-home")
+	runtimeDir := filepath.Join(tmp, "weft-home")
 	workdir := filepath.Join(tmp, "workspace")
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -72,8 +72,8 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 	}
 
 	env := append(os.Environ(),
-		"CODUX_HOME="+runtimeDir,
-		"CODUX_WORKDIR="+workdir,
+		"WEFT_HOME="+runtimeDir,
+		"WEFT_WORKDIR="+workdir,
 		"PATH="+wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"TERM=xterm-256color",
 	)
@@ -84,31 +84,31 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 		_ = exec.Command("tmux", "-L", runID, "kill-server").Run()
 	})
 
-	runCodux(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "--no-attach")
 	if !waitForBool(time.Second*8, func() bool {
-		_, err := os.Stat(filepath.Join(runtimeDir, "codux.sock"))
+		_, err := os.Stat(filepath.Join(runtimeDir, "weft.sock"))
 		return err == nil
 	}) {
 		capture := exec.Command(tmuxFromEnv(env), "capture-pane", "-p", "-t", runID)
 		capture.Env = env
 		out, _ := capture.CombinedOutput()
-		log, _ := os.ReadFile(filepath.Join(runtimeDir, "codux.log"))
+		log, _ := os.ReadFile(filepath.Join(runtimeDir, "weft.log"))
 		t.Fatalf("timed out waiting for IPC socket; log:\n%s\ntmux pane:\n%s", log, out)
 	}
 	if panes := tmuxLines(t, env, "list-panes", "-t", runID+":", "-F", "#{pane_id}"); len(panes) != 1 {
 		t.Fatalf("pane count = %d (%v), want 1", len(panes), panes)
 	}
 
-	runCodux(t, env, bin, "new", "Alpha")
+	runWeft(t, env, bin, "new", "Alpha")
 	first := waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
 	})
 	firstID := first.Agents[0].ID
-	runCodux(t, env, bin, "group", "add", "release")
-	runCodux(t, env, bin, "new", "Beta")
-	runCodux(t, env, bin, "move-right")
-	runCodux(t, env, bin, "rename", "Renamed")
-	runCodux(t, env, bin, "select", firstID)
+	runWeft(t, env, bin, "group", "add", "release")
+	runWeft(t, env, bin, "new", "Beta")
+	runWeft(t, env, bin, "move-right")
+	runWeft(t, env, bin, "rename", "Renamed")
+	runWeft(t, env, bin, "select", firstID)
 	afterOps := waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 2 && st.ActiveAgentID == firstID
 	})
@@ -124,26 +124,26 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 		t.Fatalf("renamed agent not found in release group: %#v", afterOps)
 	}
 
-	runCodux(t, env, bin, "close")
+	runWeft(t, env, bin, "close")
 	if panes := tmuxLines(t, env, "list-panes", "-t", runID+":", "-F", "#{pane_id}"); len(panes) != 1 {
 		t.Fatalf("pane count after detach = %d (%v), want 1", len(panes), panes)
 	}
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 2
 	})
-	runCodux(t, env, bin, "close", firstID)
+	runWeft(t, env, bin, "close", firstID)
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1
 	})
 }
 
-func runCodux(t *testing.T, env []string, bin string, args ...string) string {
+func runWeft(t *testing.T, env []string, bin string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(bin, args...)
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("codux %v: %v\n%s", args, err, out)
+		t.Fatalf("weft %v: %v\n%s", args, err, out)
 	}
 	return string(out)
 }
@@ -152,7 +152,7 @@ func waitState(t *testing.T, env []string, bin string, accept func(state.State) 
 	t.Helper()
 	var last state.State
 	waitFor(t, "state", time.Second*8, func() bool {
-		out := runCodux(t, env, bin, "status", "--json")
+		out := runWeft(t, env, bin, "status", "--json")
 		if err := json.Unmarshal([]byte(out), &last); err != nil {
 			return false
 		}
@@ -188,8 +188,8 @@ func tmuxLines(t *testing.T, env []string, args ...string) []string {
 	if err != nil {
 		log := ""
 		for _, item := range env {
-			if strings.HasPrefix(item, "CODUX_HOME=") {
-				data, _ := os.ReadFile(filepath.Join(strings.TrimPrefix(item, "CODUX_HOME="), "codux.log"))
+			if strings.HasPrefix(item, "WEFT_HOME=") {
+				data, _ := os.ReadFile(filepath.Join(strings.TrimPrefix(item, "WEFT_HOME="), "weft.log"))
 				log = string(data)
 			}
 		}

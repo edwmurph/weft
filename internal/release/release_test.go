@@ -27,15 +27,15 @@ func TestInferBumpAndBumpVersion(t *testing.T) {
 }
 
 func TestRenderFormulaBuildsGoBinaryFromSource(t *testing.T) {
-	formula := RenderFormula("codux", "https://example.test/codux.tar.gz", "abc123")
+	formula := RenderFormula("weft", "https://example.test/weft.tar.gz", "abc123")
 
 	for _, expected := range []string{
-		"class Codux < Formula",
+		"class Weft < Formula",
 		`depends_on "go" => :build`,
 		`depends_on "tmux"`,
 		`system "go", "build"`,
-		`./cmd/codux`,
-		`codux doctor`,
+		`./cmd/weft`,
+		`weft doctor`,
 	} {
 		if !strings.Contains(formula, expected) {
 			t.Fatalf("formula missing %q:\n%s", expected, formula)

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/edwmurph/codux/internal/state"
+	"github.com/edwmurph/weft/internal/state"
 )
 
 const (

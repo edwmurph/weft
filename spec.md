@@ -1,16 +1,16 @@
-# Codux Product Specification
+# Weft Product Specification
 
-This is the living product and technical specification for Codux. Keep this file current as the product evolves so implementation agents can treat it as the anchor definition.
+This is the living product and technical specification for Weft. Keep this file current as the product evolves so implementation agents can treat it as the anchor definition.
 
 ## Product Definition
 
-Codux is one global terminal command center for managing Codex agents across multiple workdirs.
+Weft is one global terminal command center for managing Codex agents across multiple workdirs.
 
-Codux is no longer one instance per workdir. A single Codux process owns the global navigation state, the agent registry, and Codex PTYs. Users can organize agents by workdir, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
+Weft is no longer one instance per workdir. A single Weft process owns the global navigation state, the agent registry, and Codex PTYs. Users can organize agents by workdir, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
 
 The core workflow is:
 
-1. Open Codux.
+1. Open Weft.
 2. Use the left navigation panes to choose a workdir and agent.
 3. Press `Enter` to maximize and focus the selected Codex thread.
 4. Interact with Codex only while the Codex thread is focused and maximized.
@@ -18,14 +18,14 @@ The core workflow is:
 
 ## Design Principles
 
-- Global first: one Codux should manage all configured workdirs.
+- Global first: one Weft should manage all configured workdirs.
 - Codex first when active: once an agent is opened, Codex gets the whole terminal.
 - Navigation is structural, not workflow-stage based.
 - Workdir and group movement is manual.
 - Group names are flat strings.
 - Groups are optional; agents can live directly in a workdir without a group.
 - Agent rows render configured text only; no fixed status pills beside each row.
-- The terminal UI should stay dense, minimal, and close to the current iTerm-style Codux look.
+- The terminal UI should stay dense, minimal, and close to the current iTerm-style Weft look.
 
 ## Primary Layout
 
@@ -44,7 +44,7 @@ Each card renders:
 
 Do not render card-level `parked`, `stopped`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workdirs pane summarizes them only through `needs attention`.
 
-The default card title is the display path, for example `~/code/personal/codux`. A workdir can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
+The default card title is the display path, for example `~/code/personal/weft`. A workdir can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
 
 Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workdirs pane has focus. Use a subtler blue border when the selected workdir is active but focus is in the Agents pane.
 
@@ -68,7 +68,7 @@ The middle pane shows agents for the selected workdir. It is always present so t
 
 Agents without a group render as top-level rows. User-created groups render as collapsible sections inside this pane, with their member agents indented underneath. Creating a group must not force existing top-level agents into a visible `Ungrouped`, `General`, or `Inbox` section.
 
-Group names are plain text. Emojis are inherently allowed because the group name is just user text. Codux does not need a separate emoji feature, picker, or icon system for groups in the first implementation.
+Group names are plain text. Emojis are inherently allowed because the group name is just user text. Weft does not need a separate emoji feature, picker, or icon system for groups in the first implementation.
 
 Group names are flat. Valid group examples:
 
@@ -98,16 +98,16 @@ Group rows should be visually distinct from agent rows. Use the chevron/collapse
 
 The main pane shows either:
 
-- a centered empty message when no agent is open
+- a centered empty message when no agent is open, with a subtle Weft wordmark above it when space allows
 - the selected Codex thread when an agent is open
 
 When navigation is open, the workdirs and agents panes push the Codex pane to the right. When the user presses `Enter` on an agent, navigation slides away left, the Codex pane expands to the full terminal, and focus moves to Codex.
 
-Codex can only receive input when the Codex pane is focused and maximized. When navigation is open, keyboard input controls Codux navigation and organization, not the Codex PTY.
+Codex can only receive input when the Codex pane is focused and maximized. When navigation is open, keyboard input controls Weft navigation and organization, not the Codex PTY.
 
 ## Navigation States
 
-Codux has two primary UI states.
+Weft has two primary UI states.
 
 ## Command Center State
 
@@ -144,7 +144,7 @@ m       Move selected agent to another group in the same workdir, or clear its g
 r       Rename selected workdir title, group, or agent title
 d       Delete/remove selected item
 ?       Help
-C-c     Quit Codux
+C-c     Quit Weft
 ```
 
 Deletion behavior depends on selected item type and is defined below.
@@ -221,10 +221,10 @@ stdout line as the agent's generated title. The hook payload includes
 `version`, `event`, `agent_id`, `workdir`, `group`, `status`, `title`,
 `title_template`, `codex_title`, and `first_message`.
 
-Codux must not encode provider-specific clients, model names, API keys, or HTTP
+Weft must not encode provider-specific clients, model names, API keys, or HTTP
 contracts into the runtime. The title hook is just a shell command. If the hook
 times out, exits nonzero, is missing, or writes no title, `{auto}` renders as
-`auto title failed` and Codux does not retry for that agent.
+`auto title failed` and Weft does not retry for that agent.
 
 When `{auto}` is added in the rename pane, the UI should make hook readiness
 obvious. If `title_hook_command` is missing, show a configuration error. If the
@@ -324,7 +324,7 @@ Create workdir:
 
 Remove workdir:
 
-- Remove the workdir from Codux state.
+- Remove the workdir from Weft state.
 - Close all running agents in that workdir.
 - Stop their PTYs.
 - Remove associated groups and agents from state.
@@ -508,8 +508,8 @@ Verification workflow:
 ```text
 gofmt -w cmd internal tests
 go test ./...
-CODUX_RUN_INTEGRATION=1 go test ./...
-go build ./cmd/codux
+WEFT_RUN_INTEGRATION=1 go test ./...
+go build ./cmd/weft
 ```
 
 ## Out Of Scope For First Implementation

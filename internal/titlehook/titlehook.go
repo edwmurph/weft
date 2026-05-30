@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/edwmurph/codux/internal/state"
-	"github.com/edwmurph/codux/internal/titles"
+	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/titles"
 )
 
 const (

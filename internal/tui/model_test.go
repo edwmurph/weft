@@ -8,15 +8,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/edwmurph/codux/internal/config"
-	"github.com/edwmurph/codux/internal/ipc"
-	"github.com/edwmurph/codux/internal/state"
-	"github.com/edwmurph/codux/internal/titles"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/titles"
 )
 
 func TestEmptyCommandCenterStartsInAgentsFocus(t *testing.T) {
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 
 	model := NewModel(rt, cfg, state.Empty())
 
@@ -30,7 +30,7 @@ func TestEmptyCommandCenterStartsInAgentsFocus(t *testing.T) {
 
 func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	cfg.CodexCommand = "cat"
 	model := NewModel(rt, cfg, state.Empty())
 	defer killPTYs(model)
@@ -105,8 +105,8 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
-	if model.message != "closed Codux clients" {
-		t.Fatalf("C-c should close Codux clients when Codex is ready, message=%q", model.message)
+	if model.message != "closed Weft clients" {
+		t.Fatalf("C-c should close Weft clients when Codex is ready, message=%q", model.message)
 	}
 }
 
@@ -338,7 +338,7 @@ func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 
 func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	model := NewModel(rt, cfg, state.Empty())
 	model.state.Focus = state.FocusWorkdirs
 	model.state.NavOpen = true
@@ -486,7 +486,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workdirs") || !strings.Contains(got, "CODUX  C-b command center  C-c interrupt/close") {
+	if got := model.View(); strings.Contains(got, "Workdirs") || !strings.Contains(got, "WEFT  C-b command center  C-c interrupt/close") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 
@@ -503,7 +503,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 func testModelWithAgent(t *testing.T) Model {
 	t.Helper()
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	cfg.CodexCommand = "cat"
 	st := testStateWithAgent(rt.Workdir)
 	return NewModel(rt, cfg, st)
@@ -538,7 +538,7 @@ func testRuntime(t *testing.T) config.Runtime {
 		Dir:        dir,
 		ConfigPath: filepath.Join(dir, "config.toml"),
 		StatePath:  filepath.Join(dir, "state.json"),
-		SocketPath: filepath.Join(dir, "codux.sock"),
+		SocketPath: filepath.Join(dir, "weft.sock"),
 	}
 }
 

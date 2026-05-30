@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-env_file="${CODUX_OPENAI_ENV_FILE:-.env}"
+env_file="${WEFT_OPENAI_ENV_FILE:-.env}"
 if [[ -f "$env_file" ]]; then
   set -a
   # shellcheck disable=SC1090

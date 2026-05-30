@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	AppDirEnv  = "CODUX_HOME"
-	WorkdirEnv = "CODUX_WORKDIR"
+	AppDirEnv  = "WEFT_HOME"
+	WorkdirEnv = "WEFT_WORKDIR"
 )
 
 var (
@@ -111,7 +111,7 @@ func ResolveRuntime() (Runtime, error) {
 		Dir:        dir,
 		ConfigPath: filepath.Join(dir, "config.toml"),
 		StatePath:  filepath.Join(dir, "state.json"),
-		SocketPath: filepath.Join(dir, "codux.sock"),
+		SocketPath: filepath.Join(dir, "weft.sock"),
 	}, nil
 }
 
@@ -130,7 +130,7 @@ func AppDir(workdir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".codux"), nil
+	return filepath.Join(home, ".weft"), nil
 }
 
 func RuntimeID(workdir string) string {
@@ -145,7 +145,7 @@ func RuntimeID(workdir string) string {
 }
 
 func DefaultTmuxSession(workdir string) string {
-	return "codux"
+	return "weft"
 }
 
 func EnsureConfig(rt Runtime) (Config, error) {
@@ -196,7 +196,7 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 			Rename       string `toml:"rename"`
 			Close        string `toml:"close"`
 			Help         string `toml:"help"`
-			CloseCodux   string `toml:"close_codux"`
+			CloseWeft    string `toml:"close_weft"`
 			Quit         string `toml:"quit"`
 		} `toml:"key_bindings"`
 	}
@@ -266,9 +266,9 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 	}
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	if raw.KeyBindings.Quit != "" {
-		applyBinding(&cfg.KeyBindings.Quit, legacyCloseCoduxBinding(raw.KeyBindings.Quit))
-	} else if raw.KeyBindings.CloseCodux != "" {
-		applyBinding(&cfg.KeyBindings.Quit, legacyCloseCoduxBinding(raw.KeyBindings.CloseCodux))
+		applyBinding(&cfg.KeyBindings.Quit, legacyCloseWeftBinding(raw.KeyBindings.Quit))
+	} else if raw.KeyBindings.CloseWeft != "" {
+		applyBinding(&cfg.KeyBindings.Quit, legacyCloseWeftBinding(raw.KeyBindings.CloseWeft))
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -332,7 +332,7 @@ func MigrateDefaultConfig(path string) error {
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-a"`, `focus_toggle = "C-g"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-d"`, `focus_toggle = "C-g"`)
 	updated = regexp.MustCompile(`(?m)^sessions\s*=\s*"[^"\n]*"\n?`).ReplaceAllString(updated, "")
-	updated = strings.ReplaceAll(updated, `close_codux = "C-q"`, `close_codux = "C-c"`)
+	updated = strings.ReplaceAll(updated, `close_weft = "C-q"`, `close_weft = "C-c"`)
 	if !strings.Contains(updated, "\ntitle_template =") {
 		codexCommandRE := regexp.MustCompile(`(?m)^codex_command\s*=\s*"[^"\n]*"\n`)
 		if codexCommandRE.MatchString(updated) {
@@ -359,7 +359,7 @@ func MigrateDefaultConfig(path string) error {
 		})
 	}
 	quitRE := regexp.MustCompile(`(?m)^quit\s*=\s*"([^"\n]*)"\s*$`)
-	if strings.Contains(updated, "\nclose_codux =") {
+	if strings.Contains(updated, "\nclose_weft =") {
 		updated = quitRE.ReplaceAllString(updated, "")
 	} else {
 		updated = quitRE.ReplaceAllStringFunc(updated, func(line string) string {
@@ -367,11 +367,11 @@ func MigrateDefaultConfig(path string) error {
 			if len(matches) != 2 {
 				return line
 			}
-			return fmt.Sprintf(`close_codux = "%s"`, legacyCloseCoduxBinding(matches[1]))
+			return fmt.Sprintf(`close_weft = "%s"`, legacyCloseWeftBinding(matches[1]))
 		})
 	}
-	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nclose_codux =") {
-		updated = insertKeyBinding(updated, `close_codux = "C-c"`)
+	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nclose_weft =") {
+		updated = insertKeyBinding(updated, `close_weft = "C-c"`)
 	}
 	for _, line := range []string{
 		`drawer = "C-b"`,
@@ -399,8 +399,8 @@ func MigrateDefaultConfig(path string) error {
 }
 
 func DefaultConfigText() string {
-	return `# Codux global runtime configuration.
-# Run ` + "`codux config info`" + ` to see the runtime directory, state file, and
+	return `# Weft global runtime configuration.
+# Run ` + "`weft config info`" + ` to see the runtime directory, state file, and
 # tmux session. Set tmux_session only when you need to override it.
 
 # Command launched inside each Codex PTY owned by the dashboard TUI.
@@ -409,7 +409,7 @@ codex_command = "codex"
 # Global title template for agent rows.
 title_template = "{title}"
 
-# Optional command hook for generated titles. Codux sends each agent's first
+# Optional command hook for generated titles. Weft sends each agent's first
 # submitted Codex message to this command as JSON on stdin and uses the first
 # non-empty stdout line as the generated title for {auto}.
 title_hook_command = ""
@@ -433,7 +433,7 @@ quit = "C-c"
 `
 }
 
-func legacyCloseCoduxBinding(binding string) string {
+func legacyCloseWeftBinding(binding string) string {
 	normalized := strings.ToLower(strings.TrimSpace(binding))
 	normalized = strings.ReplaceAll(normalized, "ctrl+", "c-")
 	if normalized == "c-q" {

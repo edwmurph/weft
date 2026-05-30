@@ -1,4 +1,4 @@
-<h1 align="center"><img src="assets/codux-logo.svg" alt="" width="70" valign="middle"> Codux</h1>
+<h1 align="center"><img src="assets/weft-logo.svg" alt="Weft" width="360"></h1>
 
 <p align="center">
   <strong>Coordinate multiple Codex sessions from a single tmux-hosted TUI.</strong>
@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-Codux runs one global tmux session with one full-screen pane. That pane hosts a
+Weft runs one global tmux session with one full-screen pane. That pane hosts a
 Go Bubble Tea command center, and the command center owns embedded Codex PTYs
 directly. Workdirs, optional flat groups, and agents are managed inside that
 one global state file. Detaching tmux leaves the command center and Codex
@@ -18,61 +18,61 @@ processes alive.
 
 ## Getting Started
 
-Install Codux with Homebrew:
+Install Weft with Homebrew:
 
 ```sh
-brew install edwmurph/tap/codux
+brew install edwmurph/tap/weft
 ```
 
-Then run Codux from a project directory. The launch directory is added as the
+Then run Weft from a project directory. The launch directory is added as the
 initial workdir:
 
 ```sh
-codux doctor
-codux
+weft doctor
+weft
 ```
 
 For local development from this repository:
 
 ```sh
-go run ./cmd/codux doctor
-go run ./cmd/codux
+go run ./cmd/weft doctor
+go run ./cmd/weft
 ```
 
 From another current directory, point Go at the worktree module first:
 
 ```sh
-go -C /path/to/codux-or-worktree run ./cmd/codux
+go -C /path/to/weft-or-worktree run ./cmd/weft
 ```
 
 ## Usage
 
-`codux` and `codux start` create or reattach the global tmux session.
+`weft` and `weft start` create or reattach the global tmux session.
 `--no-attach` prepares the runtime without attaching.
 
 ```text
-codux [--attach|--no-attach]
-codux start [--attach|--no-attach]
-codux refresh
-codux status [--json]
-codux new [title]
-codux group add <name>
-codux workdir add <path>
-codux rename [id] <title>
-codux close [id]
-codux close --kill
-codux sessions
-codux clear
-codux config info
+weft [--attach|--no-attach]
+weft start [--attach|--no-attach]
+weft refresh
+weft status [--json]
+weft new [title]
+weft group add <name>
+weft workdir add <path>
+weft rename [id] <title>
+weft close [id]
+weft close --kill
+weft sessions
+weft clear
+weft config info
 ```
 
-Run `codux close` without an id to close Codux clients; pass an id to close a
+Run `weft close` without an id to close Weft clients; pass an id to close a
 Codex agent.
 
 Agent rows render through the global `title_template`, which defaults to
 `{title}`. New agents default their base title to `{codex}`, so they inherit
-the live Codex title until renamed. Titles passed to `codux new` or
-`codux rename` can still include template variables for compatibility:
+the live Codex title until renamed. Titles passed to `weft new` or
+`weft rename` can still include template variables for compatibility:
 
 - `{title}`: user-configured agent title
 - `{auto}`: generated title from the first submitted message
@@ -81,37 +81,37 @@ the live Codex title until renamed. Titles passed to `codux new` or
 - `{workdir}`: agent workdir path
 - `{group}`: flat group name, when the agent is in a group
 
-For example, `codux rename "Codex {status}"` keeps a fixed title while showing
+For example, `weft rename "Codex {status}"` keeps a fixed title while showing
 the current agent status.
 
 To generate titles, configure a hook command:
 
 ```toml
-title_hook_command = "/path/to/codux/hooks/auto-title-openai.sh"
+title_hook_command = "/path/to/weft/hooks/auto-title-openai.sh"
 title_hook_timeout_seconds = 10
 ```
 
 When `title_hook_command` is configured, the first non-empty message submitted
-to each new Codex agent runs the hook from that agent's workdir. Codux sends
+to each new Codex agent runs the hook from that agent's workdir. Weft sends
 JSON on stdin with `event`, `agent_id`, `workdir`, `group`, `status`, `title`,
 `title_template`, `codex_title`, and `first_message`, then saves the first
 non-empty stdout line as the generated title.
 
 Set an agent title to `{auto}` in the rename pane, or run
-`codux rename <id> "{auto}"`, to display that saved generated title. To make
+`weft rename <id> "{auto}"`, to display that saved generated title. To make
 every row show generated titles, set `title_template = "{auto}"`. Before the
 first message, `{auto}` renders as `waiting for first message`; failed hooks
 render as `auto title failed`, show a footer error, and keep the full error in
 the rename pane.
 
-Codux treats hooks as generic shell commands. The checked-in
+Weft treats hooks as generic shell commands. The checked-in
 `hooks/auto-title-openai.sh` script is one real hook implementation; it reads
 `OPENAI_API_KEY` from the environment or a local ignored `.env` file and uses
 the OpenAI Responses API with `OPENAI_TITLE_MODEL`, defaulting to
 `gpt-5.4-nano`, to return a short task title. The prompt only uses the first
 message, so simple greetings like `hi` stay simple. You can replace it with any
 command that follows the same stdin/stdout contract. Set
-`CODUX_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
+`WEFT_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
 outside the agent workdir.
 
 The command center has `Workdirs` and `Agents` navigation panes. Agents can sit
@@ -144,21 +144,21 @@ help = "?"
 quit = "C-c"
 ```
 
-In CODEX focus, Codux keeps Codex-owned interrupts available while the active
+In CODEX focus, Weft keeps Codex-owned interrupts available while the active
 Codex agent is working. Press `C-c` to interrupt that agent. Once Codex reports
-ready, `C-c` closes Codux clients. Use `codux close` from another shell to close
-Codux directly.
+ready, `C-c` closes Weft clients. Use `weft close` from another shell to close
+Weft directly.
 
 ## Config And State
 
-Codux stores runtime files globally:
+Weft stores runtime files globally:
 
-- `~/.codux/config.toml`
-- `~/.codux/state.json`
-- `~/.codux/codux.sock`
+- `~/.weft/config.toml`
+- `~/.weft/state.json`
+- `~/.weft/weft.sock`
 
-`CODUX_WORKDIR` overrides the launch directory that seeds the initial workdir.
-`CODUX_HOME` overrides the runtime directory directly for development and tests.
+`WEFT_WORKDIR` overrides the launch directory that seeds the initial workdir.
+`WEFT_HOME` overrides the runtime directory directly for development and tests.
 
 The config keys are stable: `tmux_session`, `codex_command`, `title_template`,
 `title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. State
@@ -170,11 +170,11 @@ native tmux panes cannot be adopted into TUI-owned PTYs.
 
 ```sh
 go test ./...
-CODUX_RUN_INTEGRATION=1 go test ./...
-go build ./cmd/codux
+WEFT_RUN_INTEGRATION=1 go test ./...
+go build ./cmd/weft
 ```
 
-Live integration tests use temporary `CODUX_HOME`, `CODUX_WORKDIR`, a unique
+Live integration tests use temporary `WEFT_HOME`, `WEFT_WORKDIR`, a unique
 tmux socket, and a fake `codex_command`. Use
-`CODUX_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
+`WEFT_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
 to see per-step dashboard timing logs.

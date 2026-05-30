@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/edwmurph/codux/internal/config"
-	"github.com/edwmurph/codux/internal/state"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/state"
 	"github.com/muesli/termenv"
 )
 
@@ -40,7 +40,7 @@ func TestDesiredWorkdirPaneWidthExpandsForLongPaths(t *testing.T) {
 }
 
 func TestRenderWorkspaceShowsWorkdirsAgentsAndAgent(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := layoutState("/tmp/project")
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 120, 24, "", 72, 1)
@@ -76,24 +76,24 @@ func TestRenderWorkdirCardsUseDefaultPathAndTitleOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.DefaultConfig("codux-test")
-	st := layoutState(filepath.Join(home, "code", "personal", "codux"))
+	cfg := config.DefaultConfig("weft-test")
+	st := layoutState(filepath.Join(home, "code", "personal", "weft"))
 	st.Focus = state.FocusWorkdirs
 
 	got := ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n"))
-	if !strings.Contains(got, "~/code/personal/codux") {
+	if !strings.Contains(got, "~/code/personal/weft") {
 		t.Fatalf("workdir card should use default display path title:\n%s", got)
 	}
 
-	st.Workdirs[0].Title = "Main Codux"
+	st.Workdirs[0].Title = "Main Weft"
 	got = ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n"))
-	if !strings.Contains(got, "Main Codux") || strings.Contains(got, "~/code/personal/codux") {
+	if !strings.Contains(got, "Main Weft") || strings.Contains(got, "~/code/personal/weft") {
 		t.Fatalf("workdir card should use manual title override:\n%s", got)
 	}
 }
 
 func TestRenderWorkdirCardsShowOnlyReconciledCounts(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	now := state.NowISO()
 	st := state.State{
 		Version:           state.Version,
@@ -161,7 +161,7 @@ func TestRenderWorkdirCardCountsColorOnlyNonzeroValues(t *testing.T) {
 }
 
 func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusWorkdirs
 
@@ -176,7 +176,7 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 }
 
 func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := layoutState("/tmp/project")
 	st.SelectedFolderID = ""
 	st.Folders = nil
@@ -196,7 +196,7 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 }
 
 func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := state.Repair(state.Empty(), "/tmp/project")
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
@@ -208,10 +208,47 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 	if strings.Contains(lines[len(lines)-1], "Codex") {
 		t.Fatalf("empty command center should not render default codex title in bottom border:\n%s", got)
 	}
+
+	got = renderWorkspaceWithNavWidth(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", 0, 0)
+	stripped := ansi.Strip(got)
+	logoIndex := strings.Index(stripped, `●──┼──▶      ██║ █╗ ██║ █████╗   █████╗      ██║`)
+	hintIndex := strings.Index(stripped, "No Codex agent open")
+	if logoIndex < 0 {
+		t.Fatalf("empty command center missing Weft wordmark:\n%s", stripped)
+	}
+	if hintIndex < 0 || logoIndex > hintIndex {
+		t.Fatalf("empty command center should render wordmark above existing hint:\n%s", stripped)
+	}
+
+	content := renderEmptyCodexContent(100, 24)
+	logoWidth := maxVisualWidth(emptyWeftLogo)
+	expectedLeft := strings.Repeat(" ", (100-logoWidth)/2)
+	logoStart := -1
+	for index, line := range content {
+		if strings.Contains(ansi.Strip(line), "██╗    ██╗") {
+			logoStart = index
+			break
+		}
+	}
+	if logoStart < 0 {
+		t.Fatalf("empty content missing first logo row:\n%s", strings.Join(content, "\n"))
+	}
+	for index, want := range emptyWeftLogo {
+		got := ansi.Strip(content[logoStart+index])
+		if !strings.HasPrefix(got, expectedLeft+want) {
+			t.Fatalf("logo row %d should preserve art spacing inside one centered block:\nwant prefix %q\ngot         %q", index, expectedLeft+want, got)
+		}
+	}
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+1]); !strings.HasPrefix(got, expectedLeft+centerVisual("No Codex agent open", logoWidth)) {
+		t.Fatalf("empty title should align inside centered logo block, got %q", got)
+	}
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+2]); !strings.HasPrefix(got, expectedLeft+centerVisual("Press n to create one.", logoWidth)) {
+		t.Fatalf("empty hint should align inside centered logo block, got %q", got)
+	}
 }
 
 func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusCodex
 	st.NavOpen = false
@@ -234,7 +271,7 @@ func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
 }
 
 func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusCodex
 	st.NavOpen = false
@@ -244,7 +281,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
 	}
-	if !strings.Contains(got, "CODUX  C-b command center  C-c interrupt/close") {
+	if !strings.Contains(got, "WEFT  C-b command center  C-c interrupt/close") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
 	if !strings.Contains(got, "Agent") {
@@ -256,7 +293,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 }
 
 func TestCodexLeftPaddingStaysBeforeLeadingANSIStyle(t *testing.T) {
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusCodex
 	st.NavOpen = false
@@ -282,7 +319,7 @@ func TestFocusedCodexAndNavUseSeparateFocusColors(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(previous)
 
-	cfg := config.DefaultConfig("codux-test")
+	cfg := config.DefaultConfig("weft-test")
 	st := layoutState("/tmp/project")
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 1)
 

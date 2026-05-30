@@ -1,0 +1,116 @@
+<svg width="1200" height="360" viewBox="0 0 1200 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">weft logo</title>
+  <desc id="desc">Five agent threads weave together into a single forward arrow next to the word weft.</desc>
+
+  <style>
+    :root {
+      --word: #111827;
+      --word-shadow: rgba(255,255,255,0.55);
+      --node-fill: rgba(255,255,255,0.86);
+      --node-stroke: rgba(17,24,39,0.16);
+      --muted: rgba(17,24,39,0.56);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --word: #F8FAFC;
+        --word-shadow: rgba(0,0,0,0.55);
+        --node-fill: rgba(2,6,23,0.72);
+        --node-stroke: rgba(255,255,255,0.18);
+        --muted: rgba(248,250,252,0.68);
+      }
+    }
+    .thread { stroke-linecap: round; stroke-linejoin: round; filter: url(#softGlow); }
+    .node { fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 2; filter: url(#softGlow); }
+    .bot { stroke: currentColor; fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+    .word { fill: var(--word); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 800; letter-spacing: -0.045em; filter: url(#wordLift); }
+    .tag { fill: var(--muted); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 600; letter-spacing: 0.08em; }
+  </style>
+
+  <defs>
+    <linearGradient id="cyanBlue" x1="110" y1="72" x2="636" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE"/>
+      <stop offset="0.52" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="blueAmber" x1="110" y1="126" x2="636" y2="170" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0EA5E9"/>
+      <stop offset="0.52" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="violetAmber" x1="110" y1="180" x2="636" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6"/>
+      <stop offset="0.44" stop-color="#7C3AED"/>
+      <stop offset="0.72" stop-color="#F97316"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="coralAmber" x1="110" y1="234" x2="636" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FB5A3E"/>
+      <stop offset="0.48" stop-color="#EC4899"/>
+      <stop offset="0.78" stop-color="#F97316"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="yellowAmber" x1="110" y1="288" x2="636" y2="192" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBBF24"/>
+      <stop offset="0.48" stop-color="#F97316"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="arrowGrad" x1="528" y1="180" x2="670" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="softGlow" x="-30%" y="-50%" width="160%" height="200%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#0EA5E9" flood-opacity="0.25"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="#F97316" flood-opacity="0.18"/>
+    </filter>
+    <filter id="wordLift" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="var(--word-shadow)" flood-opacity="1"/>
+    </filter>
+  </defs>
+
+  <!-- woven agent threads -->
+  <path class="thread" d="M116 72 H240 C318 72 328 166 408 166 C474 166 490 128 542 134 C586 139 610 165 640 180" stroke="url(#cyanBlue)" stroke-width="13"/>
+  <path class="thread" d="M116 126 H248 C315 126 338 122 396 166 C455 211 492 221 548 205 C587 194 611 184 640 180" stroke="url(#blueAmber)" stroke-width="13"/>
+  <path class="thread" d="M116 180 H256 C322 180 350 207 412 207 C482 207 498 153 552 154 C590 155 614 169 640 180" stroke="url(#violetAmber)" stroke-width="13"/>
+  <path class="thread" d="M116 234 H250 C320 234 344 225 402 196 C458 168 493 156 548 171 C588 182 611 184 640 180" stroke="url(#coralAmber)" stroke-width="13"/>
+  <path class="thread" d="M116 288 H232 C318 288 344 220 405 196 C466 172 505 192 548 192 C592 192 617 184 640 180" stroke="url(#yellowAmber)" stroke-width="13"/>
+
+  <!-- output arrow -->
+  <path class="thread" d="M533 180 H660" stroke="url(#arrowGrad)" stroke-width="14"/>
+  <path d="M637 151 L668 180 L637 209" stroke="url(#arrowGrad)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)"/>
+
+  <!-- agent nodes -->
+  <g transform="translate(76 72)" style="color:#22D3EE">
+    <circle class="node" r="30"/>
+    <rect class="bot" x="-14" y="-7" width="28" height="20" rx="6"/>
+    <path class="bot" d="M0 -16 V-7 M-8 -17 H8"/>
+    <circle cx="-7" cy="3" r="2.7" fill="currentColor"/><circle cx="7" cy="3" r="2.7" fill="currentColor"/>
+  </g>
+  <g transform="translate(76 126)" style="color:#0EA5E9">
+    <circle class="node" r="30"/>
+    <rect class="bot" x="-14" y="-7" width="28" height="20" rx="6"/>
+    <path class="bot" d="M0 -16 V-7 M-8 -17 H8"/>
+    <circle cx="-7" cy="3" r="2.7" fill="currentColor"/><circle cx="7" cy="3" r="2.7" fill="currentColor"/>
+  </g>
+  <g transform="translate(76 180)" style="color:#8B5CF6">
+    <circle class="node" r="30"/>
+    <rect class="bot" x="-14" y="-7" width="28" height="20" rx="6"/>
+    <path class="bot" d="M0 -16 V-7 M-8 -17 H8"/>
+    <circle cx="-7" cy="3" r="2.7" fill="currentColor"/><circle cx="7" cy="3" r="2.7" fill="currentColor"/>
+  </g>
+  <g transform="translate(76 234)" style="color:#FB5A3E">
+    <circle class="node" r="30"/>
+    <rect class="bot" x="-14" y="-7" width="28" height="20" rx="6"/>
+    <path class="bot" d="M0 -16 V-7 M-8 -17 H8"/>
+    <circle cx="-7" cy="3" r="2.7" fill="currentColor"/><circle cx="7" cy="3" r="2.7" fill="currentColor"/>
+  </g>
+  <g transform="translate(76 288)" style="color:#FBBF24">
+    <circle class="node" r="30"/>
+    <rect class="bot" x="-14" y="-7" width="28" height="20" rx="6"/>
+    <path class="bot" d="M0 -16 V-7 M-8 -17 H8"/>
+    <circle cx="-7" cy="3" r="2.7" fill="currentColor"/><circle cx="7" cy="3" r="2.7" fill="currentColor"/>
+  </g>
+
+  <!-- wordmark -->
+  <text class="word" x="724" y="230" font-size="154">weft</text>
+  <text class="tag" x="733" y="277" font-size="24">agent threads</text>
+</svg>

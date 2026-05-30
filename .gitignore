@@ -2,11 +2,12 @@
 .env
 .env.*
 !.env.example
-.codux/
+__pycache__/
+.weft/
 .coverage
 htmlcov/
 *.log
 dist/
 bin/
-/codux
-/codux-release
+/weft
+/weft-release
