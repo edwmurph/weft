@@ -125,6 +125,9 @@ type Model struct {
 }
 
 func Run(rt config.Runtime, cfg config.Config, st state.State, migration *state.Migration) error {
+	enableTerminalKeyboardReporting()
+	defer disableTerminalKeyboardReporting()
+
 	model := NewModel(rt, cfg, st)
 	if migration != nil {
 		model.migration = migration.Message
@@ -282,6 +285,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(waitIPC(m.ipcCh), cmd)
 	case tea.KeyMsg:
 		return m.handleKey(typed)
+	}
+	if input, ok := enhancedKeyboardInputFromMsg(msg); ok {
+		return m.handleEnhancedKeyboardInput(input)
 	}
 	return m, nil
 }
@@ -512,27 +518,7 @@ func (m Model) activeCodexReceivesQuitBinding() bool {
 	if active == nil || m.ptys[active.ID] == nil {
 		return false
 	}
-	switch active.Status {
-	case state.StatusStarting:
-		return true
-	case state.StatusRunning:
-		return codexActivityStatus(active.CodexTitle) != "ready"
-	default:
-		return false
-	}
-}
-
-func codexActivityStatus(title string) string {
-	title = strings.ToLower(titles.NormalizeCodexTitle(title))
-	for _, token := range strings.FieldsFunc(title, func(r rune) bool {
-		return !unicode.IsLetter(r)
-	}) {
-		switch token {
-		case "ready", "working":
-			return token
-		}
-	}
-	return ""
+	return true
 }
 
 func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1308,7 +1294,7 @@ func (m *Model) resizeScreens() {
 }
 
 func (m Model) ptyWidth() int {
-	return max(20, m.width-m.effectiveNavWidth()-4-codexLeftPadding)
+	return max(20, codexLineContentWidth(max(0, m.codexPaneWidth()-2)))
 }
 
 func (m Model) ptyHeight() int {
@@ -1317,6 +1303,25 @@ func (m Model) ptyHeight() int {
 
 func (m Model) effectiveNavWidth() int {
 	return min(max(0, m.navWidth), max(0, m.width-22))
+}
+
+func (m Model) codexPaneWidth() int {
+	if m.width <= 0 {
+		return 0
+	}
+	navWidth := min(max(0, m.effectiveNavWidth()), m.width)
+	codexWidth := m.width - navWidth
+	navOnly := navWidth >= m.width
+	if !navOnly && codexWidth < minCodexPaneWidth && navWidth > 0 {
+		codexWidth = min(m.width, minCodexPaneWidth)
+	}
+	if navWidth <= 0 {
+		return m.width
+	}
+	if codexWidth <= 0 {
+		return 0
+	}
+	return codexWidth
 }
 
 func (m Model) targetNavWidth() int {
@@ -1606,6 +1611,8 @@ func (m *Model) captureCodexInputArgs(agent state.Agent, args map[string]string)
 		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], ' ')
 	case "backspace":
 		m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+	case codexInputShiftEnter:
+		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], '\n')
 	case "enter":
 		firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
 		delete(m.codexInputBuffers, agent.ID)

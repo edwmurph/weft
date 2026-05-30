@@ -207,9 +207,13 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 	case '@':
 		s.insertChars(param(0, 1))
 	case 's':
-		s.savedRow, s.savedCol = s.row, s.col
+		if prefix == 0 {
+			s.savedRow, s.savedCol = s.row, s.col
+		}
 	case 'u':
-		s.row, s.col = s.savedRow, s.savedCol
+		if prefix == 0 {
+			s.row, s.col = s.savedRow, s.savedCol
+		}
 	case 'h', 'l':
 		if prefix == '?' {
 			if paramsContain(params, 47, 1047, 1049) {
@@ -220,7 +224,9 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 			}
 		}
 	case 'm':
-		cellbuf.ReadStyle(params, &s.style)
+		if prefix == 0 {
+			cellbuf.ReadStyle(params, &s.style)
+		}
 	}
 	s.clampCursor()
 }

@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	collapsedCodexToolbar = "WEFT  C-b command center  C-c interrupt/close"
+	collapsedCodexToolbar = "WEFT  C-b command center  C-c to Codex"
+	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
 func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
@@ -116,8 +117,13 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 	if st.Agents[0].Status != state.StatusRunning {
 		t.Fatalf("agent should start even when SHELL is invalid, status=%s title=%q\nscreen:\n%s", st.Agents[0].Status, st.Agents[0].CodexTitle, clientOutput())
 	}
+	waitForEscapedCapture(t, env, pane, func(capture string) bool {
+		return strings.Contains(capture, keyboardProtocolSetup)
+	})
+	directRun(t, env, "send-keys", "-l", "-t", pane, "probe")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	capture := waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Fake Codex Ready") || strings.Contains(capture, "Starting Codex")
+		return strings.Contains(capture, "echo:probe")
 	})
 	if strings.Contains(capture, "No Codex agent open") || strings.Contains(capture, "fork/exec") {
 		t.Fatalf("new agent rendered stale empty/error state:\n%s", capture)
@@ -142,6 +148,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	}
 	startupMarker := filepath.Join(tmp, "fake-codex-color-only")
 	titleHookPayload := filepath.Join(tmp, "title-hook-payload.json")
+	inputLog := filepath.Join(tmp, "fake-codex-input.log")
 	titleHook := filepath.Join(tmp, "title-hook.sh")
 	if err := os.WriteFile(titleHook, []byte(
 		"#!/bin/sh\n"+
@@ -176,6 +183,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"trap 'exit 0' HUP TERM\n"+
 			"trap 'printf \"\\033]2;Fake Codex Ready\\007\"' INT\n"+
 			"while IFS= read -r line; do\n"+
+			"  if [ -n \"${INPUT_LOG:-}\" ]; then printf '%s\\n' \"$line\" >> \"$INPUT_LOG\"; fi\n"+
 			"  printf '\\033]2;Fake Codex Working\\007'\n"+
 			"  printf '\\033[2J\\033[H'\n"+
 			"  printf '╭──────────────────────────────────────────────────────────╮\\n'\n"+
@@ -204,6 +212,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		"WEFT_EXECUTABLE="+bin,
 		"STARTUP_DELAY=1.2",
 		"STARTUP_MARKER="+startupMarker,
+		"INPUT_LOG="+inputLog,
 		"PATH="+os.Getenv("PATH"),
 		"TERM=xterm-256color",
 	)
@@ -323,10 +332,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent first Codex content visible", time.Since(started).Round(time.Millisecond))
 		waitForEscapedCapture(t, env, pane, func(capture string) bool {
-			return strings.Contains(capture, "38;2;237;239;241") &&
-				strings.Contains(capture, "48;2;40;49;56") &&
-				strings.Contains(capture, "38;2;0;0;0") &&
-				strings.Contains(capture, "48;2;255;255;255") &&
+			return strings.Contains(capture, keyboardProtocolSetup) &&
 				strings.Contains(capture, "48;2;40;40;49") &&
 				strings.Contains(capture, "Summarize recent commits")
 		})
@@ -359,12 +365,37 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
+	timedStep(t, "codex focus forwards shift enter without submitting", func() {
+		before, _ := os.ReadFile(inputLog)
+		directRun(t, env, "send-keys", "-l", "-t", pane, "multi")
+		writeClientInput(t, "\x1b[13;2u")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "line")
+		time.Sleep(150 * time.Millisecond)
+		mid, _ := os.ReadFile(inputLog)
+		if len(mid) != len(before) {
+			t.Fatalf("shift enter submitted before normal Enter:\nbefore=%q\nafter=%q", before, mid)
+		}
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		if !waitForBool(2*time.Second, func() bool {
+			data, _ := os.ReadFile(inputLog)
+			if len(data) < len(before) {
+				return false
+			}
+			return bytes.Contains(data[len(before):], []byte("multi\x1b[13;2uline\n"))
+		}) {
+			data, _ := os.ReadFile(inputLog)
+			t.Fatalf("shift enter sequence was not forwarded to Codex:\nbefore=%q\nafter=%q", before, data)
+		}
+	})
+
 	timedStep(t, "C-b opens command center", func() {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
+		time.Sleep(250 * time.Millisecond)
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Agents") &&
-				strings.Contains(capture, ">_ OpenAI Codex")
+				strings.Contains(capture, "Fake Codex Ready")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 	})
@@ -449,18 +480,18 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return agent != nil && strings.Contains(agent.CodexTitle, "Working")
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codex working")
+			return strings.Contains(capture, "received:status check")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
 			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
 		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex ready")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
 	})
 
 	timedStep(t, "help modal closes", func() {
@@ -504,14 +535,14 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 	})
 
-	timedStep(t, "C-c interrupts working codex before ready codex closes weft", func() {
+	timedStep(t, "C-c stays with Codex focus and command center C-c closes weft", func() {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
 				st.Focus == state.FocusCodex &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
-		directRun(t, env, "send-keys", "-l", "-t", pane, "interrupt me")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "interrupt")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
@@ -520,7 +551,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(st.Agents[0].CodexTitle, "Working")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Fake Codex Working") || strings.Contains(capture, "Codex working")
+			return strings.Contains(capture, "received:interrupt")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		time.Sleep(250 * time.Millisecond)
@@ -535,18 +566,31 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-c")
+		time.Sleep(250 * time.Millisecond)
+		attached = directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
+		if len(attached) != 1 || attached[0] != "1" {
+			t.Fatalf("C-c should stay with Codex after CODEX is ready: %v", attached)
+		}
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Agents) == 1 &&
+				st.Focus == state.FocusCodex &&
+				st.Agents[0].Status == state.StatusRunning
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
+		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		if !waitForBool(2*time.Second, func() bool {
 			attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
 			return len(attached) == 1 && attached[0] == "0"
 		}) {
-			t.Fatalf("C-c did not detach Weft clients")
+			t.Fatalf("command center C-c did not detach Weft clients")
 		}
 		if panes := directLines(t, env, "list-panes", "-t", pane, "-F", "#{pane_id}"); len(panes) != 1 {
 			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
 		}
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusCodex &&
+				st.Focus == state.FocusFolders &&
 				st.Agents[0].Status == state.StatusRunning &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
@@ -743,7 +787,7 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	if count := strings.Count(capture, "WEFT"); count > 1 {
 		t.Fatalf("dashboard should render at most one WEFT frame label, got %d:\n%s", count, capture)
 	}
-	if count := strings.Count(capture, "C-c interrupt/close"); count > 1 {
+	if count := strings.Count(capture, "C-c to Codex"); count > 1 {
 		t.Fatalf("dashboard rendered duplicate footer/header labels, got %d:\n%s", count, capture)
 	}
 	if !empty && strings.Contains(capture, "No Codex agent open") {

@@ -556,7 +556,7 @@ func navShortcuts(cfg config.Config) string {
 }
 
 func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return appTitle + "  " + cfg.KeyBindings.Drawer + " command center  " + cfg.KeyBindings.Quit + " interrupt/close"
+	return appTitle + "  " + cfg.KeyBindings.Drawer + " command center  " + cfg.KeyBindings.Quit + " to Codex"
 }
 
 func focusHintLabel(cfg config.Config) string {

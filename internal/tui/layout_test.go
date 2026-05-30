@@ -327,13 +327,13 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
 	}
-	if !strings.Contains(got, "WEFT  C-b command center  C-c interrupt/close") {
+	if !strings.Contains(got, "WEFT  C-b command center  C-c to Codex") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
 	if !strings.Contains(got, "Agent") {
 		t.Fatalf("codex pane should render Agent title:\n%s", got)
 	}
-	if count := strings.Count(got, "C-c interrupt/close"); count != 1 {
+	if count := strings.Count(got, "C-c to Codex"); count != 1 {
 		t.Fatalf("collapsed codex should render shortcuts only once, got %d:\n%s", count, got)
 	}
 }

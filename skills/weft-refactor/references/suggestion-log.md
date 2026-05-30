@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-30 - Framed Codex keyboard passthrough
+
+- Request: Diagnose why proxied Codex focus input differs from a normal Codex terminal, with Shift+Enter recognized by Weft but not inserted as a Codex newline.
+- Suggestions: Keep Weft's framed Codex pane active, enable enhanced terminal keyboard reporting in the attached client, forward modified-key escape sequences to the supervisor-owned Codex PTY, and reserve only the drawer key to return to the command center.
+- Outcome: Implemented in `.worktrees/codex-shift-enter`; awaiting review.
+- Evidence: `internal/tui/terminal_keys.go`, `internal/tui/client.go`, `internal/tui/model.go`, `tests/integration/dashboard_e2e_test.go`.
+
 ## 2026-05-30 - Weft rebrand
 
 - Request: Rebrand the repo to Weft, update Homebrew publishing, GitHub remote metadata, code references, docs, and logo assets.

@@ -85,7 +85,7 @@ the local Unix socket. The protocol should support:
 - command request and response
 - state snapshot response
 - event subscription for state, PTY screen, status, and shutdown events
-- raw key/input delivery to the active Codex PTY
+- key/input delivery to the active Codex PTY
 - terminal size updates from the active TUI client
 - structured errors suitable for CLI output and TUI footer messages
 
@@ -232,7 +232,12 @@ Codex pane is maximized.
 
 - Workdirs and agents panes are hidden offscreen to the left.
 - Codex pane fills the terminal.
-- Codex PTY receives normal key input.
+- Weft keeps the framed Codex pane visible while Codex is focused.
+- The attached client enables enhanced terminal keyboard reporting and forwards
+  supported keyboard escape sequences into the active Codex PTY.
+- Codex-owned terminal behavior, including multiline shortcuts such as
+  Shift+Enter in supporting terminals, is preserved inside the framed pane.
+- C-c is not intercepted by Weft while Codex has focus.
 - User exits back to command center with the configured drawer/navigation key.
 
 ## Initial Keybindings
@@ -251,7 +256,7 @@ m       Move selected agent to another group in the same workdir, or clear its g
 r       Rename selected workdir title, group, or agent title
 d       Delete/remove selected item
 ?       Help
-C-c     Quit Weft
+C-c     Quit Weft from command center focus
 ```
 
 Deletion behavior depends on selected item type and is defined below.
@@ -526,6 +531,8 @@ Rules:
 - Top-level agents have no group.
 - Removing a workdir stops every PTY for agents in that workdir.
 - Codex receives input only in Codex Focus State.
+- The active Codex PTY width matches the visible Codex content width inside the
+  frame and left padding, so terminal wrapping aligns with what the user sees.
 - Closing the TUI client does not stop PTYs.
 - Restarting the supervisor stops PTYs unless a future implementation supports explicit PTY handoff.
 - The active TUI client sends terminal size changes to the supervisor, and the supervisor resizes the active Codex PTY.

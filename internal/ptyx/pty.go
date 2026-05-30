@@ -72,12 +72,6 @@ func (s *Session) Kill() {
 	}
 }
 
-func (s *Session) Text() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.text
-}
-
 func (s *Session) readLoop(output func(Data)) {
 	defer func() {
 		if s.cmd != nil {

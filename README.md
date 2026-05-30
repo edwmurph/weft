@@ -146,10 +146,12 @@ help = "?"
 quit = "C-c"
 ```
 
-In CODEX focus, Weft keeps Codex-owned interrupts available while the active
-Codex agent is working. Press `C-c` to interrupt that agent. Once Codex reports
-ready, `C-c` closes Weft clients. Use `weft close` from another shell to close
-Weft directly.
+In CODEX focus, Weft keeps the Codex pane framed while forwarding Codex input
+through the active PTY. The attached client enables enhanced terminal keyboard
+reporting so multiline shortcuts such as `Shift+Enter` are forwarded to Codex.
+Press the drawer key, `C-b` by default, to return to the command center. `C-c`
+stays with Codex while Codex has focus. To close Weft, return to the command
+center and press `C-c`, or run `weft close` from another shell.
 
 ## Config And State
 

@@ -46,6 +46,8 @@ type ClientModel struct {
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
 	model := NewClientModel(rt, cfg)
+	enableTerminalKeyboardReporting()
+	defer disableTerminalKeyboardReporting()
 	options := []tea.ProgramOption{
 		tea.WithInput(os.Stdin),
 		tea.WithOutput(os.Stdout),
@@ -103,6 +105,9 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickLoading()
 	case tea.KeyMsg:
 		return m.handleKey(typed)
+	}
+	if input, ok := enhancedKeyboardInputFromMsg(msg); ok {
+		return m.handleEnhancedKeyboardInput(input)
 	}
 	return m, nil
 }
@@ -433,14 +438,7 @@ func (m ClientModel) activeCodexReceivesQuitBinding() bool {
 	if active == nil {
 		return false
 	}
-	switch active.Status {
-	case state.StatusStarting:
-		return true
-	case state.StatusRunning:
-		return codexActivityStatus(active.CodexTitle) != "ready"
-	default:
-		return false
-	}
+	return true
 }
 
 func (m ClientModel) selectedAgent() *state.Agent {

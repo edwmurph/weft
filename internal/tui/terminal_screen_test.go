@@ -21,6 +21,16 @@ func TestTerminalScreenAppliesCursorAddressingWithoutLeakingEscapes(t *testing.T
 	}
 }
 
+func TestTerminalScreenIgnoresKeyboardModeSequences(t *testing.T) {
+	screen := NewTerminalScreen(20, 5)
+
+	screen.Write("x\x1b[>1uy\x1b[>4;2mz")
+
+	if got := strings.TrimSpace(screen.String()); got != "xyz" {
+		t.Fatalf("keyboard mode sequences should not move the cursor or style output, got %q", got)
+	}
+}
+
 func TestTerminalScreenAlternateScreenClearsPreviousContent(t *testing.T) {
 	screen := NewTerminalScreen(20, 5)
 

@@ -119,14 +119,32 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
 	if model.message != "" {
-		t.Fatalf("C-c should forward while Codex is running, message=%q", model.message)
+		t.Fatalf("C-c should forward while Codex has focus, message=%q", model.message)
 	}
 
 	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
-	if model.message != "closed Weft clients" {
-		t.Fatalf("C-c should close Weft clients when Codex is ready, message=%q", model.message)
+	if model.message != "" {
+		t.Fatalf("C-c should still forward after Codex is ready, message=%q", model.message)
+	}
+}
+
+func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.width = 100
+	model.navWidth = 0
+
+	if got, want := model.ptyWidth(), 97; got != want {
+		t.Fatalf("focused pty width = %d, want visible content width %d", got, want)
+	}
+
+	model.state.Focus = state.FocusFolders
+	model.state.NavOpen = true
+	model.navWidth = 60
+	if got, want := model.ptyWidth(), 37; got != want {
+		t.Fatalf("split pty width = %d, want visible content width %d", got, want)
 	}
 }
 
@@ -200,6 +218,35 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"first_message":"fix login"`) {
 		t.Fatalf("payload missing forwarded first message:\n%s", raw)
+	}
+}
+
+func TestTitleHookBuffersShiftEnterUntilSubmit(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	payloadPath := filepath.Join(t.TempDir(), "payload.json")
+	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
+
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "first"})
+	cmd := model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputShiftEnter})
+	if cmd != nil {
+		t.Fatal("shift enter should not submit the first message")
+	}
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "second"})
+	cmd = model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "enter"})
+	if cmd == nil {
+		t.Fatal("expected title hook command")
+	}
+	msg := cmd().(titleHookMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	raw, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"first_message":"first\nsecond"`) {
+		t.Fatalf("payload missing multiline first message:\n%s", raw)
 	}
 }
 
@@ -542,7 +589,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workdirs") || !strings.Contains(got, "WEFT  C-b command center  C-c interrupt/close") {
+	if got := model.View(); strings.Contains(got, "Workdirs") || !strings.Contains(got, "WEFT  C-b command center  C-c to Codex") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 
