@@ -47,8 +47,8 @@
 
 - Before asking the user whether to ship an implementation change, run `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, and `go build ./cmd/weft`.
 - If live integration tests cannot run because `go` is unavailable, call that out explicitly instead of treating skipped integration tests as full verification.
-- Keep live integration coverage focused on primary operator flows that need real supervisor/process/state behavior; prefer adding coverage to existing integration scenarios over creating one new live test per edge case.
-- Use mocked unit tests for broad branches, formatting details, parser cases, and deterministic command construction unless the bug only reproduces across a real supervisor, PTY, or process boundary.
+- Cover all dashboard-supported, user-facing functionality with live integration tests at the journey level. Add or extend integration scenarios whenever behavior changes workspace, group, agent, focus/navigation, prompt, attach/detach, supervisor, or PTY interactions.
+- Use unit tests for minute variations and pure logic details: validation branches, rendering/layout breakpoints, parser cases, prompt editing keystroke variants, and deterministic command construction.
 - The live integration suite may grow to roughly 2 minutes of wall time as part of normal verification. As it approaches that budget, regularly reassess whether new coverage should be added, consolidated into existing flows, or kept in faster unit tests.
 - If integration coverage starts repeating the same setup/action path, consolidate assertions into a primary-flow scenario instead of accumulating many nearly identical live supervisor tests.
 

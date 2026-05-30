@@ -739,23 +739,19 @@ tmux setting.
 
 Unit tests:
 
+- minute variations and pure logic details that do not require a live dashboard
 - state migration from old tabs/columns
-- supervisor startup, singleton locking, and shutdown
-- client/supervisor protocol handshake
-- version mismatch and upgrade restart decisions
-- command routing from CLI/TUI client to supervisor
-- workspace creation/removal
-- workspace title override set/clear behavior
-- group create/rename/delete validation
-- agent move within a workspace
-- title template rendering
-- focus transitions
-- layout width calculations
-- Codex input blocked unless maximized and focused
-- TUI client detach does not kill agent PTYs
+- supervisor startup, singleton locking, and shutdown decisions
+- protocol field parsing and structured error formatting
+- validation branches for workspace, group, agent, and config inputs
+- title template rendering variants
+- layout width calculations and rendering breakpoints
+- prompt editing keystroke variants
+- deterministic command construction and state helpers
 
 Integration tests:
 
+- all dashboard-supported, user-facing functionality at the journey level
 - launch with empty state
 - launch without tmux installed or on `PATH`
 - start supervisor with `weft --no-attach`

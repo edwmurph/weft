@@ -613,6 +613,322 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 }
 
+func TestDashboardOrganizationJourneysE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	projectRoot := filepath.Join(tmp, "projects")
+	alpha := filepath.Join(projectRoot, "alpha")
+	beta := filepath.Join(projectRoot, "beta")
+	for _, dir := range []string{runtimeDir, alpha, beta} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeCodex := writeVisibleFakeCodex(t, tmp, "fake-codex-dashboard.sh")
+	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env := append(os.Environ(),
+		"WEFT_HOME="+runtimeDir,
+		"WEFT_WORKSPACE="+alpha,
+		"WEFT_EXECUTABLE="+bin,
+		"PATH="+os.Getenv("PATH"),
+		"TERM=xterm-256color",
+	)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "direct-client-organization"
+	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, alpha, pane, 150, 36)
+	waitFor(t, "supervisor socket", 8*time.Second, func() bool {
+		_, err := os.Stat(filepath.Join(runtimeDir, "weft.sock"))
+		return err == nil
+	})
+
+	timedStep(t, "launch prompt can be declined then workspace is added with autocomplete", func() {
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Add this workspace to Weft?") &&
+				strings.Contains(capture, "N no")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "n")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Workdirs) == 0 && len(st.Agents) == 0
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "No workspaces") &&
+				strings.Contains(capture, "Add a workspace first.")
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "w")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Add workspace")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-u")
+		directRun(t, env, "send-keys", "-l", "-t", pane, filepath.Join(projectRoot, "alp"))
+		directRun(t, env, "send-keys", "-t", pane, "Down")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "> alpha") &&
+				strings.Contains(capture, "Enter choose")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Enter add") &&
+				!strings.Contains(capture, "> alpha")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			workdir := state.WorkdirByPath(st, alpha)
+			return len(st.Workdirs) == 1 && workdir != nil && st.SelectedWorkdirID == workdir.ID
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "No agents") &&
+				strings.Contains(capture, "Press n to create one.")
+		})
+	})
+
+	timedStep(t, "second workspace is added and workspace title can be set and cleared", func() {
+		directRun(t, env, "send-keys", "-t", pane, "w")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Add workspace")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-u")
+		directRun(t, env, "send-keys", "-l", "-t", pane, beta)
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			workdir := state.WorkdirByPath(st, beta)
+			return len(st.Workdirs) == 2 && workdir != nil && st.SelectedWorkdirID == workdir.ID
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "Left")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusWorkdirs
+		})
+		directRun(t, env, "send-keys", "-t", pane, "k")
+		waitState(t, env, bin, func(st state.State) bool {
+			workdir := state.WorkdirByPath(st, alpha)
+			return workdir != nil && st.SelectedWorkdirID == workdir.ID
+		})
+		directRun(t, env, "send-keys", "-t", pane, "r")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Rename workspace")
+		})
+		directRun(t, env, "send-keys", "-l", "-t", pane, "Alpha Workspace")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			workdir := state.WorkdirByPath(st, alpha)
+			return workdir != nil && workdir.Title == "Alpha Workspace"
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Alpha Workspace")
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "r")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Rename workspace")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-u")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			workdir := state.WorkdirByPath(st, alpha)
+			return workdir != nil && workdir.Title == ""
+		})
+	})
+
+	var firstAgentID string
+	timedStep(t, "group lifecycle and grouped agent journeys run through the dashboard", func() {
+		directRun(t, env, "send-keys", "-t", pane, "Right")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusFolders
+		})
+		directRun(t, env, "send-keys", "-t", pane, "g")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Create group")
+		})
+		directRun(t, env, "send-keys", "-l", "-t", pane, "release")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			return folderByPath(st, "release") != nil
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "r")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Rename group")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-u")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "renamed")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			return folderByPath(st, "renamed") != nil
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			folder := folderByPath(st, "renamed")
+			return folder != nil && state.IsGroupCollapsed(st, folder.ID)
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "renamed") && strings.Contains(capture, "▸")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			folder := folderByPath(st, "renamed")
+			return folder != nil && !state.IsGroupCollapsed(st, folder.ID)
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "n")
+		st := waitState(t, env, bin, func(st state.State) bool {
+			folder := folderByPath(st, "renamed")
+			return len(st.Agents) == 1 &&
+				folder != nil &&
+				st.Agents[0].FolderID == folder.ID &&
+				st.Agents[0].Status == state.StatusRunning &&
+				st.Focus == state.FocusCodex
+		})
+		firstAgentID = st.Agents[0].ID
+
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusFolders && st.NavOpen
+		})
+		directRun(t, env, "send-keys", "-t", pane, "k")
+		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "d")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Delete group") &&
+				strings.Contains(capture, "renamed")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "y")
+		waitState(t, env, bin, func(st state.State) bool {
+			folder := folderByPath(st, "renamed")
+			agent := findAgent(st, firstAgentID)
+			return folder != nil && agent != nil && agent.FolderID == folder.ID
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "j")
+		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "m")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Move agent") &&
+				strings.Contains(capture, "Top-level agent")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstAgentID)
+			return agent != nil && agent.FolderID == ""
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "j")
+		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "d")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Delete group") &&
+				strings.Contains(capture, "renamed")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "y")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Folders) == 0
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "n")
+		waitState(t, env, bin, func(st state.State) bool {
+			active := state.ActiveAgent(st)
+			return len(st.Agents) == 2 &&
+				active != nil &&
+				active.ID != firstAgentID &&
+				active.FolderID == "" &&
+				st.Focus == state.FocusCodex
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusFolders && st.NavOpen
+		})
+		directRun(t, env, "send-keys", "-t", pane, "k")
+		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.ActiveAgentID == firstAgentID && st.Focus == state.FocusCodex
+		})
+	})
+
+	timedStep(t, "refresh and second attach preserve selected running agent", func() {
+		out := runWeft(t, env, bin, "refresh")
+		if !strings.Contains(out, "refreshed Weft command center") {
+			t.Fatalf("refresh output missing message:\n%s", out)
+		}
+		clientOutput, _ = startDirectDashboardClient(t, env, bin, alpha, pane+"-reattach", 150, 36)
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, collapsedCodexToolbar) ||
+				(strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Agents"))
+		})
+		if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
+			t.Fatalf("first client did not detach after second attach")
+		}
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstAgentID)
+			return agent != nil &&
+				st.ActiveAgentID == firstAgentID &&
+				agent.Status == state.StatusRunning &&
+				len(st.Agents) == 2
+		})
+	})
+
+	timedStep(t, "workspace deletion removes empty and active workspaces", func() {
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusFolders && st.NavOpen
+		})
+		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "Left")
+		st := waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusWorkdirs
+		})
+		time.Sleep(250 * time.Millisecond)
+		selected := state.WorkdirByID(st, st.SelectedWorkdirID)
+		if selected == nil {
+			t.Fatalf("no selected workspace before deletion: %#v", st.Workdirs)
+		}
+
+		directRun(t, env, "send-keys", "-t", pane, "d")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Delete workspace")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "y")
+		if selected.Path == beta {
+			waitState(t, env, bin, func(st state.State) bool {
+				return len(st.Workdirs) == 1 && state.WorkdirByPath(st, beta) == nil && len(st.Agents) == 2
+			})
+		} else {
+			waitState(t, env, bin, func(st state.State) bool {
+				return len(st.Workdirs) == 1 && state.WorkdirByPath(st, alpha) == nil && len(st.Agents) == 0
+			})
+		}
+		time.Sleep(250 * time.Millisecond)
+
+		directRun(t, env, "send-keys", "-t", pane, "d")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Delete workspace")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "y")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Workdirs) == 0 && len(st.Folders) == 0 && len(st.Agents) == 0
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "No workspaces") &&
+				strings.Contains(capture, "No Codex agent open")
+		})
+	})
+}
+
 func timedStep(t *testing.T, name string, fn func()) {
 	t.Helper()
 	start := time.Now()
@@ -744,6 +1060,16 @@ func directRun(t *testing.T, env []string, args ...string) {
 		writeClientInput(t, "\x15")
 	case "Escape":
 		writeClientInput(t, "\x1b")
+	case "Tab":
+		writeClientInput(t, "\t")
+	case "Up":
+		writeClientInput(t, "\x1b[A")
+	case "Down":
+		writeClientInput(t, "\x1b[B")
+	case "Right":
+		writeClientInput(t, "\x1b[C")
+	case "Left":
+		writeClientInput(t, "\x1b[D")
 	default:
 		writeClientInput(t, keys[0])
 	}
@@ -873,4 +1199,74 @@ func folderByPath(st state.State, path string) *state.Folder {
 		}
 	}
 	return nil
+}
+
+func startDirectDashboardClient(t *testing.T, env []string, bin string, workdir string, pane string, cols int, rows int) (func() string, <-chan struct{}) {
+	t.Helper()
+	clientCmd := exec.Command(bin)
+	clientCmd.Env = env
+	clientCmd.Dir = workdir
+	clientPTY, err := pty.StartWithSize(clientCmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	if err != nil {
+		t.Fatalf("start Weft client: %v", err)
+	}
+	clientDone := make(chan struct{})
+	go func() {
+		_ = clientCmd.Wait()
+		close(clientDone)
+	}()
+	t.Cleanup(func() {
+		_ = clientPTY.Close()
+		if !clientExited(clientDone) && clientCmd.Process != nil {
+			_ = clientCmd.Process.Kill()
+		}
+		<-clientDone
+	})
+
+	clientScreen := tui.NewTerminalScreen(cols, rows)
+	var clientMu sync.Mutex
+	var clientRaw bytes.Buffer
+	go func() {
+		buf := make([]byte, 8192)
+		for {
+			n, err := clientPTY.Read(buf)
+			if n > 0 {
+				clientMu.Lock()
+				clientScreen.Write(string(buf[:n]))
+				clientRaw.Write(buf[:n])
+				clientMu.Unlock()
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	registerDirectClient(clientCmd, clientPTY, clientScreen, &clientRaw, &clientMu, clientDone)
+	output := func() string {
+		clientMu.Lock()
+		defer clientMu.Unlock()
+		return clientScreen.String()
+	}
+	_ = pane
+	return output, clientDone
+}
+
+func writeVisibleFakeCodex(t *testing.T, dir string, name string) string {
+	t.Helper()
+	fakeCodex := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeCodex, []byte(
+		"#!/bin/sh\n"+
+			"printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"printf 'Fake Codex dashboard ready\\n'\n"+
+			"trap 'exit 0' HUP INT TERM\n"+
+			"while IFS= read -r line; do\n"+
+			"  printf '\\033]2;Fake Codex Working\\007'\n"+
+			"  printf 'echo:%s\\n' \"$line\"\n"+
+			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"done\n"+
+			"while :; do sleep 1; done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeCodex
 }
