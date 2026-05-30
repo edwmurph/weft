@@ -51,7 +51,7 @@ type Snapshot struct {
 	LoadingText    string      `json:"loading_text,omitempty"`
 	Message        string      `json:"message,omitempty"`
 	NavWidth       int         `json:"nav_width"`
-	FolderCursor   int         `json:"folder_cursor"`
+	GroupCursor    int         `json:"group_cursor"`
 	ActiveClientID string      `json:"active_client_id,omitempty"`
 	DetachClient   bool        `json:"detach_client,omitempty"`
 }

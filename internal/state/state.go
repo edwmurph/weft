@@ -14,17 +14,17 @@ import (
 	"time"
 )
 
-const Version = 3
+const Version = 4
 
-const DefaultFolderPath = "inbox"
+const DefaultGroupPath = "inbox"
 const DefaultAgentTitle = "{codex}"
 
 type Focus string
 
 const (
-	FocusWorkdirs Focus = "workdirs"
-	FocusFolders  Focus = "folders"
-	FocusCodex    Focus = "codex"
+	FocusWorkspaces Focus = "workspaces"
+	FocusAgents     Focus = "agents"
+	FocusCodex      Focus = "codex"
 )
 
 type AgentStatus string
@@ -39,7 +39,7 @@ const (
 	StatusError    AgentStatus = "error"
 )
 
-type Workdir struct {
+type Workspace struct {
 	ID        string `json:"id"`
 	Path      string `json:"path"`
 	Title     string `json:"title,omitempty"`
@@ -47,18 +47,18 @@ type Workdir struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-type Folder struct {
-	ID        string `json:"id"`
-	WorkdirID string `json:"workdir_id"`
-	Path      string `json:"path"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+type Group struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	Path        string `json:"path"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type Agent struct {
 	ID                 string      `json:"id"`
-	WorkdirID          string      `json:"workdir_id"`
-	FolderID           string      `json:"folder_id"`
+	WorkspaceID        string      `json:"workspace_id"`
+	GroupID            string      `json:"group_id"`
 	Title              string      `json:"title"`
 	AutoTitle          string      `json:"auto_title,omitempty"`
 	AutoTitleAttempted bool        `json:"auto_title_attempted,omitempty"`
@@ -70,22 +70,22 @@ type Agent struct {
 }
 
 type State struct {
-	Version           int       `json:"version"`
-	ActiveAgentID     string    `json:"active_agent_id,omitempty"`
-	SelectedWorkdirID string    `json:"selected_workdir_id,omitempty"`
-	SelectedFolderID  string    `json:"selected_folder_id,omitempty"`
-	Focus             Focus     `json:"focus"`
-	NavOpen           bool      `json:"nav_open"`
-	Workdirs          []Workdir `json:"workdirs"`
-	Folders           []Folder  `json:"folders"`
-	Agents            []Agent   `json:"agents"`
-	CollapsedGroupIDs []string  `json:"collapsed_group_ids,omitempty"`
+	Version             int         `json:"version"`
+	ActiveAgentID       string      `json:"active_agent_id,omitempty"`
+	SelectedWorkspaceID string      `json:"selected_workspace_id,omitempty"`
+	SelectedGroupID     string      `json:"selected_group_id,omitempty"`
+	Focus               Focus       `json:"focus"`
+	NavOpen             bool        `json:"nav_open"`
+	Workspaces          []Workspace `json:"workspaces"`
+	Groups              []Group     `json:"groups"`
+	Agents              []Agent     `json:"agents"`
+	CollapsedGroupIDs   []string    `json:"collapsed_group_ids,omitempty"`
 }
 
 type Store struct {
-	Path     string
-	LockPath string
-	Workdir  string
+	Path      string
+	LockPath  string
+	Workspace string
 }
 
 type Migration struct {
@@ -93,16 +93,16 @@ type Migration struct {
 	Message      string
 }
 
-func NewStore(path string, workdir ...string) *Store {
+func NewStore(path string, workspace ...string) *Store {
 	current := ""
-	if len(workdir) > 0 {
-		current = workdir[0]
+	if len(workspace) > 0 {
+		current = workspace[0]
 	}
-	return &Store{Path: path, LockPath: path + ".lock", Workdir: current}
+	return &Store{Path: path, LockPath: path + ".lock", Workspace: current}
 }
 
 func Empty() State {
-	return State{Version: Version, Focus: FocusWorkdirs, NavOpen: true, Workdirs: []Workdir{}, Folders: []Folder{}, Agents: []Agent{}, CollapsedGroupIDs: []string{}}
+	return State{Version: Version, Focus: FocusWorkspaces, NavOpen: true, Workspaces: []Workspace{}, Groups: []Group{}, Agents: []Agent{}, CollapsedGroupIDs: []string{}}
 }
 
 func NowISO() string {
@@ -120,55 +120,35 @@ func (s *Store) Ensure() (State, *Migration, error) {
 	var migration *Migration
 	err := withFileLock(s.LockPath, func() error {
 		if _, err := os.Stat(s.Path); errors.Is(err, os.ErrNotExist) {
-			loaded = Repair(Empty(), s.Workdir)
+			loaded = Repair(Empty(), s.Workspace)
 			return writeJSONAtomic(s.Path, loaded)
 		}
 		raw, err := os.ReadFile(s.Path)
 		if err != nil {
 			return err
 		}
-		switch {
-		case isLegacyTmuxState(raw):
-			archived, err := archiveState(s.Path, "v1-tmux")
+		if legacyState(raw) {
+			archived, err := archiveState(s.Path, "legacy")
 			if err != nil {
 				return err
 			}
-			loaded = Repair(Empty(), s.Workdir)
+			loaded = Repair(Empty(), s.Workspace)
 			if err := writeJSONAtomic(s.Path, loaded); err != nil {
 				return err
 			}
 			migration = &Migration{
 				ArchivedPath: archived,
-				Message:      fmt.Sprintf("archived old tmux-pane state to %s; starting with clean supervisor-owned PTYs", archived),
+				Message:      fmt.Sprintf("archived legacy state to %s; starting with clean v4 supervisor state", archived),
 			}
 			return nil
-		case isTabState(raw):
-			migrated, err := migrateTabState(raw, s.Workdir)
-			if err != nil {
-				return err
-			}
-			archived, err := archiveState(s.Path, "v2-tabs")
-			if err != nil {
-				return err
-			}
-			loaded = Repair(migrated, s.Workdir)
-			if err := writeJSONAtomic(s.Path, loaded); err != nil {
-				return err
-			}
-			migration = &Migration{
-				ArchivedPath: archived,
-				Message:      fmt.Sprintf("migrated old tabs/columns state; archived original to %s", archived),
-			}
-			return nil
-		default:
-			loaded, err = parseState(raw, s.Workdir)
-			if err != nil {
-				return err
-			}
-			repaired := Repair(loaded, s.Workdir)
-			loaded = repaired
-			return writeJSONAtomic(s.Path, repaired)
 		}
+		loaded, err = parseState(raw, s.Workspace)
+		if err != nil {
+			return err
+		}
+		repaired := Repair(loaded, s.Workspace)
+		loaded = repaired
+		return writeJSONAtomic(s.Path, repaired)
 	})
 	return loaded, migration, err
 }
@@ -184,19 +164,14 @@ func (s *Store) Read() (State, error) {
 	err := withFileLock(s.LockPath, func() error {
 		raw, err := os.ReadFile(s.Path)
 		if errors.Is(err, os.ErrNotExist) {
-			loaded = Repair(Empty(), s.Workdir)
+			loaded = Repair(Empty(), s.Workspace)
 			return nil
 		}
 		if err != nil {
 			return err
 		}
 		var parseErr error
-		if isTabState(raw) && !isLegacyTmuxState(raw) {
-			loaded, parseErr = migrateTabState(raw, s.Workdir)
-			loaded = Repair(loaded, s.Workdir)
-			return parseErr
-		}
-		loaded, parseErr = parseState(raw, s.Workdir)
+		loaded, parseErr = parseState(raw, s.Workspace)
 		return parseErr
 	})
 	return loaded, err
@@ -210,27 +185,27 @@ func (s *Store) Write(next State) error {
 		return err
 	}
 	return withFileLock(s.LockPath, func() error {
-		return writeJSONAtomic(s.Path, Repair(next, s.Workdir))
+		return writeJSONAtomic(s.Path, Repair(next, s.Workspace))
 	})
 }
 
 func (s *Store) Update(mutator func(State) State) (State, error) {
 	var next State
 	err := withFileLock(s.LockPath, func() error {
-		current := Repair(Empty(), s.Workdir)
+		current := Repair(Empty(), s.Workspace)
 		raw, err := os.ReadFile(s.Path)
 		if err == nil {
-			current, err = parseState(raw, s.Workdir)
+			current, err = parseState(raw, s.Workspace)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		next = Repair(mutator(current), s.Workdir)
+		next = Repair(mutator(current), s.Workspace)
 		return writeJSONAtomic(s.Path, next)
 	})
 	return next, err
 }
 
-func parseState(raw []byte, fallbackWorkdir string) (State, error) {
+func parseState(raw []byte, fallbackWorkspace string) (State, error) {
 	var st State
 	if err := json.Unmarshal(raw, &st); err != nil {
 		return State{}, fmt.Errorf("could not parse state: %w", err)
@@ -238,16 +213,16 @@ func parseState(raw []byte, fallbackWorkdir string) (State, error) {
 	if st.Version != Version {
 		return State{}, fmt.Errorf("unsupported state version %d", st.Version)
 	}
-	return Repair(st, fallbackWorkdir), nil
+	return Repair(st, fallbackWorkspace), nil
 }
 
-func Repair(st State, fallbackWorkdir string) State {
+func Repair(st State, fallbackWorkspace string) State {
 	st.Version = Version
-	if st.Workdirs == nil {
-		st.Workdirs = []Workdir{}
+	if st.Workspaces == nil {
+		st.Workspaces = []Workspace{}
 	}
-	if st.Folders == nil {
-		st.Folders = []Folder{}
+	if st.Groups == nil {
+		st.Groups = []Group{}
 	}
 	if st.Agents == nil {
 		st.Agents = []Agent{}
@@ -255,61 +230,61 @@ func Repair(st State, fallbackWorkdir string) State {
 	if st.CollapsedGroupIDs == nil {
 		st.CollapsedGroupIDs = []string{}
 	}
-	workdirs := map[string]bool{}
-	for index := range st.Workdirs {
-		if strings.TrimSpace(st.Workdirs[index].ID) == "" {
-			st.Workdirs[index].ID = StableID("workdir", st.Workdirs[index].Path)
+	workspaces := map[string]bool{}
+	for index := range st.Workspaces {
+		if strings.TrimSpace(st.Workspaces[index].ID) == "" {
+			st.Workspaces[index].ID = StableID("workspace", st.Workspaces[index].Path)
 		}
-		st.Workdirs[index].Path = absolutePath(st.Workdirs[index].Path)
-		st.Workdirs[index].Title = strings.TrimSpace(st.Workdirs[index].Title)
-		if st.Workdirs[index].CreatedAt == "" {
-			st.Workdirs[index].CreatedAt = NowISO()
+		st.Workspaces[index].Path = absolutePath(st.Workspaces[index].Path)
+		st.Workspaces[index].Title = strings.TrimSpace(st.Workspaces[index].Title)
+		if st.Workspaces[index].CreatedAt == "" {
+			st.Workspaces[index].CreatedAt = NowISO()
 		}
-		if st.Workdirs[index].UpdatedAt == "" {
-			st.Workdirs[index].UpdatedAt = st.Workdirs[index].CreatedAt
+		if st.Workspaces[index].UpdatedAt == "" {
+			st.Workspaces[index].UpdatedAt = st.Workspaces[index].CreatedAt
 		}
-		workdirs[st.Workdirs[index].ID] = true
+		workspaces[st.Workspaces[index].ID] = true
 	}
 
-	for index := range st.Folders {
-		if !workdirs[st.Folders[index].WorkdirID] && len(st.Workdirs) > 0 {
-			st.Folders[index].WorkdirID = st.Workdirs[0].ID
+	for index := range st.Groups {
+		if !workspaces[st.Groups[index].WorkspaceID] && len(st.Workspaces) > 0 {
+			st.Groups[index].WorkspaceID = st.Workspaces[0].ID
 		}
-		if strings.TrimSpace(st.Folders[index].Path) == "" {
-			st.Folders[index].Path = DefaultFolderPath
+		if strings.TrimSpace(st.Groups[index].Path) == "" {
+			st.Groups[index].Path = DefaultGroupPath
 		}
-		if strings.TrimSpace(st.Folders[index].ID) == "" {
-			st.Folders[index].ID = StableID("folder", st.Folders[index].WorkdirID, st.Folders[index].Path)
+		if strings.TrimSpace(st.Groups[index].ID) == "" {
+			st.Groups[index].ID = StableID("group", st.Groups[index].WorkspaceID, st.Groups[index].Path)
 		}
-		if st.Folders[index].CreatedAt == "" {
-			st.Folders[index].CreatedAt = NowISO()
+		if st.Groups[index].CreatedAt == "" {
+			st.Groups[index].CreatedAt = NowISO()
 		}
-		if st.Folders[index].UpdatedAt == "" {
-			st.Folders[index].UpdatedAt = st.Folders[index].CreatedAt
+		if st.Groups[index].UpdatedAt == "" {
+			st.Groups[index].UpdatedAt = st.Groups[index].CreatedAt
 		}
 	}
 
-	folderIDs := map[string]Folder{}
-	for _, folder := range st.Folders {
-		folderIDs[folder.ID] = folder
+	groupIDs := map[string]Group{}
+	for _, group := range st.Groups {
+		groupIDs[group.ID] = group
 	}
-	st.CollapsedGroupIDs = validCollapsedGroupIDs(st.CollapsedGroupIDs, folderIDs)
+	st.CollapsedGroupIDs = validCollapsedGroupIDs(st.CollapsedGroupIDs, groupIDs)
 	for index := range st.Agents {
 		agent := &st.Agents[index]
 		if strings.TrimSpace(agent.ID) == "" {
-			agent.ID = StableID("agent", agent.WorkdirID, agent.FolderID, agent.CreatedAt, agent.Title)
+			agent.ID = StableID("agent", agent.WorkspaceID, agent.GroupID, agent.CreatedAt, agent.Title)
 		}
-		if agent.FolderID != "" {
-			if _, ok := folderIDs[agent.FolderID]; !ok {
-				agent.FolderID = ""
+		if agent.GroupID != "" {
+			if _, ok := groupIDs[agent.GroupID]; !ok {
+				agent.GroupID = ""
 			}
 		}
-		if folder, ok := folderIDs[agent.FolderID]; ok {
-			agent.WorkdirID = folder.WorkdirID
+		if group, ok := groupIDs[agent.GroupID]; ok {
+			agent.WorkspaceID = group.WorkspaceID
 		}
-		if !workdirs[agent.WorkdirID] && len(st.Workdirs) > 0 {
-			agent.WorkdirID = st.Workdirs[0].ID
-			agent.FolderID = ""
+		if !workspaces[agent.WorkspaceID] && len(st.Workspaces) > 0 {
+			agent.WorkspaceID = st.Workspaces[0].ID
+			agent.GroupID = ""
 		}
 		if strings.TrimSpace(agent.Title) == "" {
 			agent.Title = DefaultAgentTitle
@@ -328,20 +303,20 @@ func Repair(st State, fallbackWorkdir string) State {
 	if st.ActiveAgentID != "" && AgentByID(st, st.ActiveAgentID) == nil {
 		st.ActiveAgentID = ""
 	}
-	if st.SelectedWorkdirID == "" || WorkdirByID(st, st.SelectedWorkdirID) == nil {
-		if len(st.Workdirs) > 0 {
-			st.SelectedWorkdirID = st.Workdirs[0].ID
+	if st.SelectedWorkspaceID == "" || WorkspaceByID(st, st.SelectedWorkspaceID) == nil {
+		if len(st.Workspaces) > 0 {
+			st.SelectedWorkspaceID = st.Workspaces[0].ID
 		} else {
-			st.SelectedWorkdirID = ""
+			st.SelectedWorkspaceID = ""
 		}
 	}
-	if st.SelectedFolderID != "" && (FolderByID(st, st.SelectedFolderID) == nil || folderWorkdir(st, st.SelectedFolderID) != st.SelectedWorkdirID) {
-		st.SelectedFolderID = ""
+	if st.SelectedGroupID != "" && (GroupByID(st, st.SelectedGroupID) == nil || groupWorkspace(st, st.SelectedGroupID) != st.SelectedWorkspaceID) {
+		st.SelectedGroupID = ""
 	}
 
 	if st.NavOpen {
-		if st.Focus != FocusWorkdirs && st.Focus != FocusFolders {
-			st.Focus = FocusFolders
+		if st.Focus != FocusWorkspaces && st.Focus != FocusAgents {
+			st.Focus = FocusAgents
 		}
 	} else {
 		st.Focus = FocusCodex
@@ -349,12 +324,12 @@ func Repair(st State, fallbackWorkdir string) State {
 	if st.ActiveAgentID == "" {
 		st.NavOpen = true
 		if st.Focus == FocusCodex {
-			st.Focus = FocusFolders
+			st.Focus = FocusAgents
 		}
 	}
 	if st.Focus == "" {
 		if st.NavOpen {
-			st.Focus = FocusFolders
+			st.Focus = FocusAgents
 		} else {
 			st.Focus = FocusCodex
 		}
@@ -362,122 +337,21 @@ func Repair(st State, fallbackWorkdir string) State {
 	return st
 }
 
-func isTabState(raw []byte) bool {
+func legacyState(raw []byte) bool {
 	var probe map[string]any
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return false
 	}
-	if _, ok := probe["tabs"]; ok {
-		if _, newState := probe["workdirs"]; !newState {
+	version, _ := probe["version"].(float64)
+	if int(version) != Version {
+		return true
+	}
+	for _, key := range []string{"tabs", "workdirs", "folders", "selected_workdir_id", "selected_folder_id"} {
+		if _, ok := probe[key]; ok {
 			return true
 		}
 	}
 	return false
-}
-
-func isLegacyTmuxState(raw []byte) bool {
-	var probe map[string]any
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return false
-	}
-	tabs, ok := probe["tabs"].([]any)
-	if !ok {
-		return false
-	}
-	for _, item := range tabs {
-		tab, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if _, ok := tab["tmux_window_id"]; ok {
-			return true
-		}
-		if _, ok := tab["tmux_pane_id"]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-type oldTabState struct {
-	Version     int      `json:"version"`
-	ActiveTabID string   `json:"active_tab_id,omitempty"`
-	Focus       Focus    `json:"focus"`
-	Tabs        []oldTab `json:"tabs"`
-}
-
-type oldTab struct {
-	ID         string      `json:"id"`
-	Title      string      `json:"title"`
-	Column     string      `json:"column"`
-	CreatedAt  string      `json:"created_at"`
-	UpdatedAt  string      `json:"updated_at"`
-	CodexTitle string      `json:"codex_title,omitempty"`
-	Status     AgentStatus `json:"status"`
-}
-
-func migrateTabState(raw []byte, currentWorkdir string) (State, error) {
-	var old oldTabState
-	if err := json.Unmarshal(raw, &old); err != nil {
-		return State{}, fmt.Errorf("could not parse tabs state: %w", err)
-	}
-	now := NowISO()
-	workdirPath := absolutePath(currentWorkdir)
-	workdirID := StableID("workdir", workdirPath)
-	st := State{
-		Version:           Version,
-		SelectedWorkdirID: workdirID,
-		Focus:             FocusFolders,
-		NavOpen:           true,
-		Workdirs: []Workdir{{
-			ID: workdirID, Path: workdirPath, CreatedAt: now, UpdatedAt: now,
-		}},
-		Folders: []Folder{},
-		Agents:  []Agent{},
-	}
-	if old.ActiveTabID != "" {
-		st.ActiveAgentID = old.ActiveTabID
-		st.NavOpen = old.Focus != FocusCodex
-		if !st.NavOpen {
-			st.Focus = FocusCodex
-		}
-	}
-	folderIDsByPath := map[string]string{}
-	for _, tab := range old.Tabs {
-		path := strings.TrimSpace(tab.Column)
-		if path == "" {
-			path = DefaultFolderPath
-		}
-		if _, ok := folderIDsByPath[path]; !ok {
-			folderID := StableID("folder", workdirID, path)
-			folderIDsByPath[path] = folderID
-			st.Folders = append(st.Folders, Folder{
-				ID: folderID, WorkdirID: workdirID, Path: path,
-				CreatedAt: firstNonEmpty(tab.CreatedAt, now),
-				UpdatedAt: firstNonEmpty(tab.UpdatedAt, tab.CreatedAt, now),
-			})
-		}
-		agentID := tab.ID
-		if agentID == "" {
-			agentID = StableID("agent", workdirID, folderIDsByPath[path], tab.CreatedAt, tab.Title)
-		}
-		status := tab.Status
-		if status == "" {
-			status = StatusStopped
-		}
-		st.Agents = append(st.Agents, Agent{
-			ID: agentID, WorkdirID: workdirID, FolderID: folderIDsByPath[path],
-			Title: firstNonEmpty(tab.Title, "Codex"), CodexTitle: tab.CodexTitle, Status: status,
-			CreatedAt: firstNonEmpty(tab.CreatedAt, now),
-			UpdatedAt: firstNonEmpty(tab.UpdatedAt, tab.CreatedAt, now),
-		})
-	}
-	if active := AgentByID(st, st.ActiveAgentID); active != nil {
-		st.SelectedFolderID = active.FolderID
-	} else if len(st.Folders) > 0 {
-		st.SelectedFolderID = st.Folders[0].ID
-	}
-	return Repair(st, currentWorkdir), nil
 }
 
 func archiveState(path string, suffix string) (string, error) {
@@ -557,79 +431,79 @@ func AgentByID(st State, agentID string) *Agent {
 	return nil
 }
 
-func WorkdirByID(st State, workdirID string) *Workdir {
-	if workdirID == "" {
+func WorkspaceByID(st State, workspaceID string) *Workspace {
+	if workspaceID == "" {
 		return nil
 	}
-	for index := range st.Workdirs {
-		if st.Workdirs[index].ID == workdirID {
-			return &st.Workdirs[index]
+	for index := range st.Workspaces {
+		if st.Workspaces[index].ID == workspaceID {
+			return &st.Workspaces[index]
 		}
 	}
 	return nil
 }
 
-func WorkdirByPath(st State, path string) *Workdir {
-	path = NormalizeWorkdirPath(path)
-	for index := range st.Workdirs {
-		if st.Workdirs[index].Path == path {
-			return &st.Workdirs[index]
+func WorkspaceByPath(st State, path string) *Workspace {
+	path = NormalizeWorkspacePath(path)
+	for index := range st.Workspaces {
+		if st.Workspaces[index].Path == path {
+			return &st.Workspaces[index]
 		}
 	}
 	return nil
 }
 
-func FolderByID(st State, folderID string) *Folder {
-	if folderID == "" {
+func GroupByID(st State, groupID string) *Group {
+	if groupID == "" {
 		return nil
 	}
-	for index := range st.Folders {
-		if st.Folders[index].ID == folderID {
-			return &st.Folders[index]
+	for index := range st.Groups {
+		if st.Groups[index].ID == groupID {
+			return &st.Groups[index]
 		}
 	}
 	return nil
 }
 
-func ActiveWorkdir(st State) *Workdir {
-	return WorkdirByID(st, st.SelectedWorkdirID)
+func ActiveWorkspace(st State) *Workspace {
+	return WorkspaceByID(st, st.SelectedWorkspaceID)
 }
 
-func ActiveFolder(st State) *Folder {
-	return FolderByID(st, st.SelectedFolderID)
+func ActiveGroup(st State) *Group {
+	return GroupByID(st, st.SelectedGroupID)
 }
 
-func WorkdirForAgent(st State, agent Agent) *Workdir {
-	return WorkdirByID(st, agent.WorkdirID)
+func WorkspaceForAgent(st State, agent Agent) *Workspace {
+	return WorkspaceByID(st, agent.WorkspaceID)
 }
 
-func FolderForAgent(st State, agent Agent) *Folder {
-	return FolderByID(st, agent.FolderID)
+func GroupForAgent(st State, agent Agent) *Group {
+	return GroupByID(st, agent.GroupID)
 }
 
-func FoldersForWorkdir(st State, workdirID string) []Folder {
-	var folders []Folder
-	for _, folder := range st.Folders {
-		if folder.WorkdirID == workdirID {
-			folders = append(folders, folder)
+func GroupsForWorkspace(st State, workspaceID string) []Group {
+	var groups []Group
+	for _, group := range st.Groups {
+		if group.WorkspaceID == workspaceID {
+			groups = append(groups, group)
 		}
 	}
-	sort.SliceStable(folders, func(i, j int) bool {
-		if folders[i].Path == folders[j].Path {
-			return folders[i].CreatedAt < folders[j].CreatedAt
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].Path == groups[j].Path {
+			return groups[i].CreatedAt < groups[j].CreatedAt
 		}
-		return folders[i].Path < folders[j].Path
+		return groups[i].Path < groups[j].Path
 	})
-	return folders
+	return groups
 }
 
-func AgentsForFolder(st State, folderID string) []Agent {
-	if folderID == "" {
+func AgentsForGroup(st State, groupID string) []Agent {
+	if groupID == "" {
 		return nil
 	}
 	var agents []Agent
 	for _, agent := range st.Agents {
-		if agent.FolderID == folderID {
+		if agent.GroupID == groupID {
 			agents = append(agents, agent)
 		}
 	}
@@ -639,10 +513,10 @@ func AgentsForFolder(st State, folderID string) []Agent {
 	return agents
 }
 
-func UngroupedAgentsForWorkdir(st State, workdirID string) []Agent {
+func UngroupedAgentsForWorkspace(st State, workspaceID string) []Agent {
 	var agents []Agent
 	for _, agent := range st.Agents {
-		if agent.WorkdirID == workdirID && agent.FolderID == "" {
+		if agent.WorkspaceID == workspaceID && agent.GroupID == "" {
 			agents = append(agents, agent)
 		}
 	}
@@ -652,23 +526,23 @@ func UngroupedAgentsForWorkdir(st State, workdirID string) []Agent {
 	return agents
 }
 
-func AgentCountForWorkdir(st State, workdirID string) int {
+func AgentCountForWorkspace(st State, workspaceID string) int {
 	count := 0
 	for _, agent := range st.Agents {
-		if agent.WorkdirID == workdirID {
+		if agent.WorkspaceID == workspaceID {
 			count++
 		}
 	}
 	return count
 }
 
-func AgentCountForFolder(st State, folderID string) int {
-	if folderID == "" {
+func AgentCountForGroup(st State, groupID string) int {
+	if groupID == "" {
 		return 0
 	}
 	count := 0
 	for _, agent := range st.Agents {
-		if agent.FolderID == folderID {
+		if agent.GroupID == groupID {
 			count++
 		}
 	}
@@ -705,7 +579,7 @@ func CloseAgent(st State, agentID string) State {
 		return st
 	}
 	st.ActiveAgentID = ""
-	candidates := agentsForWorkdir(st, removed.WorkdirID)
+	candidates := agentsForWorkspace(st, removed.WorkspaceID)
 	if len(candidates) > 0 {
 		nextIndex := index
 		for candidateIndex, agent := range candidates {
@@ -719,22 +593,22 @@ func CloseAgent(st State, agentID string) State {
 		}
 		next := candidates[nextIndex]
 		st.ActiveAgentID = next.ID
-		st.SelectedWorkdirID = next.WorkdirID
-		st.SelectedFolderID = next.FolderID
+		st.SelectedWorkspaceID = next.WorkspaceID
+		st.SelectedGroupID = next.GroupID
 	} else {
 		st.ActiveAgentID = ""
 		st.NavOpen = true
-		st.Focus = FocusFolders
-		st.SelectedWorkdirID = removed.WorkdirID
-		st.SelectedFolderID = removed.FolderID
+		st.Focus = FocusAgents
+		st.SelectedWorkspaceID = removed.WorkspaceID
+		st.SelectedGroupID = removed.GroupID
 	}
 	return st
 }
 
-func MoveAgent(st State, agentID string, folderID string) (State, error) {
-	var target *Folder
-	if folderID != "" {
-		target = FolderByID(st, folderID)
+func MoveAgent(st State, agentID string, groupID string) (State, error) {
+	var target *Group
+	if groupID != "" {
+		target = GroupByID(st, groupID)
 		if target == nil {
 			return st, fmt.Errorf("group not found")
 		}
@@ -743,143 +617,143 @@ func MoveAgent(st State, agentID string, folderID string) (State, error) {
 		if agent.ID != agentID {
 			continue
 		}
-		if target != nil && agent.WorkdirID != target.WorkdirID {
+		if target != nil && agent.WorkspaceID != target.WorkspaceID {
 			return st, fmt.Errorf("cross-workspace moves are not supported")
 		}
-		st.Agents[index].FolderID = folderID
+		st.Agents[index].GroupID = groupID
 		st.Agents[index].UpdatedAt = NowISO()
-		st.SelectedFolderID = folderID
+		st.SelectedGroupID = groupID
 		return st, nil
 	}
 	return st, fmt.Errorf("agent not found")
 }
 
-func AddWorkdir(st State, id string, path string, now string) (State, Workdir, error) {
-	path = NormalizeWorkdirPath(path)
+func AddWorkspace(st State, id string, path string, now string) (State, Workspace, error) {
+	path = NormalizeWorkspacePath(path)
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return st, Workdir{}, fmt.Errorf("workspace path does not exist: %s", path)
+			return st, Workspace{}, fmt.Errorf("workspace path does not exist: %s", path)
 		}
-		return st, Workdir{}, fmt.Errorf("cannot read workspace path %s: %w", path, err)
+		return st, Workspace{}, fmt.Errorf("cannot read workspace path %s: %w", path, err)
 	}
 	if !info.IsDir() {
-		return st, Workdir{}, fmt.Errorf("workspace path is not a directory: %s", path)
+		return st, Workspace{}, fmt.Errorf("workspace path is not a directory: %s", path)
 	}
-	if workdir := WorkdirByPath(st, path); workdir != nil {
-		st = SelectWorkdir(st, workdir.ID)
-		return st, *workdir, nil
+	if workspace := WorkspaceByPath(st, path); workspace != nil {
+		st = SelectWorkspace(st, workspace.ID)
+		return st, *workspace, nil
 	}
 	if id == "" {
-		id = StableID("workdir", path)
+		id = StableID("workspace", path)
 	}
 	if now == "" {
 		now = NowISO()
 	}
-	workdir := Workdir{ID: id, Path: path, CreatedAt: now, UpdatedAt: now}
-	st.Workdirs = append(st.Workdirs, workdir)
-	st.SelectedWorkdirID = id
-	st.SelectedFolderID = ""
+	workspace := Workspace{ID: id, Path: path, CreatedAt: now, UpdatedAt: now}
+	st.Workspaces = append(st.Workspaces, workspace)
+	st.SelectedWorkspaceID = id
+	st.SelectedGroupID = ""
 	st.NavOpen = true
-	st.Focus = FocusFolders
-	return st, workdir, nil
+	st.Focus = FocusAgents
+	return st, workspace, nil
 }
 
-func SelectWorkdir(st State, workdirID string) State {
-	if WorkdirByID(st, workdirID) == nil {
+func SelectWorkspace(st State, workspaceID string) State {
+	if WorkspaceByID(st, workspaceID) == nil {
 		return st
 	}
-	st.SelectedWorkdirID = workdirID
-	st.SelectedFolderID = ""
-	if folders := FoldersForWorkdir(st, workdirID); len(folders) > 0 {
-		st.SelectedFolderID = folders[0].ID
+	st.SelectedWorkspaceID = workspaceID
+	st.SelectedGroupID = ""
+	if groups := GroupsForWorkspace(st, workspaceID); len(groups) > 0 {
+		st.SelectedGroupID = groups[0].ID
 	}
 	return st
 }
 
-func SelectWorkdirByPath(st State, path string) (State, bool) {
-	workdir := WorkdirByPath(st, path)
-	if workdir == nil {
+func SelectWorkspaceByPath(st State, path string) (State, bool) {
+	workspace := WorkspaceByPath(st, path)
+	if workspace == nil {
 		return st, false
 	}
-	return SelectWorkdir(st, workdir.ID), true
+	return SelectWorkspace(st, workspace.ID), true
 }
 
-func RemoveWorkdir(st State, workdirID string) (State, []Agent, error) {
-	if WorkdirByID(st, workdirID) == nil {
+func RemoveWorkspace(st State, workspaceID string) (State, []Agent, error) {
+	if WorkspaceByID(st, workspaceID) == nil {
 		return st, nil, fmt.Errorf("workspace not found")
 	}
 	var removed []Agent
 	var agents []Agent
 	for _, agent := range st.Agents {
-		if agent.WorkdirID == workdirID {
+		if agent.WorkspaceID == workspaceID {
 			removed = append(removed, agent)
 			continue
 		}
 		agents = append(agents, agent)
 	}
 	st.Agents = agents
-	st.Folders = filterFolders(st.Folders, func(folder Folder) bool { return folder.WorkdirID != workdirID })
-	st.Workdirs = filterWorkdirs(st.Workdirs, func(workdir Workdir) bool { return workdir.ID != workdirID })
+	st.Groups = filterGroups(st.Groups, func(group Group) bool { return group.WorkspaceID != workspaceID })
+	st.Workspaces = filterWorkspaces(st.Workspaces, func(workspace Workspace) bool { return workspace.ID != workspaceID })
 	if st.ActiveAgentID != "" {
 		if AgentByID(st, st.ActiveAgentID) == nil {
 			st.ActiveAgentID = ""
 		}
 	}
-	st.SelectedWorkdirID = ""
-	st.SelectedFolderID = ""
+	st.SelectedWorkspaceID = ""
+	st.SelectedGroupID = ""
 	st.NavOpen = true
-	st.Focus = FocusWorkdirs
+	st.Focus = FocusWorkspaces
 	return Repair(st, ""), removed, nil
 }
 
-func SetWorkdirTitle(st State, workdirID string, title string) (State, error) {
+func SetWorkspaceTitle(st State, workspaceID string, title string) (State, error) {
 	title = strings.TrimSpace(title)
-	if WorkdirByID(st, workdirID) == nil {
+	if WorkspaceByID(st, workspaceID) == nil {
 		return st, fmt.Errorf("workspace not found")
 	}
-	for index := range st.Workdirs {
-		if st.Workdirs[index].ID == workdirID {
-			st.Workdirs[index].Title = title
-			st.Workdirs[index].UpdatedAt = NowISO()
+	for index := range st.Workspaces {
+		if st.Workspaces[index].ID == workspaceID {
+			st.Workspaces[index].Title = title
+			st.Workspaces[index].UpdatedAt = NowISO()
 			return st, nil
 		}
 	}
 	return st, fmt.Errorf("workspace not found")
 }
 
-func AddFolder(st State, id string, workdirID string, path string, now string) (State, Folder, error) {
+func AddGroup(st State, id string, workspaceID string, path string, now string) (State, Group, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return st, Folder{}, fmt.Errorf("group name is required")
+		return st, Group{}, fmt.Errorf("group name is required")
 	}
 	if strings.Contains(path, "/") {
-		return st, Folder{}, fmt.Errorf("group names cannot contain /")
+		return st, Group{}, fmt.Errorf("group names cannot contain /")
 	}
-	if WorkdirByID(st, workdirID) == nil {
-		return st, Folder{}, fmt.Errorf("workspace not found")
+	if WorkspaceByID(st, workspaceID) == nil {
+		return st, Group{}, fmt.Errorf("workspace not found")
 	}
-	for _, folder := range FoldersForWorkdir(st, workdirID) {
-		if folder.Path == path {
-			return st, Folder{}, fmt.Errorf("group name already exists")
+	for _, group := range GroupsForWorkspace(st, workspaceID) {
+		if group.Path == path {
+			return st, Group{}, fmt.Errorf("group name already exists")
 		}
 	}
 	if id == "" {
-		id = StableID("folder", workdirID, path)
+		id = StableID("group", workspaceID, path)
 	}
 	if now == "" {
 		now = NowISO()
 	}
-	folder := Folder{ID: id, WorkdirID: workdirID, Path: path, CreatedAt: now, UpdatedAt: now}
-	st.Folders = append(st.Folders, folder)
-	st.SelectedWorkdirID = workdirID
-	st.SelectedFolderID = id
+	group := Group{ID: id, WorkspaceID: workspaceID, Path: path, CreatedAt: now, UpdatedAt: now}
+	st.Groups = append(st.Groups, group)
+	st.SelectedWorkspaceID = workspaceID
+	st.SelectedGroupID = id
 	st.NavOpen = true
-	st.Focus = FocusFolders
-	return st, folder, nil
+	st.Focus = FocusAgents
+	return st, group, nil
 }
 
-func RenameFolder(st State, folderID string, path string) (State, error) {
+func RenameGroup(st State, groupID string, path string) (State, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return st, fmt.Errorf("group name is required")
@@ -887,68 +761,68 @@ func RenameFolder(st State, folderID string, path string) (State, error) {
 	if strings.Contains(path, "/") {
 		return st, fmt.Errorf("group names cannot contain /")
 	}
-	folder := FolderByID(st, folderID)
-	if folder == nil {
+	group := GroupByID(st, groupID)
+	if group == nil {
 		return st, fmt.Errorf("group not found")
 	}
-	for _, other := range FoldersForWorkdir(st, folder.WorkdirID) {
-		if other.ID != folderID && other.Path == path {
+	for _, other := range GroupsForWorkspace(st, group.WorkspaceID) {
+		if other.ID != groupID && other.Path == path {
 			return st, fmt.Errorf("group name already exists")
 		}
 	}
-	for index := range st.Folders {
-		if st.Folders[index].ID == folderID {
-			st.Folders[index].Path = path
-			st.Folders[index].UpdatedAt = NowISO()
+	for index := range st.Groups {
+		if st.Groups[index].ID == groupID {
+			st.Groups[index].Path = path
+			st.Groups[index].UpdatedAt = NowISO()
 			return st, nil
 		}
 	}
 	return st, fmt.Errorf("group not found")
 }
 
-func DeleteFolder(st State, folderID string) (State, error) {
-	if FolderByID(st, folderID) == nil {
+func DeleteGroup(st State, groupID string) (State, error) {
+	if GroupByID(st, groupID) == nil {
 		return st, fmt.Errorf("group not found")
 	}
-	if AgentCountForFolder(st, folderID) > 0 {
+	if AgentCountForGroup(st, groupID) > 0 {
 		return st, fmt.Errorf("group is not empty")
 	}
-	st.Folders = filterFolders(st.Folders, func(folder Folder) bool { return folder.ID != folderID })
-	st.CollapsedGroupIDs = removeString(st.CollapsedGroupIDs, folderID)
-	if st.SelectedFolderID == folderID {
-		st.SelectedFolderID = ""
+	st.Groups = filterGroups(st.Groups, func(group Group) bool { return group.ID != groupID })
+	st.CollapsedGroupIDs = removeString(st.CollapsedGroupIDs, groupID)
+	if st.SelectedGroupID == groupID {
+		st.SelectedGroupID = ""
 	}
 	return Repair(st, ""), nil
 }
 
-func IsGroupCollapsed(st State, folderID string) bool {
+func IsGroupCollapsed(st State, groupID string) bool {
 	for _, id := range st.CollapsedGroupIDs {
-		if id == folderID {
+		if id == groupID {
 			return true
 		}
 	}
 	return false
 }
 
-func ToggleGroupCollapsed(st State, folderID string) State {
-	if FolderByID(st, folderID) == nil {
+func ToggleGroupCollapsed(st State, groupID string) State {
+	if GroupByID(st, groupID) == nil {
 		return st
 	}
-	if IsGroupCollapsed(st, folderID) {
-		st.CollapsedGroupIDs = removeString(st.CollapsedGroupIDs, folderID)
+	if IsGroupCollapsed(st, groupID) {
+		st.CollapsedGroupIDs = removeString(st.CollapsedGroupIDs, groupID)
 		return st
 	}
-	st.CollapsedGroupIDs = append(st.CollapsedGroupIDs, folderID)
+	st.CollapsedGroupIDs = append(st.CollapsedGroupIDs, groupID)
 	return st
 }
 
-func AddAgent(st State, id string, workdirID string, folderID string, title string, now string) (State, Agent, error) {
-	if WorkdirByID(st, workdirID) == nil {
+func AddAgent(st State, id string, workspaceID string, groupID string, title string, now string) (State, Agent, error) {
+	if WorkspaceByID(st, workspaceID) == nil {
 		return st, Agent{}, fmt.Errorf("workspace not found")
 	}
-	if folderID != "" {
-		folder := FolderByID(st, folderID)
-		if folder == nil || folder.WorkdirID != workdirID {
+	if groupID != "" {
+		group := GroupByID(st, groupID)
+		if group == nil || group.WorkspaceID != workspaceID {
 			return st, Agent{}, fmt.Errorf("group not found")
 		}
 	}
@@ -956,19 +830,19 @@ func AddAgent(st State, id string, workdirID string, folderID string, title stri
 		title = DefaultAgentTitle
 	}
 	if id == "" {
-		id = StableID("agent", workdirID, folderID, now, title)
+		id = StableID("agent", workspaceID, groupID, now, title)
 	}
 	if now == "" {
 		now = NowISO()
 	}
 	agent := Agent{
-		ID: id, WorkdirID: workdirID, FolderID: folderID,
+		ID: id, WorkspaceID: workspaceID, GroupID: groupID,
 		Title: title, Status: StatusStarting, CreatedAt: now, UpdatedAt: now,
 	}
 	st.Agents = append(st.Agents, agent)
 	st.ActiveAgentID = id
-	st.SelectedWorkdirID = workdirID
-	st.SelectedFolderID = folderID
+	st.SelectedWorkspaceID = workspaceID
+	st.SelectedGroupID = groupID
 	st.Focus = FocusCodex
 	st.NavOpen = false
 	return st, agent, nil
@@ -988,9 +862,9 @@ func RenameAgent(st State, agentID string, title string) (State, error) {
 	}), nil
 }
 
-func folderWorkdir(st State, folderID string) string {
-	if folder := FolderByID(st, folderID); folder != nil {
-		return folder.WorkdirID
+func groupWorkspace(st State, groupID string) string {
+	if group := GroupByID(st, groupID); group != nil {
+		return group.WorkspaceID
 	}
 	return ""
 }
@@ -1000,7 +874,7 @@ func StableID(parts ...string) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-func NormalizeWorkdirPath(path string) string {
+func NormalizeWorkspacePath(path string) string {
 	return absolutePath(path)
 }
 
@@ -1036,14 +910,14 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func validCollapsedGroupIDs(ids []string, folders map[string]Folder) []string {
+func validCollapsedGroupIDs(ids []string, groups map[string]Group) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if id == "" || seen[id] {
 			continue
 		}
-		if _, ok := folders[id]; !ok {
+		if _, ok := groups[id]; !ok {
 			continue
 		}
 		seen[id] = true
@@ -1052,10 +926,10 @@ func validCollapsedGroupIDs(ids []string, folders map[string]Folder) []string {
 	return out
 }
 
-func agentsForWorkdir(st State, workdirID string) []Agent {
+func agentsForWorkspace(st State, workspaceID string) []Agent {
 	var agents []Agent
 	for _, agent := range st.Agents {
-		if agent.WorkdirID == workdirID {
+		if agent.WorkspaceID == workspaceID {
 			agents = append(agents, agent)
 		}
 	}
@@ -1075,21 +949,21 @@ func removeString(values []string, value string) []string {
 	return out
 }
 
-func filterFolders(folders []Folder, keep func(Folder) bool) []Folder {
-	out := folders[:0]
-	for _, folder := range folders {
-		if keep(folder) {
-			out = append(out, folder)
+func filterGroups(groups []Group, keep func(Group) bool) []Group {
+	out := groups[:0]
+	for _, group := range groups {
+		if keep(group) {
+			out = append(out, group)
 		}
 	}
 	return out
 }
 
-func filterWorkdirs(workdirs []Workdir, keep func(Workdir) bool) []Workdir {
-	out := workdirs[:0]
-	for _, workdir := range workdirs {
-		if keep(workdir) {
-			out = append(out, workdir)
+func filterWorkspaces(workspaces []Workspace, keep func(Workspace) bool) []Workspace {
+	out := workspaces[:0]
+	for _, workspace := range workspaces {
+		if keep(workspace) {
+			out = append(out, workspace)
 		}
 	}
 	return out

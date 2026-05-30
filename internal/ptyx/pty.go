@@ -27,10 +27,10 @@ type Session struct {
 	text  string
 }
 
-func Start(ctx context.Context, tabID string, command string, workdir string, cols int, rows int, output func(Data)) (*Session, error) {
+func Start(ctx context.Context, tabID string, command string, workspace string, cols int, rows int, output func(Data)) (*Session, error) {
 	shell := shellx.Resolve()
 	cmd := exec.CommandContext(ctx, shell, "-lc", command)
-	cmd.Dir = workdir
+	cmd.Dir = workspace
 	cmd.Env = childEnv(os.Environ(), shell)
 	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(max(cols, 20)), Rows: uint16(max(rows, 5))})
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *Session) readLoop(output func(Data)) {
 
 func childEnv(env []string, shell string) []string {
 	remove := map[string]bool{
-		"WEFT_HOME": true, "WEFT_WORKSPACE": true, "WEFT_WORKDIR": true, "NO_COLOR": true,
+		"WEFT_HOME": true, "WEFT_WORKSPACE": true, "NO_COLOR": true,
 	}
 	next := make([]string, 0, len(env)+1)
 	hasTerm := false

@@ -2,6 +2,7 @@ package titlehook
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,16 +15,23 @@ import (
 func TestBuildPayloadUsesAgentContext(t *testing.T) {
 	agent := state.Agent{ID: "a", Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
-	payload := BuildPayload(agent, state.Workdir{Path: "/tmp/project"}, state.Folder{Path: "ship"}, "{auto}", "fix login")
+	payload := BuildPayload(agent, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login")
 
 	if payload.Version != 1 || payload.Event != EventFirstMessage {
 		t.Fatalf("payload identity = %#v", payload)
 	}
-	if payload.AgentID != "a" || payload.Workspace != "/tmp/project" || payload.Workdir != "/tmp/project" || payload.Group != "ship" {
+	if payload.AgentID != "a" || payload.Workspace != "/tmp/project" || payload.Group != "ship" {
 		t.Fatalf("payload context = %#v", payload)
 	}
 	if payload.Status != "ready" || payload.FirstMessage != "fix login" {
 		t.Fatalf("payload values = %#v", payload)
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "workdir") {
+		t.Fatalf("payload should not include legacy workdir field: %s", raw)
 	}
 }
 

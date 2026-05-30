@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-30 - Aggressive legacy cleanup
+
+- Request: Remove old tmux/workdir/folder compatibility and normalize Weft around workspaces, groups, agents, and the supervisor.
+- Suggestions: Make the cleanup intentionally breaking, move state JSON to v4 `workspaces`/`groups`/`workspace_id` names, archive legacy state instead of migrating it, drop legacy config/env/CLI/title-hook aliases, and update tests/docs to match the new contract.
+- Outcome: Implemented in `.worktrees/aggressive-legacy-cleanup`; awaiting review.
+- Evidence: `internal/state`, `internal/config`, `internal/app`, `internal/tui`, `internal/titlehook`, `internal/titles`, `tests/integration`, `README.md`, `spec.md`.
+
 ## 2026-05-30 - Safe LOC refactor
 
 - Request: Safely reduce Weft LOC without changing CLI, TUI, supervisor, IPC, config, state, or spec behavior.

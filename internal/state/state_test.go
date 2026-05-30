@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-func TestStoreArchivesLegacyTmuxState(t *testing.T) {
+func TestStoreArchivesLegacyState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
-	workdir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workdir, 0o700); err != nil {
+	workspace := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	legacy := map[string]any{
@@ -28,7 +28,7 @@ func TestStoreArchivesLegacyTmuxState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st, migration, err := NewStore(path, workdir).Ensure()
+	st, migration, err := NewStore(path, workspace).Ensure()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,19 +36,19 @@ func TestStoreArchivesLegacyTmuxState(t *testing.T) {
 	if migration == nil {
 		t.Fatal("expected migration")
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.v1-tmux.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); err != nil {
 		t.Fatal(err)
 	}
-	if st.Version != Version || len(st.Agents) != 0 || len(st.Workdirs) != 0 || len(st.Folders) != 0 {
+	if st.Version != Version || len(st.Agents) != 0 || len(st.Workspaces) != 0 || len(st.Groups) != 0 {
 		t.Fatalf("state = %#v", st)
 	}
 }
 
-func TestStoreMigratesTabsAndColumnsToWorkdirsFoldersAgents(t *testing.T) {
+func TestStoreArchivesTabsAndColumnsStateWithoutMigrating(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
-	workdir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workdir, 0o700); err != nil {
+	workspace := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	old := map[string]any{
@@ -65,7 +65,7 @@ func TestStoreMigratesTabsAndColumnsToWorkdirsFoldersAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st, migration, err := NewStore(path, workdir).Ensure()
+	st, migration, err := NewStore(path, workspace).Ensure()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,17 +73,14 @@ func TestStoreMigratesTabsAndColumnsToWorkdirsFoldersAgents(t *testing.T) {
 	if migration == nil {
 		t.Fatal("expected migration")
 	}
-	if st.ActiveAgentID != "b" || st.Focus != FocusCodex || st.NavOpen {
-		t.Fatalf("selection/focus not preserved: %#v", st)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); err != nil {
+		t.Fatal(err)
 	}
-	if len(st.Workdirs) != 1 || st.Workdirs[0].Path != workdir {
-		t.Fatalf("workdirs = %#v", st.Workdirs)
+	if st.ActiveAgentID != "" || st.Focus != FocusWorkspaces || !st.NavOpen {
+		t.Fatalf("legacy selection should not be preserved: %#v", st)
 	}
-	if len(st.Folders) != 2 || len(st.Agents) != 2 {
-		t.Fatalf("folders/agents = %#v %#v", st.Folders, st.Agents)
-	}
-	if st.Agents[1].FolderID == st.Agents[0].FolderID {
-		t.Fatalf("columns should become distinct folders: %#v", st)
+	if len(st.Workspaces) != 0 || len(st.Groups) != 0 || len(st.Agents) != 0 {
+		t.Fatalf("legacy state should start clean, got %#v", st)
 	}
 }
 
@@ -101,72 +98,72 @@ func TestCloseAgentSelectsNextAgent(t *testing.T) {
 	}
 }
 
-func TestCloseLastAgentInWorkdirStaysInCurrentWorkdir(t *testing.T) {
+func TestCloseLastAgentInWorkspaceStaysInCurrentWorkspace(t *testing.T) {
 	st := testState(t)
 	now := NowISO()
-	otherWorkdir := Workdir{ID: "w2", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now}
-	otherGroup := Folder{ID: "g2", WorkdirID: otherWorkdir.ID, Path: "inbox", CreatedAt: now, UpdatedAt: now}
-	st.Workdirs = append(st.Workdirs, otherWorkdir)
-	st.Folders = append(st.Folders, otherGroup)
+	otherWorkspace := Workspace{ID: "w2", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now}
+	otherGroup := Group{ID: "g2", WorkspaceID: otherWorkspace.ID, Path: "inbox", CreatedAt: now, UpdatedAt: now}
+	st.Workspaces = append(st.Workspaces, otherWorkspace)
+	st.Groups = append(st.Groups, otherGroup)
 	st.Agents = []Agent{
-		{ID: "only", WorkdirID: "w", FolderID: "f", Title: "Only", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
-		{ID: "other", WorkdirID: "w2", FolderID: "g2", Title: "Other", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
+		{ID: "only", WorkspaceID: "w", GroupID: "f", Title: "Only", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
+		{ID: "other", WorkspaceID: "w2", GroupID: "g2", Title: "Other", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
 	}
 	st.ActiveAgentID = "only"
 
 	st = CloseAgent(st, "only")
 
-	if st.SelectedWorkdirID != "w" || st.ActiveAgentID != "" {
-		t.Fatalf("state switched away from current workdir: %#v", st)
+	if st.SelectedWorkspaceID != "w" || st.ActiveAgentID != "" {
+		t.Fatalf("state switched away from current workspace: %#v", st)
 	}
 }
 
-func TestWorkdirCanHaveNoGroupsAndUngroupedAgents(t *testing.T) {
-	st := stateWithWorkdir(t)
-	if len(st.Workdirs) != 1 || len(st.Folders) != 0 {
-		t.Fatalf("workdir state = %#v", st)
+func TestWorkspaceCanHaveNoGroupsAndUngroupedAgents(t *testing.T) {
+	st := stateWithWorkspace(t)
+	if len(st.Workspaces) != 1 || len(st.Groups) != 0 {
+		t.Fatalf("workspace state = %#v", st)
 	}
 
-	next, agent, err := AddAgent(st, "a", st.SelectedWorkdirID, "", "Codex", NowISO())
+	next, agent, err := AddAgent(st, "a", st.SelectedWorkspaceID, "", "Codex", NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.FolderID != "" {
+	if agent.GroupID != "" {
 		t.Fatalf("new agent should be ungrouped: %#v", agent)
 	}
-	if ungrouped := UngroupedAgentsForWorkdir(next, st.SelectedWorkdirID); len(ungrouped) != 1 {
+	if ungrouped := UngroupedAgentsForWorkspace(next, st.SelectedWorkspaceID); len(ungrouped) != 1 {
 		t.Fatalf("ungrouped agents = %#v", ungrouped)
 	}
 	next = CloseAgent(next, agent.ID)
-	if len(next.Agents) != 0 || next.SelectedWorkdirID != st.SelectedWorkdirID || next.SelectedFolderID != "" {
+	if len(next.Agents) != 0 || next.SelectedWorkspaceID != st.SelectedWorkspaceID || next.SelectedGroupID != "" {
 		t.Fatalf("closed ungrouped agent state = %#v", next)
 	}
 }
 
-func TestWorkdirTitleOverrideCanBeSetAndCleared(t *testing.T) {
+func TestWorkspaceTitleOverrideCanBeSetAndCleared(t *testing.T) {
 	st := testState(t)
 
-	next, err := SetWorkdirTitle(st, "w", "  Trading Engine  ")
+	next, err := SetWorkspaceTitle(st, "w", "  Trading Engine  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := next.Workdirs[0].Title; got != "Trading Engine" {
+	if got := next.Workspaces[0].Title; got != "Trading Engine" {
 		t.Fatalf("title override = %q", got)
 	}
 
-	next, err = SetWorkdirTitle(next, "w", " ")
+	next, err = SetWorkspaceTitle(next, "w", " ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := next.Workdirs[0].Title; got != "" {
+	if got := next.Workspaces[0].Title; got != "" {
 		t.Fatalf("blank title should clear override, got %q", got)
 	}
 }
 
 func TestAddAgentDefaultsTitleToCodexTemplate(t *testing.T) {
-	st := stateWithWorkdir(t)
+	st := stateWithWorkspace(t)
 
-	_, agent, err := AddAgent(st, "a", st.SelectedWorkdirID, "", "", NowISO())
+	_, agent, err := AddAgent(st, "a", st.SelectedWorkspaceID, "", "", NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,18 +172,18 @@ func TestAddAgentDefaultsTitleToCodexTemplate(t *testing.T) {
 	}
 }
 
-func TestRepairAllowsEmptyWorkdirs(t *testing.T) {
+func TestRepairAllowsEmptyWorkspaces(t *testing.T) {
 	st := Repair(Empty(), t.TempDir())
 
-	if len(st.Workdirs) != 0 || st.SelectedWorkdirID != "" || st.Focus != FocusWorkdirs || !st.NavOpen {
+	if len(st.Workspaces) != 0 || st.SelectedWorkspaceID != "" || st.Focus != FocusWorkspaces || !st.NavOpen {
 		t.Fatalf("empty repaired state = %#v", st)
 	}
 }
 
-func TestRemoveLastWorkdirLeavesEmptyState(t *testing.T) {
-	st := stateWithWorkdir(t)
+func TestRemoveLastWorkspaceLeavesEmptyState(t *testing.T) {
+	st := stateWithWorkspace(t)
 
-	next, removed, err := RemoveWorkdir(st, st.SelectedWorkdirID)
+	next, removed, err := RemoveWorkspace(st, st.SelectedWorkspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,74 +191,74 @@ func TestRemoveLastWorkdirLeavesEmptyState(t *testing.T) {
 	if len(removed) != 0 {
 		t.Fatalf("removed agents = %#v", removed)
 	}
-	if len(next.Workdirs) != 0 || next.SelectedWorkdirID != "" || next.Focus != FocusWorkdirs || !next.NavOpen {
-		t.Fatalf("state should allow no workdirs: %#v", next)
+	if len(next.Workspaces) != 0 || next.SelectedWorkspaceID != "" || next.Focus != FocusWorkspaces || !next.NavOpen {
+		t.Fatalf("state should allow no workspaces: %#v", next)
 	}
 }
 
-func TestFolderValidationAndMoveAgent(t *testing.T) {
+func TestGroupValidationAndMoveAgent(t *testing.T) {
 	st := testState(t)
 
-	if _, _, err := AddFolder(st, "bad", st.SelectedWorkdirID, "bad/path", NowISO()); err == nil {
+	if _, _, err := AddGroup(st, "bad", st.SelectedWorkspaceID, "bad/path", NowISO()); err == nil {
 		t.Fatal("expected slash validation error")
 	}
-	next, folder, err := AddFolder(st, "ideas", st.SelectedWorkdirID, "ideas", NowISO())
+	next, group, err := AddGroup(st, "ideas", st.SelectedWorkspaceID, "ideas", NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err = MoveAgent(next, "a", folder.ID)
+	next, err = MoveAgent(next, "a", group.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent := AgentByID(next, "a"); agent == nil || agent.FolderID != folder.ID {
+	if agent := AgentByID(next, "a"); agent == nil || agent.GroupID != group.ID {
 		t.Fatalf("agent not moved: %#v", agent)
 	}
-	if _, err := DeleteFolder(next, folder.ID); err == nil {
-		t.Fatal("expected non-empty folder delete error")
+	if _, err := DeleteGroup(next, group.ID); err == nil {
+		t.Fatal("expected non-empty group delete error")
 	}
 
 	next, err = MoveAgent(next, "a", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent := AgentByID(next, "a"); agent == nil || agent.FolderID != "" {
+	if agent := AgentByID(next, "a"); agent == nil || agent.GroupID != "" {
 		t.Fatalf("agent not moved to top-level: %#v", agent)
 	}
-	next, err = DeleteFolder(next, folder.ID)
+	next, err = DeleteGroup(next, group.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(next.Folders) != 1 {
-		t.Fatalf("group should be deleted: %#v", next.Folders)
+	if len(next.Groups) != 1 {
+		t.Fatalf("group should be deleted: %#v", next.Groups)
 	}
 }
 
 func testState(t *testing.T) State {
 	t.Helper()
 	dir := t.TempDir()
-	workdirID := "w"
-	folderID := "f"
+	workspaceID := "w"
+	groupID := "f"
 	now := NowISO()
 	return State{
-		Version:           Version,
-		ActiveAgentID:     "a",
-		SelectedWorkdirID: workdirID,
-		SelectedFolderID:  folderID,
-		Focus:             FocusFolders,
-		NavOpen:           true,
-		Workdirs:          []Workdir{{ID: workdirID, Path: dir, CreatedAt: now, UpdatedAt: now}},
-		Folders:           []Folder{{ID: folderID, WorkdirID: workdirID, Path: "inbox", CreatedAt: now, UpdatedAt: now}},
+		Version:             Version,
+		ActiveAgentID:       "a",
+		SelectedWorkspaceID: workspaceID,
+		SelectedGroupID:     groupID,
+		Focus:               FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []Workspace{{ID: workspaceID, Path: dir, CreatedAt: now, UpdatedAt: now}},
+		Groups:              []Group{{ID: groupID, WorkspaceID: workspaceID, Path: "inbox", CreatedAt: now, UpdatedAt: now}},
 		Agents: []Agent{
-			{ID: "a", WorkdirID: workdirID, FolderID: folderID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
-			{ID: "b", WorkdirID: workdirID, FolderID: folderID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
-			{ID: "c", WorkdirID: workdirID, FolderID: folderID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
+			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
+			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
+			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
 		},
 	}
 }
 
-func stateWithWorkdir(t *testing.T) State {
+func stateWithWorkspace(t *testing.T) State {
 	t.Helper()
-	st, _, err := AddWorkdir(Empty(), "w", t.TempDir(), NowISO())
+	st, _, err := AddWorkspace(Empty(), "w", t.TempDir(), NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -41,20 +41,20 @@ func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptK
 	return lines
 }
 
-func renamePromptTargetForState(st state.State, folderCursor int) (promptKind, string, string, bool) {
-	if st.Focus == state.FocusWorkdirs {
-		if workdir := state.WorkdirByID(st, st.SelectedWorkdirID); workdir != nil {
-			return promptWorkdirTitle, workdir.ID, workdir.Title, true
+func renamePromptTargetForState(st state.State, groupCursor int) (promptKind, string, string, bool) {
+	if st.Focus == state.FocusWorkspaces {
+		if workspace := state.WorkspaceByID(st, st.SelectedWorkspaceID); workspace != nil {
+			return promptWorkspaceTitle, workspace.ID, workspace.Title, true
 		}
 		return "", "", "", false
 	}
-	row := currentFolderRowForState(st, folderCursor)
+	row := currentGroupRowForState(st, groupCursor)
 	switch row.kind {
-	case folderRowFolder:
-		if folder := state.FolderByID(st, row.folderID); folder != nil {
-			return promptRenameGroup, folder.ID, folder.Path, true
+	case groupRowGroup:
+		if group := state.GroupByID(st, row.groupID); group != nil {
+			return promptRenameGroup, group.ID, group.Path, true
 		}
-	case folderRowAgent:
+	case groupRowAgent:
 		if agent := state.AgentByID(st, row.agentID); agent != nil {
 			return promptRenameAgent, agent.ID, agent.Title, true
 		}
@@ -62,20 +62,20 @@ func renamePromptTargetForState(st state.State, folderCursor int) (promptKind, s
 	return "", "", "", false
 }
 
-func deleteConfirmTargetForState(st state.State, folderCursor int) (confirmKind, string, bool) {
-	if st.Focus == state.FocusWorkdirs {
-		if workdir := state.WorkdirByID(st, st.SelectedWorkdirID); workdir != nil {
-			return confirmDeleteWorkdir, workdir.ID, true
+func deleteConfirmTargetForState(st state.State, groupCursor int) (confirmKind, string, bool) {
+	if st.Focus == state.FocusWorkspaces {
+		if workspace := state.WorkspaceByID(st, st.SelectedWorkspaceID); workspace != nil {
+			return confirmDeleteWorkspace, workspace.ID, true
 		}
 		return "", "", false
 	}
-	row := currentFolderRowForState(st, folderCursor)
+	row := currentGroupRowForState(st, groupCursor)
 	switch row.kind {
-	case folderRowFolder:
-		if folder := state.FolderByID(st, row.folderID); folder != nil {
-			return confirmDeleteGroup, folder.ID, true
+	case groupRowGroup:
+		if group := state.GroupByID(st, row.groupID); group != nil {
+			return confirmDeleteGroup, group.ID, true
 		}
-	case folderRowAgent:
+	case groupRowAgent:
 		if agent := state.AgentByID(st, row.agentID); agent != nil {
 			return confirmDeleteAgent, agent.ID, true
 		}
@@ -83,37 +83,37 @@ func deleteConfirmTargetForState(st state.State, folderCursor int) (confirmKind,
 	return "", "", false
 }
 
-func selectedAgentForState(st state.State, folderCursor int) *state.Agent {
-	row := currentFolderRowForState(st, folderCursor)
-	if row.kind == folderRowAgent {
+func selectedAgentForState(st state.State, groupCursor int) *state.Agent {
+	row := currentGroupRowForState(st, groupCursor)
+	if row.kind == groupRowAgent {
 		return state.AgentByID(st, row.agentID)
 	}
 	return nil
 }
 
-func currentFolderRowForState(st state.State, folderCursor int) folderRow {
-	rows := folderRowsForState(st)
+func currentGroupRowForState(st state.State, groupCursor int) groupRow {
+	rows := groupRowsForState(st)
 	if len(rows) == 0 {
-		return folderRow{}
+		return groupRow{}
 	}
-	if folderCursor < 0 || folderCursor >= len(rows) {
+	if groupCursor < 0 || groupCursor >= len(rows) {
 		return rows[0]
 	}
-	return rows[folderCursor]
+	return rows[groupCursor]
 }
 
-func folderRowsForState(st state.State) []folderRow {
-	var rows []folderRow
-	for _, agent := range state.UngroupedAgentsForWorkdir(st, st.SelectedWorkdirID) {
-		rows = append(rows, folderRow{kind: folderRowAgent, agentID: agent.ID})
+func groupRowsForState(st state.State) []groupRow {
+	var rows []groupRow
+	for _, agent := range state.UngroupedAgentsForWorkspace(st, st.SelectedWorkspaceID) {
+		rows = append(rows, groupRow{kind: groupRowAgent, agentID: agent.ID})
 	}
-	for _, folder := range state.FoldersForWorkdir(st, st.SelectedWorkdirID) {
-		rows = append(rows, folderRow{kind: folderRowFolder, folderID: folder.ID})
-		if state.IsGroupCollapsed(st, folder.ID) {
+	for _, group := range state.GroupsForWorkspace(st, st.SelectedWorkspaceID) {
+		rows = append(rows, groupRow{kind: groupRowGroup, groupID: group.ID})
+		if state.IsGroupCollapsed(st, group.ID) {
 			continue
 		}
-		for _, agent := range state.AgentsForFolder(st, folder.ID) {
-			rows = append(rows, folderRow{kind: folderRowAgent, folderID: folder.ID, agentID: agent.ID})
+		for _, agent := range state.AgentsForGroup(st, group.ID) {
+			rows = append(rows, groupRow{kind: groupRowAgent, groupID: group.ID, agentID: agent.ID})
 		}
 	}
 	return rows
@@ -128,15 +128,15 @@ func renderAgentBaseTitleForState(st state.State, agent state.Agent) string {
 }
 
 func renderAgentWithTemplate(st state.State, agent state.Agent, template string) string {
-	workdir := state.Workdir{}
-	folder := state.Folder{}
-	if w := state.WorkdirForAgent(st, agent); w != nil {
-		workdir = *w
+	workspace := state.Workspace{}
+	group := state.Group{}
+	if w := state.WorkspaceForAgent(st, agent); w != nil {
+		workspace = *w
 	}
-	if f := state.FolderForAgent(st, agent); f != nil {
-		folder = *f
+	if f := state.GroupForAgent(st, agent); f != nil {
+		group = *f
 	}
-	return titles.RenderAgent(agent, workdir, folder, template)
+	return titles.RenderAgent(agent, workspace, group, template)
 }
 
 func autoTitleNotice(cfg config.Config, agent state.Agent, draftTitle string) string {

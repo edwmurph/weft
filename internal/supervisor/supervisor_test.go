@@ -36,7 +36,7 @@ func TestSupervisorServesHandshakeStatusAndStructuredErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.State == nil || len(status.State.Workdirs) != 0 {
+	if status.State == nil || len(status.State.Workspaces) != 0 {
 		t.Fatalf("status state = %#v", status.State)
 	}
 	if status.Message == "" {
@@ -67,8 +67,8 @@ func TestUpgradeStatusDecisions(t *testing.T) {
 	st := state.Empty()
 	id := "agent"
 	now := state.NowISO()
-	st.Workdirs = []state.Workdir{{ID: "w", Path: "/tmp/work", CreatedAt: now, UpdatedAt: now}}
-	st.Agents = []state.Agent{{ID: id, WorkdirID: "w", Title: "Alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}}
+	st.Workspaces = []state.Workspace{{ID: "w", Path: "/tmp/work", CreatedAt: now, UpdatedAt: now}}
+	st.Agents = []state.Agent{{ID: id, WorkspaceID: "w", Title: "Alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}}
 	response := ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.ProtocolVersion, SupervisorVersion: "3.9.0"}
 
 	upgrade := UpgradeStatus(response, "4.0.0")
@@ -143,7 +143,7 @@ func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	stop := runTestSupervisor(t, rt, cfg, store)
 	defer stop()
 
-	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "add_workspace", Args: map[string]string{"path": rt.Workdir}}, 2*time.Second); err != nil {
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "add_workspace", Args: map[string]string{"path": rt.Workspace}}, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "new", Args: map[string]string{"title": "Fake"}}, 2*time.Second); err != nil {
@@ -223,13 +223,13 @@ func runTestSupervisor(t *testing.T, rt config.Runtime, cfg config.Config, store
 func testRuntime(t *testing.T) (config.Runtime, config.Config, *state.Store) {
 	t.Helper()
 	dir := t.TempDir()
-	workdir := filepath.Join(dir, "work")
+	workspace := filepath.Join(dir, "work")
 	runtimeDir := filepath.Join(dir, "home")
-	if err := os.MkdirAll(workdir, 0o700); err != nil {
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	rt := config.Runtime{
-		Workdir:    workdir,
+		Workspace:  workspace,
 		Dir:        runtimeDir,
 		ConfigPath: filepath.Join(runtimeDir, "config.toml"),
 		StatePath:  filepath.Join(runtimeDir, "state.json"),
@@ -239,7 +239,7 @@ func testRuntime(t *testing.T) (config.Runtime, config.Config, *state.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := state.NewStore(rt.StatePath, rt.Workdir)
+	store := state.NewStore(rt.StatePath, rt.Workspace)
 	return rt, cfg, store
 }
 

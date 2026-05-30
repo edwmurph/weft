@@ -15,7 +15,7 @@ import (
 
 func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	st := layoutState("/tmp/project")
-	if got := workspaceNavFrameWidth(st, 140); got != fixedWorkdirPaneWidth+defaultAgentsPaneWidth {
+	if got := workspaceNavFrameWidth(st, 140); got != fixedWorkspacePaneWidth+defaultAgentsPaneWidth {
 		t.Fatalf("wide nav width = %d", got)
 	}
 	if got := workspaceNavFrameWidth(st, minThreePaneWidth); got != minTwoPaneNavWidth {
@@ -34,7 +34,7 @@ func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 }
 
 func TestRenderWorkspaceShowsWorkspacesAgentsAndConsole(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 
@@ -67,16 +67,16 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndConsole(t *testing.T) {
 }
 
 func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	workdir := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
-	expectedPath := "~" + strings.TrimPrefix(workdir, home)
-	st := layoutState(workdir)
+	workspace := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
+	expectedPath := "~" + strings.TrimPrefix(workspace, home)
+	st := layoutState(workspace)
 
-	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", minThreePaneWidth, 24, "", workdir)
+	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", minThreePaneWidth, 24, "", workspace)
 
 	for _, expected := range []string{"Workspaces", "Agents", "No Codex agent open", expectedPath} {
 		if !strings.Contains(got, expected) {
@@ -85,17 +85,17 @@ func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
 	}
 }
 
-func TestRenderWorkspaceKeepsFixedWorkdirPaneAtMediumWidth(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+func TestRenderWorkspaceKeepsFixedWorkspacePaneAtMediumWidth(t *testing.T) {
+	cfg := config.DefaultConfig()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	workdir := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
-	expectedPath := "~" + strings.TrimPrefix(workdir, home)
-	st := layoutState(workdir)
+	workspace := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
+	expectedPath := "~" + strings.TrimPrefix(workspace, home)
+	st := layoutState(workspace)
 
-	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", workdir)
+	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", workspace)
 
 	for _, expected := range []string{"Workspaces", "Agents", expectedPath} {
 		if !strings.Contains(got, expected) {
@@ -103,103 +103,103 @@ func TestRenderWorkspaceKeepsFixedWorkdirPaneAtMediumWidth(t *testing.T) {
 		}
 	}
 	if strings.Contains(got, "No Codex agent open") {
-		t.Fatalf("medium dashboard should hide Codex preview before clipping fixed Workdirs:\n%s", got)
+		t.Fatalf("medium dashboard should hide Codex preview before clipping fixed Workspaces:\n%s", got)
 	}
 }
 
-func TestRenderWorkdirCardsUseDefaultPathAndTitleOverride(t *testing.T) {
+func TestRenderWorkspaceCardsUseDefaultPathAndTitleOverride(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := layoutState(filepath.Join(home, "code", "personal", "weft"))
-	st.Focus = state.FocusWorkdirs
+	st.Focus = state.FocusWorkspaces
 
-	got := ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n"))
+	got := ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n"))
 	if !strings.Contains(got, "~/code/personal/weft") {
-		t.Fatalf("workdir card should use default display path title:\n%s", got)
+		t.Fatalf("workspace card should use default display path title:\n%s", got)
 	}
 
-	st.Workdirs[0].Title = "Main Weft"
-	got = ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n"))
+	st.Workspaces[0].Title = "Main Weft"
+	got = ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n"))
 	if !strings.Contains(got, "Main Weft") || strings.Contains(got, "~/code/personal/weft") {
-		t.Fatalf("workdir card should use manual title override:\n%s", got)
+		t.Fatalf("workspace card should use manual title override:\n%s", got)
 	}
 }
 
-func TestRenderWorkdirCardsShowOnlyReconciledCounts(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
+	cfg := config.DefaultConfig()
 	now := state.NowISO()
 	st := state.State{
-		Version:           state.Version,
-		SelectedWorkdirID: "w",
-		Focus:             state.FocusWorkdirs,
-		NavOpen:           true,
-		Workdirs:          []state.Workdir{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
 		Agents: []state.Agent{
-			{ID: "starting", WorkdirID: "w", Title: "Starting", Status: state.StatusStarting, CreatedAt: now, UpdatedAt: now},
-			{ID: "running", WorkdirID: "w", Title: "Running", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
-			{ID: "working", WorkdirID: "w", Title: "Working", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
-			{ID: "shipping", WorkdirID: "w", Title: "Shipping", Status: state.StatusShipping, CreatedAt: now, UpdatedAt: now},
-			{ID: "ready", WorkdirID: "w", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "live-ready", WorkdirID: "w", Title: "Live Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
-			{ID: "failed", WorkdirID: "w", Title: "Failed", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
+			{ID: "starting", WorkspaceID: "w", Title: "Starting", Status: state.StatusStarting, CreatedAt: now, UpdatedAt: now},
+			{ID: "running", WorkspaceID: "w", Title: "Running", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "working", WorkspaceID: "w", Title: "Working", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "shipping", WorkspaceID: "w", Title: "Shipping", Status: state.StatusShipping, CreatedAt: now, UpdatedAt: now},
+			{ID: "ready", WorkspaceID: "w", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "live-ready", WorkspaceID: "w", Title: "Live Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "failed", WorkspaceID: "w", Title: "Failed", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
-	counts := workdirCardCountsForWorkdir(st, "w")
+	counts := workspaceCardCountsForWorkspace(st, "w")
 	if counts.total != 7 || counts.active != 4 || counts.needsAttention != 3 {
 		t.Fatalf("counts = %#v", counts)
 	}
 	if counts.active+counts.needsAttention != counts.total {
 		t.Fatalf("counts should reconcile: %#v", counts)
 	}
-	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n")))
+	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n")))
 	for _, expected := range []string{"7 total", "4 active", "3 needs attention", "3 needs attention │", "╭ /tmp/project", "│", "╰"} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("workdir card missing %q:\n%s", expected, got)
+			t.Fatalf("workspace card missing %q:\n%s", expected, got)
 		}
 	}
 	for _, forbidden := range []string{"parked", "stopped", "quiet", "error"} {
 		if strings.Contains(got, forbidden) {
-			t.Fatalf("workdir card should not render %q label:\n%s", forbidden, got)
+			t.Fatalf("workspace card should not render %q label:\n%s", forbidden, got)
 		}
 	}
 }
 
-func TestRenderWorkdirCardCountsColorOnlyNonzeroValues(t *testing.T) {
+func TestRenderWorkspaceCardCountsColorOnlyNonzeroValues(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(previous)
 
-	zeroActive := renderWorkdirCardCounts(workdirCardCounts{total: 1, active: 0, needsAttention: 1}, 72)
-	if !strings.Contains(zeroActive, workdirCountMutedStyle.Render("0 active")) {
+	zeroActive := renderWorkspaceCardCounts(workspaceCardCounts{total: 1, active: 0, needsAttention: 1}, 72)
+	if !strings.Contains(zeroActive, workspaceCountMutedStyle.Render("0 active")) {
 		t.Fatalf("zero active should use muted style:\n%q", zeroActive)
 	}
-	if strings.Contains(zeroActive, workdirCountActiveStyle.Render("0 active")) {
+	if strings.Contains(zeroActive, workspaceCountActiveStyle.Render("0 active")) {
 		t.Fatalf("zero active should not use active color:\n%q", zeroActive)
 	}
-	if !strings.Contains(zeroActive, workdirCountNeedsAttentionStyle.Render("1 needs attention")) {
+	if !strings.Contains(zeroActive, workspaceCountNeedsAttentionStyle.Render("1 needs attention")) {
 		t.Fatalf("nonzero needs attention should use amber style:\n%q", zeroActive)
 	}
 
-	zeroNeedsAttention := renderWorkdirCardCounts(workdirCardCounts{total: 1, active: 1, needsAttention: 0}, 72)
-	if !strings.Contains(zeroNeedsAttention, workdirCountActiveStyle.Render("1 active")) {
+	zeroNeedsAttention := renderWorkspaceCardCounts(workspaceCardCounts{total: 1, active: 1, needsAttention: 0}, 72)
+	if !strings.Contains(zeroNeedsAttention, workspaceCountActiveStyle.Render("1 active")) {
 		t.Fatalf("nonzero active should use active color:\n%q", zeroNeedsAttention)
 	}
-	if !strings.Contains(zeroNeedsAttention, workdirCountMutedStyle.Render("0 needs attention")) {
+	if !strings.Contains(zeroNeedsAttention, workspaceCountMutedStyle.Render("0 needs attention")) {
 		t.Fatalf("zero needs attention should use muted style:\n%q", zeroNeedsAttention)
 	}
-	if strings.Contains(zeroNeedsAttention, workdirCountNeedsAttentionStyle.Render("0 needs attention")) {
+	if strings.Contains(zeroNeedsAttention, workspaceCountNeedsAttentionStyle.Render("0 needs attention")) {
 		t.Fatalf("zero needs attention should not use amber color:\n%q", zeroNeedsAttention)
 	}
 }
 
 func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
-	st.Focus = state.FocusWorkdirs
+	st.Focus = state.FocusWorkspaces
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 70, 16, "", 32, 0)
 
@@ -212,12 +212,12 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 }
 
 func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
-	st.SelectedFolderID = ""
-	st.Folders = nil
-	st.Agents[0].FolderID = ""
+	st.SelectedGroupID = ""
+	st.Groups = nil
+	st.Agents[0].GroupID = ""
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 0)
 	if !strings.Contains(got, "Agents") || !strings.Contains(got, "• alpha") || strings.Contains(got, "▾") {
@@ -232,17 +232,17 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	}
 
 	st = state.Repair(state.Empty(), "/tmp/project")
-	got = strings.Join(renderFoldersPane(cfg, st, 40, 12, 0), "\n")
+	got = strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n")
 	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create one.") {
 		t.Fatalf("no-workspace agents pane should explain workspace requirement:\n%s", got)
 	}
 }
 
 func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := state.Repair(state.Empty(), "/tmp/project")
 
-	got := strings.Join(renderWorkdirsPane(cfg, st, 64, 12), "\n")
+	got := strings.Join(renderWorkspacesPane(cfg, st, 64, 12), "\n")
 
 	if !strings.Contains(got, "No workspaces") || !strings.Contains(got, "Press w to add one.") {
 		t.Fatalf("empty workspaces pane missing help:\n%s", got)
@@ -255,7 +255,7 @@ func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 }
 
 func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := state.Repair(state.Empty(), "/tmp/project")
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
@@ -267,7 +267,7 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 	st = layoutState("/tmp/project")
 	st.Agents = nil
 	st.ActiveAgentID = ""
-	st.Focus = state.FocusFolders
+	st.Focus = state.FocusAgents
 	st.NavOpen = true
 	got = renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
 	if !strings.Contains(got, "Press n to create one.") {
@@ -317,7 +317,7 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 }
 
 func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusCodex
 	st.NavOpen = false
@@ -340,7 +340,7 @@ func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
 }
 
 func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusCodex
 	st.NavOpen = false
@@ -362,7 +362,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 }
 
 func TestCodexLeftPaddingStaysBeforeLeadingANSIStyle(t *testing.T) {
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusCodex
 	st.NavOpen = false
@@ -388,7 +388,7 @@ func TestFocusedCodexAndNavUseSeparateFocusColors(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(previous)
 
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 1)
 
@@ -418,17 +418,17 @@ func TestCornerLinePreservesTinyWidths(t *testing.T) {
 	}
 }
 
-func layoutState(workdir string) state.State {
+func layoutState(workspace string) state.State {
 	now := state.NowISO()
 	return state.State{
-		Version:           state.Version,
-		ActiveAgentID:     "a",
-		SelectedWorkdirID: "w",
-		SelectedFolderID:  "f",
-		Focus:             state.FocusFolders,
-		NavOpen:           true,
-		Workdirs:          []state.Workdir{{ID: "w", Path: workdir, CreatedAt: now, UpdatedAt: now}},
-		Folders:           []state.Folder{{ID: "f", WorkdirID: "w", Path: "inbox", CreatedAt: now, UpdatedAt: now}},
-		Agents:            []state.Agent{{ID: "a", WorkdirID: "w", FolderID: "f", Title: "alpha", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now}},
+		Version:             state.Version,
+		ActiveAgentID:       "a",
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "f",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups:              []state.Group{{ID: "f", WorkspaceID: "w", Path: "inbox", CreatedAt: now, UpdatedAt: now}},
+		Agents:              []state.Agent{{ID: "a", WorkspaceID: "w", GroupID: "f", Title: "alpha", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now}},
 	}
 }

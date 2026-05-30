@@ -41,6 +41,10 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"weft start",
+		"weft workdir",
+		"weft folder",
+		"weft quit",
+		"weft delete-session",
 		"Title templates:",
 		"Weft uses one global runtime",
 		"unless you use close --kill or clear",
@@ -48,6 +52,17 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		if strings.Contains(help, forbidden) {
 			t.Fatalf("help should not contain %q:\n%s", forbidden, help)
 		}
+	}
+}
+
+func TestLegacyCLICommandsAreUnknown(t *testing.T) {
+	for _, command := range []string{"workdir", "folder", "quit", "delete-session"} {
+		t.Run(command, func(t *testing.T) {
+			err := Run([]string{command})
+			if err == nil || !strings.Contains(err.Error(), `unknown command "`+command+`"`) {
+				t.Fatalf("Run(%q) error = %v", command, err)
+			}
+		})
 	}
 }
 
@@ -624,7 +639,7 @@ func TestValidateWorkspaceAddPathRequiresExistingDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := state.NormalizeWorkdirPath(dir); got != want {
+	if want := state.NormalizeWorkspacePath(dir); got != want {
 		t.Fatalf("validated path = %q, want %q", got, want)
 	}
 

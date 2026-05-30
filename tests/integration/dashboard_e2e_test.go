@@ -29,11 +29,11 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 	bin := buildWeft(t)
 	tmp := t.TempDir()
 	runtimeDir := filepath.Join(tmp, "weft-home")
-	workdir := filepath.Join(tmp, "workspace")
+	workspace := filepath.Join(tmp, "workspace")
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(workdir, 0o700); err != nil {
+	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
@@ -44,7 +44,7 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 
 	env := append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKSPACE="+workdir,
+		"WEFT_WORKSPACE="+workspace,
 		"WEFT_EXECUTABLE="+bin,
 		"SHELL=/missing/zsh",
 		"PATH=/usr/bin:/bin",
@@ -58,7 +58,7 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 
 	clientCmd := exec.Command(bin)
 	clientCmd.Env = env
-	clientCmd.Dir = workdir
+	clientCmd.Dir = workspace
 	clientPTY, err := pty.StartWithSize(clientCmd, &pty.Winsize{Cols: 100, Rows: 32})
 	if err != nil {
 		t.Fatalf("start Weft client: %v", err)
@@ -144,11 +144,11 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	tmp := t.TempDir()
 
 	runtimeDir := filepath.Join(tmp, "weft-home")
-	workdir := filepath.Join(tmp, "workspace")
+	workspace := filepath.Join(tmp, "workspace")
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(workdir, 0o700); err != nil {
+	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	startupMarker := filepath.Join(tmp, "fake-codex-color-only")
@@ -213,7 +213,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	env := append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKSPACE="+workdir,
+		"WEFT_WORKSPACE="+workspace,
 		"WEFT_EXECUTABLE="+bin,
 		"STARTUP_DELAY=1.2",
 		"STARTUP_MARKER="+startupMarker,
@@ -229,7 +229,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	clientCmd := exec.Command(bin)
 	clientCmd.Env = env
-	clientCmd.Dir = workdir
+	clientCmd.Dir = workspace
 	clientPTY, err := pty.StartWithSize(clientCmd, &pty.Winsize{Cols: 160, Rows: 38})
 	if err != nil {
 		t.Fatalf("start Weft client: %v", err)
@@ -355,7 +355,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
-			return agent != nil && agent.FolderID == "" && st.Focus == state.FocusCodex
+			return agent != nil && agent.GroupID == "" && st.Focus == state.FocusCodex
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
@@ -400,9 +400,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	timedStep(t, "C-b opens command center", func() {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		time.Sleep(250 * time.Millisecond)
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, "Fake Codex Ready")
@@ -441,7 +441,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "release")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return folderByPath(st, "release") != nil
+			return groupByPath(st, "release") != nil
 		})
 		directRun(t, env, "send-keys", "-t", pane, "m")
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -451,8 +451,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
-			folder := folderForAgent(st, agent)
-			return agent != nil && folder != nil && folder.Path == "release"
+			group := groupForAgent(st, agent)
+			return agent != nil && group != nil && group.Path == "release"
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
@@ -498,7 +498,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex ready")
 		})
@@ -544,7 +544,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 0 && len(st.Folders) == 0 && st.SelectedWorkdirID != ""
+			return len(st.Agents) == 0 && len(st.Groups) == 0 && st.SelectedWorkspaceID != ""
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No agents")
@@ -593,7 +593,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				st.Agents[0].Status == state.StatusRunning
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		if !waitForBool(2*time.Second, func() bool {
 			attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
@@ -606,7 +606,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusFolders &&
+				st.Focus == state.FocusAgents &&
 				st.Agents[0].Status == state.StatusRunning &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
@@ -662,7 +662,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Workdirs) == 0 && len(st.Agents) == 0
+			return len(st.Workspaces) == 0 && len(st.Agents) == 0
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No workspaces") &&
@@ -687,8 +687,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			workdir := state.WorkdirByPath(st, alpha)
-			return len(st.Workdirs) == 1 && workdir != nil && st.SelectedWorkdirID == workdir.ID
+			workspace := state.WorkspaceByPath(st, alpha)
+			return len(st.Workspaces) == 1 && workspace != nil && st.SelectedWorkspaceID == workspace.ID
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No agents") &&
@@ -718,22 +718,22 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			directRun(t, env, "send-keys", "-t", pane, "Enter")
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Workdirs) == 2 && state.WorkdirByPath(st, beta) != nil
+			return len(st.Workspaces) == 2 && state.WorkspaceByPath(st, beta) != nil
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Left")
 		st := waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusWorkdirs
+			return st.Focus == state.FocusWorkspaces
 		})
-		alphaWorkdir := state.WorkdirByPath(st, alpha)
-		if alphaWorkdir == nil {
-			t.Fatalf("alpha workspace missing after beta add: %#v", st.Workdirs)
+		alphaWorkspace := state.WorkspaceByPath(st, alpha)
+		if alphaWorkspace == nil {
+			t.Fatalf("alpha workspace missing after beta add: %#v", st.Workspaces)
 		}
-		if st.SelectedWorkdirID != alphaWorkdir.ID {
+		if st.SelectedWorkspaceID != alphaWorkspace.ID {
 			directRun(t, env, "send-keys", "-t", pane, "k")
 			waitState(t, env, bin, func(st state.State) bool {
-				workdir := state.WorkdirByPath(st, alpha)
-				return workdir != nil && st.SelectedWorkdirID == workdir.ID
+				workspace := state.WorkspaceByPath(st, alpha)
+				return workspace != nil && st.SelectedWorkspaceID == workspace.ID
 			})
 		}
 		directRun(t, env, "send-keys", "-t", pane, "r")
@@ -743,8 +743,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "Alpha Workspace")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			workdir := state.WorkdirByPath(st, alpha)
-			return workdir != nil && workdir.Title == "Alpha Workspace"
+			workspace := state.WorkspaceByPath(st, alpha)
+			return workspace != nil && workspace.Title == "Alpha Workspace"
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Alpha Workspace")
@@ -757,8 +757,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "C-u")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			workdir := state.WorkdirByPath(st, alpha)
-			return workdir != nil && workdir.Title == ""
+			workspace := state.WorkspaceByPath(st, alpha)
+			return workspace != nil && workspace.Title == ""
 		})
 	})
 
@@ -766,7 +766,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 	timedStep(t, "group lifecycle and grouped agent journeys run through the dashboard", func() {
 		directRun(t, env, "send-keys", "-t", pane, "Right")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusFolders
+			return st.Focus == state.FocusAgents
 		})
 		directRun(t, env, "send-keys", "-t", pane, "g")
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -775,7 +775,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "release")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return folderByPath(st, "release") != nil
+			return groupByPath(st, "release") != nil
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "r")
@@ -786,29 +786,29 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "renamed")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return folderByPath(st, "renamed") != nil
+			return groupByPath(st, "renamed") != nil
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			folder := folderByPath(st, "renamed")
-			return folder != nil && state.IsGroupCollapsed(st, folder.ID)
+			group := groupByPath(st, "renamed")
+			return group != nil && state.IsGroupCollapsed(st, group.ID)
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "renamed") && strings.Contains(capture, "▸")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			folder := folderByPath(st, "renamed")
-			return folder != nil && !state.IsGroupCollapsed(st, folder.ID)
+			group := groupByPath(st, "renamed")
+			return group != nil && !state.IsGroupCollapsed(st, group.ID)
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		st := waitState(t, env, bin, func(st state.State) bool {
-			folder := folderByPath(st, "renamed")
+			group := groupByPath(st, "renamed")
 			return len(st.Agents) == 1 &&
-				folder != nil &&
-				st.Agents[0].FolderID == folder.ID &&
+				group != nil &&
+				st.Agents[0].GroupID == group.ID &&
 				st.Agents[0].Status == state.StatusRunning &&
 				st.Focus == state.FocusCodex
 		})
@@ -816,7 +816,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusFolders && st.NavOpen
+			return st.Focus == state.FocusAgents && st.NavOpen
 		})
 		directRun(t, env, "send-keys", "-t", pane, "k")
 		time.Sleep(250 * time.Millisecond)
@@ -827,9 +827,9 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool {
-			folder := folderByPath(st, "renamed")
+			group := groupByPath(st, "renamed")
 			agent := findAgent(st, firstAgentID)
-			return folder != nil && agent != nil && agent.FolderID == folder.ID
+			return group != nil && agent != nil && agent.GroupID == group.ID
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "j")
@@ -842,7 +842,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstAgentID)
-			return agent != nil && agent.FolderID == ""
+			return agent != nil && agent.GroupID == ""
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "j")
@@ -854,7 +854,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Folders) == 0
+			return len(st.Groups) == 0
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "n")
@@ -863,12 +863,12 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return len(st.Agents) == 2 &&
 				active != nil &&
 				active.ID != firstAgentID &&
-				active.FolderID == "" &&
+				active.GroupID == "" &&
 				st.Focus == state.FocusCodex
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusFolders && st.NavOpen
+			return st.Focus == state.FocusAgents && st.NavOpen
 		})
 		directRun(t, env, "send-keys", "-t", pane, "k")
 		time.Sleep(250 * time.Millisecond)
@@ -903,17 +903,17 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 	timedStep(t, "workspace deletion removes empty and active workspaces", func() {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusFolders && st.NavOpen
+			return st.Focus == state.FocusAgents && st.NavOpen
 		})
 		time.Sleep(250 * time.Millisecond)
 		directRun(t, env, "send-keys", "-t", pane, "Left")
 		st := waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusWorkdirs
+			return st.Focus == state.FocusWorkspaces
 		})
 		time.Sleep(250 * time.Millisecond)
-		selected := state.WorkdirByID(st, st.SelectedWorkdirID)
+		selected := state.WorkspaceByID(st, st.SelectedWorkspaceID)
 		if selected == nil {
-			t.Fatalf("no selected workspace before deletion: %#v", st.Workdirs)
+			t.Fatalf("no selected workspace before deletion: %#v", st.Workspaces)
 		}
 
 		directRun(t, env, "send-keys", "-t", pane, "d")
@@ -923,11 +923,11 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "y")
 		if selected.Path == beta {
 			waitState(t, env, bin, func(st state.State) bool {
-				return len(st.Workdirs) == 1 && state.WorkdirByPath(st, beta) == nil && len(st.Agents) == 2
+				return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, beta) == nil && len(st.Agents) == 2
 			})
 		} else {
 			waitState(t, env, bin, func(st state.State) bool {
-				return len(st.Workdirs) == 1 && state.WorkdirByPath(st, alpha) == nil && len(st.Agents) == 0
+				return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, alpha) == nil && len(st.Agents) == 0
 			})
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -938,7 +938,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Workdirs) == 0 && len(st.Folders) == 0 && len(st.Agents) == 0
+			return len(st.Workspaces) == 0 && len(st.Groups) == 0 && len(st.Agents) == 0
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No workspaces") &&
@@ -955,12 +955,12 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 	bin := buildWeft(t)
 	tmp := t.TempDir()
 	fakeCodex := writeVisibleFakeCodex(t, tmp, "fake-codex-performance.sh")
-	runtimeDir, workdir := createRuntime(t, tmp, fakeCodex)
-	secondWorkdir := filepath.Join(tmp, "second-workspace")
-	if err := os.Mkdir(secondWorkdir, 0o700); err != nil {
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	secondWorkspace := filepath.Join(tmp, "second-workspace")
+	if err := os.Mkdir(secondWorkspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := baseIntegrationEnv(runtimeDir, workdir, bin)
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
 	t.Cleanup(func() {
 		cmd := exec.Command(bin, "close", "--kill", "--yes")
 		cmd.Env = env
@@ -969,7 +969,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 
 	pane := "direct-client-performance"
 	started := time.Now()
-	clientOutput, firstClientDone := startDirectDashboardClient(t, env, bin, workdir, pane, 150, 36)
+	clientOutput, firstClientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 150, 36)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Add this workspace to Weft?") &&
 			strings.Contains(capture, "Y yes")
@@ -990,10 +990,10 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 		return strings.Contains(capture, "Add workspace")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "C-u")
-	directRun(t, env, "send-keys", "-l", "-t", pane, secondWorkdir)
+	directRun(t, env, "send-keys", "-l", "-t", pane, secondWorkspace)
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Workdirs) == 2 && state.WorkdirByPath(st, secondWorkdir) != nil
+		return len(st.Workspaces) == 2 && state.WorkspaceByPath(st, secondWorkspace) != nil
 	})
 	assertPerformanceBudget(t, "add workspace prompt completes", time.Since(started), 3*time.Second)
 
@@ -1025,7 +1025,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 	assertPerformanceBudget(t, "refresh command returns", time.Since(started), 3*time.Second)
 
 	started = time.Now()
-	clientOutput, _ = startDirectDashboardClient(t, env, bin, workdir, pane+"-reattach", 150, 36)
+	clientOutput, _ = startDirectDashboardClient(t, env, bin, workspace, pane+"-reattach", 150, 36)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, collapsedCodexToolbar) ||
 			strings.Contains(capture, "Fake Codex dashboard ready")
@@ -1296,32 +1296,32 @@ func findAgent(st state.State, id string) *state.Agent {
 	return nil
 }
 
-func folderForAgent(st state.State, agent *state.Agent) *state.Folder {
+func groupForAgent(st state.State, agent *state.Agent) *state.Group {
 	if agent == nil {
 		return nil
 	}
-	for index := range st.Folders {
-		if st.Folders[index].ID == agent.FolderID {
-			return &st.Folders[index]
+	for index := range st.Groups {
+		if st.Groups[index].ID == agent.GroupID {
+			return &st.Groups[index]
 		}
 	}
 	return nil
 }
 
-func folderByPath(st state.State, path string) *state.Folder {
-	for index := range st.Folders {
-		if st.Folders[index].Path == path {
-			return &st.Folders[index]
+func groupByPath(st state.State, path string) *state.Group {
+	for index := range st.Groups {
+		if st.Groups[index].Path == path {
+			return &st.Groups[index]
 		}
 	}
 	return nil
 }
 
-func startDirectDashboardClient(t *testing.T, env []string, bin string, workdir string, pane string, cols int, rows int) (func() string, <-chan struct{}) {
+func startDirectDashboardClient(t *testing.T, env []string, bin string, workspace string, pane string, cols int, rows int) (func() string, <-chan struct{}) {
 	t.Helper()
 	clientCmd := exec.Command(bin)
 	clientCmd.Env = env
-	clientCmd.Dir = workdir
+	clientCmd.Dir = workspace
 	clientPTY, err := pty.StartWithSize(clientCmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
 		t.Fatalf("start Weft client: %v", err)

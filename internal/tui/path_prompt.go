@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	workdirSuggestionLimit        = 200
-	workdirSuggestionVisibleLimit = 8
+	workspaceSuggestionLimit        = 200
+	workspaceSuggestionVisibleLimit = 8
 )
 
 type promptStatus struct {
@@ -123,7 +123,7 @@ func promptRuneDeletesPreviousToken(prompt promptKind, msg tea.KeyMsg) bool {
 	if r == '⌫' || r == '⌦' || r == '␈' || r == '␡' || r == '←' || r == '⇤' {
 		return true
 	}
-	return prompt == promptWorkdir && isOptionBackspaceGlyph(r)
+	return prompt == promptWorkspace && isOptionBackspaceGlyph(r)
 }
 
 func previousPromptTokenBoundary(value string, position int) int {
@@ -237,11 +237,11 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 
 func promptPlaceholder(prompt promptKind) string {
 	switch prompt {
-	case promptWorkdir:
+	case promptWorkspace:
 		return "~/code/project"
 	case promptGroup, promptRenameGroup, promptMoveAgent:
 		return "release"
-	case promptWorkdirTitle, promptRenameAgent:
+	case promptWorkspaceTitle, promptRenameAgent:
 		return "Codex {status}"
 	default:
 		return ""
@@ -249,7 +249,7 @@ func promptPlaceholder(prompt promptKind) string {
 }
 
 func promptHasAutocomplete(prompt promptKind) bool {
-	return prompt == promptWorkdir || prompt == promptMoveAgent
+	return prompt == promptWorkspace || prompt == promptMoveAgent
 }
 
 func refreshPromptInput(input *textinput.Model, ctx promptContext) {
@@ -261,8 +261,8 @@ func refreshPromptInput(input *textinput.Model, ctx promptContext) {
 
 func promptSuggestions(ctx promptContext, value string) []string {
 	switch ctx.prompt {
-	case promptWorkdir:
-		return workdirPathSuggestions(value)
+	case promptWorkspace:
+		return workspacePathSuggestions(value)
 	case promptMoveAgent:
 		return groupNameSuggestions(ctx)
 	default:
@@ -276,7 +276,7 @@ func completePromptSuggestion(input *textinput.Model, ctx promptContext) bool {
 		return false
 	}
 	value := suggestion
-	if ctx.prompt == promptWorkdir {
+	if ctx.prompt == promptWorkspace {
 		value = pathWithoutTrailingSeparator(suggestion)
 	}
 	if value == input.Value() {
@@ -295,17 +295,17 @@ func pathWithoutTrailingSeparator(path string) string {
 	return strings.TrimRight(path, string(os.PathSeparator))
 }
 
-func workdirInputIsExistingDirectory(value string) bool {
-	info, err := os.Stat(state.NormalizeWorkdirPath(value))
+func workspaceInputIsExistingDirectory(value string) bool {
+	info, err := os.Stat(state.NormalizeWorkspacePath(value))
 	return err == nil && info.IsDir()
 }
 
-func defaultWorkdirPromptValue(st state.State, fallback string) string {
+func defaultWorkspacePromptValue(st state.State, fallback string) string {
 	path := fallback
-	if workdir := state.ActiveWorkdir(st); workdir != nil && strings.TrimSpace(workdir.Path) != "" {
-		path = workdir.Path
+	if workspace := state.ActiveWorkspace(st); workspace != nil && strings.TrimSpace(workspace.Path) != "" {
+		path = workspace.Path
 	}
-	path = state.NormalizeWorkdirPath(path)
+	path = state.NormalizeWorkspacePath(path)
 	parent := filepath.Dir(path)
 	if parent == "." || parent == "" {
 		parent = path
@@ -313,11 +313,11 @@ func defaultWorkdirPromptValue(st state.State, fallback string) string {
 	return withTrailingSeparator(displayPathForPrompt(parent))
 }
 
-func workdirAddMessage(previous state.State, workdir state.Workdir) string {
-	if workdirByPath(previous, workdir.Path) != nil {
-		return "selected existing workspace " + sessions.DisplayPath(workdir.Path)
+func workspaceAddMessage(previous state.State, workspace state.Workspace) string {
+	if workspaceByPath(previous, workspace.Path) != nil {
+		return "selected existing workspace " + sessions.DisplayPath(workspace.Path)
 	}
-	return "added workspace " + sessions.DisplayPath(workdir.Path)
+	return "added workspace " + sessions.DisplayPath(workspace.Path)
 }
 
 func renderPromptInput(label string, input textinput.Model, width int) []string {
@@ -368,11 +368,11 @@ func renderPromptModal(ctx promptContext, input textinput.Model, width int, heig
 
 func promptTitle(prompt promptKind) string {
 	switch prompt {
-	case promptWorkdir:
+	case promptWorkspace:
 		return "Add workspace"
 	case promptGroup:
 		return "Create group"
-	case promptWorkdirTitle:
+	case promptWorkspaceTitle:
 		return "Rename workspace"
 	case promptRenameGroup:
 		return "Rename group"
@@ -387,7 +387,7 @@ func promptTitle(prompt promptKind) string {
 
 func promptLabel(prompt promptKind) string {
 	switch prompt {
-	case promptWorkdir:
+	case promptWorkspace:
 		return "Path"
 	case promptGroup, promptRenameGroup, promptMoveAgent:
 		return "Group"
@@ -400,7 +400,7 @@ func promptHint(prompt promptKind) string {
 	switch prompt {
 	case promptGroup:
 		return "Flat and unique in this workspace."
-	case promptWorkdirTitle:
+	case promptWorkspaceTitle:
 		return "Blank uses the path title."
 	case promptMoveAgent:
 		return "Blank makes the agent top-level."
@@ -425,9 +425,9 @@ func renderConfirmPrompt(confirm confirmKind, target string, width int) string {
 
 func confirmTitle(confirm confirmKind) string {
 	switch confirm {
-	case confirmAddLaunchWorkdir:
+	case confirmAddLaunchWorkspace:
 		return "Add this workspace to Weft?"
-	case confirmDeleteWorkdir:
+	case confirmDeleteWorkspace:
 		return "Delete workspace"
 	case confirmDeleteGroup:
 		return "Delete group"
@@ -439,7 +439,7 @@ func confirmTitle(confirm confirmKind) string {
 }
 
 func confirmTargetLabel(confirm confirmKind) string {
-	if confirm == confirmAddLaunchWorkdir {
+	if confirm == confirmAddLaunchWorkspace {
 		return "Current directory"
 	}
 	return "Target"
@@ -450,7 +450,7 @@ func confirmDetail(confirm confirmKind) string {
 }
 
 func renderConfirmActions(confirm confirmKind) string {
-	if confirm == confirmAddLaunchWorkdir {
+	if confirm == confirmAddLaunchWorkspace {
 		return modalKeyStyle.Render("Y") + " yes  " + modalKeyStyle.Render("N") + " no  " + modalKeyStyle.Render("Esc") + " no"
 	}
 	return modalKeyStyle.Render("Y") + " delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
@@ -458,15 +458,15 @@ func renderConfirmActions(confirm confirmKind) string {
 
 func confirmTarget(confirm confirmKind, st state.State, pendingID string, renderAgentTitle func(state.Agent) string) string {
 	switch confirm {
-	case confirmAddLaunchWorkdir:
+	case confirmAddLaunchWorkspace:
 		return pendingID
-	case confirmDeleteWorkdir:
-		if workdir := state.WorkdirByID(st, pendingID); workdir != nil {
-			return workdir.Path
+	case confirmDeleteWorkspace:
+		if workspace := state.WorkspaceByID(st, pendingID); workspace != nil {
+			return workspace.Path
 		}
 	case confirmDeleteGroup:
-		if folder := state.FolderByID(st, pendingID); folder != nil {
-			return folder.Path
+		if group := state.GroupByID(st, pendingID); group != nil {
+			return group.Path
 		}
 	case confirmDeleteAgent:
 		if agent := state.AgentByID(st, pendingID); agent != nil {
@@ -504,9 +504,9 @@ func renderPromptSuggestionMenu(ctx promptContext, input textinput.Model, width 
 
 func promptSuggestionRows(height int) int {
 	if height <= 0 {
-		return workdirSuggestionVisibleLimit
+		return workspaceSuggestionVisibleLimit
 	}
-	return max(3, min(workdirSuggestionVisibleLimit, height-16))
+	return max(3, min(workspaceSuggestionVisibleLimit, height-16))
 }
 
 func suggestionWindow(selected int, count int, maxRows int) (int, int) {
@@ -530,7 +530,7 @@ func suggestionWindow(selected int, count int, maxRows int) (int, int) {
 }
 
 func promptSuggestionMenuLabel(ctx promptContext, value string, suggestion string) string {
-	if ctx.prompt != promptWorkdir {
+	if ctx.prompt != promptWorkspace {
 		return suggestion
 	}
 	dirText, _ := splitPromptPath(strings.TrimSpace(value))
@@ -549,14 +549,14 @@ func promptSuggestionMenuLabel(ctx promptContext, value string, suggestion strin
 func inspectPromptStatus(ctx promptContext, raw string) promptStatus {
 	raw = strings.TrimSpace(raw)
 	switch ctx.prompt {
-	case promptWorkdir:
-		return inspectWorkdirPromptPath(ctx.state, raw)
+	case promptWorkspace:
+		return inspectWorkspacePromptPath(ctx.state, raw)
 	case promptGroup, promptRenameGroup:
 		if message := validateGroupPrompt(ctx, raw); message != "" {
 			return promptStatus{message: message, style: modalWarningStyle}
 		}
 		return promptStatus{message: "Ready", style: modalSuccessStyle}
-	case promptWorkdirTitle:
+	case promptWorkspaceTitle:
 		if raw == "" {
 			return promptStatus{message: "Blank uses path title", style: mutedStyle}
 		}
@@ -581,9 +581,9 @@ func inspectPromptStatus(ctx promptContext, raw string) promptStatus {
 
 func promptSubmitBlocker(ctx promptContext, value string) string {
 	switch ctx.prompt {
-	case promptWorkdir:
-		if !workdirInputIsExistingDirectory(value) {
-			return inspectWorkdirPromptPath(ctx.state, value).message
+	case promptWorkspace:
+		if !workspaceInputIsExistingDirectory(value) {
+			return inspectWorkspacePromptPath(ctx.state, value).message
 		}
 	case promptGroup, promptRenameGroup:
 		return validateGroupPrompt(ctx, value)
@@ -608,11 +608,11 @@ func promptSubmitActionLabel(ctx promptContext, value string) string {
 		return ""
 	}
 	switch ctx.prompt {
-	case promptWorkdir:
+	case promptWorkspace:
 		return "add"
 	case promptGroup:
 		return "create"
-	case promptWorkdirTitle:
+	case promptWorkspaceTitle:
 		if value == "" {
 			return "clear"
 		}
@@ -637,32 +637,32 @@ func validateGroupPrompt(ctx promptContext, value string) string {
 	if strings.Contains(value, "/") {
 		return "No / in group names"
 	}
-	workdirID := ctx.state.SelectedWorkdirID
+	workspaceID := ctx.state.SelectedWorkspaceID
 	if ctx.prompt == promptRenameGroup {
-		folder := state.FolderByID(ctx.state, ctx.pendingID)
-		if folder == nil {
+		group := state.GroupByID(ctx.state, ctx.pendingID)
+		if group == nil {
 			return "Group not found"
 		}
-		workdirID = folder.WorkdirID
+		workspaceID = group.WorkspaceID
 	}
-	if workdirID == "" || state.WorkdirByID(ctx.state, workdirID) == nil {
+	if workspaceID == "" || state.WorkspaceByID(ctx.state, workspaceID) == nil {
 		return "Select a workspace first"
 	}
-	for _, folder := range state.FoldersForWorkdir(ctx.state, workdirID) {
-		if folder.Path == value && folder.ID != ctx.pendingID {
+	for _, group := range state.GroupsForWorkspace(ctx.state, workspaceID) {
+		if group.Path == value && group.ID != ctx.pendingID {
 			return "Group already exists"
 		}
 	}
 	return ""
 }
 
-func promptMoveGroup(ctx promptContext, value string) *state.Folder {
+func promptMoveGroup(ctx promptContext, value string) *state.Group {
 	if ctx.selectedAgent == nil {
 		return nil
 	}
-	for _, folder := range state.FoldersForWorkdir(ctx.state, ctx.selectedAgent.WorkdirID) {
-		if folder.Path == value {
-			return &folder
+	for _, group := range state.GroupsForWorkspace(ctx.state, ctx.selectedAgent.WorkspaceID) {
+		if group.Path == value {
+			return &group
 		}
 	}
 	return nil
@@ -672,10 +672,10 @@ func groupNameSuggestions(ctx promptContext) []string {
 	if ctx.selectedAgent == nil {
 		return nil
 	}
-	folders := state.FoldersForWorkdir(ctx.state, ctx.selectedAgent.WorkdirID)
-	suggestions := make([]string, 0, len(folders))
-	for _, folder := range folders {
-		suggestions = append(suggestions, folder.Path)
+	groups := state.GroupsForWorkspace(ctx.state, ctx.selectedAgent.WorkspaceID)
+	suggestions := make([]string, 0, len(groups))
+	for _, group := range groups {
+		suggestions = append(suggestions, group.Path)
 	}
 	sort.Slice(suggestions, func(i int, j int) bool {
 		return strings.ToLower(suggestions[i]) < strings.ToLower(suggestions[j])
@@ -683,12 +683,12 @@ func groupNameSuggestions(ctx promptContext) []string {
 	return suggestions
 }
 
-func inspectWorkdirPromptPath(st state.State, raw string) promptStatus {
+func inspectWorkspacePromptPath(st state.State, raw string) promptStatus {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return promptStatus{message: "Type a path", style: mutedStyle}
 	}
-	path := state.NormalizeWorkdirPath(raw)
+	path := state.NormalizeWorkspacePath(raw)
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -702,24 +702,24 @@ func inspectWorkdirPromptPath(st state.State, raw string) promptStatus {
 	if !info.IsDir() {
 		return promptStatus{message: "! Not a directory: " + sessions.DisplayPath(path), style: modalErrorStyle}
 	}
-	if workdirByPath(st, path) != nil {
+	if workspaceByPath(st, path) != nil {
 		return promptStatus{message: "Already added: " + sessions.DisplayPath(path), style: mutedStyle}
 	}
 	return promptStatus{message: "✓ " + sessions.DisplayPath(path), style: modalSuccessStyle}
 }
 
-func workdirByPath(st state.State, path string) *state.Workdir {
-	path = state.NormalizeWorkdirPath(path)
-	for index := range st.Workdirs {
-		if st.Workdirs[index].Path == path {
-			return &st.Workdirs[index]
+func workspaceByPath(st state.State, path string) *state.Workspace {
+	path = state.NormalizeWorkspacePath(path)
+	for index := range st.Workspaces {
+		if st.Workspaces[index].Path == path {
+			return &st.Workspaces[index]
 		}
 	}
 	return nil
 }
 
 func nearestExistingParent(path string) string {
-	path = state.NormalizeWorkdirPath(path)
+	path = state.NormalizeWorkspacePath(path)
 	for {
 		info, err := os.Stat(path)
 		if err == nil && info.IsDir() {
@@ -733,7 +733,7 @@ func nearestExistingParent(path string) string {
 	}
 }
 
-func workdirPathSuggestions(raw string) []string {
+func workspacePathSuggestions(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -769,8 +769,8 @@ func workdirPathSuggestions(raw string) []string {
 	sort.Slice(suggestions, func(i int, j int) bool {
 		return strings.ToLower(suggestions[i]) < strings.ToLower(suggestions[j])
 	})
-	if len(suggestions) > workdirSuggestionLimit {
-		suggestions = suggestions[:workdirSuggestionLimit]
+	if len(suggestions) > workspaceSuggestionLimit {
+		suggestions = suggestions[:workspaceSuggestionLimit]
 	}
 	return suggestions
 }

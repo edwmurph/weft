@@ -21,7 +21,7 @@ go build ./cmd/weft
 ```
 
 Live integration tests are opt-in because they start real supervisor and PTY
-processes. Each test uses temporary `WEFT_HOME`, temporary `WEFT_WORKDIR`, and
+processes. Each test uses temporary `WEFT_HOME`, temporary `WEFT_WORKSPACE`, and
 a fake `codex_command`.
 
 ## Homebrew Publishing

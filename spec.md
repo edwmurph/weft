@@ -132,7 +132,7 @@ Weft stores runtime files globally under `~/.weft` by default, or under
 - `weftd.lock`
 - `weftd.log`
 
-`WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace context. `WEFT_WORKDIR` remains a legacy compatibility alias.
+`WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace context.
 
 ## Primary Layout
 
@@ -326,7 +326,6 @@ Supported variables:
 {codex}    live Codex title
 {status}   derived/live agent status
 {workspace}  display workspace path
-{workdir}    legacy alias for {workspace}
 {group}   flat group name
 ```
 
@@ -354,8 +353,8 @@ Generated titles are computed for every agent when `title_hook_command` is
 configured. The first non-empty message submitted to the Codex PTY runs the
 hook from the agent workspace, sends JSON on stdin, and stores the first non-empty
 stdout line as the agent's generated title. The hook payload includes
-`version`, `event`, `agent_id`, `workspace`, legacy `workdir`, `group`, `status`, `title`,
-the agent `title_template`, `codex_title`, and `first_message`.
+`version`, `event`, `agent_id`, `workspace`, `group`, `status`, `title`, the
+agent `title_template`, `codex_title`, and `first_message`.
 
 Weft must not encode provider-specific clients, model names, API keys, or HTTP
 contracts into the runtime. The title hook is just a shell command. If the hook
@@ -370,27 +369,25 @@ should be saved on the agent and shown in the footer and rename pane.
 
 ## Data Model
 
-The state model should move from flat tabs grouped by columns to global workspaces, flat groups, and agents.
+The state model uses global workspaces, flat groups, and agents.
 
-The persisted JSON shape currently keeps historical `workdirs`, `workdir_id`, and related Go names for compatibility. Product UI, docs, commands, prompts, and title variables should call these objects workspaces.
-
-Current compatibility shape:
+Current persisted shape:
 
 ```go
 type State struct {
-    Version          int       `json:"version"`
-    ActiveAgentID    string    `json:"active_agent_id,omitempty"`
-    SelectedWorkdirID string   `json:"selected_workdir_id,omitempty"`
-    SelectedGroupID  string    `json:"selected_group_id,omitempty"`
-    Focus            Focus     `json:"focus"`
-    NavOpen          bool      `json:"nav_open"`
-    Workdirs         []Workdir `json:"workdirs"`
-    Groups           []Group   `json:"groups"`
+    Version             int         `json:"version"`
+    ActiveAgentID       string      `json:"active_agent_id,omitempty"`
+    SelectedWorkspaceID string      `json:"selected_workspace_id,omitempty"`
+    SelectedGroupID     string      `json:"selected_group_id,omitempty"`
+    Focus               Focus       `json:"focus"`
+    NavOpen             bool        `json:"nav_open"`
+    Workspaces          []Workspace `json:"workspaces"`
+    Groups              []Group     `json:"groups"`
     Agents           []Agent   `json:"agents"`
     CollapsedGroupIDs []string `json:"collapsed_group_ids,omitempty"`
 }
 
-type Workdir struct {
+type Workspace struct {
     ID        string `json:"id"`
     Path      string `json:"path"`
     Title     string `json:"title,omitempty"`
@@ -400,15 +397,15 @@ type Workdir struct {
 
 type Group struct {
     ID        string `json:"id"`
-    WorkdirID string `json:"workdir_id"`
-    Name      string `json:"name"`
+    WorkspaceID string `json:"workspace_id"`
+    Path      string `json:"path"`
     CreatedAt string `json:"created_at"`
     UpdatedAt string `json:"updated_at"`
 }
 
 type Agent struct {
     ID         string      `json:"id"`
-    WorkdirID  string      `json:"workdir_id"`
+    WorkspaceID string    `json:"workspace_id"`
     GroupID    string      `json:"group_id"`
     Title      string      `json:"title"`
     AutoTitle  string      `json:"auto_title,omitempty"`
@@ -420,8 +417,6 @@ type Agent struct {
     UpdatedAt  string      `json:"updated_at"`
 }
 ```
-
-The implementation may keep legacy `folder` JSON field names while migrating existing users, but product UI, docs, commands, and prompts should call these objects groups.
 
 Runtime-only details such as PID, PTY handles, socket clients, terminal size,
 and screen cache must not be persisted in `state.json`. They belong to the
@@ -448,7 +443,6 @@ codex
 Rules:
 
 - `workspaces` and `agents` focus are valid only while navigation is open.
-- The persisted focus value may remain `workdirs` for compatibility; IPC should accept both `workspaces` and legacy `workdirs`.
 - `codex` focus is valid only while Codex is maximized.
 - Opening an agent with `Enter` sets focus to `codex` and closes navigation.
 - Reopening navigation moves focus back to the last focused navigation pane.
@@ -653,11 +647,6 @@ Global `--clear`:
 - describe destructive commands explicitly
 - do not include the title-template reference section
 
-`weft delete-session`:
-
-- is legacy compatibility only after the supervisor architecture lands
-- should be removed or replaced with a supervisor-scoped command before the next major CLI cleanup
-
 ## Rendering Requirements
 
 The UI should remain usable in small terminals.
@@ -683,25 +672,10 @@ Visual style:
 
 ## Migration
 
-Existing state with flat tabs and columns should migrate as follows:
-
-- Current runtime workspace becomes the first workspace.
-- Each old column becomes one flat group name.
-- Each old tab becomes one agent.
-- Preserve tab ID as agent ID when safe.
-- Preserve title, Codex title, status, created timestamp, and updated timestamp.
-- Preserve active tab as active agent.
-- Set selected workspace and selected group from the active agent when the active agent has a group.
-- Default `NavOpen` to false if an active agent exists, otherwise true.
-
-Unsupported or legacy state should be archived before writing migrated state.
-
-The supervisor architecture migration should preserve `config.toml`,
-`state.json`, workspaces, groups, agents, titles, generated titles, selected
-objects, and focus state. It cannot adopt live Codex PTYs from the old
-legacy tmux-pane runtime. If an old runtime is running during upgrade, Weft
-should explain that saved metadata will migrate but live terminals must be
-restarted.
+Legacy state shapes are not migrated. If `state.json` is not v4 or still uses
+old tab, column, workdir, folder, or tmux-pane fields, Weft archives it to
+`state.legacy.json` and writes a clean v4 state file. Live Codex PTYs from old
+runtime architectures are not adopted.
 
 ## Configuration
 
@@ -729,18 +703,16 @@ help = "?"
 quit = "C-c"
 ```
 
-Existing keybindings can be migrated where names overlap.
-
-`tmux_session` is legacy configuration. The supervisor architecture must ignore
-or migrate it out of generated config. New generated config should not include a
-tmux setting.
+Only the current config keys are loaded. Legacy keys such as `tmux_session`,
+`columns`, `new_workdir`, `new_folder`, `focus_toggle`, `close_weft`, `prev`,
+`previous`, `new`, and `close` are ignored.
 
 ## Testing Requirements
 
 Unit tests:
 
 - minute variations and pure logic details that do not require a live dashboard
-- state migration from old tabs/columns
+- state archive/reset behavior for old tabs/columns, workdir/folder, and tmux-pane shapes
 - supervisor startup, singleton locking, and shutdown decisions
 - protocol field parsing and structured error formatting
 - validation branches for workspace, group, agent, and config inputs

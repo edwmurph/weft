@@ -38,14 +38,14 @@ type ClientModel struct {
 	message  string
 	loading  int
 
-	input                 textinput.Model
-	prompt                promptKind
-	confirm               confirmKind
-	pendingID             string
-	promptSuggestionOpen  bool
-	launchWorkdirPrompted bool
-	codexInputQueue       []map[string]string
-	codexInputInFlight    bool
+	input                   textinput.Model
+	prompt                  promptKind
+	confirm                 confirmKind
+	pendingID               string
+	promptSuggestionOpen    bool
+	launchWorkspacePrompted bool
+	codexInputQueue         []map[string]string
+	codexInputInFlight      bool
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
@@ -71,7 +71,7 @@ func NewClientModel(rt config.Runtime, cfg config.Config) ClientModel {
 	input.Prompt = "> "
 	input.CharLimit = 240
 	input.Width = 60
-	st := state.Repair(state.Empty(), rt.Workdir)
+	st := state.Repair(state.Empty(), rt.Workspace)
 	return ClientModel{
 		cfg: cfg, runtime: rt, clientID: shortID(), width: 100, height: 32,
 		snapshot: ipc.Snapshot{State: st, CodexTitle: "Codex", CodexContent: "No Codex agent open.", NavWidth: workspaceNavFrameWidth(st, 100)},
@@ -133,9 +133,9 @@ func (m ClientModel) View() string {
 	loadingText := m.snapshot.LoadingText
 	if loadingText != "" {
 		loadingText = loadingFrames[m.loading%len(loadingFrames)] + strings.TrimPrefix(loadingText, loadingFrames[0])
-		return renderLoadingWorkspaceWithNavWidth(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, loadingText, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.FolderCursor)
+		return renderLoadingWorkspaceWithNavWidth(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, loadingText, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
 	}
-	return renderWorkspaceWithNavWidth(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, m.snapshot.CodexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.FolderCursor)
+	return renderWorkspaceWithNavWidth(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, m.snapshot.CodexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
 }
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -177,13 +177,13 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.FocusLeft, msg):
 		return m, m.request("focus", map[string]string{"target": "workspaces"})
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
-		return m, m.request("focus", map[string]string{"target": string(state.FocusFolders)})
+		return m, m.request("focus", map[string]string{"target": string(state.FocusAgents)})
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
 		return m, m.request("nav_move", map[string]string{"delta": "-1"})
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
 		return m, m.request("nav_move", map[string]string{"delta": "1"})
 	case bindingMatches(m.cfg.KeyBindings.NewWorkspace, msg):
-		m.startPrompt(promptWorkdir, defaultWorkdirPromptValue(m.snapshot.State, m.runtime.Workdir))
+		m.startPrompt(promptWorkspace, defaultWorkspacePromptValue(m.snapshot.State, m.runtime.Workspace))
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
@@ -242,7 +242,7 @@ func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 }
 
 func (m *ClientModel) startRenamePrompt() {
-	prompt, id, value, ok := renamePromptTargetForState(m.snapshot.State, m.snapshot.FolderCursor)
+	prompt, id, value, ok := renamePromptTargetForState(m.snapshot.State, m.snapshot.GroupCursor)
 	if ok {
 		m.pendingID = id
 		m.startPrompt(prompt, value)
@@ -250,7 +250,7 @@ func (m *ClientModel) startRenamePrompt() {
 }
 
 func (m *ClientModel) startDeleteConfirm() {
-	confirm, id, ok := deleteConfirmTargetForState(m.snapshot.State, m.snapshot.FolderCursor)
+	confirm, id, ok := deleteConfirmTargetForState(m.snapshot.State, m.snapshot.GroupCursor)
 	if ok {
 		m.confirm = confirm
 		m.pendingID = id
@@ -260,13 +260,13 @@ func (m *ClientModel) startDeleteConfirm() {
 
 func (m ClientModel) applyPrompt(value string) tea.Cmd {
 	switch m.prompt {
-	case promptWorkdir:
+	case promptWorkspace:
 		return m.request("add_workspace", map[string]string{"path": value})
 	case promptGroup:
 		return m.request("add_group", map[string]string{"path": value})
 	case promptRenameGroup:
 		return m.request("rename_group", map[string]string{"id": m.pendingID, "path": value})
-	case promptWorkdirTitle:
+	case promptWorkspaceTitle:
 		return m.request("rename_workspace", map[string]string{"id": m.pendingID, "title": value})
 	case promptRenameAgent:
 		return m.request("rename", map[string]string{"id": m.pendingID, "title": value})
@@ -280,9 +280,9 @@ func (m ClientModel) applyPrompt(value string) tea.Cmd {
 
 func (m ClientModel) applyConfirm() tea.Cmd {
 	switch m.confirm {
-	case confirmAddLaunchWorkdir:
+	case confirmAddLaunchWorkspace:
 		return m.request("add_workspace", map[string]string{"path": m.pendingID})
-	case confirmDeleteWorkdir:
+	case confirmDeleteWorkspace:
 		return m.request("remove_workspace", map[string]string{"id": m.pendingID})
 	case confirmDeleteGroup:
 		return m.request("remove_group", map[string]string{"id": m.pendingID})
@@ -298,8 +298,7 @@ func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 	return func() tea.Msg {
 		args = cloneArgs(args)
 		args["client_id"] = clientID
-		args["launch_workspace"] = rt.Workdir
-		args["launch_workdir"] = rt.Workdir
+		args["launch_workspace"] = rt.Workspace
 		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 		return clientResponseMsg{command: command, response: response, err: err}
 	}
@@ -345,22 +344,22 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	} else if response.SupervisorVersion != "" && response.SupervisorVersion != version.Version {
 		m.message = fmt.Sprintf("Weft client %s found running supervisor %s. Restarting the supervisor can stop live Codex terminals. Saved layout and metadata remain.", version.Version, response.SupervisorVersion)
 	}
-	m.maybePromptForLaunchWorkdir()
+	m.maybePromptForLaunchWorkspace()
 }
 
-func (m *ClientModel) maybePromptForLaunchWorkdir() {
-	if m.launchWorkdirPrompted || m.mode != modeNormal {
+func (m *ClientModel) maybePromptForLaunchWorkspace() {
+	if m.launchWorkspacePrompted || m.mode != modeNormal {
 		return
 	}
-	path := strings.TrimSpace(m.runtime.Workdir)
-	if path == "" || !workdirInputIsExistingDirectory(path) || state.WorkdirByPath(m.snapshot.State, path) != nil {
-		m.launchWorkdirPrompted = true
+	path := strings.TrimSpace(m.runtime.Workspace)
+	if path == "" || !workspaceInputIsExistingDirectory(path) || state.WorkspaceByPath(m.snapshot.State, path) != nil {
+		m.launchWorkspacePrompted = true
 		return
 	}
-	m.confirm = confirmAddLaunchWorkdir
+	m.confirm = confirmAddLaunchWorkspace
 	m.pendingID = path
 	m.mode = modeConfirm
-	m.launchWorkdirPrompted = true
+	m.launchWorkspacePrompted = true
 }
 
 func (m ClientModel) modalView(content string) string {
@@ -399,11 +398,11 @@ func (m ClientModel) activeCodexReceivesQuitBinding() bool {
 }
 
 func (m ClientModel) selectedAgent() *state.Agent {
-	return selectedAgentForState(m.snapshot.State, m.snapshot.FolderCursor)
+	return selectedAgentForState(m.snapshot.State, m.snapshot.GroupCursor)
 }
 
-func (m ClientModel) currentFolderRow() folderRow {
-	return currentFolderRowForState(m.snapshot.State, m.snapshot.FolderCursor)
+func (m ClientModel) currentGroupRow() groupRow {
+	return currentGroupRowForState(m.snapshot.State, m.snapshot.GroupCursor)
 }
 
 func (m ClientModel) renderAgentTitle(agent state.Agent) string {

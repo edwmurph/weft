@@ -49,8 +49,6 @@ func Run(args []string) error {
 		case supervisor.CommandName:
 			clearApplies = false
 			action = runSupervisor
-		case "quit":
-			action = func() error { return closeWeft("quit", args[1:]) }
 		case "refresh":
 			action = func() error { return callIPC("refresh", nil, false) }
 		case "status":
@@ -65,11 +63,7 @@ func Run(args []string) error {
 			}
 		case "group":
 			action = func() error { return groupCommand(args[1:]) }
-		case "folder":
-			action = func() error { return groupCommand(args[1:]) }
 		case "workspace":
-			action = func() error { return workspaceCommand(args[1:]) }
-		case "workdir":
 			action = func() error { return workspaceCommand(args[1:]) }
 		case "rename":
 			action = func() error { return rename(args[1:]) }
@@ -88,8 +82,6 @@ func Run(args []string) error {
 			action = func() error { return callIPC("move", map[string]string{"direction": "right"}, false) }
 		case "sessions":
 			action = listSessions
-		case "delete-session":
-			action = func() error { return deleteSession(args[1:]) }
 		case "clear":
 			clearApplies = false
 			action = clear
@@ -286,7 +278,7 @@ func closeWeft(command string, args []string) error {
 		fmt.Println("Weft supervisor stopped.")
 		return nil
 	}
-	return callIPC("close_weft", nil, false)
+	return callIPC("close_client", nil, false)
 }
 
 func status(args []string) error {
@@ -324,7 +316,7 @@ func status(args []string) error {
 		return json.NewEncoder(os.Stdout).Encode(st)
 	}
 	fmt.Printf("supervisor: down (%v)\n", err)
-	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\nagents: %d\n", rt.Workdir, rt.Dir, displayFocus(st.Focus), len(st.Workdirs), len(st.Folders), len(st.Agents))
+	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\nagents: %d\n", rt.Workspace, rt.Dir, displayFocus(st.Focus), len(st.Workspaces), len(st.Groups), len(st.Agents))
 	return nil
 }
 
@@ -360,7 +352,7 @@ func workspaceCommand(args []string) error {
 }
 
 func validateWorkspaceAddPath(path string) (string, error) {
-	path = state.NormalizeWorkdirPath(path)
+	path = state.NormalizeWorkspacePath(path)
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -393,15 +385,7 @@ func listSessions() error {
 		agents = len(response.State.Agents)
 	}
 	fmt.Printf("%-12s %-7s %-7s %-7s %s\n", "Supervisor", "Status", "Clients", "Agents", "Workspace")
-	fmt.Printf("%-12s %-7s %-7d %-7d %s\n", "weftd", "running", clients, agents, sessions.DisplayPath(rt.Workdir))
-	return nil
-}
-
-func deleteSession(args []string) error {
-	if len(args) > 0 {
-		return errors.New("delete-session no longer accepts a tmux session name; use `weft close --kill` to stop the current supervisor")
-	}
-	fmt.Println("delete-session is legacy compatibility only. Use `weft close --kill` to stop the current supervisor.")
+	fmt.Printf("%-12s %-7s %-7d %-7d %s\n", "weftd", "running", clients, agents, sessions.DisplayPath(rt.Workspace))
 	return nil
 }
 
@@ -414,19 +398,15 @@ func clear() error {
 }
 
 func clearRuntime(rt config.Runtime, confirmDestructive bool) error {
-	workspaces := existingWorkspaces(rt)
 	runtimeFiles := existingRuntimeFiles(rt)
-	if len(runtimeFiles) == 0 && len(workspaces) == 0 {
-		fmt.Println("No Weft runtime state or workspaces found.")
+	if len(runtimeFiles) == 0 {
+		fmt.Println("No Weft runtime state found.")
 		return nil
 	}
 	if confirmDestructive {
 		fmt.Println("This will stop the Weft supervisor and delete Weft runtime state:")
 		for _, path := range runtimeFiles {
 			fmt.Printf("- runtime file: %s\n", sessions.DisplayPath(path))
-		}
-		for _, workspace := range workspaces {
-			fmt.Printf("- workspace: %s\n", sessions.DisplayPath(workspace))
 		}
 		if !confirm("Delete Weft runtime state? [y/N] ") {
 			fmt.Println("Delete canceled.")
@@ -435,19 +415,13 @@ func clearRuntime(rt config.Runtime, confirmDestructive bool) error {
 	}
 	_ = supervisor.Shutdown(rt)
 	waitForSupervisorStop(rt, 2*time.Second)
-	deletedWorkspaces := 0
-	for _, workspace := range workspaces {
-		if deleteWorkspace(rt, workspace) {
-			deletedWorkspaces++
-		}
-	}
 	deletedFiles := 0
 	for _, path := range runtimeFiles {
 		if os.Remove(path) == nil {
 			deletedFiles++
 		}
 	}
-	fmt.Printf("Deleted %d runtime file(s) and %d workspace(s).\n", deletedFiles, deletedWorkspaces)
+	fmt.Printf("Deleted %d runtime file(s).\n", deletedFiles)
 	return nil
 }
 
@@ -481,10 +455,10 @@ func doctor(args []string) error {
 			fmt.Printf("warn Codex command is not on PATH: %s\n", cfg.CodexCommand)
 		}
 	}
-	fmt.Printf("info launch workspace: %s\n", rt.Workdir)
+	fmt.Printf("info launch workspace: %s\n", rt.Workspace)
 	fmt.Printf("info runtime dir: %s\n", rt.Dir)
 	fmt.Printf("ok config: %s\n", rt.ConfigPath)
-	fmt.Printf("ok state: %s (%d workspaces, %d groups, %d agents)\n", rt.StatePath, len(st.Workdirs), len(st.Folders), len(st.Agents))
+	fmt.Printf("ok state: %s (%d workspaces, %d groups, %d agents)\n", rt.StatePath, len(st.Workspaces), len(st.Groups), len(st.Agents))
 	if _, err := supervisor.Status(rt); err == nil {
 		fmt.Println("ok supervisor: running")
 	} else {
@@ -523,7 +497,7 @@ func configCommand(args []string) error {
 	switch args[0] {
 	case "info":
 		fmt.Println("Weft global runtime")
-		fmt.Printf("Launch workspace: %s\n", rt.Workdir)
+		fmt.Printf("Launch workspace: %s\n", rt.Workspace)
 		fmt.Printf("Runtime dir: %s\n", rt.Dir)
 		fmt.Printf("Config: %s\n", rt.ConfigPath)
 		fmt.Printf("State: %s\n", rt.StatePath)
@@ -550,8 +524,7 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 		return err
 	}
 	args = cloneArgs(args)
-	args["launch_workspace"] = rt.Workdir
-	args["launch_workdir"] = rt.Workdir
+	args["launch_workspace"] = rt.Workspace
 	result, err := supervisor.Ensure(rt)
 	if err != nil {
 		return err
@@ -600,7 +573,7 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
-	store := state.NewStore(rt.StatePath, rt.Workdir)
+	store := state.NewStore(rt.StatePath, rt.Workspace)
 	return rt, cfg, store, nil
 }
 
@@ -630,12 +603,10 @@ func existingRuntimeFiles(rt config.Runtime) []string {
 		rt.StatePath,
 		rt.StatePath + ".lock",
 		rt.SocketPath,
-		filepath.Join(rt.Dir, "weft-tui.sock"),
 		supervisor.PIDPath(rt),
 		supervisor.LockPath(rt),
 		supervisor.LogPath(rt),
 		filepath.Join(rt.Dir, "weft-client.log"),
-		filepath.Join(rt.Dir, "weft.log"),
 	}
 	var paths []string
 	for _, path := range candidates {
@@ -644,40 +615,6 @@ func existingRuntimeFiles(rt config.Runtime) []string {
 		}
 	}
 	return paths
-}
-
-func existingWorkspaces(rt config.Runtime) []string {
-	root := filepath.Join(rt.Dir, "workdirs")
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil
-	}
-	var paths []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			paths = append(paths, filepath.Join(root, entry.Name()))
-		}
-	}
-	return paths
-}
-
-func deleteWorkspace(rt config.Runtime, path string) bool {
-	root, err := filepath.Abs(filepath.Join(rt.Dir, "workdirs"))
-	if err != nil {
-		return false
-	}
-	target, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-	if target == root || !strings.HasPrefix(target, root+string(os.PathSeparator)) {
-		return false
-	}
-	info, err := os.Lstat(target)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 {
-		return false
-	}
-	return os.RemoveAll(target) == nil
 }
 
 func looksLikeID(value string) bool {
@@ -693,10 +630,10 @@ func looksLikeID(value string) bool {
 }
 
 func displayFocus(focus state.Focus) string {
-	if focus == state.FocusWorkdirs {
+	if focus == state.FocusWorkspaces {
 		return "workspaces"
 	}
-	if focus == state.FocusFolders {
+	if focus == state.FocusAgents {
 		return "agents"
 	}
 	return string(focus)

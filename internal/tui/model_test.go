@@ -16,23 +16,23 @@ import (
 
 func TestEmptyCommandCenterStartsInAgentsFocus(t *testing.T) {
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 
 	model := NewModel(rt, cfg, state.Empty())
 
-	if model.state.Focus != state.FocusWorkdirs || !model.state.NavOpen {
+	if model.state.Focus != state.FocusWorkspaces || !model.state.NavOpen {
 		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
 	}
-	if len(model.state.Workdirs) != 0 || len(model.state.Folders) != 0 {
+	if len(model.state.Workspaces) != 0 || len(model.state.Groups) != 0 {
 		t.Fatalf("empty state = %#v", model.state)
 	}
 }
 
 func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	cfg.CodexCommand = "cat"
-	model := NewModel(rt, cfg, testStateWithWorkdir(t, rt.Workdir))
+	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
 	defer killPTYs(model)
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
@@ -48,7 +48,7 @@ func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	if model.state.Agents[0].Title != cfg.TitleTemplate {
 		t.Fatalf("new agent title = %q", model.state.Agents[0].Title)
 	}
-	if model.state.Agents[0].FolderID != "" {
+	if model.state.Agents[0].GroupID != "" {
 		t.Fatalf("new agent should be top-level: %#v", model.state.Agents[0])
 	}
 	if model.state.Focus != state.FocusCodex || model.state.NavOpen {
@@ -56,14 +56,14 @@ func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	}
 }
 
-func TestNewAgentRequiresWorkdir(t *testing.T) {
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+func TestNewAgentRequiresWorkspace(t *testing.T) {
+	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	model = updated.(Model)
 
 	if cmd != nil || len(model.state.Agents) != 0 {
-		t.Fatalf("new agent should be blocked without workdir, cmd=%v agents=%#v", cmd, model.state.Agents)
+		t.Fatalf("new agent should be blocked without workspace, cmd=%v agents=%#v", cmd, model.state.Agents)
 	}
 	if model.message != "add a workspace first" {
 		t.Fatalf("message = %q", model.message)
@@ -71,7 +71,7 @@ func TestNewAgentRequiresWorkdir(t *testing.T) {
 
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{}})
 	if response.OK || response.Message != "add a workspace first" || cmd != nil {
-		t.Fatalf("ipc new should be blocked without workdir, response=%#v cmd=%v", response, cmd)
+		t.Fatalf("ipc new should be blocked without workspace, response=%#v cmd=%v", response, cmd)
 	}
 }
 
@@ -79,31 +79,31 @@ func TestIPCLaunchWorkspaceSelectsExistingWorkspace(t *testing.T) {
 	rt := testRuntime(t)
 	other := t.TempDir()
 	launch := t.TempDir()
-	st := testStateWithWorkdir(t, other)
-	next, _, err := state.AddWorkdir(st, "launch", launch, state.NowISO())
+	st := testStateWithWorkspace(t, other)
+	next, _, err := state.AddWorkspace(st, "launch", launch, state.NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
-	next.SelectedWorkdirID = "w"
-	model := NewModel(rt, config.DefaultConfig("weft-test"), next)
+	next.SelectedWorkspaceID = "w"
+	model := NewModel(rt, config.DefaultConfig(), next)
 
 	response, _ := model.handleIPC(ipc.Request{Command: "snapshot", Args: map[string]string{"launch_workspace": launch}})
 
 	if !response.OK {
 		t.Fatalf("snapshot response = %#v", response)
 	}
-	if model.state.SelectedWorkdirID != "launch" {
-		t.Fatalf("selected workspace = %q, want launch", model.state.SelectedWorkdirID)
+	if model.state.SelectedWorkspaceID != "launch" {
+		t.Fatalf("selected workspace = %q, want launch", model.state.SelectedWorkspaceID)
 	}
 }
 
-func TestClientPromptsToAddMissingLaunchWorkdir(t *testing.T) {
+func TestClientPromptsToAddMissingLaunchWorkspace(t *testing.T) {
 	rt := testRuntime(t)
-	model := NewClientModel(rt, config.DefaultConfig("weft-test"))
+	model := NewClientModel(rt, config.DefaultConfig())
 
 	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{State: state.Empty()}})
 
-	if model.mode != modeConfirm || model.confirm != confirmAddLaunchWorkdir || model.pendingID != rt.Workdir {
+	if model.mode != modeConfirm || model.confirm != confirmAddLaunchWorkspace || model.pendingID != rt.Workspace {
 		t.Fatalf("prompt state = mode:%s confirm:%s pending:%q", model.mode, model.confirm, model.pendingID)
 	}
 	got := ansi.Strip(model.View())
@@ -117,22 +117,22 @@ func TestClientPromptsToAddMissingLaunchWorkdir(t *testing.T) {
 	}
 }
 
-func TestClientDoesNotPromptForExistingLaunchWorkdir(t *testing.T) {
+func TestClientDoesNotPromptForExistingLaunchWorkspace(t *testing.T) {
 	rt := testRuntime(t)
-	st := testStateWithWorkdir(t, rt.Workdir)
-	model := NewClientModel(rt, config.DefaultConfig("weft-test"))
+	st := testStateWithWorkspace(t, rt.Workspace)
+	model := NewClientModel(rt, config.DefaultConfig())
 
 	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{State: st}})
 
 	if model.mode != modeNormal {
-		t.Fatalf("existing launch workdir should not prompt, mode=%s", model.mode)
+		t.Fatalf("existing launch workspace should not prompt, mode=%s", model.mode)
 	}
 }
 
 func TestSnapshotShowsActiveAgentStartError(t *testing.T) {
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("weft-test")
-	st := testStateWithAgent(rt.Workdir)
+	cfg := config.DefaultConfig()
+	st := testStateWithAgent(rt.Workspace)
 	st.Agents[0].Status = state.StatusError
 	st.Agents[0].CodexTitle = "fork/exec /missing/zsh: no such file or directory"
 
@@ -182,7 +182,7 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	defer killPTYs(model)
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlB})
 	model = updated.(Model)
-	if model.state.Focus != state.FocusFolders || !model.state.NavOpen {
+	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
 		t.Fatalf("C-b should open command center, got %s/%t", model.state.Focus, model.state.NavOpen)
 	}
 
@@ -213,7 +213,7 @@ func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
 		t.Fatalf("focused pty width = %d, want visible content width %d", got, want)
 	}
 
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.navWidth = 60
 	if got, want := model.ptyWidth(), 37; got != want {
@@ -455,9 +455,9 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 		t.Fatalf("message = %q", model.message)
 	}
 
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.folderCursor = 1
+	model.groupCursor = 1
 	model.prompt = promptRenameAgent
 	model.mode = modeInput
 	model.pendingID = "a"
@@ -498,7 +498,7 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 		t.Fatalf("codex-focused output should paint terminal cursor:\n%q", output)
 	}
 
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	output = model.activeOutput()
 	if strings.Contains(output, "48;2;255;255;255") {
@@ -511,9 +511,9 @@ func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 	defer killPTYs(model)
 	model.cfg.TitleTemplate = "{auto}"
 	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.folderCursor = 1
+	model.groupCursor = 1
 	model.prompt = promptRenameAgent
 	model.mode = modeInput
 	model.pendingID = "a"
@@ -541,9 +541,9 @@ func TestRenameAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
 	model.state.Agents[0].Title = "{status} {auto}"
 	model.state.Agents[0].AutoTitle = "Fix login"
 	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.folderCursor = 1
+	model.groupCursor = 1
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	model = updated.(Model)
@@ -562,21 +562,21 @@ func TestRenameAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
 	}
 }
 
-func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
+func TestWorkspaceRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("weft-test")
-	model := NewModel(rt, cfg, testStateWithWorkdir(t, rt.Workdir))
-	model.state.Focus = state.FocusWorkdirs
+	cfg := config.DefaultConfig()
+	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
+	model.state.Focus = state.FocusWorkspaces
 	model.state.NavOpen = true
-	model.lastNavFocus = state.FocusWorkdirs
+	model.lastNavFocus = state.FocusWorkspaces
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	model = updated.(Model)
 	if cmd != nil {
 		t.Fatalf("rename prompt should not start command, got %#v", cmd)
 	}
-	if model.mode != modeInput || model.prompt != promptWorkdirTitle || model.pendingID != model.state.SelectedWorkdirID {
-		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s selected:%s", model.mode, model.prompt, model.pendingID, model.state.SelectedWorkdirID)
+	if model.mode != modeInput || model.prompt != promptWorkspaceTitle || model.pendingID != model.state.SelectedWorkspaceID {
+		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s selected:%s", model.mode, model.prompt, model.pendingID, model.state.SelectedWorkspaceID)
 	}
 
 	model.input.SetValue("Trading Engine")
@@ -585,7 +585,7 @@ func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	if model.mode != modeNormal {
 		t.Fatalf("mode after save = %s", model.mode)
 	}
-	if got := model.state.Workdirs[0].Title; got != "Trading Engine" {
+	if got := model.state.Workspaces[0].Title; got != "Trading Engine" {
 		t.Fatalf("title override = %q", got)
 	}
 
@@ -594,7 +594,7 @@ func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	model.input.SetValue("")
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
-	if got := model.state.Workdirs[0].Title; got != "" {
+	if got := model.state.Workspaces[0].Title; got != "" {
 		t.Fatalf("blank input should clear title override, got %q", got)
 	}
 	if model.message != "cleared workspace title" {
@@ -609,10 +609,10 @@ func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T
 		t.Fatal(err)
 	}
 	rt := testRuntime(t)
-	rt.Workdir = current
-	cfg := config.DefaultConfig("weft-test")
+	rt.Workspace = current
+	cfg := config.DefaultConfig()
 	model := NewModel(rt, cfg, state.Empty())
-	model.state.Focus = state.FocusWorkdirs
+	model.state.Focus = state.FocusWorkspaces
 	model.state.NavOpen = true
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
@@ -620,7 +620,7 @@ func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T
 	if cmd != nil {
 		t.Fatalf("workspace prompt should not start command, got %#v", cmd)
 	}
-	if model.mode != modeInput || model.prompt != promptWorkdir {
+	if model.mode != modeInput || model.prompt != promptWorkspace {
 		t.Fatalf("prompt state = mode:%s prompt:%s", model.mode, model.prompt)
 	}
 	if want := withTrailingSeparator(displayPathForPrompt(parent)); model.input.Value() != want {
@@ -643,7 +643,7 @@ func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T
 	if strings.Contains(got, "> current") {
 		t.Fatalf("workspace menu should start closed:\n%s", got)
 	}
-	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "✓ "+parent {
+	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "✓ "+parent {
 		t.Fatalf("path status = %q", status)
 	}
 	if strings.Count(got, "╭") < 2 || strings.Count(got, "╰") < 2 {
@@ -656,7 +656,7 @@ func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T
 
 func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
 	rt := testRuntime(t)
-	model := NewModel(rt, config.DefaultConfig("weft-test"), testStateWithWorkdir(t, rt.Workdir))
+	model := NewModel(rt, config.DefaultConfig(), testStateWithWorkspace(t, rt.Workspace))
 
 	model.startPrompt(promptGroup, "")
 	got := ansi.Strip(model.View())
@@ -686,7 +686,7 @@ func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
 		}
 	}
 
-	model.startPrompt(promptWorkdirTitle, "")
+	model.startPrompt(promptWorkspaceTitle, "")
 	got = ansi.Strip(model.View())
 	for _, expected := range []string{"Rename workspace", "Blank uses path title", "Enter clear", "Esc cancel"} {
 		if !strings.Contains(got, expected) {
@@ -700,7 +700,7 @@ func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
 	}
 }
 
-func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
+func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	parent := t.TempDir()
 	alpha := filepath.Join(parent, "alpha-project")
 	beta := filepath.Join(parent, "beta-project")
@@ -713,8 +713,8 @@ func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(beta, "nested"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
-	model.startPrompt(promptWorkdir, withTrailingSeparator(parent))
+	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
+	model.startPrompt(promptWorkspace, withTrailingSeparator(parent))
 
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{"Down suggestions", "Enter add", "Esc cancel"} {
@@ -768,19 +768,19 @@ func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	if model.mode != modeNormal {
 		t.Fatalf("second enter should add workspace, mode=%s", model.mode)
 	}
-	if model.state.SelectedWorkdirID == "" || model.state.Workdirs[len(model.state.Workdirs)-1].Path != beta {
-		t.Fatalf("workdir was not added/selected: %#v", model.state.Workdirs)
+	if model.state.SelectedWorkspaceID == "" || model.state.Workspaces[len(model.state.Workspaces)-1].Path != beta {
+		t.Fatalf("workspace was not added/selected: %#v", model.state.Workspaces)
 	}
 }
 
 func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.folderCursor = 1
+	model.groupCursor = 1
 	now := state.NowISO()
-	model.state.Folders = append(model.state.Folders, state.Folder{ID: "release", WorkdirID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
+	model.state.Groups = append(model.state.Groups, state.Group{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
 
 	model.startPrompt(promptMoveAgent, "")
 	got := ansi.Strip(model.View())
@@ -821,11 +821,11 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	if model.mode != modeNormal {
 		t.Fatalf("valid move should close prompt, mode=%s", model.mode)
 	}
-	if agent := state.AgentByID(model.state, "a"); agent == nil || agent.FolderID != "release" {
+	if agent := state.AgentByID(model.state, "a"); agent == nil || agent.GroupID != "release" {
 		t.Fatalf("agent was not moved to release: %#v", agent)
 	}
 
-	model.folderCursor = 2
+	model.groupCursor = 2
 	model.startPrompt(promptMoveAgent, "missing")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
@@ -834,16 +834,16 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	}
 }
 
-func TestWorkdirPromptSuggestionMenuScrollsWithSelection(t *testing.T) {
+func TestWorkspacePromptSuggestionMenuScrollsWithSelection(t *testing.T) {
 	parent := t.TempDir()
 	for index := 0; index < 12; index++ {
 		if err := os.Mkdir(filepath.Join(parent, fmt.Sprintf("project-%02d", index)), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
 	model.height = 32
-	model.startPrompt(promptWorkdir, withTrailingSeparator(parent))
+	model.startPrompt(promptWorkspace, withTrailingSeparator(parent))
 
 	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
@@ -864,7 +864,7 @@ func TestWorkdirPromptSuggestionMenuScrollsWithSelection(t *testing.T) {
 	}
 }
 
-func TestWorkdirPromptTabOpensAndChoosesDirectory(t *testing.T) {
+func TestWorkspacePromptTabOpensAndChoosesDirectory(t *testing.T) {
 	parent := t.TempDir()
 	alpha := filepath.Join(parent, "alpha-project")
 	if err := os.Mkdir(alpha, 0o700); err != nil {
@@ -873,8 +873,8 @@ func TestWorkdirPromptTabOpensAndChoosesDirectory(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(parent, "beta-project"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
-	model.startPrompt(promptWorkdir, filepath.Join(parent, "alp"))
+	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
+	model.startPrompt(promptWorkspace, filepath.Join(parent, "alp"))
 
 	if got, want := model.input.MatchedSuggestions(), []string{withTrailingSeparator(alpha)}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("matched suggestions = %#v, want %#v", got, want)
@@ -896,14 +896,14 @@ func TestWorkdirPromptTabOpensAndChoosesDirectory(t *testing.T) {
 	if model.promptSuggestionOpen {
 		t.Fatal("second tab should close suggestions after choosing")
 	}
-	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "✓ "+alpha {
+	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "✓ "+alpha {
 		t.Fatalf("completed path status = %q", status)
 	}
 }
 
 func TestPromptInputSupportsOptionWordEditing(t *testing.T) {
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
-	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
+	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
 
 	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
 	model = updated.(Model)
@@ -925,8 +925,8 @@ func TestPromptInputSupportsOptionWordEditing(t *testing.T) {
 }
 
 func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
-	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
+	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
 
 	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b"), Alt: true})
 	model = updated.(Model)
@@ -946,14 +946,14 @@ func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
 		t.Fatalf("alt-ctrl-h value = %q, want %q", got, want)
 	}
 
-	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x7f}, Alt: true})
 	model = updated.(Model)
 	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
 		t.Fatalf("alt-del rune value = %q, want %q", got, want)
 	}
 
-	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\b'}, Alt: true})
 	model = updated.(Model)
 	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
@@ -961,7 +961,7 @@ func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
 	}
 
 	for _, r := range []rune{'⌫', '←'} {
-		model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+		model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
 		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		model = updated.(Model)
 		if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
@@ -969,21 +969,21 @@ func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
 		}
 	}
 
-	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyCtrlH})
 	model = updated.(Model)
 	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
 		t.Fatalf("ctrl-h value = %q, want %q", got, want)
 	}
 
-	model.startPrompt(promptWorkdir, "/alpha-beta/gamma_delta")
+	model.startPrompt(promptWorkspace, "/alpha-beta/gamma_delta")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'➜'}})
 	model = updated.(Model)
 	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
 		t.Fatalf("option-backspace arrow glyph value = %q, want %q", got, want)
 	}
 
-	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'∂'}})
 	model = updated.(Model)
 	if got, want := model.input.Value(), "/alpha-beta/gamma_delta∂"; got != want {
@@ -991,22 +991,22 @@ func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
 	}
 }
 
-func TestWorkdirPromptShowsInvalidPathStatus(t *testing.T) {
+func TestWorkspacePromptShowsInvalidPathStatus(t *testing.T) {
 	parent := t.TempDir()
 	filePath := filepath.Join(parent, "notes.txt")
 	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
 
-	model.startPrompt(promptWorkdir, filePath)
-	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "! Not a directory: "+filePath {
+	model.startPrompt(promptWorkspace, filePath)
+	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "! Not a directory: "+filePath {
 		t.Fatalf("file path status = %q", status)
 	}
 
 	missing := filepath.Join(parent, "missing")
-	model.startPrompt(promptWorkdir, missing)
-	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "! Parent exists: "+parent {
+	model.startPrompt(promptWorkspace, missing)
+	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "! Parent exists: "+parent {
 		t.Fatalf("missing path status = %q", status)
 	}
 
@@ -1041,16 +1041,16 @@ func TestIPCNewCopiesConfiguredTitleTemplate(t *testing.T) {
 func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.folderCursor = 0
+	model.groupCursor = 0
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if !state.IsGroupCollapsed(model.state, "f") {
 		t.Fatalf("group should collapse: %#v", model.state.CollapsedGroupIDs)
 	}
-	if rows := model.folderRows(); len(rows) != 1 {
+	if rows := model.groupRows(); len(rows) != 1 {
 		t.Fatalf("collapsed group should hide agents, rows=%#v", rows)
 	}
 
@@ -1064,50 +1064,47 @@ func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 func TestNewAgentUsesCurrentGroupOnlyWhenCursorIsGrouped(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.state.ActiveAgentID = ""
-	model.folderCursor = 0
+	model.groupCursor = 0
 
 	cmd := model.newAgent("Grouped")
 	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
-	if got := model.state.Agents[len(model.state.Agents)-1].FolderID; got != "f" {
-		t.Fatalf("group row should create grouped agent, got folder %q", got)
+	if got := model.state.Agents[len(model.state.Agents)-1].GroupID; got != "f" {
+		t.Fatalf("group row should create grouped agent, got group %q", got)
 	}
 
 	ungrouped := model.state.Agents[len(model.state.Agents)-1]
 	ungrouped.ID = "ungrouped"
-	ungrouped.FolderID = ""
+	ungrouped.GroupID = ""
 	model.state.Agents = append([]state.Agent{ungrouped}, model.state.Agents...)
 	model.state.ActiveAgentID = "ungrouped"
 	model.state.NavOpen = true
-	model.state.Focus = state.FocusFolders
-	model.syncFolderCursor()
+	model.state.Focus = state.FocusAgents
+	model.syncGroupCursor()
 
 	cmd = model.newAgent("Top-level")
 	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
-	if got := model.state.Agents[len(model.state.Agents)-1].FolderID; got != "" {
-		t.Fatalf("top-level agent row should create ungrouped agent, got folder %q", got)
+	if got := model.state.Agents[len(model.state.Agents)-1].GroupID; got != "" {
+		t.Fatalf("top-level agent row should create ungrouped agent, got group %q", got)
 	}
 }
 
-func TestIPCFocusAcceptsGroupsAlias(t *testing.T) {
+func TestIPCFocusRejectsGroupsAlias(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
 
 	response, _ := model.handleIPC(ipc.Request{Command: "focus", Args: map[string]string{"target": "groups"}})
 
-	if !response.OK {
-		t.Fatalf("focus groups failed: %#v", response)
-	}
-	if model.state.Focus != state.FocusFolders || !model.state.NavOpen {
-		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
+	if response.OK || response.Message != "focus target must be workspaces, agents, or codex" {
+		t.Fatalf("focus groups response = %#v", response)
 	}
 }
 
@@ -1116,7 +1113,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	defer killPTYs(model)
 	model.width = 120
 	model.height = 32
-	model.state.Focus = state.FocusFolders
+	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.navWidth = model.targetNavWidth()
 
@@ -1148,30 +1145,30 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 func testModelWithAgent(t *testing.T) Model {
 	t.Helper()
 	rt := testRuntime(t)
-	cfg := config.DefaultConfig("weft-test")
+	cfg := config.DefaultConfig()
 	cfg.CodexCommand = "cat"
-	st := testStateWithAgent(rt.Workdir)
+	st := testStateWithAgent(rt.Workspace)
 	return NewModel(rt, cfg, st)
 }
 
-func testStateWithAgent(workdir string) state.State {
+func testStateWithAgent(workspace string) state.State {
 	now := state.NowISO()
 	return state.State{
-		Version:           state.Version,
-		ActiveAgentID:     "a",
-		SelectedWorkdirID: "w",
-		SelectedFolderID:  "f",
-		Focus:             state.FocusCodex,
-		NavOpen:           false,
-		Workdirs:          []state.Workdir{{ID: "w", Path: workdir, CreatedAt: now, UpdatedAt: now}},
-		Folders:           []state.Folder{{ID: "f", WorkdirID: "w", Path: "inbox", CreatedAt: now, UpdatedAt: now}},
-		Agents:            []state.Agent{{ID: "a", WorkdirID: "w", FolderID: "f", Title: "alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
+		Version:             state.Version,
+		ActiveAgentID:       "a",
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "f",
+		Focus:               state.FocusCodex,
+		NavOpen:             false,
+		Workspaces:          []state.Workspace{{ID: "w", Path: workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups:              []state.Group{{ID: "f", WorkspaceID: "w", Path: "inbox", CreatedAt: now, UpdatedAt: now}},
+		Agents:              []state.Agent{{ID: "a", WorkspaceID: "w", GroupID: "f", Title: "alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
 	}
 }
 
-func testStateWithWorkdir(t *testing.T, workdir string) state.State {
+func testStateWithWorkspace(t *testing.T, workspace string) state.State {
 	t.Helper()
-	st, _, err := state.AddWorkdir(state.Empty(), "w", workdir, state.NowISO())
+	st, _, err := state.AddWorkspace(state.Empty(), "w", workspace, state.NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1188,7 +1185,7 @@ func testRuntime(t *testing.T) config.Runtime {
 	t.Helper()
 	dir := t.TempDir()
 	return config.Runtime{
-		Workdir:    dir,
+		Workspace:  dir,
 		Dir:        dir,
 		ConfigPath: filepath.Join(dir, "config.toml"),
 		StatePath:  filepath.Join(dir, "state.json"),

@@ -22,11 +22,11 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 	bin := buildWeft(t)
 	tmp := t.TempDir()
 	runtimeDir := filepath.Join(tmp, "weft-home")
-	workdir := filepath.Join(tmp, "workspace")
+	workspace := filepath.Join(tmp, "workspace")
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(workdir, 0o700); err != nil {
+	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
@@ -37,7 +37,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 
 	env := append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKSPACE="+workdir,
+		"WEFT_WORKSPACE="+workspace,
 		"WEFT_EXECUTABLE="+bin,
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
@@ -63,7 +63,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		t.Fatalf("doctor output missing supervisor ownership:\n%s", out)
 	}
 
-	runWeft(t, env, bin, "workspace", "add", workdir)
+	runWeft(t, env, bin, "workspace", "add", workspace)
 	runWeft(t, env, bin, "new", "Alpha")
 	first := waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
@@ -80,8 +80,8 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 	foundRenamed := false
 	for index := range afterOps.Agents {
 		agent := &afterOps.Agents[index]
-		folder := folderForAgent(afterOps, agent)
-		if agent.Title == "Renamed" && folder != nil && folder.Path == "release" {
+		group := groupForAgent(afterOps, agent)
+		if agent.Title == "Renamed" && group != nil && group.Path == "release" {
 			foundRenamed = true
 		}
 	}
@@ -106,9 +106,9 @@ func TestUpgradeSimulationNoRunningAgentsRestartsSupervisor(t *testing.T) {
 
 	bin := buildWeft(t)
 	tmp := t.TempDir()
-	runtimeDir, workdir := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
-	oldEnv := upgradeEnv(runtimeDir, workdir, bin, "3.9.0")
-	newEnv := baseIntegrationEnv(runtimeDir, workdir, bin)
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
+	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
 	t.Cleanup(func() {
 		cmd := exec.Command(bin, "close", "--kill", "--yes")
 		cmd.Env = newEnv
@@ -134,9 +134,9 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 
 	bin := buildWeft(t)
 	tmp := t.TempDir()
-	runtimeDir, workdir := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
-	oldEnv := upgradeEnv(runtimeDir, workdir, bin, "3.9.0")
-	newEnv := baseIntegrationEnv(runtimeDir, workdir, bin)
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
+	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
 	t.Cleanup(func() {
 		cmd := exec.Command(bin, "close", "--kill", "--yes")
 		cmd.Env = newEnv
@@ -145,7 +145,7 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
-	runWeft(t, oldEnv, bin, "workspace", "add", workdir)
+	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
 	runWeft(t, oldEnv, bin, "new", "Alpha")
 	waitState(t, oldEnv, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
@@ -186,8 +186,8 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 
 	bin := buildWeft(t)
 	tmp := t.TempDir()
-	runtimeDir, workdir := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
-	env := baseIntegrationEnv(runtimeDir, workdir, bin)
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
 	t.Cleanup(func() {
 		cmd := exec.Command(bin, "close", "--kill", "--yes")
 		cmd.Env = env
@@ -195,7 +195,7 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 	})
 
 	runWeft(t, env, bin, "--no-attach")
-	runWeft(t, env, bin, "workspace", "add", workdir)
+	runWeft(t, env, bin, "workspace", "add", workspace)
 	runWeft(t, env, bin, "new", "Alpha")
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
@@ -208,7 +208,7 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 		}
 	}
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 0 && len(st.Workdirs) == 0
+		return len(st.Agents) == 0 && len(st.Workspaces) == 0
 	})
 }
 
@@ -227,18 +227,18 @@ func buildWeft(t *testing.T) string {
 func createRuntime(t *testing.T, tmp string, fakeCodex string) (string, string) {
 	t.Helper()
 	runtimeDir := filepath.Join(tmp, "weft-home")
-	workdir := filepath.Join(tmp, "workspace")
+	workspace := filepath.Join(tmp, "workspace")
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(workdir, 0o700); err != nil {
+	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return runtimeDir, workdir
+	return runtimeDir, workspace
 }
 
 func writeFakeCodex(t *testing.T, dir string, name string) string {
@@ -260,18 +260,18 @@ func writeFakeCodex(t *testing.T, dir string, name string) string {
 	return fakeCodex
 }
 
-func baseIntegrationEnv(runtimeDir string, workdir string, bin string) []string {
+func baseIntegrationEnv(runtimeDir string, workspace string, bin string) []string {
 	return append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKSPACE="+workdir,
+		"WEFT_WORKSPACE="+workspace,
 		"WEFT_EXECUTABLE="+bin,
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
 	)
 }
 
-func upgradeEnv(runtimeDir string, workdir string, bin string, version string) []string {
-	return append(baseIntegrationEnv(runtimeDir, workdir, bin),
+func upgradeEnv(runtimeDir string, workspace string, bin string, version string) []string {
+	return append(baseIntegrationEnv(runtimeDir, workspace, bin),
 		"WEFT_CLIENT_VERSION_OVERRIDE="+version,
 		"WEFT_SUPERVISOR_VERSION_OVERRIDE="+version,
 	)

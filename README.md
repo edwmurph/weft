@@ -95,7 +95,6 @@ or `weft rename` can still include template variables:
 - `{codex}`: live Codex terminal title
 - `{status}`: live Codex status, falling back to agent lifecycle status
 - `{workspace}`: agent workspace path
-- `{workdir}`: legacy alias for `{workspace}`
 - `{group}`: flat group name, when the agent is in a group
 
 For example, `weft rename "Codex {status}"` keeps a fixed title while showing
@@ -110,10 +109,9 @@ title_hook_timeout_seconds = 10
 
 When `title_hook_command` is configured, the first non-empty message submitted
 to each new Codex agent runs the hook from that agent's workspace. Weft sends
-JSON on stdin with `event`, `agent_id`, `workspace`, legacy `workdir`, `group`,
-`status`, `title`, the agent `title_template`, `codex_title`, and
-`first_message`, then saves the first non-empty stdout line as the generated
-title.
+JSON on stdin with `event`, `agent_id`, `workspace`, `group`, `status`,
+`title`, the agent `title_template`, `codex_title`, and `first_message`, then
+saves the first non-empty stdout line as the generated title.
 
 Set an agent title to `{auto}` in the rename pane, or run
 `weft rename <id> "{auto}"`, to display that saved generated title. To make new
@@ -190,13 +188,11 @@ selection and the first-run add prompt.
 `WEFT_HOME` overrides the runtime directory directly for development and tests.
 
 The config keys are stable: `codex_command`, `title_template`,
-`title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. Legacy
-configs with `tmux_session` still load, but the setting is ignored by the
-supervisor architecture and is not generated for new installs. State is
-versioned. Old tabs/columns state is migrated into workspaces, optional groups,
-and agents. Internal state still uses the historical `workdirs` field for
-compatibility. Old tmux-pane state is archived to `state.v1-tmux.json` because
-native tmux panes cannot be adopted into supervisor-owned PTYs.
+`title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. State is
+versioned with v4 workspace/group names: `workspaces`, `groups`,
+`selected_workspace_id`, `selected_group_id`, `workspace_id`, and `group_id`.
+Older state shapes are archived to `state.legacy.json` and Weft starts with
+clean v4 state.
 
 ## Development
 

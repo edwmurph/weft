@@ -13,9 +13,7 @@ const (
 	CodexTemplate     = "{codex}"
 	StatusTemplate    = "{status}"
 	WorkspaceTemplate = "{workspace}"
-	WorkdirTemplate   = "{workdir}"
 	GroupTemplate     = "{group}"
-	FolderTemplate    = "{folder}"
 	PendingTitle      = "..."
 	AutoPending       = "waiting for first message"
 	AutoFailed        = "auto title failed"
@@ -33,9 +31,7 @@ func TemplateVariables() []TemplateVariable {
 		{Name: CodexTemplate, Description: "live Codex title"},
 		{Name: StatusTemplate, Description: "live Codex status"},
 		{Name: WorkspaceTemplate, Description: "workspace path"},
-		{Name: WorkdirTemplate, Description: "legacy workspace alias"},
 		{Name: GroupTemplate, Description: "group name"},
-		{Name: FolderTemplate, Description: "legacy group alias"},
 	}
 }
 
@@ -74,7 +70,7 @@ func codexActivityStatus(title string) string {
 	return ""
 }
 
-func RenderAgent(agent state.Agent, workdir state.Workdir, folder state.Folder, template string) string {
+func RenderAgent(agent state.Agent, workspace state.Workspace, group state.Group, template string) string {
 	if strings.TrimSpace(template) == "" {
 		template = TitleTemplate
 	}
@@ -91,10 +87,8 @@ func RenderAgent(agent state.Agent, workdir state.Workdir, folder state.Folder, 
 		AutoTemplate:      renderAutoTitle(agent),
 		CodexTemplate:     codexTitle,
 		StatusTemplate:    RenderStatus(agent),
-		WorkspaceTemplate: fallback(workdir.Path, PendingTitle),
-		WorkdirTemplate:   fallback(workdir.Path, PendingTitle),
-		GroupTemplate:     fallback(folder.Path, PendingTitle),
-		FolderTemplate:    fallback(folder.Path, PendingTitle),
+		WorkspaceTemplate: fallback(workspace.Path, PendingTitle),
+		GroupTemplate:     fallback(group.Path, PendingTitle),
 	}
 	renderedTitle := replaceVariables(title, values)
 	values[TitleTemplate] = renderedTitle

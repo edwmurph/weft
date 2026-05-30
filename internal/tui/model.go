@@ -46,21 +46,21 @@ const (
 type promptKind string
 
 const (
-	promptWorkdir      promptKind = "workdir"
-	promptGroup        promptKind = "group"
-	promptWorkdirTitle promptKind = "workdir-title"
-	promptRenameGroup  promptKind = "rename-group"
-	promptRenameAgent  promptKind = "rename-agent"
-	promptMoveAgent    promptKind = "move-agent"
+	promptWorkspace      promptKind = "workspace"
+	promptGroup          promptKind = "group"
+	promptWorkspaceTitle promptKind = "workspace-title"
+	promptRenameGroup    promptKind = "rename-group"
+	promptRenameAgent    promptKind = "rename-agent"
+	promptMoveAgent      promptKind = "move-agent"
 )
 
 type confirmKind string
 
 const (
-	confirmAddLaunchWorkdir confirmKind = "add-launch-workdir"
-	confirmDeleteWorkdir    confirmKind = "delete-workdir"
-	confirmDeleteGroup      confirmKind = "delete-group"
-	confirmDeleteAgent      confirmKind = "delete-agent"
+	confirmAddLaunchWorkspace confirmKind = "add-launch-workspace"
+	confirmDeleteWorkspace    confirmKind = "delete-workspace"
+	confirmDeleteGroup        confirmKind = "delete-group"
+	confirmDeleteAgent        confirmKind = "delete-agent"
 )
 
 const (
@@ -74,17 +74,17 @@ type loadingTick struct{}
 
 var loadingFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-type folderRowKind string
+type groupRowKind string
 
 const (
-	folderRowFolder folderRowKind = "folder"
-	folderRowAgent  folderRowKind = "agent"
+	groupRowGroup groupRowKind = "group"
+	groupRowAgent groupRowKind = "agent"
 )
 
-type folderRow struct {
-	kind     folderRowKind
-	folderID string
-	agentID  string
+type groupRow struct {
+	kind    groupRowKind
+	groupID string
+	agentID string
 }
 
 type Model struct {
@@ -111,7 +111,7 @@ type Model struct {
 	prompt               promptKind
 	confirm              confirmKind
 	pendingID            string
-	folderCursor         int
+	groupCursor          int
 	lastNavFocus         state.Focus
 	promptSuggestionOpen bool
 }
@@ -122,32 +122,32 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	input.Prompt = "> "
 	input.CharLimit = 240
 	input.Width = 60
-	st = state.Repair(st, rt.Workdir)
+	st = state.Repair(st, rt.Workspace)
 	if state.ActiveAgent(st) == nil {
 		st.ActiveAgentID = ""
-		if len(st.Workdirs) == 0 {
-			st.Focus = state.FocusWorkdirs
+		if len(st.Workspaces) == 0 {
+			st.Focus = state.FocusWorkspaces
 		} else {
-			st.Focus = state.FocusFolders
+			st.Focus = state.FocusAgents
 		}
 		st.NavOpen = true
 	}
 	lastNav := st.Focus
 	if lastNav == state.FocusCodex || lastNav == "" {
-		lastNav = state.FocusFolders
+		lastNav = state.FocusAgents
 	}
 	model := Model{
-		cfg: cfg, runtime: rt, store: state.NewStore(rt.StatePath, rt.Workdir), state: st,
+		cfg: cfg, runtime: rt, store: state.NewStore(rt.StatePath, rt.Workspace), state: st,
 		width: 100, height: 32, screens: map[string]*TerminalScreen{}, ptys: map[string]*ptyx.Session{},
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
 		dataCh:            make(chan ptyx.Data, 64),
 		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
 	}
-	if next, ok := state.SelectWorkdirByPath(model.state, rt.Workdir); ok {
+	if next, ok := state.SelectWorkspaceByPath(model.state, rt.Workspace); ok {
 		model.state = next
 	}
-	model.syncFolderCursor()
+	model.syncGroupCursor()
 	model.navWidth = model.targetNavWidth()
 	for _, agent := range model.state.Agents {
 		model.startPTY(agent.ID)
@@ -197,7 +197,7 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		LoadingText:  loadingText,
 		Message:      m.message,
 		NavWidth:     m.targetNavWidth(),
-		FolderCursor: m.folderCursor,
+		GroupCursor:  m.groupCursor,
 	}
 }
 
@@ -274,9 +274,9 @@ func (m Model) View() string {
 		title = m.renderAgentTitle(*active)
 	}
 	if loadingText != "" {
-		return renderLoadingWorkspaceWithNavWidth(m.cfg, m.state, title, loadingText, m.width, m.height, m.message, m.navWidth, m.folderCursor)
+		return renderLoadingWorkspaceWithNavWidth(m.cfg, m.state, title, loadingText, m.width, m.height, m.message, m.navWidth, m.groupCursor)
 	}
-	return renderWorkspaceWithNavWidth(m.cfg, m.state, title, content, m.width, m.height, m.message, m.navWidth, m.folderCursor)
+	return renderWorkspaceWithNavWidth(m.cfg, m.state, title, content, m.width, m.height, m.message, m.navWidth, m.groupCursor)
 }
 
 func (m Model) modalView(content string) string {
@@ -392,17 +392,17 @@ func (m Model) activeCodexReceivesQuitBinding() bool {
 func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case bindingMatches(m.cfg.KeyBindings.FocusLeft, msg):
-		m.focusNavPane(state.FocusWorkdirs)
+		m.focusNavPane(state.FocusWorkspaces)
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
-		m.focusNavPane(state.FocusFolders)
+		m.focusNavPane(state.FocusAgents)
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
 		m.moveSelection(-1)
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
 		m.moveSelection(1)
 	case bindingMatches(m.cfg.KeyBindings.NewWorkspace, msg):
-		m.startPrompt(promptWorkdir, defaultWorkdirPromptValue(m.state, m.runtime.Workdir))
+		m.startPrompt(promptWorkspace, defaultWorkspacePromptValue(m.state, m.runtime.Workspace))
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
-		m.focusNavPane(state.FocusFolders)
+		m.focusNavPane(state.FocusAgents)
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
 		return m, m.newAgent(m.cfg.TitleTemplate)
@@ -415,19 +415,19 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.Delete, msg):
 		m.startDeleteConfirm()
 	case bindingMatches(m.cfg.KeyBindings.Open, msg) || msg.Type == tea.KeyEnter:
-		if m.state.Focus == state.FocusWorkdirs {
-			m.focusNavPane(state.FocusFolders)
+		if m.state.Focus == state.FocusWorkspaces {
+			m.focusNavPane(state.FocusAgents)
 			return m, nil
 		}
-		row := m.currentFolderRow()
-		if row.kind == folderRowFolder {
-			m.toggleSelectedGroup(row.folderID)
+		row := m.currentGroupRow()
+		if row.kind == groupRowGroup {
+			m.toggleSelectedGroup(row.groupID)
 			return m, nil
 		}
 		if agent := m.selectedAgent(); agent != nil {
 			m.state.ActiveAgentID = agent.ID
-			m.state.SelectedWorkdirID = agent.WorkdirID
-			m.state.SelectedFolderID = agent.FolderID
+			m.state.SelectedWorkspaceID = agent.WorkspaceID
+			m.state.SelectedGroupID = agent.GroupID
 			m.save()
 			return m, m.setCodexFocus()
 		}
@@ -436,7 +436,7 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) focusNavPane(focus state.Focus) {
-	if focus != state.FocusWorkdirs && focus != state.FocusFolders {
+	if focus != state.FocusWorkspaces && focus != state.FocusAgents {
 		return
 	}
 	m.state.Focus = focus
@@ -446,44 +446,44 @@ func (m *Model) focusNavPane(focus state.Focus) {
 }
 
 func (m *Model) rememberCurrentNavFocus() {
-	if m.state.Focus == state.FocusWorkdirs || m.state.Focus == state.FocusFolders {
+	if m.state.Focus == state.FocusWorkspaces || m.state.Focus == state.FocusAgents {
 		m.lastNavFocus = m.state.Focus
 	}
 }
 
 func (m *Model) moveSelection(delta int) {
-	if m.state.Focus == state.FocusWorkdirs {
-		workdirIDs := make([]string, 0, len(m.state.Workdirs))
-		for _, workdir := range m.state.Workdirs {
-			workdirIDs = append(workdirIDs, workdir.ID)
+	if m.state.Focus == state.FocusWorkspaces {
+		workspaceIDs := make([]string, 0, len(m.state.Workspaces))
+		for _, workspace := range m.state.Workspaces {
+			workspaceIDs = append(workspaceIDs, workspace.ID)
 		}
-		current := navigation.IndexByID(workdirIDs, m.state.SelectedWorkdirID)
-		next := navigation.MoveIndex(current, len(workdirIDs), delta)
-		if len(workdirIDs) > 0 && workdirIDs[next] != m.state.SelectedWorkdirID {
-			m.state.SelectedWorkdirID = workdirIDs[next]
-			if folders := state.FoldersForWorkdir(m.state, m.state.SelectedWorkdirID); len(folders) > 0 {
-				m.state.SelectedFolderID = folders[0].ID
+		current := navigation.IndexByID(workspaceIDs, m.state.SelectedWorkspaceID)
+		next := navigation.MoveIndex(current, len(workspaceIDs), delta)
+		if len(workspaceIDs) > 0 && workspaceIDs[next] != m.state.SelectedWorkspaceID {
+			m.state.SelectedWorkspaceID = workspaceIDs[next]
+			if groups := state.GroupsForWorkspace(m.state, m.state.SelectedWorkspaceID); len(groups) > 0 {
+				m.state.SelectedGroupID = groups[0].ID
 			}
-			m.folderCursor = 0
+			m.groupCursor = 0
 			m.save()
 		}
 		return
 	}
-	rows := m.folderRows()
+	rows := m.groupRows()
 	if len(rows) == 0 {
 		return
 	}
-	m.folderCursor = navigation.MoveIndex(m.folderCursor, len(rows), delta)
-	m.applyFolderCursor(rows[m.folderCursor])
+	m.groupCursor = navigation.MoveIndex(m.groupCursor, len(rows), delta)
+	m.applyGroupCursor(rows[m.groupCursor])
 }
 
-func (m *Model) applyFolderCursor(row folderRow) {
+func (m *Model) applyGroupCursor(row groupRow) {
 	switch row.kind {
-	case folderRowFolder:
-		m.state.SelectedFolderID = row.folderID
-	case folderRowAgent:
+	case groupRowGroup:
+		m.state.SelectedGroupID = row.groupID
+	case groupRowAgent:
 		if agent := state.AgentByID(m.state, row.agentID); agent != nil {
-			m.state.SelectedFolderID = agent.FolderID
+			m.state.SelectedGroupID = agent.GroupID
 			m.state.ActiveAgentID = agent.ID
 		}
 	}
@@ -498,7 +498,7 @@ func (m *Model) startPrompt(prompt promptKind, value string) {
 }
 
 func (m *Model) startRenamePrompt() {
-	prompt, id, value, ok := renamePromptTargetForState(m.state, m.folderCursor)
+	prompt, id, value, ok := renamePromptTargetForState(m.state, m.groupCursor)
 	if ok {
 		m.pendingID = id
 		m.startPrompt(prompt, value)
@@ -506,7 +506,7 @@ func (m *Model) startRenamePrompt() {
 }
 
 func (m *Model) startDeleteConfirm() {
-	confirm, id, ok := deleteConfirmTargetForState(m.state, m.folderCursor)
+	confirm, id, ok := deleteConfirmTargetForState(m.state, m.groupCursor)
 	if ok {
 		m.confirm = confirm
 		m.pendingID = id
@@ -516,45 +516,45 @@ func (m *Model) startDeleteConfirm() {
 
 func (m *Model) applyPrompt(value string) tea.Cmd {
 	switch m.prompt {
-	case promptWorkdir:
-		next, workdir, err := state.AddWorkdir(m.state, shortID(), value, state.NowISO())
+	case promptWorkspace:
+		next, workspace, err := state.AddWorkspace(m.state, shortID(), value, state.NowISO())
 		if err != nil {
 			m.message = err.Error()
 			return nil
 		}
-		message := workdirAddMessage(m.state, workdir)
+		message := workspaceAddMessage(m.state, workspace)
 		m.state = next
 		m.message = message
 		m.rememberCurrentNavFocus()
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 	case promptGroup:
-		workdir := state.ActiveWorkdir(m.state)
-		if workdir == nil {
+		workspace := state.ActiveWorkspace(m.state)
+		if workspace == nil {
 			m.message = "select a workspace first"
 			return nil
 		}
-		next, folder, err := state.AddFolder(m.state, shortID(), workdir.ID, value, state.NowISO())
+		next, group, err := state.AddGroup(m.state, shortID(), workspace.ID, value, state.NowISO())
 		if err != nil {
 			m.message = err.Error()
 			return nil
 		}
 		m.state = next
-		m.message = "created group " + folder.Path
-		m.syncFolderCursor()
+		m.message = "created group " + group.Path
+		m.syncGroupCursor()
 		m.save()
 	case promptRenameGroup:
-		next, err := state.RenameFolder(m.state, m.pendingID, value)
+		next, err := state.RenameGroup(m.state, m.pendingID, value)
 		if err != nil {
 			m.message = err.Error()
 			return nil
 		}
 		m.state = next
 		m.message = "renamed group"
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
-	case promptWorkdirTitle:
-		next, err := state.SetWorkdirTitle(m.state, m.pendingID, value)
+	case promptWorkspaceTitle:
+		next, err := state.SetWorkspaceTitle(m.state, m.pendingID, value)
 		if err != nil {
 			m.message = err.Error()
 			return nil
@@ -587,23 +587,23 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 			m.message = "select an agent first"
 			return nil
 		}
-		folderID := ""
+		groupID := ""
 		if value != "" {
-			folder := m.findFolderByPath(agent.WorkdirID, value)
-			if folder == nil {
+			group := m.findGroupByPath(agent.WorkspaceID, value)
+			if group == nil {
 				m.message = "group not found"
 				return nil
 			}
-			folderID = folder.ID
+			groupID = group.ID
 		}
-		next, err := state.MoveAgent(m.state, agent.ID, folderID)
+		next, err := state.MoveAgent(m.state, agent.ID, groupID)
 		if err != nil {
 			m.message = err.Error()
 			return nil
 		}
 		m.state = next
 		m.message = "moved agent"
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 	}
 	return nil
@@ -611,20 +611,20 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 
 func (m *Model) applyConfirm() tea.Cmd {
 	switch m.confirm {
-	case confirmAddLaunchWorkdir:
-		next, workdir, err := state.AddWorkdir(m.state, shortID(), m.pendingID, state.NowISO())
+	case confirmAddLaunchWorkspace:
+		next, workspace, err := state.AddWorkspace(m.state, shortID(), m.pendingID, state.NowISO())
 		if err != nil {
 			m.message = err.Error()
 			return nil
 		}
-		message := workdirAddMessage(m.state, workdir)
+		message := workspaceAddMessage(m.state, workspace)
 		m.state = next
 		m.message = message
 		m.rememberCurrentNavFocus()
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
-	case confirmDeleteWorkdir:
-		next, agents, err := state.RemoveWorkdir(m.state, m.pendingID)
+	case confirmDeleteWorkspace:
+		next, agents, err := state.RemoveWorkspace(m.state, m.pendingID)
 		if err != nil {
 			m.message = err.Error()
 			return nil
@@ -632,20 +632,20 @@ func (m *Model) applyConfirm() tea.Cmd {
 		for _, agent := range agents {
 			m.killAgentPTY(agent.ID)
 		}
-		m.state = state.Repair(next, m.runtime.Workdir)
+		m.state = state.Repair(next, m.runtime.Workspace)
 		m.message = "removed workspace"
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 		return m.startNavAnimation()
 	case confirmDeleteGroup:
-		next, err := state.DeleteFolder(m.state, m.pendingID)
+		next, err := state.DeleteGroup(m.state, m.pendingID)
 		if err != nil {
 			m.message = err.Error()
 			return nil
 		}
 		m.state = next
 		m.message = "deleted group"
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 	case confirmDeleteAgent:
 		return m.closeAgent(m.pendingID)
@@ -654,19 +654,19 @@ func (m *Model) applyConfirm() tea.Cmd {
 }
 
 func (m *Model) newAgent(title string) tea.Cmd {
-	workdir := state.ActiveWorkdir(m.state)
-	if workdir == nil {
+	workspace := state.ActiveWorkspace(m.state)
+	if workspace == nil {
 		m.message = "add a workspace first"
 		return nil
 	}
-	folderID := m.groupIDForNewAgent()
-	next, agent, err := state.AddAgent(m.state, shortID(), workdir.ID, folderID, title, state.NowISO())
+	groupID := m.groupIDForNewAgent()
+	next, agent, err := state.AddAgent(m.state, shortID(), workspace.ID, groupID, title, state.NowISO())
 	if err != nil {
 		m.message = err.Error()
 		return nil
 	}
 	m.state = next
-	m.syncFolderCursor()
+	m.syncGroupCursor()
 	m.save()
 	return tea.Batch(m.startPTYCmd(agent.ID), m.startNavAnimation(), tickLoading())
 }
@@ -677,7 +677,7 @@ func (m *Model) closeAgent(agentID string) tea.Cmd {
 	}
 	m.killAgentPTY(agentID)
 	m.state = state.CloseAgent(m.state, agentID)
-	m.syncFolderCursor()
+	m.syncGroupCursor()
 	m.save()
 	return m.startNavAnimation()
 }
@@ -692,69 +692,69 @@ func (m *Model) killAgentPTY(agentID string) {
 }
 
 func (m *Model) selectedAgent() *state.Agent {
-	return selectedAgentForState(m.state, m.folderCursor)
+	return selectedAgentForState(m.state, m.groupCursor)
 }
 
-func (m Model) currentFolderRow() folderRow {
-	return currentFolderRowForState(m.state, m.folderCursor)
+func (m Model) currentGroupRow() groupRow {
+	return currentGroupRowForState(m.state, m.groupCursor)
 }
 
-func (m Model) folderRows() []folderRow {
-	return folderRowsForState(m.state)
+func (m Model) groupRows() []groupRow {
+	return groupRowsForState(m.state)
 }
 
 func (m Model) groupIDForNewAgent() string {
-	row := m.currentFolderRow()
+	row := m.currentGroupRow()
 	switch row.kind {
-	case folderRowFolder:
-		return row.folderID
-	case folderRowAgent:
-		return row.folderID
+	case groupRowGroup:
+		return row.groupID
+	case groupRowAgent:
+		return row.groupID
 	default:
 		return ""
 	}
 }
 
-func (m *Model) toggleSelectedGroup(folderID string) {
-	m.state = state.ToggleGroupCollapsed(m.state, folderID)
-	m.state.SelectedFolderID = folderID
-	for index, row := range m.folderRows() {
-		if row.kind == folderRowFolder && row.folderID == folderID {
-			m.folderCursor = index
+func (m *Model) toggleSelectedGroup(groupID string) {
+	m.state = state.ToggleGroupCollapsed(m.state, groupID)
+	m.state.SelectedGroupID = groupID
+	for index, row := range m.groupRows() {
+		if row.kind == groupRowGroup && row.groupID == groupID {
+			m.groupCursor = index
 			break
 		}
 	}
 	m.save()
 }
 
-func (m *Model) syncFolderCursor() {
-	rows := m.folderRows()
+func (m *Model) syncGroupCursor() {
+	rows := m.groupRows()
 	if len(rows) == 0 {
-		m.folderCursor = 0
+		m.groupCursor = 0
 		return
 	}
 	if m.state.ActiveAgentID != "" {
 		for index, row := range rows {
-			if row.kind == folderRowAgent && row.agentID == m.state.ActiveAgentID {
-				m.folderCursor = index
+			if row.kind == groupRowAgent && row.agentID == m.state.ActiveAgentID {
+				m.groupCursor = index
 				return
 			}
 		}
 	}
 	for index, row := range rows {
-		if row.folderID == m.state.SelectedFolderID {
-			m.folderCursor = index
+		if row.groupID == m.state.SelectedGroupID {
+			m.groupCursor = index
 			return
 		}
 	}
-	m.folderCursor = 0
+	m.groupCursor = 0
 }
 
-func (m Model) findFolderByPath(workdirID string, path string) *state.Folder {
+func (m Model) findGroupByPath(workspaceID string, path string) *state.Group {
 	path = strings.TrimSpace(path)
-	for _, folder := range state.FoldersForWorkdir(m.state, workdirID) {
-		if folder.Path == path {
-			f := folder
+	for _, group := range state.GroupsForWorkspace(m.state, workspaceID) {
+		if group.Path == path {
+			f := group
 			return &f
 		}
 	}
@@ -776,8 +776,8 @@ func (m *Model) toggleDrawer() tea.Cmd {
 
 func (m *Model) openNav() tea.Cmd {
 	m.state.NavOpen = true
-	if m.lastNavFocus != state.FocusWorkdirs && m.lastNavFocus != state.FocusFolders {
-		m.lastNavFocus = state.FocusFolders
+	if m.lastNavFocus != state.FocusWorkspaces && m.lastNavFocus != state.FocusAgents {
+		m.lastNavFocus = state.FocusAgents
 	}
 	m.state.Focus = m.lastNavFocus
 	m.save()
@@ -789,7 +789,7 @@ func (m *Model) setCodexFocus() tea.Cmd {
 		m.message = "select an agent first"
 		return nil
 	}
-	if m.state.Focus == state.FocusWorkdirs || m.state.Focus == state.FocusFolders {
+	if m.state.Focus == state.FocusWorkspaces || m.state.Focus == state.FocusAgents {
 		m.lastNavFocus = m.state.Focus
 	}
 	m.state.Focus = state.FocusCodex
@@ -863,20 +863,20 @@ func (m Model) agentUsesAutoTitle(agent state.Agent) bool {
 }
 
 func (m Model) titleHookCmd(agent state.Agent, firstMessage string) tea.Cmd {
-	workdir := state.Workdir{}
-	if found := state.WorkdirForAgent(m.state, agent); found != nil {
-		workdir = *found
+	workspace := state.Workspace{}
+	if found := state.WorkspaceForAgent(m.state, agent); found != nil {
+		workspace = *found
 	}
-	folder := state.Folder{}
-	if found := state.FolderForAgent(m.state, agent); found != nil {
-		folder = *found
+	group := state.Group{}
+	if found := state.GroupForAgent(m.state, agent); found != nil {
+		group = *found
 	}
-	payload := titlehook.BuildPayload(agent, workdir, folder, agent.Title, firstMessage)
+	payload := titlehook.BuildPayload(agent, workspace, group, agent.Title, firstMessage)
 	command := m.cfg.TitleHookCommand
 	timeout := time.Duration(m.cfg.TitleHookTimeoutSeconds) * time.Second
 	ctx := m.ctx
 	return func() tea.Msg {
-		title, err := titlehook.Run(ctx, command, workdir.Path, timeout, payload)
+		title, err := titlehook.Run(ctx, command, workspace.Path, timeout, payload)
 		return titleHookMsg{agentID: agent.ID, title: title, err: err}
 	}
 }
@@ -966,8 +966,8 @@ func (m *Model) startPTY(agentID string) {
 	if m.screens[agentID] == nil {
 		m.screens[agentID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
 	}
-	workdir := m.agentWorkdir(agentID)
-	ptySession, err := ptyx.Start(m.ctx, agentID, m.cfg.CodexCommand, workdir, m.ptyWidth(), m.ptyHeight(), func(data ptyx.Data) {
+	workspace := m.agentWorkspace(agentID)
+	ptySession, err := ptyx.Start(m.ctx, agentID, m.cfg.CodexCommand, workspace, m.ptyWidth(), m.ptyHeight(), func(data ptyx.Data) {
 		m.dataCh <- data
 	})
 	if err != nil {
@@ -993,12 +993,12 @@ func (m *Model) startPTYCmd(agentID string) tea.Cmd {
 	}
 	ctx := m.ctx
 	command := m.cfg.CodexCommand
-	workdir := m.agentWorkdir(agentID)
+	workspace := m.agentWorkspace(agentID)
 	cols := m.ptyWidth()
 	rows := m.ptyHeight()
 	dataCh := m.dataCh
 	return func() tea.Msg {
-		ptySession, err := ptyx.Start(ctx, agentID, command, workdir, cols, rows, func(data ptyx.Data) {
+		ptySession, err := ptyx.Start(ctx, agentID, command, workspace, cols, rows, func(data ptyx.Data) {
 			dataCh <- data
 		})
 		return ptyStartedMsg{agentID: agentID, session: ptySession, err: err}
@@ -1193,7 +1193,7 @@ func ipcError(code string, err error) ipc.Response {
 }
 
 func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
-	m.applyLaunchWorkdir(launchWorkspaceArg(request.Args))
+	m.applyLaunchWorkspace(launchWorkspaceArg(request.Args))
 	switch request.Command {
 	case "snapshot":
 		return m.ipcResponse(m.message), nil
@@ -1233,8 +1233,8 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.navWidth = m.targetNavWidth()
 		return m.ipcResponse("selection opened"), cmd
 	case "new":
-		if state.ActiveWorkdir(m.state) == nil {
-			return ipc.ErrorResponse("workdir_required", "add a workspace first"), nil
+		if state.ActiveWorkspace(m.state) == nil {
+			return ipc.ErrorResponse("workspace_required", "add a workspace first"), nil
 		}
 		title := request.Args["title"]
 		if title == "" {
@@ -1260,16 +1260,16 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.save()
 		return m.ipcResponse("renamed Codex agent"), nil
 	case "rename_group":
-		next, err := state.RenameFolder(m.state, request.Args["id"], request.Args["path"])
+		next, err := state.RenameGroup(m.state, request.Args["id"], request.Args["path"])
 		if err != nil {
 			return ipcError("rename_group_failed", err), nil
 		}
 		m.state = next
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 		return m.ipcResponse("renamed group"), nil
-	case "rename_workspace", "rename_workdir":
-		next, err := state.SetWorkdirTitle(m.state, request.Args["id"], request.Args["title"])
+	case "rename_workspace":
+		next, err := state.SetWorkspaceTitle(m.state, request.Args["id"], request.Args["title"])
 		if err != nil {
 			return ipcError("rename_workspace_failed", err), nil
 		}
@@ -1287,35 +1287,35 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		cmd := m.closeAgent(id)
 		m.navWidth = m.targetNavWidth()
 		return m.ipcResponse("closed Codex agent"), cmd
-	case "remove_workspace", "remove_workdir":
-		next, agents, err := state.RemoveWorkdir(m.state, request.Args["id"])
+	case "remove_workspace":
+		next, agents, err := state.RemoveWorkspace(m.state, request.Args["id"])
 		if err != nil {
 			return ipcError("remove_workspace_failed", err), nil
 		}
 		for _, agent := range agents {
 			m.killAgentPTY(agent.ID)
 		}
-		m.state = state.Repair(next, m.runtime.Workdir)
-		m.syncFolderCursor()
+		m.state = state.Repair(next, m.runtime.Workspace)
+		m.syncGroupCursor()
 		m.save()
 		m.navWidth = m.targetNavWidth()
 		return m.ipcResponse("removed workspace"), m.startNavAnimation()
 	case "remove_group":
-		next, err := state.DeleteFolder(m.state, request.Args["id"])
+		next, err := state.DeleteGroup(m.state, request.Args["id"])
 		if err != nil {
 			return ipcError("remove_group_failed", err), nil
 		}
 		m.state = next
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 		return m.ipcResponse("deleted group"), nil
 	case "select":
 		id := request.Args["id"]
 		if agent := state.AgentByID(m.state, id); agent != nil {
 			m.state.ActiveAgentID = id
-			m.state.SelectedWorkdirID = agent.WorkdirID
-			m.state.SelectedFolderID = agent.FolderID
-			m.syncFolderCursor()
+			m.state.SelectedWorkspaceID = agent.WorkspaceID
+			m.state.SelectedGroupID = agent.GroupID
+			m.syncGroupCursor()
 			m.save()
 			return m.ipcResponse("selected Codex agent"), nil
 		}
@@ -1329,54 +1329,54 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		if agent == nil {
 			return ipc.ErrorResponse("agent_not_found", "agent not found"), nil
 		}
-		folderID, ok := m.destinationGroupIDForMove(*agent, request.Args)
+		groupID, ok := m.destinationGroupIDForMove(*agent, request.Args)
 		if !ok {
 			return ipc.ErrorResponse("group_not_found", "group not found"), nil
 		}
-		next, err := state.MoveAgent(m.state, agent.ID, folderID)
+		next, err := state.MoveAgent(m.state, agent.ID, groupID)
 		if err != nil {
 			return ipcError("move_agent_failed", err), nil
 		}
 		m.state = next
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 		return m.ipcResponse("moved Codex agent"), nil
-	case "add_workspace", "add_workdir":
+	case "add_workspace":
 		path := request.Args["path"]
-		next, workdir, err := state.AddWorkdir(m.state, shortID(), path, state.NowISO())
+		next, workspace, err := state.AddWorkspace(m.state, shortID(), path, state.NowISO())
 		if err != nil {
 			return ipcError("add_workspace_failed", err), nil
 		}
-		message := workdirAddMessage(m.state, workdir)
+		message := workspaceAddMessage(m.state, workspace)
 		m.state = next
 		m.rememberCurrentNavFocus()
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 		return m.ipcResponse(message), nil
-	case "add_group", "add_folder":
+	case "add_group":
 		path := request.Args["path"]
-		workdirID := request.Args["workdir_id"]
-		if workdirID == "" {
-			workdirID = m.state.SelectedWorkdirID
+		workspaceID := request.Args["workspace_id"]
+		if workspaceID == "" {
+			workspaceID = m.state.SelectedWorkspaceID
 		}
-		next, _, err := state.AddFolder(m.state, shortID(), workdirID, path, state.NowISO())
+		next, _, err := state.AddGroup(m.state, shortID(), workspaceID, path, state.NowISO())
 		if err != nil {
 			return ipcError("add_group_failed", err), nil
 		}
 		m.state = next
-		m.syncFolderCursor()
+		m.syncGroupCursor()
 		m.save()
 		return m.ipcResponse("created group"), nil
 	case "focus":
 		target := state.Focus(request.Args["target"])
 		if target == "workspaces" {
-			target = state.FocusWorkdirs
+			target = state.FocusWorkspaces
 		}
-		if target == "agents" || target == "groups" || target == "folders" {
-			target = state.FocusFolders
+		if target == "agents" {
+			target = state.FocusAgents
 		}
 		switch target {
-		case state.FocusWorkdirs, state.FocusFolders:
+		case state.FocusWorkspaces, state.FocusAgents:
 			m.focusNavPane(target)
 			m.navWidth = m.targetNavWidth()
 			return m.ipcResponse("focus updated"), m.startNavAnimation()
@@ -1390,7 +1390,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	case "codex_input":
 		cmd := m.applyCodexInput(request.Args)
 		return m.ipcResponse(m.message), cmd
-	case "close_weft", "quit":
+	case "close_client":
 		m.closeWeft()
 		return m.ipcResponse("closed Weft clients"), nil
 	default:
@@ -1402,36 +1402,36 @@ func launchWorkspaceArg(args map[string]string) string {
 	if value := strings.TrimSpace(args["launch_workspace"]); value != "" {
 		return value
 	}
-	return args["launch_workdir"]
+	return ""
 }
 
-func (m *Model) applyLaunchWorkdir(path string) {
-	next, ok := state.SelectWorkdirByPath(m.state, path)
+func (m *Model) applyLaunchWorkspace(path string) {
+	next, ok := state.SelectWorkspaceByPath(m.state, path)
 	if !ok {
 		return
 	}
-	if next.SelectedWorkdirID == m.state.SelectedWorkdirID && next.SelectedFolderID == m.state.SelectedFolderID {
+	if next.SelectedWorkspaceID == m.state.SelectedWorkspaceID && next.SelectedGroupID == m.state.SelectedGroupID {
 		return
 	}
 	m.state = next
-	m.syncFolderCursor()
+	m.syncGroupCursor()
 	m.save()
 }
 
 func (m *Model) openSelection() tea.Cmd {
-	if m.state.Focus == state.FocusWorkdirs {
-		m.focusNavPane(state.FocusFolders)
+	if m.state.Focus == state.FocusWorkspaces {
+		m.focusNavPane(state.FocusAgents)
 		return nil
 	}
-	row := m.currentFolderRow()
-	if row.kind == folderRowFolder {
-		m.toggleSelectedGroup(row.folderID)
+	row := m.currentGroupRow()
+	if row.kind == groupRowGroup {
+		m.toggleSelectedGroup(row.groupID)
 		return nil
 	}
 	if agent := m.selectedAgent(); agent != nil {
 		m.state.ActiveAgentID = agent.ID
-		m.state.SelectedWorkdirID = agent.WorkdirID
-		m.state.SelectedFolderID = agent.FolderID
+		m.state.SelectedWorkspaceID = agent.WorkspaceID
+		m.state.SelectedGroupID = agent.GroupID
 		m.save()
 		return m.setCodexFocus()
 	}
@@ -1511,56 +1511,36 @@ func (m Model) destinationGroupIDForMove(agent state.Agent, args map[string]stri
 		if groupID == "" {
 			return "", true
 		}
-		folder := state.FolderByID(m.state, groupID)
-		if folder != nil && folder.WorkdirID == agent.WorkdirID {
-			return folder.ID, true
+		group := state.GroupByID(m.state, groupID)
+		if group != nil && group.WorkspaceID == agent.WorkspaceID {
+			return group.ID, true
 		}
 		return "", false
-	}
-	if folderID, ok := args["folder_id"]; ok {
-		if folderID == "" {
-			return "", true
-		}
-		folder := state.FolderByID(m.state, folderID)
-		if folder != nil && folder.WorkdirID == agent.WorkdirID {
-			return folder.ID, true
-		}
-		return "", false
-	}
-	if folderPath, ok := args["folder"]; ok {
-		if strings.TrimSpace(folderPath) == "" {
-			return "", true
-		}
-		folder := m.findFolderByPath(agent.WorkdirID, folderPath)
-		if folder == nil {
-			return "", false
-		}
-		return folder.ID, true
 	}
 	if groupPath, ok := args["group"]; ok {
 		if strings.TrimSpace(groupPath) == "" {
 			return "", true
 		}
-		folder := m.findFolderByPath(agent.WorkdirID, groupPath)
-		if folder == nil {
+		group := m.findGroupByPath(agent.WorkspaceID, groupPath)
+		if group == nil {
 			return "", false
 		}
-		return folder.ID, true
+		return group.ID, true
 	}
-	folders := state.FoldersForWorkdir(m.state, agent.WorkdirID)
+	groups := state.GroupsForWorkspace(m.state, agent.WorkspaceID)
 	current := 0
 	groupIDs := []string{""}
-	for index, folder := range folders {
-		groupIDs = append(groupIDs, folder.ID)
-		if folder.ID == agent.FolderID {
+	for index, group := range groups {
+		groupIDs = append(groupIDs, group.ID)
+		if group.ID == agent.GroupID {
 			current = index + 1
 			break
 		}
 	}
 	switch args["direction"] {
-	case "left", "prev":
+	case "left":
 		current = navigation.MoveIndex(current, len(groupIDs), -1)
-	case "right", "next":
+	case "right":
 		current = navigation.MoveIndex(current, len(groupIDs), 1)
 	default:
 		return "", false
@@ -1568,15 +1548,15 @@ func (m Model) destinationGroupIDForMove(agent state.Agent, args map[string]stri
 	return groupIDs[current], true
 }
 
-func (m Model) agentWorkdir(agentID string) string {
+func (m Model) agentWorkspace(agentID string) string {
 	agent := state.AgentByID(m.state, agentID)
 	if agent == nil {
-		return m.runtime.Workdir
+		return m.runtime.Workspace
 	}
-	if workdir := state.WorkdirForAgent(m.state, *agent); workdir != nil {
-		return workdir.Path
+	if workspace := state.WorkspaceForAgent(m.state, *agent); workspace != nil {
+		return workspace.Path
 	}
-	return m.runtime.Workdir
+	return m.runtime.Workspace
 }
 
 func (m Model) renderAgentTitle(agent state.Agent) string {
@@ -1588,35 +1568,35 @@ func (m Model) statusText() string {
 	fmt.Fprintf(&builder, "supervisor: running\n")
 	fmt.Fprintf(&builder, "runtime dir: %s\n", m.runtime.Dir)
 	fmt.Fprintf(&builder, "socket: %s\n", m.runtime.SocketPath)
-	fmt.Fprintf(&builder, "launch workspace: %s\n", m.runtime.Workdir)
+	fmt.Fprintf(&builder, "launch workspace: %s\n", m.runtime.Workspace)
 	fmt.Fprintf(&builder, "focus: %s\n", displayFocus(m.state.Focus))
 	fmt.Fprintf(&builder, "nav open: %t\n", m.state.NavOpen)
-	fmt.Fprintf(&builder, "workspaces: %d\n", len(m.state.Workdirs))
-	fmt.Fprintf(&builder, "groups: %d\n", len(m.state.Folders))
+	fmt.Fprintf(&builder, "workspaces: %d\n", len(m.state.Workspaces))
+	fmt.Fprintf(&builder, "groups: %d\n", len(m.state.Groups))
 	fmt.Fprintf(&builder, "agents: %d\n", len(m.state.Agents))
 	for _, agent := range m.state.Agents {
 		marker := " "
 		if agent.ID == m.state.ActiveAgentID {
 			marker = "*"
 		}
-		folder := ""
-		if f := state.FolderForAgent(m.state, agent); f != nil {
-			folder = f.Path
+		group := ""
+		if f := state.GroupForAgent(m.state, agent); f != nil {
+			group = f.Path
 		}
-		workdir := ""
-		if w := state.WorkdirForAgent(m.state, agent); w != nil {
-			workdir = w.Path
+		workspace := ""
+		if w := state.WorkspaceForAgent(m.state, agent); w != nil {
+			workspace = w.Path
 		}
-		fmt.Fprintf(&builder, "%s %s %s %s %s %s\n", marker, agent.ID, folder, agent.Status, m.renderAgentTitle(agent), workdir)
+		fmt.Fprintf(&builder, "%s %s %s %s %s %s\n", marker, agent.ID, group, agent.Status, m.renderAgentTitle(agent), workspace)
 	}
 	return strings.TrimRight(builder.String(), "\n")
 }
 
 func displayFocus(focus state.Focus) string {
-	if focus == state.FocusWorkdirs {
+	if focus == state.FocusWorkspaces {
 		return "workspaces"
 	}
-	if focus == state.FocusFolders {
+	if focus == state.FocusAgents {
 		return "agents"
 	}
 	return string(focus)

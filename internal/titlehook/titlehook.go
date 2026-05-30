@@ -27,7 +27,6 @@ type Payload struct {
 	Event         string `json:"event"`
 	AgentID       string `json:"agent_id"`
 	Workspace     string `json:"workspace"`
-	Workdir       string `json:"workdir"`
 	Group         string `json:"group,omitempty"`
 	Status        string `json:"status"`
 	Title         string `json:"title"`
@@ -36,14 +35,13 @@ type Payload struct {
 	FirstMessage  string `json:"first_message"`
 }
 
-func BuildPayload(agent state.Agent, workdir state.Workdir, folder state.Folder, titleTemplate string, firstMessage string) Payload {
+func BuildPayload(agent state.Agent, workspace state.Workspace, group state.Group, titleTemplate string, firstMessage string) Payload {
 	return Payload{
 		Version:       1,
 		Event:         EventFirstMessage,
 		AgentID:       agent.ID,
-		Workspace:     workdir.Path,
-		Workdir:       workdir.Path,
-		Group:         folder.Path,
+		Workspace:     workspace.Path,
+		Group:         group.Path,
 		Status:        titles.RenderStatus(agent),
 		Title:         agent.Title,
 		TitleTemplate: titleTemplate,
@@ -52,7 +50,7 @@ func BuildPayload(agent state.Agent, workdir state.Workdir, folder state.Folder,
 	}
 }
 
-func Run(ctx context.Context, command string, workdir string, timeout time.Duration, payload Payload) (string, error) {
+func Run(ctx context.Context, command string, workspace string, timeout time.Duration, payload Payload) (string, error) {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return "", errors.New("title hook command is empty")
@@ -69,7 +67,7 @@ func Run(ctx context.Context, command string, workdir string, timeout time.Durat
 
 	shell := shellx.Resolve()
 	cmd := exec.CommandContext(hookCtx, shell, "-c", command)
-	cmd.Dir = workdir
+	cmd.Dir = workspace
 	cmd.Env = shellx.Env(os.Environ(), shell)
 	cmd.Stdin = bytes.NewReader(payloadBytes)
 	var stdout bytes.Buffer
