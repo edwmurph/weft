@@ -52,11 +52,15 @@ codux [--attach|--no-attach]
 codux start [--attach|--no-attach]
 codux refresh
 codux status [--json]
-codux quit [--kill]
+codux close [id]
+codux close --kill
 codux sessions
 codux clear
 codux config info
 ```
+
+Run `codux close` without an id to close Codux clients; pass an id to close a
+Codex session.
 
 When NAV is focused, press `?` for dashboard shortcuts. Defaults:
 
@@ -71,12 +75,13 @@ rename = "r"
 close = "c"
 help = "?"
 focus_toggle = "C-g"
-quit = "C-q"
+close_codux = "C-c"
 ```
 
-In CODEX focus, Codux handles only `C-g` and `C-q`. All other input is
-forwarded to the active Codex PTY. Use `codux sessions` from the CLI to inspect
-other running Codux sessions.
+In CODEX focus, Codux keeps Codex-owned shortcuts available. For a live Codex
+tab, the first `C-c` is forwarded to Codex and arms Codux close; the next `C-c`
+closes Codux. Press any other key first to keep sending input to Codex. Use
+`codux close` from another shell to close Codux directly.
 
 ## Config And State
 

@@ -33,7 +33,7 @@ type KeyBindings struct {
 	Close       string `toml:"close"`
 	Help        string `toml:"help"`
 	FocusToggle string `toml:"focus_toggle"`
-	Quit        string `toml:"quit"`
+	CloseCodux  string `toml:"close_codux"`
 }
 
 type Config struct {
@@ -70,7 +70,7 @@ func DefaultKeyBindings() KeyBindings {
 		Close:       "c",
 		Help:        "?",
 		FocusToggle: "C-g",
-		Quit:        "C-q",
+		CloseCodux:  "C-c",
 	}
 }
 
@@ -170,6 +170,7 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 			Close       string `toml:"close"`
 			Help        string `toml:"help"`
 			FocusToggle string `toml:"focus_toggle"`
+			CloseCodux  string `toml:"close_codux"`
 			Quit        string `toml:"quit"`
 		} `toml:"key_bindings"`
 	}
@@ -203,7 +204,11 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.Close, raw.KeyBindings.Close)
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.FocusToggle, raw.KeyBindings.FocusToggle)
-	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
+	if raw.KeyBindings.CloseCodux != "" {
+		applyBinding(&cfg.KeyBindings.CloseCodux, raw.KeyBindings.CloseCodux)
+	} else if raw.KeyBindings.Quit != "" {
+		applyBinding(&cfg.KeyBindings.CloseCodux, legacyCloseCoduxBinding(raw.KeyBindings.Quit))
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -234,7 +239,7 @@ func (c Config) Validate() error {
 		"new": c.KeyBindings.New, "prev": c.KeyBindings.Prev, "next": c.KeyBindings.Next,
 		"move_left": c.KeyBindings.MoveLeft, "move_right": c.KeyBindings.MoveRight,
 		"rename": c.KeyBindings.Rename, "close": c.KeyBindings.Close, "help": c.KeyBindings.Help,
-		"focus_toggle": c.KeyBindings.FocusToggle, "quit": c.KeyBindings.Quit,
+		"focus_toggle": c.KeyBindings.FocusToggle, "close_codux": c.KeyBindings.CloseCodux,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return ConfigError{Message: fmt.Sprintf("key binding %q must be a non-empty string", name)}
@@ -258,8 +263,21 @@ func MigrateDefaultConfig(path string) error {
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-a"`, `focus_toggle = "C-g"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-d"`, `focus_toggle = "C-g"`)
 	updated = regexp.MustCompile(`(?m)^sessions\s*=\s*"[^"\n]*"\n?`).ReplaceAllString(updated, "")
-	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nquit =") {
-		updated = strings.Replace(updated, `focus_toggle = "C-g"`+"\n", `focus_toggle = "C-g"`+"\n"+`quit = "C-q"`+"\n", 1)
+	updated = strings.ReplaceAll(updated, `close_codux = "C-q"`, `close_codux = "C-c"`)
+	quitRE := regexp.MustCompile(`(?m)^quit\s*=\s*"([^"\n]*)"\s*$`)
+	if strings.Contains(updated, "\nclose_codux =") {
+		updated = quitRE.ReplaceAllString(updated, "")
+	} else {
+		updated = quitRE.ReplaceAllStringFunc(updated, func(line string) string {
+			matches := quitRE.FindStringSubmatch(line)
+			if len(matches) != 2 {
+				return line
+			}
+			return fmt.Sprintf(`close_codux = "%s"`, legacyCloseCoduxBinding(matches[1]))
+		})
+	}
+	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nclose_codux =") {
+		updated = insertKeyBinding(updated, `close_codux = "C-c"`)
 	}
 	if updated == text {
 		return nil
@@ -288,8 +306,27 @@ rename = "r"
 close = "c"
 help = "?"
 focus_toggle = "C-g"
-quit = "C-q"
+close_codux = "C-c"
 `
+}
+
+func legacyCloseCoduxBinding(binding string) string {
+	normalized := strings.ToLower(strings.TrimSpace(binding))
+	normalized = strings.ReplaceAll(normalized, "ctrl+", "c-")
+	if normalized == "c-q" {
+		return "C-c"
+	}
+	return binding
+}
+
+func insertKeyBinding(text string, line string) string {
+	focusRE := regexp.MustCompile(`(?m)^focus_toggle\s*=\s*"[^"\n]*"\n`)
+	if focusRE.MatchString(text) {
+		return focusRE.ReplaceAllStringFunc(text, func(match string) string {
+			return match + line + "\n"
+		})
+	}
+	return strings.Replace(text, "[key_bindings]\n", "[key_bindings]\n"+line+"\n", 1)
 }
 
 func normalizeColumns(columns []string) []string {

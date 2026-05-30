@@ -150,7 +150,7 @@ class %s < Formula
   end
 
   test do
-    assert_match "Start, inspect, or detach Codux tmux workspaces", shell_output("#{bin}/%s --help")
+    assert_match "Start, inspect, or close Codux tmux workspaces", shell_output("#{bin}/%s --help")
     assert_match "tmux", shell_output("#{bin}/%s doctor")
   end
 end

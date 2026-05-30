@@ -78,7 +78,7 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 		"TERM=xterm-256color",
 	)
 	t.Cleanup(func() {
-		cmd := exec.Command(bin, "quit", "--kill")
+		cmd := exec.Command(bin, "close", "--kill")
 		cmd.Env = env
 		_ = cmd.Run()
 		_ = exec.Command("tmux", "-L", runID, "kill-server").Run()
@@ -121,7 +121,7 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 		t.Fatalf("renamed/moved tab not found: %#v", afterOps.Tabs)
 	}
 
-	runCodux(t, env, bin, "quit")
+	runCodux(t, env, bin, "close")
 	if panes := tmuxLines(t, env, "list-panes", "-t", runID+":", "-F", "#{pane_id}"); len(panes) != 1 {
 		t.Fatalf("pane count after detach = %d (%v), want 1", len(panes), panes)
 	}

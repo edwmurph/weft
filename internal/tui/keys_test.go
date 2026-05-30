@@ -7,8 +7,8 @@ import (
 )
 
 func TestBindingMatchesCoduxConfigSpelling(t *testing.T) {
-	if !bindingMatches("C-q", tea.KeyMsg{Type: tea.KeyCtrlQ}) {
-		t.Fatal("C-q should match ctrl+q")
+	if !bindingMatches("C-c", tea.KeyMsg{Type: tea.KeyCtrlC}) {
+		t.Fatal("C-c should match ctrl+c")
 	}
 	if !bindingMatches("S-Left", tea.KeyMsg{Type: tea.KeyShiftLeft}) {
 		t.Fatal("S-Left should match shift+left")

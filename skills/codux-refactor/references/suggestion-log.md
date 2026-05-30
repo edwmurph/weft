@@ -2,10 +2,17 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-29 - Close-Codux shortcut rename
+
+- Request: Make `C-c` interrupt Codex first and close Codux on the next press, remove `C-q` from the shortcut surface, and merge the close-Codux CLI into `codux close`.
+- Suggestions: Rename the dashboard exit binding to `close_codux`, default it to `C-c`, forward the first `C-c` to a live Codex tab in CODEX focus, arm the next `C-c` to close Codux unless another key is pressed first, make `codux close` close Codux clients when no tab id is passed, and keep legacy command compatibility outside visible docs.
+- Outcome: Implemented on `main` as an unpushed pending ship commit; awaiting review after the latest behavior change.
+- Evidence: `internal/config/config.go`, `internal/tui/model.go`, `tests/integration/dashboard_e2e_test.go`, `README.md`.
+
 ## 2026-05-29 - Codex-focus shortcut simplification
 
-- Request: Stop dashboard `s` from overriding Codex input, keep only `C-g` and `C-q` active in CODEX focus, and remove the dashboard sessions pane.
-- Suggestions: Treat `C-g` and `C-q` as the only global CODEX-focus shortcuts, forward all other active-tab input to the Codex PTY, remove the dashboard sessions modal/ticker/config key, and keep session management in the CLI.
+- Request: Stop dashboard `s` from overriding Codex input, keep only the focus toggle and close-Codux shortcut active in CODEX focus, and remove the dashboard sessions pane.
+- Suggestions: Treat the focus toggle and close-Codux shortcut as the only global CODEX-focus shortcuts, forward other active-tab input to the Codex PTY, remove the dashboard sessions modal/ticker/config key, and keep session management in the CLI.
 - Outcome: Implemented in `.worktrees/codex-focus-shortcuts`; awaiting review.
 - Evidence: `internal/tui/model.go`, `internal/config/config.go`, `tests/integration/dashboard_e2e_test.go`, `README.md`.
 

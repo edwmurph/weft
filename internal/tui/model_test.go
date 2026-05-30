@@ -53,9 +53,12 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 		{Type: tea.KeyRunes, Runes: []rune("n")},
 		{Type: tea.KeyShiftRight},
 		{Type: tea.KeyCtrlD},
+		{Type: tea.KeyCtrlQ},
+		{Type: tea.KeyCtrlC},
 	} {
 		rt := testRuntime(t)
 		cfg := config.DefaultConfig("codux-test")
+		cfg.CodexCommand = "cat"
 		model := NewModel(rt, cfg, state.State{
 			Version: state.Version,
 			Focus:   state.FocusCodex,
@@ -64,6 +67,11 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 			},
 			ActiveTabID: "a",
 		})
+		defer func() {
+			for _, pty := range model.ptys {
+				pty.Kill()
+			}
+		}()
 
 		updated, cmd := model.handleKey(msg)
 		model = updated.(Model)
@@ -88,6 +96,7 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig("codux-test")
+	cfg.CodexCommand = "cat"
 	model := NewModel(rt, cfg, state.State{
 		Version: state.Version,
 		Focus:   state.FocusCodex,
@@ -96,11 +105,40 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 		},
 		ActiveTabID: "a",
 	})
+	defer func() {
+		for _, pty := range model.ptys {
+			pty.Kill()
+		}
+	}()
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlG})
 	model = updated.(Model)
 	if model.state.Focus != state.FocusNav {
 		t.Fatalf("C-g should focus nav, got %s", model.state.Focus)
+	}
+
+	model.state.Focus = state.FocusCodex
+	model.state.Tabs[0].CodexTitle = "Fake Codex Working"
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model = updated.(Model)
+	if model.message != "" {
+		t.Fatalf("C-c should forward while Codex is busy, message=%q", model.message)
+	}
+
+	model.state.Tabs[0].CodexTitle = "Fake Codex Ready"
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model = updated.(Model)
+	if model.message != "closed Codux clients" {
+		t.Fatalf("second C-c should close Codux clients, message=%q", model.message)
+	}
+
+	model.message = ""
+	model.closeArmedTab = ""
+	model.state.Focus = state.FocusNav
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model = updated.(Model)
+	if model.message != "closed Codux clients" {
+		t.Fatalf("C-c should close Codux clients in NAV focus, message=%q", model.message)
 	}
 }
 
@@ -211,7 +249,7 @@ func TestNavHeightAnimatesOnFocusChanges(t *testing.T) {
 	for model.navHeight != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "INBOX") || !strings.Contains(got, "CODUX  C-g focus nav  C-q quit") {
+	if got := model.View(); strings.Contains(got, "INBOX") || !strings.Contains(got, "CODUX  C-g focus nav  C-c interrupt/close") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 

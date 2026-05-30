@@ -14,6 +14,7 @@
 
 - Use the fast path. Do one preflight on the main checkout: confirm branch is `main`, check `git status --short`, and compare `main...origin/main`.
 - If the reviewed change lives in a detached worktree, copy that exact diff onto the main checkout, preferably with `git diff --binary ... > /tmp/<slug>.patch` and `git apply --check` before `git apply`.
+- If the user interrupts or changes scope after a diff has been copied or committed on `main` but before it has been pushed, stop the ship flow. Move the full pending diff into a detached worktree under `./.worktrees/<slug>`, stage it there if the user asked for staged work, and restore the main checkout to `origin/main` before continuing.
 - Do not re-run broad exploratory diffs or repeated status checks unless a command fails or the repo state changes unexpectedly.
 - Do not re-run the full verification workflow during ship if the exact final diff was already verified after the user's last requested change. Re-run full verification only when verification is stale, missing, failed, or the landing step changes content.
 - Commit only the relevant files as one squash commit on `main`, then push to `origin/main` over SSH. Use a truthful commit message because the release workflow infers `major`, `minor`, or `patch` from the shipped commit; add a `Semver-Bump: major|minor|patch` trailer only when the automatic inference would be wrong.
@@ -23,6 +24,7 @@
 ## Git / Worktrees
 
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
+- Keep all implementation follow-up work in a detached worktree until the user explicitly says `ship it`; do not continue editing `main` after a paused or interrupted ship attempt.
 - After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux`; a `git diff` command alone is not enough.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".

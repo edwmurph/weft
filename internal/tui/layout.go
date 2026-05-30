@@ -351,14 +351,14 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 }
 
 func navShortcuts(cfg config.Config) string {
-	return "←↑↓→ select  S-←/→ move  Enter codex  " +
+	return "←↑↓→ select  S-←/→ move  Enter  " +
 		cfg.KeyBindings.New + " new  " +
 		cfg.KeyBindings.Close + " close  " +
-		cfg.KeyBindings.Quit + " quit"
+		cfg.KeyBindings.CloseCodux + " close codux"
 }
 
 func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return appTitle + "  " + cfg.KeyBindings.FocusToggle + " focus nav  " + cfg.KeyBindings.Quit + " quit"
+	return appTitle + "  " + cfg.KeyBindings.FocusToggle + " focus nav  " + cfg.KeyBindings.CloseCodux + " interrupt/close"
 }
 
 func focusHintLabel(cfg config.Config) string {

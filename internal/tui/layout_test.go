@@ -33,10 +33,10 @@ func TestRenderWorkspaceKeepsNavAndCodexFrames(t *testing.T) {
 		"CODUX",
 		"←↑↓→ select",
 		"S-←/→ move",
-		"Enter codex",
+		"Enter",
 		"n new",
 		"c close",
-		"C-q quit",
+		"C-c close codux",
 		"alpha",
 		"output",
 		"╭─",
@@ -144,13 +144,13 @@ func TestActiveCodexFooterDoesNotRenderDotIndicator(t *testing.T) {
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
 	}
-	if !strings.Contains(got, "CODUX  C-g focus nav  C-q quit") {
+	if !strings.Contains(got, "CODUX  C-g focus nav  C-c interrupt/close") {
 		t.Fatalf("collapsed codex top toolbar missing focus shortcuts:\n%s", got)
 	}
 	if !strings.Contains(got, "/tmp/project") {
 		t.Fatalf("collapsed codex top toolbar should keep workdir visible:\n%s", got)
 	}
-	if count := strings.Count(got, "C-q quit"); count != 1 {
+	if count := strings.Count(got, "C-c interrupt/close"); count != 1 {
 		t.Fatalf("collapsed codex should render shortcuts only once, got %d:\n%s", count, got)
 	}
 	if !strings.Contains(got, "alpha") {
@@ -167,7 +167,7 @@ func TestFocusedCodexAnimationFrameDoesNotRenderBottomShortcut(t *testing.T) {
 
 	got := renderWorkspaceWithNavHeight(cfg, st, "alpha", "output", 80, 24, "", "/tmp/project", 3)
 
-	if strings.Contains(got, "C-q quit") {
+	if strings.Contains(got, "C-c interrupt/close") {
 		t.Fatalf("focused codex animation frame should not flash bottom shortcut:\n%s", got)
 	}
 	if !strings.Contains(got, "/tmp/project") {

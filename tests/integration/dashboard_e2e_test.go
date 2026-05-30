@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	navToolbar            = "CODUX  ←↑↓→ select  S-←/→ move  Enter codex  n new  c close  C-q quit"
-	collapsedCodexToolbar = "CODUX  C-g focus nav  C-q quit"
+	navToolbar            = "CODUX  ←↑↓→ select  S-←/→ move  Enter  n new  c close  C-c close codux"
+	collapsedCodexToolbar = "CODUX  C-g focus nav  C-c interrupt/close"
 )
 
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
@@ -111,7 +111,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		"TERM=xterm-256color",
 	)
 	t.Cleanup(func() {
-		cmd := exec.Command(bin, "quit", "--kill")
+		cmd := exec.Command(bin, "close", "--kill")
 		cmd.Env = env
 		_ = cmd.Run()
 		_ = exec.Command("tmux", "-L", runID, "kill-server").Run()
@@ -318,6 +318,34 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), true)
 	})
+
+	timedStep(t, "C-c interrupts codex before second C-c closes codux", func() {
+		tmuxRun(t, env, "send-keys", "-t", pane, "n")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Tabs) == 1 &&
+				st.Focus == state.FocusCodex &&
+				strings.Contains(st.Tabs[0].CodexTitle, "Ready")
+		})
+		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
+		time.Sleep(250 * time.Millisecond)
+		attached := tmuxLines(t, env, "display-message", "-p", "-t", runID+":", "#{session_attached}")
+		if len(attached) != 1 || attached[0] != "1" {
+			t.Fatalf("C-c should stay with Codex while CODEX is focused: %v", attached)
+		}
+		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
+		if !waitForBool(2*time.Second, func() bool {
+			attached := tmuxLines(t, env, "display-message", "-p", "-t", runID+":", "#{session_attached}")
+			return len(attached) == 1 && attached[0] == "0"
+		}) {
+			t.Fatalf("C-c did not detach Codux clients")
+		}
+		if panes := tmuxLines(t, env, "list-panes", "-t", runID+":", "-F", "#{pane_id}"); len(panes) != 1 {
+			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
+		}
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Tabs) == 1 && st.Focus == state.FocusCodex
+		})
+	})
 }
 
 func timedStep(t *testing.T, name string, fn func()) {
@@ -452,7 +480,7 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	if count := strings.Count(capture, "CODUX"); count > 1 || (empty && count != 1) {
 		t.Fatalf("dashboard should render at most one CODUX frame label, got %d:\n%s", count, capture)
 	}
-	if count := strings.Count(capture, "C-q quit"); count > 2 {
+	if count := strings.Count(capture, "C-c close codux"); count > 2 {
 		t.Fatalf("dashboard rendered duplicate footer/header labels, got %d:\n%s", count, capture)
 	}
 	if !empty && strings.Contains(capture, "No Codex tabs open") {

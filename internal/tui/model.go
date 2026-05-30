@@ -74,9 +74,10 @@ type Model struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 
-	renameInput  textinput.Model
-	viewport     viewport.Model
-	pendingClose string
+	renameInput   textinput.Model
+	viewport      viewport.Model
+	pendingClose  string
+	closeArmedTab string
 }
 
 func Run(rt config.Runtime, cfg config.Config, st state.State, migration *state.Migration) error {
@@ -233,15 +234,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if bindingMatches(m.cfg.KeyBindings.Quit, msg) {
-		m.detach()
+	closeCoduxPressed := bindingMatches(m.cfg.KeyBindings.CloseCodux, msg)
+	if closeCoduxPressed && !m.activeCodexOwnsCloseBinding() {
+		m.closeCodux()
 		return m, nil
 	}
+	if closeCoduxPressed {
+		if active := state.ActiveTab(m.state); active != nil && m.closeArmedTab == active.ID {
+			m.closeCodux()
+			return m, nil
+		}
+	}
 	if bindingMatches(m.cfg.KeyBindings.FocusToggle, msg) {
+		m.closeArmedTab = ""
 		return m, m.toggleFocus()
 	}
 	if m.state.Focus == state.FocusCodex && state.ActiveTab(m.state) != nil {
 		if active := state.ActiveTab(m.state); active != nil {
+			if closeCoduxPressed {
+				m.closeArmedTab = active.ID
+			} else {
+				m.closeArmedTab = ""
+			}
 			if pty := m.ptys[active.ID]; pty != nil {
 				_ = pty.Write(encodeKey(msg))
 			}
@@ -258,6 +272,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m.handleNavKey(msg)
+}
+
+func (m Model) activeCodexOwnsCloseBinding() bool {
+	if m.state.Focus != state.FocusCodex {
+		return false
+	}
+	active := state.ActiveTab(m.state)
+	if active == nil {
+		return false
+	}
+	if m.ptys[active.ID] == nil {
+		return false
+	}
+	switch active.Status {
+	case state.StatusStarting, state.StatusRunning:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -320,6 +353,7 @@ func (m Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) newTab(title string) tea.Cmd {
 	now := state.NowISO()
+	m.closeArmedTab = ""
 	tab := state.Tab{
 		ID: shortID(), Title: title, Column: m.cfg.Columns[0],
 		CreatedAt: now, UpdatedAt: now, Status: state.StatusStarting,
@@ -334,6 +368,9 @@ func (m *Model) newTab(title string) tea.Cmd {
 func (m *Model) closeTab(tabID string) tea.Cmd {
 	if tabID == "" {
 		return nil
+	}
+	if m.closeArmedTab == tabID {
+		m.closeArmedTab = ""
 	}
 	if pty := m.ptys[tabID]; pty != nil {
 		pty.Kill()
@@ -363,6 +400,9 @@ func (m *Model) selectTab(tabID string) {
 	}
 	for _, tab := range m.state.Tabs {
 		if tab.ID == tabID {
+			if m.state.ActiveTabID != tabID {
+				m.closeArmedTab = ""
+			}
 			m.state.ActiveTabID = tabID
 			m.save()
 			return
@@ -378,14 +418,17 @@ func (m *Model) toggleFocus() tea.Cmd {
 }
 
 func (m *Model) setFocus(focus state.Focus) tea.Cmd {
+	if m.state.Focus != focus {
+		m.closeArmedTab = ""
+	}
 	m.state.Focus = focus
 	m.save()
 	return m.startNavAnimation()
 }
 
-func (m *Model) detach() {
+func (m *Model) closeCodux() {
 	_ = exec.Command("tmux", "detach-client", "-s", m.cfg.TmuxSession).Run()
-	m.message = "detached tmux clients"
+	m.message = "closed Codux clients"
 }
 
 func (m *Model) startPTY(tabID string) {
@@ -658,10 +701,10 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		cmd := m.setFocus(target)
 		st := m.state
 		return ipc.Response{OK: true, State: &st, Message: "focus updated"}, cmd
-	case "quit":
-		m.detach()
+	case "close_codux", "quit":
+		m.closeCodux()
 		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "detached Codux clients"}, nil
+		return ipc.Response{OK: true, State: &st, Message: "closed Codux clients"}, nil
 	default:
 		return ipc.Response{OK: false, Message: "unknown command: " + request.Command}, nil
 	}
@@ -715,7 +758,7 @@ func renderHelp(cfg config.Config, migration string) string {
 		fmt.Sprintf("%s close", cfg.KeyBindings.Close),
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s focus", cfg.KeyBindings.FocusToggle),
-		fmt.Sprintf("%s detach tmux", cfg.KeyBindings.Quit),
+		fmt.Sprintf("%s close codux", cfg.KeyBindings.CloseCodux),
 		"",
 		"Esc close",
 	}

@@ -20,17 +20,17 @@ import (
 	"github.com/edwmurph/codux/internal/version"
 )
 
-const helpText = `Start, inspect, or detach Codux tmux workspaces for Codex.
+const helpText = `Start, inspect, or close Codux tmux workspaces for Codex.
 
 Usage:
   codux [--attach|--no-attach]
   codux start [--attach|--no-attach]
-  codux quit [--kill]
   codux refresh
   codux status [--json]
   codux new [title]
   codux rename [id] <title>
   codux close [id]
+  codux close --kill
   codux select <id>
   codux move-left
   codux move-right
@@ -61,7 +61,7 @@ func Run(args []string) error {
 	case "tui":
 		return runTUI()
 	case "quit":
-		return quit(args[1:])
+		return closeCodux("quit", args[1:])
 	case "refresh":
 		return callIPC("refresh", nil, false)
 	case "status":
@@ -75,11 +75,7 @@ func Run(args []string) error {
 	case "rename":
 		return rename(args[1:])
 	case "close":
-		id := ""
-		if len(args) > 1 {
-			id = args[1]
-		}
-		return callIPC("close", map[string]string{"id": id}, false)
+		return closeCommand(args[1:])
 	case "select":
 		if len(args) < 2 {
 			return errors.New("select requires a tab id")
@@ -170,12 +166,25 @@ func runTUI() error {
 	return nil
 }
 
-func quit(args []string) error {
-	fs := flag.NewFlagSet("quit", flag.ContinueOnError)
+func closeCommand(args []string) error {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return closeCodux("close", args)
+	}
+	if len(args) > 1 {
+		return errors.New("close accepts at most one tab id")
+	}
+	return callIPC("close", map[string]string{"id": args[0]}, false)
+}
+
+func closeCodux(command string, args []string) error {
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	kill := fs.Bool("kill", false, "kill the Codux tmux session")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("%s accepts only --kill without a tab id", command)
 	}
 	_, cfg, _, err := resolveRuntime()
 	if err != nil {
@@ -190,7 +199,7 @@ func quit(args []string) error {
 		_ = callIPC("shutdown", nil, true)
 		return controller.KillSession()
 	}
-	if err := callIPC("quit", nil, true); err == nil {
+	if err := callIPC("close_codux", nil, true); err == nil {
 		return nil
 	}
 	return controller.DetachClients()
