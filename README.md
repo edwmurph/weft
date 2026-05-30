@@ -133,12 +133,14 @@ outside the agent workdir.
 The command center has `Workdirs` and `Agents` navigation panes. Agents can sit
 directly in a workdir as top-level rows. Groups are optional collapsible
 sections inside the `Agents` pane, and `Enter` on a group opens or collapses it.
-In the `Workdirs` pane, `w` opens an add-workdir path prompt with a bordered
-input, a scrolling below-input autocomplete menu, arrow-key selection, and
-compact path status. Prompt inputs support Option/Alt word movement and
-deletion when the terminal sends Option as Meta/Esc. Alt-modified keys are
-also preserved when forwarded into Codex agent panes. `r` sets an optional card
-title and blank input clears it back to the display path.
+Dashboard forms use bordered inputs, compact validation/status lines, and
+state-specific key hints. In the `Workdirs` pane, `w` opens an add-workdir path
+prompt with a scrolling below-input autocomplete menu, arrow-key selection, and
+compact path status. Moving an agent autocompletes known group names after a
+matching prefix. Prompt inputs support Option/Alt word movement and deletion
+when the terminal sends Option as Meta/Esc. Alt-modified keys are also
+preserved when forwarded into Codex agent panes. `r` sets an optional card title
+and blank input clears it back to the display path.
 
 When the command center is open, press `?` for shortcuts. Defaults:
 

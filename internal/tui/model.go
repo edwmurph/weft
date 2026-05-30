@@ -72,7 +72,6 @@ const (
 	navAnimationInterval = 12 * time.Millisecond
 	navAnimationStep     = 4
 	loadingInterval      = 90 * time.Millisecond
-	inputModalLabelWidth = 9
 )
 
 type navAnimationTick struct{}
@@ -116,13 +115,13 @@ type Model struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 
-	input                 textinput.Model
-	prompt                promptKind
-	confirm               confirmKind
-	pendingID             string
-	folderCursor          int
-	lastNavFocus          state.Focus
-	workdirSuggestionOpen bool
+	input                textinput.Model
+	prompt               promptKind
+	confirm              confirmKind
+	pendingID            string
+	folderCursor         int
+	lastNavFocus         state.Focus
+	promptSuggestionOpen bool
 }
 
 func Run(rt config.Runtime, cfg config.Config, st state.State, migration *state.Migration) error {
@@ -328,43 +327,36 @@ func (m Model) modalView(content string) string {
 
 func (m Model) renderInputModal() string {
 	width := max(36, min(m.width-16, 72))
-	input := m.input
-	input.Width = max(16, width-inputModalLabelWidth-3)
-	lines := []string{modalTitleStyle.Render(m.promptTitle()), ""}
-	if m.prompt == promptWorkdir {
-		lines = append(lines, renderWorkdirPromptInput(input, width)...)
-		if suggestions := renderWorkdirSuggestionMenu(input, width, m.workdirSuggestionOpen, workdirSuggestionRows(m.height)); len(suggestions) > 0 {
-			lines = append(lines, suggestions...)
+	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.renderPromptExtra(m.input, width))
+}
+
+func (m Model) promptContext() promptContext {
+	return promptContext{
+		prompt:        m.prompt,
+		pendingID:     m.pendingID,
+		state:         m.state,
+		selectedAgent: m.selectedAgent(),
+	}
+}
+
+func (m Model) renderPromptExtra(input textinput.Model, width int) []string {
+	if m.prompt != promptRenameAgent {
+		return nil
+	}
+	lines := []string{"", modalLabelStyle.Render("Preview")}
+	if active := m.selectedAgent(); active != nil {
+		draft := *active
+		if value := strings.TrimSpace(input.Value()); value != "" {
+			draft.Title = value
 		}
-		lines = append(lines, renderWorkdirPromptStatus(m.state, input.Value(), width))
-	} else {
-		label := m.promptLabel()
-		lines = append(lines, renderInputModalRow(label, input.View(), width))
-	}
-	if hint := m.promptHint(); hint != "" {
-		lines = append(lines, "", mutedStyle.Render(clip(hint, width)))
-	}
-	if m.prompt == promptRenameAgent {
-		lines = append(lines, "", modalLabelStyle.Render("Preview"))
-		if active := m.selectedAgent(); active != nil {
-			draft := *active
-			if value := strings.TrimSpace(input.Value()); value != "" {
-				draft.Title = value
-			}
-			lines = append(lines, modalValueStyle.Render(clip(m.renderAgentBaseTitle(draft), width)))
-			if notice := m.autoTitleNotice(*active, draft.Title); notice != "" {
-				lines = append(lines, mutedStyle.Render(clip(notice, width)))
-			}
+		lines = append(lines, modalValueStyle.Render(clip(m.renderAgentBaseTitle(draft), width)))
+		if notice := m.autoTitleNotice(*active, draft.Title); notice != "" {
+			lines = append(lines, mutedStyle.Render(clip(notice, width)))
 		}
-		lines = append(lines, "", modalLabelStyle.Render("Variables"))
-		lines = append(lines, m.renderTitleVariables(width)...)
 	}
-	if m.prompt == promptWorkdir {
-		lines = append(lines, "", renderWorkdirModalActions(input, m.workdirSuggestionOpen))
-	} else {
-		lines = append(lines, "", renderModalActions(m.prompt))
-	}
-	return strings.Join(lines, "\n")
+	lines = append(lines, "", modalLabelStyle.Render("Variables"))
+	lines = append(lines, m.renderTitleVariables(width)...)
+	return lines
 }
 
 func (m Model) renderTitleVariables(width int) []string {
@@ -375,80 +367,9 @@ func (m Model) renderTitleVariables(width int) []string {
 	return lines
 }
 
-func renderInputModalRow(label string, value string, width int) string {
-	valueWidth := max(0, width-inputModalLabelWidth-1)
-	return modalLabelStyle.Render(padVisual(label, inputModalLabelWidth)) + " " + clip(value, valueWidth)
-}
-
-func renderModalActions(prompt promptKind) string {
-	if prompt == promptWorkdir {
-		return modalKeyStyle.Render("Enter") + " select/add  " + modalKeyStyle.Render("Up/Down") + " choose  " + modalKeyStyle.Render("Esc") + " cancel"
-	}
-	return modalKeyStyle.Render("Enter") + " save  " + modalKeyStyle.Render("Esc") + " cancel"
-}
-
-func (m Model) promptTitle() string {
-	switch m.prompt {
-	case promptWorkdir:
-		return "Add workdir"
-	case promptGroup:
-		return "Create group"
-	case promptWorkdirTitle:
-		return "Rename workdir"
-	case promptRenameGroup:
-		return "Rename group"
-	case promptRenameAgent:
-		return "Rename agent"
-	case promptMoveAgent:
-		return "Move agent"
-	default:
-		return "Input"
-	}
-}
-
-func (m Model) promptLabel() string {
-	switch m.prompt {
-	case promptWorkdir:
-		return "Path"
-	case promptGroup, promptRenameGroup, promptMoveAgent:
-		return "Group"
-	default:
-		return "Title"
-	}
-}
-
-func (m Model) promptHint() string {
-	switch m.prompt {
-	case promptWorkdir:
-		return ""
-	case promptGroup:
-		return "Group names are flat and unique within the selected workdir."
-	case promptWorkdirTitle:
-		return "Leave blank to use the default path title."
-	case promptMoveAgent:
-		return "Enter a group name in this workdir, or leave blank to make the agent top-level."
-	default:
-		return ""
-	}
-}
-
 func (m Model) renderConfirmModal() string {
-	name := "item"
-	switch m.confirm {
-	case confirmDeleteWorkdir:
-		if workdir := state.WorkdirByID(m.state, m.pendingID); workdir != nil {
-			name = "workdir " + workdir.Path
-		}
-	case confirmDeleteGroup:
-		if folder := state.FolderByID(m.state, m.pendingID); folder != nil {
-			name = "group " + folder.Path
-		}
-	case confirmDeleteAgent:
-		if agent := state.AgentByID(m.state, m.pendingID); agent != nil {
-			name = "agent " + m.renderAgentTitle(*agent)
-		}
-	}
-	return fmt.Sprintf("Delete %s?\n\nY delete  N cancel", name)
+	width := max(36, min(m.width-16, 72))
+	return renderConfirmPrompt(m.confirm, confirmTarget(m.confirm, m.state, m.pendingID, m.renderAgentTitle), width)
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -495,66 +416,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if handlePromptWordKey(&m.input, m.prompt, msg) {
-		refreshPromptInput(&m.input, m.prompt)
-		if m.prompt == promptWorkdir {
-			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
-		}
-		return m, nil
+	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, msg)
+	m.input = result.input
+	m.promptSuggestionOpen = result.suggestionOpen
+	if result.message != "" {
+		m.message = result.message
 	}
-	switch msg.Type {
-	case tea.KeyEsc:
-		if m.prompt == promptWorkdir && m.workdirSuggestionOpen {
-			m.workdirSuggestionOpen = false
-			return m, nil
-		}
+	switch result.action {
+	case promptInputCancel:
 		m.mode = modeNormal
 		return m, nil
-	case tea.KeyEnter:
-		if m.prompt == promptWorkdir && m.workdirSuggestionOpen && completeWorkdirSuggestion(&m.input) {
-			m.workdirSuggestionOpen = false
-			return m, nil
-		}
-		if m.prompt == promptWorkdir && !workdirInputIsExistingDirectory(m.input.Value()) {
-			m.message = inspectWorkdirPromptPath(m.state, m.input.Value()).message
-			return m, nil
-		}
-		value := strings.TrimSpace(m.input.Value())
-		if value == "" && m.prompt != promptMoveAgent && m.prompt != promptWorkdirTitle {
-			m.message = "value is required"
-			return m, nil
-		}
-		cmd := m.applyPrompt(value)
+	case promptInputSubmit:
+		cmd := m.applyPrompt(result.value)
 		m.mode = modeNormal
 		return m, cmd
-	case tea.KeyTab:
-		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 {
-			if m.workdirSuggestionOpen {
-				completeWorkdirSuggestion(&m.input)
-				m.workdirSuggestionOpen = false
-				return m, nil
-			}
-			m.workdirSuggestionOpen = true
-			return m, nil
-		}
-	case tea.KeyUp, tea.KeyDown:
-		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 && !m.workdirSuggestionOpen {
-			m.workdirSuggestionOpen = true
-			return m, nil
-		}
+	default:
+		return m, result.cmd
 	}
-	oldValue := m.input.Value()
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	refreshPromptInput(&m.input, m.prompt)
-	if m.prompt == promptWorkdir {
-		if m.input.Value() != oldValue {
-			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
-		} else if len(m.input.MatchedSuggestions()) == 0 {
-			m.workdirSuggestionOpen = false
-		}
-	}
-	return m, cmd
 }
 
 func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -677,8 +555,8 @@ func (m *Model) applyFolderCursor(row folderRow) {
 
 func (m *Model) startPrompt(prompt promptKind, value string) {
 	m.prompt = prompt
-	configurePromptInput(&m.input, prompt, value)
-	m.workdirSuggestionOpen = false
+	configurePromptInput(&m.input, m.promptContext(), value)
+	m.promptSuggestionOpen = false
 	m.mode = modeInput
 }
 

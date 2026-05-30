@@ -226,6 +226,24 @@ Navigation panes are open.
 - Codex PTY does not receive normal key input.
 - User can create, delete, rename, move, and select objects.
 
+## Dashboard Form UX
+
+All in-dashboard text-entry forms use the same compact modal treatment:
+
+- rounded, bordered input directly below the field label
+- one compact status or validation line below the input or suggestion menu
+- short state-specific footer actions, such as `Enter save`, `Enter choose`, `Esc close suggestions`, and `Esc cancel`
+- `Enter` submits only when the current value is valid for that form; invalid required values keep the form open and show the validation status
+- `Esc` closes an open autocomplete menu first; otherwise it cancels the form
+- prompt inputs support Option/Alt word movement and deletion when the terminal sends Option as Meta/Esc
+
+Autocomplete appears only when it has a useful known set:
+
+- path autocomplete for the add-workdir path prompt
+- group-name autocomplete for moving an agent to an existing group
+
+Autocomplete menus open directly under the input, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option closes the menu and leaves the form in a normal submit state.
+
 ## Codex Focus State
 
 Codex pane is maximized.
@@ -436,7 +454,7 @@ Add workdir:
 
 - User provides an existing filesystem path.
 - Dashboard prompt opens with the selected workdir's parent directory prefilled.
-- Dashboard prompt uses a bordered path input.
+- Dashboard prompt uses the shared bordered form input.
 - Autocomplete opens directly below the input when the user types or presses `Down`.
 - While autocomplete is open, `Up` and `Down` move the highlighted option, `Enter` chooses it, and `Esc` closes the menu.
 - Autocomplete uses a bounded visible menu; moving past the visible rows scrolls the menu to keep the highlighted option visible.
@@ -506,6 +524,7 @@ Move agent:
 
 - Moves the agent to another group in the same workdir.
 - Can also clear the group, moving the agent back to a top-level row.
+- Dashboard prompt autocompletes existing group names in that workdir after the user types a matching prefix.
 - Does not restart the PTY.
 - Cross-workdir moves are out of scope for the first implementation.
 

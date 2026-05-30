@@ -534,7 +534,7 @@ func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) 
 		"Path",
 		"✓ ",
 		"Enter add",
-		"Down open options",
+		"Down suggestions",
 		"Esc cancel",
 	} {
 		if !strings.Contains(got, expected) {
@@ -555,6 +555,51 @@ func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) 
 	}
 }
 
+func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+
+	model.startPrompt(promptGroup, "")
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Create group",
+		"Group",
+		"Group required",
+		"Flat and unique in this workdir.",
+		"Esc cancel",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("group prompt missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "Enter create") {
+		t.Fatalf("empty required prompt should not advertise submit:\n%s", got)
+	}
+	if strings.Count(got, "╭") < 2 || strings.Count(got, "╰") < 2 {
+		t.Fatalf("group prompt should render a bordered input box:\n%s", got)
+	}
+
+	model.input.SetValue("release")
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{"Ready", "Enter create", "Esc cancel"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("valid group prompt missing %q:\n%s", expected, got)
+		}
+	}
+
+	model.startPrompt(promptWorkdirTitle, "")
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{"Rename workdir", "Blank uses path title", "Enter clear", "Esc cancel"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("blank title prompt missing %q:\n%s", expected, got)
+		}
+	}
+	model.input.SetValue("Trading Engine")
+	got = ansi.Strip(model.View())
+	if !strings.Contains(got, "Enter save") {
+		t.Fatalf("non-empty title prompt should advertise save:\n%s", got)
+	}
+}
+
 func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	parent := t.TempDir()
 	alpha := filepath.Join(parent, "alpha-project")
@@ -572,7 +617,7 @@ func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	model.startPrompt(promptWorkdir, withTrailingSeparator(parent))
 
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Down open options", "Enter add", "Esc cancel"} {
+	for _, expected := range []string{"Down suggestions", "Enter add", "Esc cancel"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("closed suggestion state missing %q:\n%s", expected, got)
 		}
@@ -587,7 +632,7 @@ func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 		t.Fatalf("opened suggestion = %q, want %q", got, want)
 	}
 	got = ansi.Strip(model.View())
-	for _, expected := range []string{"> alpha-project", "beta-project", "Enter choose", "Up/Down move", "Esc close options"} {
+	for _, expected := range []string{"> alpha-project", "beta-project", "Enter choose", "Up/Down move", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("open suggestion state missing %q:\n%s", expected, got)
 		}
@@ -625,6 +670,67 @@ func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	}
 	if model.state.SelectedWorkdirID == "" || model.state.Workdirs[len(model.state.Workdirs)-1].Path != beta {
 		t.Fatalf("workdir was not added/selected: %#v", model.state.Workdirs)
+	}
+}
+
+func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Focus = state.FocusFolders
+	model.state.NavOpen = true
+	model.folderCursor = 1
+	now := state.NowISO()
+	model.state.Folders = append(model.state.Folders, state.Folder{ID: "release", WorkdirID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
+
+	model.startPrompt(promptMoveAgent, "")
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Move agent", "Top-level agent", "Enter top-level", "Esc cancel"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("blank move prompt missing %q:\n%s", expected, got)
+		}
+	}
+
+	model.startPrompt(promptMoveAgent, "rel")
+	if got, want := model.input.MatchedSuggestions(), []string{"release"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("matched groups = %#v, want %#v", got, want)
+	}
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{"> release", "Enter choose", "Esc close suggestions"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("group suggestion menu missing %q:\n%s", expected, got)
+		}
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeInput || model.promptSuggestionOpen {
+		t.Fatalf("choosing a group should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
+	}
+	if got := model.input.Value(); got != "release" {
+		t.Fatalf("chosen group = %q", got)
+	}
+	got = ansi.Strip(model.View())
+	if strings.Count(got, "> release") > 1 || !strings.Contains(got, "Enter move") {
+		t.Fatalf("chosen group should close suggestions and advertise submit:\n%s", got)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeNormal {
+		t.Fatalf("valid move should close prompt, mode=%s", model.mode)
+	}
+	if agent := state.AgentByID(model.state, "a"); agent == nil || agent.FolderID != "release" {
+		t.Fatalf("agent was not moved to release: %#v", agent)
+	}
+
+	model.folderCursor = 2
+	model.startPrompt(promptMoveAgent, "missing")
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeInput || model.message != "Group not found" {
+		t.Fatalf("invalid move should stay open with message, mode=%s message=%q", model.mode, model.message)
 	}
 }
 
@@ -675,7 +781,7 @@ func TestWorkdirPromptTabOpensAndChoosesDirectory(t *testing.T) {
 	}
 	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
-	if !model.workdirSuggestionOpen {
+	if !model.promptSuggestionOpen {
 		t.Fatal("first tab should open suggestions")
 	}
 	if model.input.Value() != filepath.Join(parent, "alp") {
@@ -687,7 +793,7 @@ func TestWorkdirPromptTabOpensAndChoosesDirectory(t *testing.T) {
 	if want := alpha; model.input.Value() != want {
 		t.Fatalf("completed path = %q, want %q", model.input.Value(), want)
 	}
-	if model.workdirSuggestionOpen {
+	if model.promptSuggestionOpen {
 		t.Fatal("second tab should close suggestions after choosing")
 	}
 	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "✓ "+alpha {

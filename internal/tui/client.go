@@ -39,13 +39,13 @@ type ClientModel struct {
 	message  string
 	loading  int
 
-	input                 textinput.Model
-	prompt                promptKind
-	confirm               confirmKind
-	pendingID             string
-	workdirSuggestionOpen bool
-	codexInputQueue       []map[string]string
-	codexInputInFlight    bool
+	input                textinput.Model
+	prompt               promptKind
+	confirm              confirmKind
+	pendingID            string
+	promptSuggestionOpen bool
+	codexInputQueue      []map[string]string
+	codexInputInFlight   bool
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
@@ -203,66 +203,23 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if handlePromptWordKey(&m.input, m.prompt, msg) {
-		refreshPromptInput(&m.input, m.prompt)
-		if m.prompt == promptWorkdir {
-			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
-		}
-		return m, nil
+	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, msg)
+	m.input = result.input
+	m.promptSuggestionOpen = result.suggestionOpen
+	if result.message != "" {
+		m.message = result.message
 	}
-	switch msg.Type {
-	case tea.KeyEsc:
-		if m.prompt == promptWorkdir && m.workdirSuggestionOpen {
-			m.workdirSuggestionOpen = false
-			return m, nil
-		}
+	switch result.action {
+	case promptInputCancel:
 		m.mode = modeNormal
 		return m, nil
-	case tea.KeyEnter:
-		if m.prompt == promptWorkdir && m.workdirSuggestionOpen && completeWorkdirSuggestion(&m.input) {
-			m.workdirSuggestionOpen = false
-			return m, nil
-		}
-		if m.prompt == promptWorkdir && !workdirInputIsExistingDirectory(m.input.Value()) {
-			m.message = inspectWorkdirPromptPath(m.snapshot.State, m.input.Value()).message
-			return m, nil
-		}
-		value := strings.TrimSpace(m.input.Value())
-		if value == "" && m.prompt != promptMoveAgent && m.prompt != promptWorkdirTitle {
-			m.message = "value is required"
-			return m, nil
-		}
-		cmd := m.applyPrompt(value)
+	case promptInputSubmit:
+		cmd := m.applyPrompt(result.value)
 		m.mode = modeNormal
 		return m, cmd
-	case tea.KeyTab:
-		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 {
-			if m.workdirSuggestionOpen {
-				completeWorkdirSuggestion(&m.input)
-				m.workdirSuggestionOpen = false
-				return m, nil
-			}
-			m.workdirSuggestionOpen = true
-			return m, nil
-		}
-	case tea.KeyUp, tea.KeyDown:
-		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 && !m.workdirSuggestionOpen {
-			m.workdirSuggestionOpen = true
-			return m, nil
-		}
+	default:
+		return m, result.cmd
 	}
-	oldValue := m.input.Value()
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	refreshPromptInput(&m.input, m.prompt)
-	if m.prompt == promptWorkdir {
-		if m.input.Value() != oldValue {
-			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
-		} else if len(m.input.MatchedSuggestions()) == 0 {
-			m.workdirSuggestionOpen = false
-		}
-	}
-	return m, cmd
 }
 
 func (m ClientModel) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -279,8 +236,8 @@ func (m ClientModel) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 	m.prompt = prompt
-	configurePromptInput(&m.input, prompt, value)
-	m.workdirSuggestionOpen = false
+	configurePromptInput(&m.input, m.promptContext(), value)
+	m.promptSuggestionOpen = false
 	m.mode = modeInput
 }
 
@@ -428,43 +385,36 @@ func (m ClientModel) modalView(content string) string {
 
 func (m ClientModel) renderInputModal() string {
 	width := max(36, min(m.width-16, 72))
-	input := m.input
-	input.Width = max(16, width-inputModalLabelWidth-3)
-	lines := []string{modalTitleStyle.Render(m.promptTitle()), ""}
-	if m.prompt == promptWorkdir {
-		lines = append(lines, renderWorkdirPromptInput(input, width)...)
-		if suggestions := renderWorkdirSuggestionMenu(input, width, m.workdirSuggestionOpen, workdirSuggestionRows(m.height)); len(suggestions) > 0 {
-			lines = append(lines, suggestions...)
+	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.renderPromptExtra(m.input, width))
+}
+
+func (m ClientModel) promptContext() promptContext {
+	return promptContext{
+		prompt:        m.prompt,
+		pendingID:     m.pendingID,
+		state:         m.snapshot.State,
+		selectedAgent: m.selectedAgent(),
+	}
+}
+
+func (m ClientModel) renderPromptExtra(input textinput.Model, width int) []string {
+	if m.prompt != promptRenameAgent {
+		return nil
+	}
+	lines := []string{"", modalLabelStyle.Render("Preview")}
+	if active := m.selectedAgent(); active != nil {
+		draft := *active
+		if value := strings.TrimSpace(input.Value()); value != "" {
+			draft.Title = value
 		}
-		lines = append(lines, renderWorkdirPromptStatus(m.snapshot.State, input.Value(), width))
-	} else {
-		label := m.promptLabel()
-		lines = append(lines, renderInputModalRow(label, input.View(), width))
-	}
-	if hint := m.promptHint(); hint != "" {
-		lines = append(lines, "", mutedStyle.Render(clip(hint, width)))
-	}
-	if m.prompt == promptRenameAgent {
-		lines = append(lines, "", modalLabelStyle.Render("Preview"))
-		if active := m.selectedAgent(); active != nil {
-			draft := *active
-			if value := strings.TrimSpace(input.Value()); value != "" {
-				draft.Title = value
-			}
-			lines = append(lines, modalValueStyle.Render(clip(m.renderAgentBaseTitle(draft), width)))
-			if notice := m.autoTitleNotice(*active, draft.Title); notice != "" {
-				lines = append(lines, mutedStyle.Render(clip(notice, width)))
-			}
+		lines = append(lines, modalValueStyle.Render(clip(m.renderAgentBaseTitle(draft), width)))
+		if notice := m.autoTitleNotice(*active, draft.Title); notice != "" {
+			lines = append(lines, mutedStyle.Render(clip(notice, width)))
 		}
-		lines = append(lines, "", modalLabelStyle.Render("Variables"))
-		lines = append(lines, m.renderTitleVariables(width)...)
 	}
-	if m.prompt == promptWorkdir {
-		lines = append(lines, "", renderWorkdirModalActions(input, m.workdirSuggestionOpen))
-	} else {
-		lines = append(lines, "", renderModalActions(m.prompt))
-	}
-	return strings.Join(lines, "\n")
+	lines = append(lines, "", modalLabelStyle.Render("Variables"))
+	lines = append(lines, m.renderTitleVariables(width)...)
+	return lines
 }
 
 func (m ClientModel) renderTitleVariables(width int) []string {
@@ -475,36 +425,9 @@ func (m ClientModel) renderTitleVariables(width int) []string {
 	return lines
 }
 
-func (m ClientModel) promptTitle() string {
-	return Model{prompt: m.prompt}.promptTitle()
-}
-
-func (m ClientModel) promptLabel() string {
-	return Model{prompt: m.prompt}.promptLabel()
-}
-
-func (m ClientModel) promptHint() string {
-	return Model{prompt: m.prompt}.promptHint()
-}
-
 func (m ClientModel) renderConfirmModal() string {
-	name := "item"
-	st := m.snapshot.State
-	switch m.confirm {
-	case confirmDeleteWorkdir:
-		if workdir := state.WorkdirByID(st, m.pendingID); workdir != nil {
-			name = "workdir " + workdir.Path
-		}
-	case confirmDeleteGroup:
-		if folder := state.FolderByID(st, m.pendingID); folder != nil {
-			name = "group " + folder.Path
-		}
-	case confirmDeleteAgent:
-		if agent := state.AgentByID(st, m.pendingID); agent != nil {
-			name = "agent " + m.renderAgentTitle(*agent)
-		}
-	}
-	return fmt.Sprintf("Delete %s?\n\nY delete  N cancel", name)
+	width := max(36, min(m.width-16, 72))
+	return renderConfirmPrompt(m.confirm, confirmTarget(m.confirm, m.snapshot.State, m.pendingID, m.renderAgentTitle), width)
 }
 
 func (m ClientModel) activeCodexReceivesQuitBinding() bool {

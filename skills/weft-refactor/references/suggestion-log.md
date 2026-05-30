@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-30 - Dashboard form UX consistency
+
+- Request: Refactor dashboard prompts/forms so add workdir, rename, group, move, and delete confirmation flows share one consistent professional form UX.
+- Suggestions: Promote the improved add-workdir prompt into shared prompt helpers, keep path autocomplete path-specific, add useful group-name autocomplete for move-agent, prevalidate form submissions so invalid input stays open, and use compact state-specific footer actions across text and confirmation prompts.
+- Outcome: Implemented in `.worktrees/forms-ux-consistency`; awaiting review.
+- Evidence: `internal/tui/path_prompt.go`, `internal/tui/model.go`, `internal/tui/client.go`, `internal/tui/model_test.go`, `tests/integration/dashboard_e2e_test.go`, `README.md`, `spec.md`.
+
 ## 2026-05-30 - Framed Codex keyboard passthrough
 
 - Request: Diagnose why proxied Codex focus input differs from a normal Codex terminal, with Shift+Enter recognized by Weft but not inserted as a Codex newline.

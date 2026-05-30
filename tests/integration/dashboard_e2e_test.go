@@ -508,13 +508,17 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	timedStep(t, "close confirmation cancels then closes", func() {
 		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Delete agent Codex ready?")
+			return strings.Contains(capture, "Delete agent") &&
+				strings.Contains(capture, "Codex ready") &&
+				strings.Contains(capture, "Y delete")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 1 })
 		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Delete agent Codex ready?")
+			return strings.Contains(capture, "Delete agent") &&
+				strings.Contains(capture, "Codex ready") &&
+				strings.Contains(capture, "N cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 0 })
@@ -524,7 +528,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, clientOutput(), true)
 		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Delete group release?")
+			return strings.Contains(capture, "Delete group") &&
+				strings.Contains(capture, "release") &&
+				strings.Contains(capture, "Esc cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool {
