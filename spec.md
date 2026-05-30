@@ -200,9 +200,9 @@ Each group row renders:
 
 Each agent row renders:
 
-- only the configured agent title string
+- only the rendered agent title template
 
-Agent rows must not render fixed status tags. Status can appear only if the configured title template includes a status variable.
+Agent rows must not render fixed status tags. Status can appear only if the agent title template includes a status variable.
 
 Group rows should be visually distinct from agent rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Agent rows should use a lighter marker and indentation when nested under a group.
 
@@ -306,17 +306,16 @@ The exact derivation of `ready`, `running`, and other live states can reuse the 
 
 ## Title Templates
 
-Agent rows render a configured title string. Title templates are a global default only. They are not per-workspace, per-group, or per-agent in the first implementation.
+Agent rows render each agent's stored title template. The global title template is the default copied into new agents.
 
-An agent can still have its own base title. The global template controls how that title is rendered.
+An agent title can include template variables. Renaming an agent edits that agent's stored template and does not change the global default.
 
-New agents default their base title to `{codex}` so they inherit the live Codex
-title until renamed.
+New agents copy the configured global title template into their own title.
 
-Default template:
+Default global template:
 
 ```text
-{title}
+{status} {auto}
 ```
 
 Supported variables:
@@ -331,7 +330,7 @@ Supported variables:
 {group}   flat group name
 ```
 
-Example global templates:
+Example agent/default templates:
 
 ```text
 {title}
@@ -356,7 +355,7 @@ configured. The first non-empty message submitted to the Codex PTY runs the
 hook from the agent workspace, sends JSON on stdin, and stores the first non-empty
 stdout line as the agent's generated title. The hook payload includes
 `version`, `event`, `agent_id`, `workspace`, legacy `workdir`, `group`, `status`, `title`,
-`title_template`, `codex_title`, and `first_message`.
+the agent `title_template`, `codex_title`, and `first_message`.
 
 Weft must not encode provider-specific clients, model names, API keys, or HTTP
 contracts into the runtime. The title hook is just a shell command. If the hook
@@ -428,7 +427,7 @@ Runtime-only details such as PID, PTY handles, socket clients, terminal size,
 and screen cache must not be persisted in `state.json`. They belong to the
 supervisor process and can be reconstructed from state and live PTYs.
 
-The global title template belongs in config, not per agent:
+The global title template belongs in config and is copied into new agents:
 
 ```toml
 title_template = "{status} {auto}"
@@ -526,12 +525,13 @@ Create agent:
 - If the cursor is on a group or grouped agent, create the agent in that group.
 - Otherwise create a top-level agent with no group.
 - Starts a Codex PTY with the agent workspace as the process working directory.
-- Uses the configured global title template for display.
+- Copies the configured global title template into the agent title.
 
 Rename agent:
 
-- Updates the agent base title.
-- Does not change the global title template.
+- Opens with the stored agent title template.
+- Updates the agent title template.
+- Does not change the global default title template.
 
 Move agent:
 

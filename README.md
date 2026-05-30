@@ -85,10 +85,10 @@ that the running iTerm2 session has not picked up the preference yet. For
 custom iTerm2 settings folders, it tells the user to quit and reopen iTerm2
 because new tabs may keep using the in-memory profile.
 
-Agent rows render through the global `title_template`, which defaults to
-`{status} {auto}`. New agents default their base title to `{codex}`, so they
-inherit the live Codex title until renamed. Titles passed to `weft new` or
-`weft rename` can still include template variables for compatibility:
+Agent rows render from each agent's title template. New agents copy the global
+`title_template`, which defaults to `{status} {auto}`, into their own title so
+the rename pane opens with that editable template. Titles passed to `weft new`
+or `weft rename` can still include template variables:
 
 - `{title}`: user-configured agent title
 - `{auto}`: generated title from the first submitted message
@@ -111,12 +111,13 @@ title_hook_timeout_seconds = 10
 When `title_hook_command` is configured, the first non-empty message submitted
 to each new Codex agent runs the hook from that agent's workspace. Weft sends
 JSON on stdin with `event`, `agent_id`, `workspace`, legacy `workdir`, `group`,
-`status`, `title`, `title_template`, `codex_title`, and `first_message`, then
-saves the first non-empty stdout line as the generated title.
+`status`, `title`, the agent `title_template`, `codex_title`, and
+`first_message`, then saves the first non-empty stdout line as the generated
+title.
 
 Set an agent title to `{auto}` in the rename pane, or run
-`weft rename <id> "{auto}"`, to display that saved generated title. To make
-every row show generated titles, set `title_template = "{auto}"`. Before the
+`weft rename <id> "{auto}"`, to display that saved generated title. To make new
+agents start with generated titles, set `title_template = "{auto}"`. Before the
 first message, `{auto}` renders as `waiting for first message`; failed hooks
 render as `auto title failed`, show a footer error, and keep the full error in
 the rename pane.

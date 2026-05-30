@@ -427,7 +427,7 @@ func DefaultConfigText() string {
 # Command launched inside each Codex PTY owned by the supervisor.
 codex_command = "codex"
 
-# Global title template for agent rows.
+# Default title template copied into new agents.
 title_template = "{status} {auto}"
 
 # Optional command hook for generated titles. Weft sends each agent's first

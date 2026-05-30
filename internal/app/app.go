@@ -529,7 +529,7 @@ func configCommand(args []string) error {
 		fmt.Printf("State: %s\n", rt.StatePath)
 		fmt.Printf("Supervisor socket: %s\n", rt.SocketPath)
 		fmt.Printf("Codex command: %s\n", cfg.CodexCommand)
-		fmt.Printf("Title template: %s\n", cfg.TitleTemplate)
+		fmt.Printf("Default title template: %s\n", cfg.TitleTemplate)
 	case "path":
 		fmt.Println(rt.ConfigPath)
 	case "show":

@@ -12,7 +12,6 @@ import (
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/state"
-	"github.com/edwmurph/weft/internal/titles"
 )
 
 func TestEmptyCommandCenterStartsInAgentsFocus(t *testing.T) {
@@ -46,7 +45,7 @@ func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	if len(model.state.Agents) != 1 {
 		t.Fatalf("agents = %#v", model.state.Agents)
 	}
-	if model.state.Agents[0].Title != titles.CodexTemplate {
+	if model.state.Agents[0].Title != cfg.TitleTemplate {
 		t.Fatalf("new agent title = %q", model.state.Agents[0].Title)
 	}
 	if model.state.Agents[0].FolderID != "" {
@@ -287,6 +286,7 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
 	model.cfg.TitleTemplate = "{status} {auto}"
+	model.state.Agents[0].Title = model.cfg.TitleTemplate
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
 	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "fix"})
@@ -419,7 +419,7 @@ func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
 	if got := state.AgentByID(model.state, "a").AutoTitle; got != "Generated before rename" {
 		t.Fatalf("auto title = %q", got)
 	}
-	if got := model.renderAgentTitle(*state.AgentByID(model.state, "a")); got != "running Generated before rename" {
+	if got := model.renderAgentTitle(*state.AgentByID(model.state, "a")); got != "Generated before rename" {
 		t.Fatalf("rendered title = %q", got)
 	}
 	raw, err := os.ReadFile(payloadPath)
@@ -524,7 +524,6 @@ func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 		"Rename agent",
 		"Preview",
 		"Fake Codex Ready",
-		"Auto title unavailable",
 		"Variables",
 		"{auto}: generated title",
 		"Enter save",
@@ -533,6 +532,33 @@ func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("rename modal missing %q:\n%s", expected, got)
 		}
+	}
+}
+
+func TestRenameAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Agents[0].Title = "{status} {auto}"
+	model.state.Agents[0].AutoTitle = "Fix login"
+	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
+	model.state.Focus = state.FocusFolders
+	model.state.NavOpen = true
+	model.folderCursor = 1
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model = updated.(Model)
+
+	if cmd != nil {
+		t.Fatalf("rename prompt should not start command, got %#v", cmd)
+	}
+	if model.mode != modeInput || model.prompt != promptRenameAgent || model.pendingID != "a" {
+		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s", model.mode, model.prompt, model.pendingID)
+	}
+	if got, want := model.input.Value(), "{status} {auto}"; got != want {
+		t.Fatalf("rename prompt value = %q, want stored title template %q", got, want)
+	}
+	if got := model.renderAgentTitle(model.state.Agents[0]); got != "ready Fix login" {
+		t.Fatalf("agent row title = %q", got)
 	}
 }
 
@@ -994,9 +1020,10 @@ func TestWorkdirPromptShowsInvalidPathStatus(t *testing.T) {
 	}
 }
 
-func TestIPCNewDefaultsToCodexTemplate(t *testing.T) {
+func TestIPCNewCopiesConfiguredTitleTemplate(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
+	model.cfg.TitleTemplate = "{status} {auto}"
 	model.state.Agents = nil
 	model.state.ActiveAgentID = ""
 
@@ -1006,7 +1033,7 @@ func TestIPCNewDefaultsToCodexTemplate(t *testing.T) {
 	if !response.OK || cmd == nil {
 		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
 	}
-	if len(model.state.Agents) != 1 || model.state.Agents[0].Title != titles.CodexTemplate {
+	if len(model.state.Agents) != 1 || model.state.Agents[0].Title != model.cfg.TitleTemplate {
 		t.Fatalf("agents = %#v", model.state.Agents)
 	}
 }

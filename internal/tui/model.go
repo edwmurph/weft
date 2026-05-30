@@ -405,7 +405,7 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusNavPane(state.FocusFolders)
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
-		return m, m.newAgent(titles.CodexTemplate)
+		return m, m.newAgent(m.cfg.TitleTemplate)
 	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
@@ -859,7 +859,7 @@ func (m *Model) captureCodexInput(agent state.Agent, msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m Model) agentUsesAutoTitle(agent state.Agent) bool {
-	return strings.Contains(m.cfg.TitleTemplate, titles.AutoTemplate) || strings.Contains(agent.Title, titles.AutoTemplate)
+	return strings.Contains(agent.Title, titles.AutoTemplate)
 }
 
 func (m Model) titleHookCmd(agent state.Agent, firstMessage string) tea.Cmd {
@@ -871,7 +871,7 @@ func (m Model) titleHookCmd(agent state.Agent, firstMessage string) tea.Cmd {
 	if found := state.FolderForAgent(m.state, agent); found != nil {
 		folder = *found
 	}
-	payload := titlehook.BuildPayload(agent, workdir, folder, m.cfg.TitleTemplate, firstMessage)
+	payload := titlehook.BuildPayload(agent, workdir, folder, agent.Title, firstMessage)
 	command := m.cfg.TitleHookCommand
 	timeout := time.Duration(m.cfg.TitleHookTimeoutSeconds) * time.Second
 	ctx := m.ctx
@@ -1238,7 +1238,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		title := request.Args["title"]
 		if title == "" {
-			title = titles.CodexTemplate
+			title = m.cfg.TitleTemplate
 		}
 		cmd := m.newAgent(title)
 		m.navWidth = m.targetNavWidth()

@@ -119,8 +119,8 @@ func folderRowsForState(st state.State) []folderRow {
 	return rows
 }
 
-func renderAgentTitleForState(cfg config.Config, st state.State, agent state.Agent) string {
-	return renderAgentWithTemplate(st, agent, cfg.TitleTemplate)
+func renderAgentTitleForState(_ config.Config, st state.State, agent state.Agent) string {
+	return renderAgentWithTemplate(st, agent, agent.Title)
 }
 
 func renderAgentBaseTitleForState(st state.State, agent state.Agent) string {
@@ -140,7 +140,7 @@ func renderAgentWithTemplate(st state.State, agent state.Agent, template string)
 }
 
 func autoTitleNotice(cfg config.Config, agent state.Agent, draftTitle string) string {
-	if !strings.Contains(cfg.TitleTemplate, titles.AutoTemplate) && !strings.Contains(draftTitle, titles.AutoTemplate) {
+	if !strings.Contains(draftTitle, titles.AutoTemplate) {
 		return ""
 	}
 	if strings.TrimSpace(agent.AutoTitle) != "" {

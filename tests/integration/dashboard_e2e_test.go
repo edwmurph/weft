@@ -206,7 +206,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	titleHookCommand := "TITLE_HOOK_PAYLOAD=" + shellQuote(titleHookPayload) + " " + shellQuote(titleHook)
-	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\ntitle_hook_command = %q\n", fakeCodex, "{title}", titleHookCommand)
+	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\ntitle_hook_command = %q\n", fakeCodex, "{codex}", titleHookCommand)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}

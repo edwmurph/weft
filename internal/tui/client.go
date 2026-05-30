@@ -14,7 +14,6 @@ import (
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/state"
-	"github.com/edwmurph/weft/internal/titles"
 	"github.com/edwmurph/weft/internal/version"
 )
 
@@ -188,7 +187,7 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
-		return m, m.request("new", map[string]string{"title": titles.CodexTemplate})
+		return m, m.request("new", nil)
 	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")

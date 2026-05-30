@@ -352,7 +352,7 @@ func renderFoldersPane(cfg config.Config, st state.State, width int, height int,
 	content := []string{}
 	rowIndex := 0
 	for _, agent := range state.UngroupedAgentsForWorkdir(st, st.SelectedWorkdirID) {
-		title := titles.RenderAgent(agent, workdirForRender(st, agent), state.Folder{}, cfg.TitleTemplate)
+		title := renderAgentTitleForState(cfg, st, agent)
 		agentRow := "• " + title
 		agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
 		if rowIndex == folderCursor && st.Focus == state.FocusFolders {
@@ -383,7 +383,7 @@ func renderFoldersPane(cfg config.Config, st state.State, width int, height int,
 			continue
 		}
 		for _, agent := range state.AgentsForFolder(st, folder.ID) {
-			title := titles.RenderAgent(agent, workdirForRender(st, agent), folder, cfg.TitleTemplate)
+			title := renderAgentTitleForState(cfg, st, agent)
 			agentRow := "  • " + title
 			agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
 			if rowIndex == folderCursor && st.Focus == state.FocusFolders {
