@@ -143,6 +143,26 @@ func TestWorkdirCanHaveNoGroupsAndUngroupedAgents(t *testing.T) {
 	}
 }
 
+func TestWorkdirTitleOverrideCanBeSetAndCleared(t *testing.T) {
+	st := testState(t)
+
+	next, err := SetWorkdirTitle(st, "w", "  Trading Engine  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := next.Workdirs[0].Title; got != "Trading Engine" {
+		t.Fatalf("title override = %q", got)
+	}
+
+	next, err = SetWorkdirTitle(next, "w", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := next.Workdirs[0].Title; got != "" {
+		t.Fatalf("blank title should clear override, got %q", got)
+	}
+}
+
 func TestFolderValidationAndMoveAgent(t *testing.T) {
 	st := testState(t)
 

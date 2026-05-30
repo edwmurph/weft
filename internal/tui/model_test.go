@@ -168,6 +168,46 @@ func TestRenameAgentPromptPreviewsGlobalTemplate(t *testing.T) {
 	}
 }
 
+func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig("codux-test")
+	model := NewModel(rt, cfg, state.Empty())
+	model.state.Focus = state.FocusWorkdirs
+	model.state.NavOpen = true
+	model.lastNavFocus = state.FocusWorkdirs
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatalf("rename prompt should not start command, got %#v", cmd)
+	}
+	if model.mode != modeInput || model.prompt != promptWorkdirTitle || model.pendingID != model.state.SelectedWorkdirID {
+		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s selected:%s", model.mode, model.prompt, model.pendingID, model.state.SelectedWorkdirID)
+	}
+
+	model.input.SetValue("Trading Engine")
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeNormal {
+		t.Fatalf("mode after save = %s", model.mode)
+	}
+	if got := model.state.Workdirs[0].Title; got != "Trading Engine" {
+		t.Fatalf("title override = %q", got)
+	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model = updated.(Model)
+	model.input.SetValue("")
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if got := model.state.Workdirs[0].Title; got != "" {
+		t.Fatalf("blank input should clear title override, got %q", got)
+	}
+	if model.message != "cleared workdir title" {
+		t.Fatalf("message = %q", model.message)
+	}
+}
+
 func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)

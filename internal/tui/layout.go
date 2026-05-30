@@ -14,8 +14,8 @@ const (
 	appTitle             = "CODUX"
 	codexLeftPadding     = 1
 	navHorizontalPadding = 1
-	maxWorkdirPaneWidth  = 64
-	minAgentsPaneWidth   = 34
+	maxWorkdirPaneWidth  = 78
+	minAgentsPaneWidth   = 28
 	borderHorizontal     = "─"
 	borderVertical       = "│"
 	borderTopLeft        = "╭"
@@ -25,17 +25,23 @@ const (
 )
 
 var (
-	mutedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	headerStyle      = lipgloss.NewStyle().Underline(true)
-	activeTabStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
-	activePaneStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	groupHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	modalStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
-	modalTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
-	modalLabelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
-	modalValueStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	modalTokenStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	modalKeyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	mutedStyle                      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	headerStyle                     = lipgloss.NewStyle().Underline(true)
+	activeTabStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
+	activePaneStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	groupHeaderStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	modalStyle                      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
+	modalTitleStyle                 = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+	modalLabelStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	modalValueStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	modalTokenStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	modalKeyStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	workdirCardBorderStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	workdirCardSelectedStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	workdirCardSelectedFocusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	workdirCountMutedStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	workdirCountActiveStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	workdirCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 )
 
 type framePalette struct {
@@ -166,25 +172,154 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 
 func renderWorkdirsPane(_ config.Config, st state.State, width int, height int) []string {
 	content := []string{}
+	cardWidth := max(2, width-2-(navHorizontalPadding*2))
 	for _, workdir := range st.Workdirs {
-		marker := "  "
-		if workdir.ID == st.SelectedWorkdirID {
-			marker = "▶ "
+		selected := workdir.ID == st.SelectedWorkdirID
+		card := renderWorkdirCard(st, workdir, cardWidth, selected, st.Focus == state.FocusWorkdirs)
+		for _, line := range card {
+			content = append(content, strings.Repeat(" ", navHorizontalPadding)+line)
 		}
-		left := marker + "📁 " + sessions.DisplayPath(workdir.Path)
-		right := fmtInt(state.AgentCountForWorkdir(st, workdir.ID))
-		row := rowLine(left, right, max(0, width-2-(navHorizontalPadding*2)))
-		if workdir.ID == st.SelectedWorkdirID && st.Focus == state.FocusWorkdirs {
-			row = activeTabStyle.Render(padVisual(row, max(0, width-2-(navHorizontalPadding*2))))
-		} else if workdir.ID == st.SelectedWorkdirID {
-			row = activePaneStyle.Render(row)
-		}
-		content = append(content, strings.Repeat(" ", navHorizontalPadding)+row)
 	}
 	if len(content) == 0 {
 		content = append(content, mutedStyle.Render("No workdirs"))
 	}
 	return renderPaneFrame("Workdirs", "", width, height, st.Focus == state.FocusWorkdirs, content)
+}
+
+type workdirCardCounts struct {
+	total          int
+	active         int
+	needsAttention int
+}
+
+func renderWorkdirCard(st state.State, workdir state.Workdir, width int, selected bool, focused bool) []string {
+	if width < 2 {
+		return []string{""}
+	}
+	borderStyle := workdirCardBorderStyle
+	if selected && focused {
+		borderStyle = workdirCardSelectedFocusedStyle
+	} else if selected {
+		borderStyle = workdirCardSelectedStyle
+	}
+	innerWidth := max(0, width-2)
+	title := workdirCardTitle(workdir)
+	top := borderStyle.Render(workdirCardTopLine(title, width))
+	counts := workdirCardCountsForWorkdir(st, workdir.ID)
+	body := borderStyle.Render(borderVertical) + renderWorkdirCardCounts(counts, innerWidth) + borderStyle.Render(borderVertical)
+	bottom := borderStyle.Render(workdirCardBottomLine(width))
+	return []string{top, body, bottom}
+}
+
+func workdirCardTopLine(title string, width int) string {
+	if width < 2 {
+		return ""
+	}
+	contentWidth := max(0, width-2)
+	label := " " + strings.TrimSpace(title) + " "
+	label = clip(label, contentWidth)
+	padding := max(0, contentWidth-lipgloss.Width(label))
+	return borderTopLeft + label + strings.Repeat(borderHorizontal, padding) + borderTopRight
+}
+
+func workdirCardBottomLine(width int) string {
+	if width < 2 {
+		return ""
+	}
+	return borderBottomLeft + strings.Repeat(borderHorizontal, max(0, width-2)) + borderBottomRight
+}
+
+func workdirCardTitle(workdir state.Workdir) string {
+	if title := strings.TrimSpace(workdir.Title); title != "" {
+		return title
+	}
+	return sessions.DisplayPath(workdir.Path)
+}
+
+func workdirCardCountsForWorkdir(st state.State, workdirID string) workdirCardCounts {
+	counts := workdirCardCounts{}
+	for _, agent := range st.Agents {
+		if agent.WorkdirID != workdirID {
+			continue
+		}
+		counts.total++
+		if workdirCardAgentActive(agent) {
+			counts.active++
+		}
+	}
+	counts.needsAttention = counts.total - counts.active
+	return counts
+}
+
+func workdirCardAgentActive(agent state.Agent) bool {
+	switch titles.RenderStatus(agent) {
+	case string(state.StatusStarting), string(state.StatusRunning), "working", string(state.StatusShipping):
+		return true
+	default:
+		return false
+	}
+}
+
+func renderWorkdirCardCounts(counts workdirCardCounts, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	labels := workdirCardCountLabels(counts)
+	styles := []lipgloss.Style{
+		workdirCountMutedStyle,
+		workdirActiveStyle(counts),
+		workdirNeedsAttentionStyle(counts),
+	}
+	sum := 0
+	for _, label := range labels {
+		sum += lipgloss.Width(label)
+	}
+	const (
+		leftPadding  = 1
+		rightPadding = 1
+	)
+	gapTotal := width - leftPadding - rightPadding - sum
+	if gapTotal < 4 {
+		return workdirCountMutedStyle.Render(padVisual(clip(" "+strings.Join(labels, "  ")+" ", width), width))
+	}
+	gap := max(2, gapTotal/(len(labels)-1))
+	remainder := gapTotal - gap*(len(labels)-1)
+	var builder strings.Builder
+	builder.WriteString(" ")
+	for index, label := range labels {
+		if index > 0 {
+			spaces := gap
+			if remainder > 0 {
+				spaces++
+				remainder--
+			}
+			builder.WriteString(strings.Repeat(" ", spaces))
+		}
+		builder.WriteString(styles[index].Render(label))
+	}
+	return padVisual(builder.String(), width)
+}
+
+func workdirActiveStyle(counts workdirCardCounts) lipgloss.Style {
+	if counts.active == 0 {
+		return workdirCountMutedStyle
+	}
+	return workdirCountActiveStyle
+}
+
+func workdirNeedsAttentionStyle(counts workdirCardCounts) lipgloss.Style {
+	if counts.needsAttention == 0 {
+		return workdirCountMutedStyle
+	}
+	return workdirCountNeedsAttentionStyle
+}
+
+func workdirCardCountLabels(counts workdirCardCounts) []string {
+	return []string{
+		fmtInt(counts.total) + " total",
+		fmtInt(counts.active) + " active",
+		fmtInt(counts.needsAttention) + " needs attention",
+	}
 }
 
 func renderFoldersPane(cfg config.Config, st state.State, width int, height int, folderCursor int) []string {
@@ -496,10 +631,21 @@ func fmtInt(value int) string {
 }
 
 func desiredWorkdirPaneWidth(st state.State) int {
-	width := 26
+	width := 48
 	for _, workdir := range st.Workdirs {
-		label := "▶ 📁 " + sessions.DisplayPath(workdir.Path) + " " + fmtInt(state.AgentCountForWorkdir(st, workdir.ID))
-		width = max(width, lipgloss.Width(label)+2+(navHorizontalPadding*2))
+		counts := workdirCardCountsForWorkdir(st, workdir.ID)
+		titleWidth := lipgloss.Width(workdirCardTitle(workdir)) + 5
+		countWidth := workdirCardCountPreferredWidth(counts)
+		width = max(width, max(titleWidth, countWidth)+2+(navHorizontalPadding*2))
 	}
 	return min(width, maxWorkdirPaneWidth)
+}
+
+func workdirCardCountPreferredWidth(counts workdirCardCounts) int {
+	width := 1
+	for _, label := range workdirCardCountLabels(counts) {
+		width += lipgloss.Width(label)
+	}
+	width += 8
+	return width + 2
 }

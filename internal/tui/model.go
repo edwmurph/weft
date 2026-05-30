@@ -46,11 +46,12 @@ const (
 type promptKind string
 
 const (
-	promptWorkdir     promptKind = "workdir"
-	promptGroup       promptKind = "group"
-	promptRenameGroup promptKind = "rename-group"
-	promptRenameAgent promptKind = "rename-agent"
-	promptMoveAgent   promptKind = "move-agent"
+	promptWorkdir      promptKind = "workdir"
+	promptGroup        promptKind = "group"
+	promptWorkdirTitle promptKind = "workdir-title"
+	promptRenameGroup  promptKind = "rename-group"
+	promptRenameAgent  promptKind = "rename-agent"
+	promptMoveAgent    promptKind = "move-agent"
 )
 
 type confirmKind string
@@ -288,6 +289,8 @@ func (m Model) promptTitle() string {
 		return "Create workdir"
 	case promptGroup:
 		return "Create group"
+	case promptWorkdirTitle:
+		return "Rename workdir"
 	case promptRenameGroup:
 		return "Rename group"
 	case promptRenameAgent:
@@ -316,6 +319,8 @@ func (m Model) promptHint() string {
 		return "Path must exist. Codux stores the absolute path and never deletes project files."
 	case promptGroup:
 		return "Group names are flat and unique within the selected workdir."
+	case promptWorkdirTitle:
+		return "Leave blank to use the default path title."
 	case promptMoveAgent:
 		return "Enter a group name in this workdir, or leave blank to make the agent top-level."
 	default:
@@ -391,7 +396,7 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyEnter:
 		value := strings.TrimSpace(m.input.Value())
-		if value == "" && m.prompt != promptMoveAgent {
+		if value == "" && m.prompt != promptMoveAgent && m.prompt != promptWorkdirTitle {
 			m.message = "value is required"
 			return m, nil
 		}
@@ -552,7 +557,10 @@ func (m *Model) startPrompt(prompt promptKind, value string) {
 
 func (m *Model) startRenamePrompt() {
 	if m.state.Focus == state.FocusWorkdirs {
-		m.message = "workdir rename is out of scope"
+		if workdir := state.WorkdirByID(m.state, m.state.SelectedWorkdirID); workdir != nil {
+			m.pendingID = workdir.ID
+			m.startPrompt(promptWorkdirTitle, workdir.Title)
+		}
 		return
 	}
 	row := m.currentFolderRow()
@@ -632,6 +640,19 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 		m.state = next
 		m.message = "renamed group"
 		m.syncFolderCursor()
+		m.save()
+	case promptWorkdirTitle:
+		next, err := state.SetWorkdirTitle(m.state, m.pendingID, value)
+		if err != nil {
+			m.message = err.Error()
+			return nil
+		}
+		m.state = next
+		if value == "" {
+			m.message = "cleared workdir title"
+		} else {
+			m.message = "renamed workdir"
+		}
 		m.save()
 	case promptRenameAgent:
 		next, err := state.RenameAgent(m.state, m.pendingID, value)

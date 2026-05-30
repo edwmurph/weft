@@ -41,6 +41,7 @@ const (
 type Workdir struct {
 	ID        string `json:"id"`
 	Path      string `json:"path"`
+	Title     string `json:"title,omitempty"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -263,6 +264,7 @@ func Repair(st State, fallbackWorkdir string) State {
 			st.Workdirs[index].ID = StableID("workdir", st.Workdirs[index].Path)
 		}
 		st.Workdirs[index].Path = absolutePath(st.Workdirs[index].Path)
+		st.Workdirs[index].Title = strings.TrimSpace(st.Workdirs[index].Title)
 		if st.Workdirs[index].CreatedAt == "" {
 			st.Workdirs[index].CreatedAt = NowISO()
 		}
@@ -804,6 +806,21 @@ func RemoveWorkdir(st State, workdirID string) (State, []Agent, error) {
 	st.NavOpen = true
 	st.Focus = FocusWorkdirs
 	return Repair(st, ""), removed, nil
+}
+
+func SetWorkdirTitle(st State, workdirID string, title string) (State, error) {
+	title = strings.TrimSpace(title)
+	if WorkdirByID(st, workdirID) == nil {
+		return st, fmt.Errorf("workdir not found")
+	}
+	for index := range st.Workdirs {
+		if st.Workdirs[index].ID == workdirID {
+			st.Workdirs[index].Title = title
+			st.Workdirs[index].UpdatedAt = NowISO()
+			return st, nil
+		}
+	}
+	return st, fmt.Errorf("workdir not found")
 }
 
 func AddFolder(st State, id string, workdirID string, path string, now string) (State, Folder, error) {

@@ -85,6 +85,8 @@ the current agent status.
 The command center has `Workdirs` and `Agents` navigation panes. Agents can sit
 directly in a workdir as top-level rows. Groups are optional collapsible
 sections inside the `Agents` pane, and `Enter` on a group opens or collapses it.
+In the `Workdirs` pane, `r` sets an optional card title and blank input clears
+it back to the display path.
 
 When the command center is open, press `?` for shortcuts. Defaults:
 

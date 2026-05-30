@@ -33,25 +33,34 @@ The app has three logical panes.
 
 ## Workdirs Pane
 
-The left pane lists configured workdirs.
+The left pane lists configured workdirs as vertically stacked bordered cards.
 
-Each row renders:
+Each card renders:
 
-- a workdir icon, default `📁` when the terminal supports it
-- the display path, for example `~/code/personal/codux`
-- the number of agents in that workdir
+- a title in the top border
+- `total`, the number of all agents in that workdir
+- `active`, the number of agents whose rendered/live status is `starting`, `running`, `working`, or `shipping`
+- `needs attention`, computed as `total - active`
 
-Rows should stay minimal. Do not render workdir aliases, status tags, extra metadata, or descriptions in the default view.
+Do not render card-level `parked`, `stopped`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workdirs pane summarizes them only through `needs attention`.
+
+The default card title is the display path, for example `~/code/personal/codux`. A workdir can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
+
+Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workdirs pane has focus. Use a subtler blue border when the selected workdir is active but focus is in the Agents pane.
+
+Counts should use subtle colors:
+
+- `total`: muted neutral
+- `active`: blue
+- `needs attention`: amber when nonzero, muted neutral when zero
 
 Example:
 
 ```text
-📁 ~/code/personal/codux              8
-📁 ~/code/personal/trading-engine     3
-📁 ~/code/personal/configs            2
+╭ ~/code/personal/trading-engine ─────────────────────────────╮
+│  8 total        3 active        5 needs attention            │
+╰──────────────────────────────────────────────────────────────╯
 ```
-
-If Unicode workdir icons are unavailable or disabled, fall back to a plain text marker such as `[workdir]`.
 
 ## Agents Pane
 
@@ -132,7 +141,7 @@ w       Create workdir
 g       Create group in selected workdir
 n       Create agent in the current group when the cursor is on a group or grouped agent; otherwise create a top-level agent
 m       Move selected agent to another group in the same workdir, or clear its group
-r       Rename selected group or agent title
+r       Rename selected workdir title, group, or agent title
 d       Delete/remove selected item
 ?       Help
 C-c     Quit Codux
@@ -142,9 +151,7 @@ Deletion behavior depends on selected item type and is defined below.
 
 ## Status
 
-Agent status exists in the model but global status counts are deferred for now.
-
-Do not implement global `ready`, `running`, `sitting`, or `shipping` counts in the first pass. This can be added later as a top-level command center summary.
+Agent status exists in the model. The Workdirs pane summarizes status only as `active` and `needs attention` counts per workdir. A separate top-level global status summary is deferred.
 
 Status should be available to title templates.
 
@@ -224,6 +231,7 @@ type State struct {
 type Workdir struct {
     ID        string `json:"id"`
     Path      string `json:"path"`
+    Title     string `json:"title,omitempty"`
     CreatedAt string `json:"created_at"`
     UpdatedAt string `json:"updated_at"`
 }
@@ -294,11 +302,13 @@ Remove workdir:
 - Do not delete filesystem contents.
 - Confirm before removal if any agent is running, ready, or shipping.
 
-Rename workdir:
+Rename workdir title:
 
-- Workdirs are identified and displayed by path.
-- Rename is out of scope for the first implementation.
-- Future alias support can be added without changing the core model.
+- Workdirs are still identified by path and stable ID.
+- Pressing `r` while focused on the Workdirs pane opens a workdir-title prompt.
+- Non-empty input stores the optional workdir title override.
+- Blank input clears the override and returns display to the default path title.
+- No CLI command is required for workdir title changes in the first implementation.
 
 ## Group CRUD
 
@@ -389,9 +399,9 @@ Minimum behavior:
 Visual style:
 
 - Terminal-native borders.
-- Dense rows.
+- Dense layouts.
 - Minimal color.
-- No card-heavy dashboard.
+- Use bordered cards only for the Workdirs pane.
 - No table layout.
 - No fixed status tags on agent rows.
 
@@ -442,6 +452,7 @@ Unit tests:
 
 - state migration from old tabs/columns
 - workdir creation/removal
+- workdir title override set/clear behavior
 - group create/rename/delete validation
 - agent move within a workdir
 - title template rendering
@@ -472,11 +483,11 @@ go build ./cmd/codux
 
 ## Out Of Scope For First Implementation
 
-- Global status counts UI
+- Top-level global status summary
 - Nested group names
 - Per-group title templates
 - Per-agent title templates
-- Workdir aliases
+- CLI command for workdir title overrides
 - Cross-workdir agent moves
 - Emoji picker
 - Automatic group classification

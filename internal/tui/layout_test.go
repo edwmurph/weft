@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,9 +49,11 @@ func TestRenderWorkspaceShowsWorkdirsAgentsAndAgent(t *testing.T) {
 		"Workdirs",
 		"Agents",
 		"Agent",
-		"▶",
 		"▾ inbox",
-		"📁 /tmp/project",
+		"╭ /tmp/project",
+		"1 total",
+		"0 active",
+		"1 needs attention",
 		"alpha",
 		"output",
 		"╭─",
@@ -64,6 +68,95 @@ func TestRenderWorkspaceShowsWorkdirsAgentsAndAgent(t *testing.T) {
 	}
 	if strings.Contains(got, "ready") {
 		t.Fatalf("agent rows should not render fixed status tags unless template asks for them:\n%s", got)
+	}
+}
+
+func TestRenderWorkdirCardsUseDefaultPathAndTitleOverride(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig("codux-test")
+	st := layoutState(filepath.Join(home, "code", "personal", "codux"))
+	st.Focus = state.FocusWorkdirs
+
+	got := ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n"))
+	if !strings.Contains(got, "~/code/personal/codux") {
+		t.Fatalf("workdir card should use default display path title:\n%s", got)
+	}
+
+	st.Workdirs[0].Title = "Main Codux"
+	got = ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n"))
+	if !strings.Contains(got, "Main Codux") || strings.Contains(got, "~/code/personal/codux") {
+		t.Fatalf("workdir card should use manual title override:\n%s", got)
+	}
+}
+
+func TestRenderWorkdirCardsShowOnlyReconciledCounts(t *testing.T) {
+	cfg := config.DefaultConfig("codux-test")
+	now := state.NowISO()
+	st := state.State{
+		Version:           state.Version,
+		SelectedWorkdirID: "w",
+		Focus:             state.FocusWorkdirs,
+		NavOpen:           true,
+		Workdirs:          []state.Workdir{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Agents: []state.Agent{
+			{ID: "starting", WorkdirID: "w", Title: "Starting", Status: state.StatusStarting, CreatedAt: now, UpdatedAt: now},
+			{ID: "running", WorkdirID: "w", Title: "Running", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "working", WorkdirID: "w", Title: "Working", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "shipping", WorkdirID: "w", Title: "Shipping", Status: state.StatusShipping, CreatedAt: now, UpdatedAt: now},
+			{ID: "ready", WorkdirID: "w", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "live-ready", WorkdirID: "w", Title: "Live Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "failed", WorkdirID: "w", Title: "Failed", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+
+	counts := workdirCardCountsForWorkdir(st, "w")
+	if counts.total != 7 || counts.active != 4 || counts.needsAttention != 3 {
+		t.Fatalf("counts = %#v", counts)
+	}
+	if counts.active+counts.needsAttention != counts.total {
+		t.Fatalf("counts should reconcile: %#v", counts)
+	}
+	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkdirsPane(cfg, st, 78, 8), "\n")))
+	for _, expected := range []string{"7 total", "4 active", "3 needs attention", "3 needs attention │", "╭ /tmp/project", "│", "╰"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("workdir card missing %q:\n%s", expected, got)
+		}
+	}
+	for _, forbidden := range []string{"parked", "stopped", "quiet", "error"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("workdir card should not render %q label:\n%s", forbidden, got)
+		}
+	}
+}
+
+func TestRenderWorkdirCardCountsColorOnlyNonzeroValues(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	zeroActive := renderWorkdirCardCounts(workdirCardCounts{total: 1, active: 0, needsAttention: 1}, 72)
+	if !strings.Contains(zeroActive, workdirCountMutedStyle.Render("0 active")) {
+		t.Fatalf("zero active should use muted style:\n%q", zeroActive)
+	}
+	if strings.Contains(zeroActive, workdirCountActiveStyle.Render("0 active")) {
+		t.Fatalf("zero active should not use active color:\n%q", zeroActive)
+	}
+	if !strings.Contains(zeroActive, workdirCountNeedsAttentionStyle.Render("1 needs attention")) {
+		t.Fatalf("nonzero needs attention should use amber style:\n%q", zeroActive)
+	}
+
+	zeroNeedsAttention := renderWorkdirCardCounts(workdirCardCounts{total: 1, active: 1, needsAttention: 0}, 72)
+	if !strings.Contains(zeroNeedsAttention, workdirCountActiveStyle.Render("1 active")) {
+		t.Fatalf("nonzero active should use active color:\n%q", zeroNeedsAttention)
+	}
+	if !strings.Contains(zeroNeedsAttention, workdirCountMutedStyle.Render("0 needs attention")) {
+		t.Fatalf("zero needs attention should use muted style:\n%q", zeroNeedsAttention)
+	}
+	if strings.Contains(zeroNeedsAttention, workdirCountNeedsAttentionStyle.Render("0 needs attention")) {
+		t.Fatalf("zero needs attention should not use amber color:\n%q", zeroNeedsAttention)
 	}
 }
 
