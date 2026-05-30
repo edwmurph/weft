@@ -26,6 +26,7 @@ type Payload struct {
 	Version       int    `json:"version"`
 	Event         string `json:"event"`
 	AgentID       string `json:"agent_id"`
+	Workspace     string `json:"workspace"`
 	Workdir       string `json:"workdir"`
 	Group         string `json:"group,omitempty"`
 	Status        string `json:"status"`
@@ -40,6 +41,7 @@ func BuildPayload(agent state.Agent, workdir state.Workdir, folder state.Folder,
 		Version:       1,
 		Event:         EventFirstMessage,
 		AgentID:       agent.ID,
+		Workspace:     workdir.Path,
 		Workdir:       workdir.Path,
 		Group:         folder.Path,
 		Status:        titles.RenderStatus(agent),

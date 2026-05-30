@@ -31,6 +31,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		"weft <command> [--clear]",
 		"weft --clear                 Clear runtime state, then open a fresh dashboard.",
 		"weft <command> --clear       Clear runtime state, then run the command.",
+		"weft workspace add <path>    Add a workspace to the command center.",
 		"weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
 		"weft doctor keys             Diagnose terminal key encoding.",
 	} {
@@ -617,9 +618,9 @@ func TestOfferDoctorKeyFixExplainsCustomPrefsNeedRestart(t *testing.T) {
 	}
 }
 
-func TestValidateWorkdirAddPathRequiresExistingDirectory(t *testing.T) {
+func TestValidateWorkspaceAddPathRequiresExistingDirectory(t *testing.T) {
 	dir := t.TempDir()
-	got, err := validateWorkdirAddPath(dir)
+	got, err := validateWorkspaceAddPath(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,10 +632,10 @@ func TestValidateWorkdirAddPathRequiresExistingDirectory(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := validateWorkdirAddPath(filePath); err == nil || !strings.Contains(err.Error(), "workdir path is not a directory") {
+	if _, err := validateWorkspaceAddPath(filePath); err == nil || !strings.Contains(err.Error(), "workspace path is not a directory") {
 		t.Fatalf("file path error = %v", err)
 	}
-	if _, err := validateWorkdirAddPath(filepath.Join(dir, "missing")); err == nil || !strings.Contains(err.Error(), "workdir path does not exist") {
+	if _, err := validateWorkspaceAddPath(filepath.Join(dir, "missing")); err == nil || !strings.Contains(err.Error(), "workspace path does not exist") {
 		t.Fatalf("missing path error = %v", err)
 	}
 }

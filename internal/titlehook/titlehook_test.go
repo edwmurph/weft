@@ -19,7 +19,7 @@ func TestBuildPayloadUsesAgentContext(t *testing.T) {
 	if payload.Version != 1 || payload.Event != EventFirstMessage {
 		t.Fatalf("payload identity = %#v", payload)
 	}
-	if payload.AgentID != "a" || payload.Workdir != "/tmp/project" || payload.Group != "ship" {
+	if payload.AgentID != "a" || payload.Workspace != "/tmp/project" || payload.Workdir != "/tmp/project" || payload.Group != "ship" {
 		t.Fatalf("payload context = %#v", payload)
 	}
 	if payload.Status != "ready" || payload.FirstMessage != "fix login" {

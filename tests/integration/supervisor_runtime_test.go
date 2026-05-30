@@ -37,7 +37,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 
 	env := append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKDIR="+workdir,
+		"WEFT_WORKSPACE="+workdir,
 		"WEFT_EXECUTABLE="+bin,
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
@@ -63,7 +63,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		t.Fatalf("doctor output missing supervisor ownership:\n%s", out)
 	}
 
-	runWeft(t, env, bin, "workdir", "add", workdir)
+	runWeft(t, env, bin, "workspace", "add", workdir)
 	runWeft(t, env, bin, "new", "Alpha")
 	first := waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
@@ -145,7 +145,7 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
-	runWeft(t, oldEnv, bin, "workdir", "add", workdir)
+	runWeft(t, oldEnv, bin, "workspace", "add", workdir)
 	runWeft(t, oldEnv, bin, "new", "Alpha")
 	waitState(t, oldEnv, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
@@ -195,7 +195,7 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 	})
 
 	runWeft(t, env, bin, "--no-attach")
-	runWeft(t, env, bin, "workdir", "add", workdir)
+	runWeft(t, env, bin, "workspace", "add", workdir)
 	runWeft(t, env, bin, "new", "Alpha")
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
@@ -263,7 +263,7 @@ func writeFakeCodex(t *testing.T, dir string, name string) string {
 func baseIntegrationEnv(runtimeDir string, workdir string, bin string) []string {
 	return append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKDIR="+workdir,
+		"WEFT_WORKSPACE="+workdir,
 		"WEFT_EXECUTABLE="+bin,
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",

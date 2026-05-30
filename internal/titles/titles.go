@@ -8,16 +8,17 @@ import (
 )
 
 const (
-	TitleTemplate   = "{title}"
-	AutoTemplate    = "{auto}"
-	CodexTemplate   = "{codex}"
-	StatusTemplate  = "{status}"
-	WorkdirTemplate = "{workdir}"
-	GroupTemplate   = "{group}"
-	FolderTemplate  = "{folder}"
-	PendingTitle    = "..."
-	AutoPending     = "waiting for first message"
-	AutoFailed      = "auto title failed"
+	TitleTemplate     = "{title}"
+	AutoTemplate      = "{auto}"
+	CodexTemplate     = "{codex}"
+	StatusTemplate    = "{status}"
+	WorkspaceTemplate = "{workspace}"
+	WorkdirTemplate   = "{workdir}"
+	GroupTemplate     = "{group}"
+	FolderTemplate    = "{folder}"
+	PendingTitle      = "..."
+	AutoPending       = "waiting for first message"
+	AutoFailed        = "auto title failed"
 )
 
 type TemplateVariable struct {
@@ -31,7 +32,8 @@ func TemplateVariables() []TemplateVariable {
 		{Name: AutoTemplate, Description: "generated title from first message"},
 		{Name: CodexTemplate, Description: "live Codex title"},
 		{Name: StatusTemplate, Description: "live Codex status"},
-		{Name: WorkdirTemplate, Description: "workdir path"},
+		{Name: WorkspaceTemplate, Description: "workspace path"},
+		{Name: WorkdirTemplate, Description: "legacy workspace alias"},
 		{Name: GroupTemplate, Description: "group name"},
 		{Name: FolderTemplate, Description: "legacy group alias"},
 	}
@@ -85,13 +87,14 @@ func RenderAgent(agent state.Agent, workdir state.Workdir, folder state.Folder, 
 		codexTitle = PendingTitle
 	}
 	values := map[string]string{
-		TitleTemplate:   title,
-		AutoTemplate:    renderAutoTitle(agent),
-		CodexTemplate:   codexTitle,
-		StatusTemplate:  RenderStatus(agent),
-		WorkdirTemplate: fallback(workdir.Path, PendingTitle),
-		GroupTemplate:   fallback(folder.Path, PendingTitle),
-		FolderTemplate:  fallback(folder.Path, PendingTitle),
+		TitleTemplate:     title,
+		AutoTemplate:      renderAutoTitle(agent),
+		CodexTemplate:     codexTitle,
+		StatusTemplate:    RenderStatus(agent),
+		WorkspaceTemplate: fallback(workdir.Path, PendingTitle),
+		WorkdirTemplate:   fallback(workdir.Path, PendingTitle),
+		GroupTemplate:     fallback(folder.Path, PendingTitle),
+		FolderTemplate:    fallback(folder.Path, PendingTitle),
 	}
 	renderedTitle := replaceVariables(title, values)
 	values[TitleTemplate] = renderedTitle

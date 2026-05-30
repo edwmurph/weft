@@ -9,6 +9,7 @@ import (
 
 func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	t.Setenv(AppDirEnv, "")
+	t.Setenv(WorkspaceEnv, "")
 	t.Setenv(WorkdirEnv, "")
 	dir := t.TempDir()
 	rt := Runtime{
@@ -114,6 +115,7 @@ title_hook_timeout_seconds = 3
 previous = "Left"
 next = "Right"
 new = "a"
+new_workdir = "z"
 new_folder = "x"
 close = "x"
 focus_toggle = "C-g"
@@ -136,6 +138,9 @@ quit = "C-q"
 	}
 	if cfg.KeyBindings.NewAgent != "a" {
 		t.Fatalf("new_agent = %q", cfg.KeyBindings.NewAgent)
+	}
+	if cfg.KeyBindings.NewWorkspace != "z" {
+		t.Fatalf("new_workspace = %q", cfg.KeyBindings.NewWorkspace)
 	}
 	if cfg.KeyBindings.NewGroup != "x" {
 		t.Fatalf("new_group = %q", cfg.KeyBindings.NewGroup)
@@ -185,7 +190,7 @@ quit = "C-q"
 		`title_hook_timeout_seconds = 10`,
 		`drawer = "C-b"`,
 		`select_prev = "k"`,
-		`new_workdir = "w"`,
+		`new_workspace = "w"`,
 		`new_group = "g"`,
 		`new_agent = "n"`,
 		`quit = "C-c"`,
@@ -241,6 +246,30 @@ func TestRuntimeIDIncludesSanitizedNameAndDigest(t *testing.T) {
 	}
 	if len(id) <= len("my-repo-") {
 		t.Fatalf("RuntimeID missing digest: %q", id)
+	}
+}
+
+func TestCurrentWorkdirPrefersWorkspaceEnvAndKeepsLegacyAlias(t *testing.T) {
+	workspace := t.TempDir()
+	legacy := t.TempDir()
+	t.Setenv(WorkspaceEnv, workspace)
+	t.Setenv(WorkdirEnv, legacy)
+
+	got, err := CurrentWorkdir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != workspace {
+		t.Fatalf("CurrentWorkdir = %q, want workspace env %q", got, workspace)
+	}
+
+	t.Setenv(WorkspaceEnv, "")
+	got, err = CurrentWorkdir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != legacy {
+		t.Fatalf("CurrentWorkdir = %q, want legacy env %q", got, legacy)
 	}
 }
 

@@ -12,7 +12,7 @@
 
 Weft runs one local supervisor that owns embedded Codex PTYs, state, and title
 hooks. Terminal UI clients attach to that supervisor to render the command
-center, then detach without stopping running Codex processes. Workdirs,
+center, then detach without stopping running Codex processes. Workspaces,
 optional flat groups, and agents are managed inside one global state file.
 
 ## Getting Started
@@ -24,7 +24,7 @@ brew install edwmurph/tap/weft
 ```
 
 Then run Weft from a project directory. On first interactive launch, Weft asks
-whether to add that directory as a workdir:
+whether to add that directory as a workspace:
 
 ```sh
 weft doctor
@@ -57,7 +57,7 @@ weft refresh
 weft status [--json]
 weft new [title]
 weft group add <name>
-weft workdir add <path>
+weft workspace add <path>
 weft rename [id] <title>
 weft close [id]
 weft close --kill
@@ -94,7 +94,8 @@ inherit the live Codex title until renamed. Titles passed to `weft new` or
 - `{auto}`: generated title from the first submitted message
 - `{codex}`: live Codex terminal title
 - `{status}`: live Codex status, falling back to agent lifecycle status
-- `{workdir}`: agent workdir path
+- `{workspace}`: agent workspace path
+- `{workdir}`: legacy alias for `{workspace}`
 - `{group}`: flat group name, when the agent is in a group
 
 For example, `weft rename "Codex {status}"` keeps a fixed title while showing
@@ -108,10 +109,10 @@ title_hook_timeout_seconds = 10
 ```
 
 When `title_hook_command` is configured, the first non-empty message submitted
-to each new Codex agent runs the hook from that agent's workdir. Weft sends
-JSON on stdin with `event`, `agent_id`, `workdir`, `group`, `status`, `title`,
-`title_template`, `codex_title`, and `first_message`, then saves the first
-non-empty stdout line as the generated title.
+to each new Codex agent runs the hook from that agent's workspace. Weft sends
+JSON on stdin with `event`, `agent_id`, `workspace`, legacy `workdir`, `group`,
+`status`, `title`, `title_template`, `codex_title`, and `first_message`, then
+saves the first non-empty stdout line as the generated title.
 
 Set an agent title to `{auto}` in the rename pane, or run
 `weft rename <id> "{auto}"`, to display that saved generated title. To make
@@ -128,13 +129,13 @@ the OpenAI Responses API with `OPENAI_TITLE_MODEL`, defaulting to
 message, so simple greetings like `hi` stay simple. You can replace it with any
 command that follows the same stdin/stdout contract. Set
 `WEFT_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
-outside the agent workdir.
+outside the agent workspace.
 
-The command center has `Workdirs` and `Agents` navigation panes. Agents can sit
-directly in a workdir as top-level rows. Groups are optional collapsible
+The command center has `Workspaces`, `Agents`, and `Console` panes. Agents can sit
+directly in a workspace as top-level rows. Groups are optional collapsible
 sections inside the `Agents` pane, and `Enter` on a group opens or collapses it.
 Dashboard forms use bordered inputs, compact validation/status lines, and
-state-specific key hints. In the `Workdirs` pane, `w` opens an add-workdir path
+state-specific key hints. In the `Workspaces` pane, `w` opens an add-workspace path
 prompt with a scrolling below-input autocomplete menu, arrow-key selection, and
 compact path status. Moving an agent autocompletes known group names after a
 matching prefix. Prompt inputs support Option/Alt word movement and deletion
@@ -156,7 +157,7 @@ focus_right = "Right"
 select_prev = "k"
 select_next = "j"
 open = "Enter"
-new_workdir = "w"
+new_workspace = "w"
 new_group = "g"
 new_agent = "n"
 move_agent = "m"
@@ -166,7 +167,7 @@ help = "?"
 quit = "C-c"
 ```
 
-In CODEX focus, Weft keeps the Codex pane framed while forwarding Codex input
+In CODEX focus, Weft keeps the Console pane framed while forwarding Codex input
 through the active PTY. The attached client enables enhanced terminal keyboard
 reporting so multiline shortcuts such as `Shift+Enter` are forwarded to Codex.
 Press the drawer key, `C-b` by default, to return to the command center. `C-c`
@@ -183,7 +184,7 @@ Weft stores runtime files globally:
 - `~/.weft/weftd.pid`
 - `~/.weft/weftd.log`
 
-`WEFT_WORKDIR` overrides the launch directory used for attach-time workdir
+`WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace
 selection and the first-run add prompt.
 `WEFT_HOME` overrides the runtime directory directly for development and tests.
 
@@ -191,8 +192,9 @@ The config keys are stable: `codex_command`, `title_template`,
 `title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. Legacy
 configs with `tmux_session` still load, but the setting is ignored by the
 supervisor architecture and is not generated for new installs. State is
-versioned. Old tabs/columns state is migrated into workdirs, optional groups,
-and agents. Old tmux-pane state is archived to `state.v1-tmux.json` because
+versioned. Old tabs/columns state is migrated into workspaces, optional groups,
+and agents. Internal state still uses the historical `workdirs` field for
+compatibility. Old tmux-pane state is archived to `state.v1-tmux.json` because
 native tmux panes cannot be adopted into supervisor-owned PTYs.
 
 ## Development
@@ -203,7 +205,7 @@ WEFT_RUN_INTEGRATION=1 go test ./...
 go build ./cmd/weft
 ```
 
-Live integration tests use temporary `WEFT_HOME`, `WEFT_WORKDIR`, and a fake
+Live integration tests use temporary `WEFT_HOME`, `WEFT_WORKSPACE`, and a fake
 `codex_command`. Use
 `WEFT_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
 to see per-step dashboard timing logs.

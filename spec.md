@@ -4,26 +4,26 @@ This is the living product and technical specification for Weft. Keep this file 
 
 ## Product Definition
 
-Weft is one global terminal command center for managing Codex agents across multiple workdirs.
+Weft is one global terminal command center for managing Codex agents across multiple workspaces.
 
-Weft is no longer one instance per workdir. One local Weft supervisor owns the global navigation state, the agent registry, and Codex PTYs. Terminal UI clients attach to that supervisor, render the command center, and can detach without stopping agents. Users can organize agents by workdir, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
+Weft is no longer one instance per workspace. One local Weft supervisor owns the global navigation state, the agent registry, and Codex PTYs. Terminal UI clients attach to that supervisor, render the command center, and can detach without stopping agents. Users can organize agents by workspace, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
 
 The core workflow is:
 
 1. Open Weft.
-2. Use the left navigation panes to choose a workdir and agent.
-3. Press `Enter` to maximize and focus the selected Codex thread.
+2. Use the left navigation panes to choose a workspace and agent.
+3. Press `Enter` to maximize and focus the selected console.
 4. Interact with Codex only while the Codex thread is focused and maximized.
 5. Reopen navigation to switch, organize, create, move, rename, or close agents.
 
 ## Design Principles
 
-- Global first: one Weft should manage all configured workdirs.
+- Global first: one Weft should manage all configured workspaces.
 - Codex first when active: once an agent is opened, Codex gets the whole terminal.
 - Navigation is structural, not workflow-stage based.
-- Workdir and group movement is manual.
+- Workspace and group movement is manual.
 - Group names are flat strings.
-- Groups are optional; agents can live directly in a workdir without a group.
+- Groups are optional; agents can live directly in a workspace without a group.
 - Agent rows render configured text only; no fixed status pills beside each row.
 - The terminal UI should stay dense, minimal, and close to the current iTerm-style Weft look.
 - Supervisor-owned sessions: agent PTYs must outlive any single TUI client.
@@ -132,31 +132,31 @@ Weft stores runtime files globally under `~/.weft` by default, or under
 - `weftd.lock`
 - `weftd.log`
 
-`WEFT_WORKDIR` overrides the launch directory used for attach-time workdir context.
+`WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace context. `WEFT_WORKDIR` remains a legacy compatibility alias.
 
 ## Primary Layout
 
 The app has three logical panes.
 
-## Workdirs Pane
+## Workspaces Pane
 
-The left pane lists configured workdirs as vertically stacked bordered cards.
+The left pane lists configured workspaces as vertically stacked bordered cards.
 
-When there are no configured workdirs, the pane shows centered help text telling
-the user that there are no workdirs and to press the configured add-workdir key.
+When there are no configured workspaces, the pane shows centered help text telling
+the user that there are no workspaces and to press the configured add-workspace key.
 
 Each card renders:
 
 - a title in the top border
-- `total`, the number of all agents in that workdir
+- `total`, the number of all agents in that workspace
 - `active`, the number of agents whose rendered/live status is `starting`, `running`, `working`, or `shipping`
 - `needs attention`, computed as `total - active`
 
-Do not render card-level `parked`, `stopped`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workdirs pane summarizes them only through `needs attention`.
+Do not render card-level `parked`, `stopped`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.
 
-The default card title is the display path, for example `~/code/personal/weft`. A workdir can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
+The default card title is the display path, for example `~/code/personal/weft`. A workspace can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
 
-Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workdirs pane has focus. Use a subtler blue border when the selected workdir is active but focus is in the Agents pane.
+Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workspaces pane has focus. Use a subtler blue border when the selected workspace is active but focus is in the Agents pane.
 
 Counts should use subtle colors:
 
@@ -174,9 +174,9 @@ Example:
 
 ## Agents Pane
 
-The middle pane shows agents for the selected workdir. It is always present so the Workdirs pane can stay purely scoped to workdirs.
+The middle pane shows agents for the selected workspace. It is always present so the Workspaces pane can stay purely scoped to workspaces.
 
-When no workdir exists or no workdir is selected, the Agents pane shows centered help text telling the user to add a workdir first. It must not advertise creating an agent until a workdir exists. When a workdir is selected but has no agents or groups, the Agents pane shows centered help text saying there are no agents and to press the configured new-agent key.
+When no workspace exists or no workspace is selected, the Agents pane shows centered help text telling the user to add a workspace first. It must not advertise creating an agent until a workspace exists. When a workspace is selected but has no agents or groups, the Agents pane shows centered help text saying there are no agents and to press the configured new-agent key.
 
 Agents without a group render as top-level rows. User-created groups render as collapsible sections inside this pane, with their member agents indented underneath. Creating a group must not force existing top-level agents into a visible `Ungrouped`, `General`, or `Inbox` section.
 
@@ -213,9 +213,9 @@ The main pane shows either:
 - a centered empty message when no agent is open, with a subtle Weft wordmark above it when space allows
 - the selected Codex thread when an agent is open
 
-When navigation is open, the workdirs and agents panes push the Codex pane to the right. When the user presses `Enter` on an agent, navigation slides away left, the Codex pane expands to the full terminal, and focus moves to Codex.
+When navigation is open, the Workspaces and Agents panes push the Console pane to the right. When the user presses `Enter` on an agent, navigation slides away left, the Console pane expands to the full terminal, and focus moves to Codex.
 
-Codex can only receive input when the Codex pane is focused and maximized. When navigation is open, keyboard input controls Weft navigation and organization, not the Codex PTY.
+Codex can only receive input when the Console pane is focused and maximized. When navigation is open, keyboard input controls Weft navigation and organization, not the Codex PTY.
 
 ## Navigation States
 
@@ -225,9 +225,9 @@ Weft has two primary UI states.
 
 Navigation panes are open.
 
-- Workdirs pane is visible.
+- Workspaces pane is visible.
 - Agents pane is visible.
-- Codex pane is visible but not focused.
+- Console pane is visible but not focused.
 - Codex PTY does not receive normal key input.
 - User can create, delete, rename, move, and select objects.
 
@@ -244,18 +244,18 @@ All in-dashboard text-entry forms use the same compact modal treatment:
 
 Autocomplete appears only when it has a useful known set:
 
-- path autocomplete for the add-workdir path prompt
+- path autocomplete for the add-workspace path prompt
 - group-name autocomplete for moving an agent to an existing group
 
 Autocomplete menus open directly under the input, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option closes the menu and leaves the form in a normal submit state.
 
 ## Codex Focus State
 
-Codex pane is maximized.
+Console pane is maximized.
 
-- Workdirs and agents panes are hidden offscreen to the left.
-- Codex pane fills the terminal.
-- Weft keeps the framed Codex pane visible while Codex is focused.
+- Workspaces and Agents panes are hidden offscreen to the left.
+- Console pane fills the terminal.
+- Weft keeps the framed Console pane visible while Codex is focused.
 - The attached client enables enhanced terminal keyboard reporting and forwards
   supported keyboard escape sequences into the active Codex PTY.
 - Codex-owned terminal behavior, including multiline shortcuts such as
@@ -270,13 +270,13 @@ These are product-level defaults and may map to existing config structures durin
 ```text
 Enter   Open selected agent and maximize Codex
 C-b     Toggle command center navigation
-Left/Right Move focus between workdirs and agents panes
+Left/Right Move focus between workspaces and agents panes
 j/k     Move selection within the focused navigation pane
-w       Add workdir
-g       Create group in selected workdir
+w       Add workspace
+g       Create group in selected workspace
 n       Create agent in the current group when the cursor is on a group or grouped agent; otherwise create a top-level agent
-m       Move selected agent to another group in the same workdir, or clear its group
-r       Rename selected workdir title, group, or agent title
+m       Move selected agent to another group in the same workspace, or clear its group
+r       Rename selected workspace title, group, or agent title
 d       Delete/remove selected item
 ?       Help
 C-c     Quit Weft from command center focus
@@ -286,7 +286,7 @@ Deletion behavior depends on selected item type and is defined below.
 
 ## Status
 
-Agent status exists in the model. The Workdirs pane summarizes status only as `active` and `needs attention` counts per workdir. A separate top-level global status summary is deferred.
+Agent status exists in the model. The Workspaces pane summarizes status only as `active` and `needs attention` counts per workspace. A separate top-level global status summary is deferred.
 
 Status should be available to title templates.
 
@@ -306,7 +306,7 @@ The exact derivation of `ready`, `running`, and other live states can reuse the 
 
 ## Title Templates
 
-Agent rows render a configured title string. Title templates are a global default only. They are not per-workdir, per-group, or per-agent in the first implementation.
+Agent rows render a configured title string. Title templates are a global default only. They are not per-workspace, per-group, or per-agent in the first implementation.
 
 An agent can still have its own base title. The global template controls how that title is rendered.
 
@@ -326,7 +326,8 @@ Supported variables:
 {auto}     generated title from the first submitted message
 {codex}    live Codex title
 {status}   derived/live agent status
-{workdir}  display workdir path
+{workspace}  display workspace path
+{workdir}    legacy alias for {workspace}
 {group}   flat group name
 ```
 
@@ -338,7 +339,7 @@ Example global templates:
 {status} {auto}
 {status} {title}
 {group}: {title}
-{workdir} / {group} / {title}
+{workspace} / {group} / {title}
 ```
 
 If a variable is unavailable, render a stable fallback rather than an empty broken string:
@@ -352,9 +353,9 @@ If a variable is unavailable, render a stable fallback rather than an empty brok
 
 Generated titles are computed for every agent when `title_hook_command` is
 configured. The first non-empty message submitted to the Codex PTY runs the
-hook from the agent workdir, sends JSON on stdin, and stores the first non-empty
+hook from the agent workspace, sends JSON on stdin, and stores the first non-empty
 stdout line as the agent's generated title. The hook payload includes
-`version`, `event`, `agent_id`, `workdir`, `group`, `status`, `title`,
+`version`, `event`, `agent_id`, `workspace`, legacy `workdir`, `group`, `status`, `title`,
 `title_template`, `codex_title`, and `first_message`.
 
 Weft must not encode provider-specific clients, model names, API keys, or HTTP
@@ -370,9 +371,11 @@ should be saved on the agent and shown in the footer and rename pane.
 
 ## Data Model
 
-The state model should move from flat tabs grouped by columns to global workdirs, flat groups, and agents.
+The state model should move from flat tabs grouped by columns to global workspaces, flat groups, and agents.
 
-Recommended normalized shape:
+The persisted JSON shape currently keeps historical `workdirs`, `workdir_id`, and related Go names for compatibility. Product UI, docs, commands, prompts, and title variables should call these objects workspaces.
+
+Current compatibility shape:
 
 ```go
 type State struct {
@@ -438,14 +441,15 @@ title_hook_timeout_seconds = 10
 Focus values:
 
 ```text
-workdirs
+workspaces
 agents
 codex
 ```
 
 Rules:
 
-- `workdirs` and `agents` focus are valid only while navigation is open.
+- `workspaces` and `agents` focus are valid only while navigation is open.
+- The persisted focus value may remain `workdirs` for compatibility; IPC should accept both `workspaces` and legacy `workdirs`.
 - `codex` focus is valid only while Codex is maximized.
 - Opening an agent with `Enter` sets focus to `codex` and closes navigation.
 - Reopening navigation moves focus back to the last focused navigation pane.
@@ -453,20 +457,20 @@ Rules:
 
 ## CRUD Semantics
 
-## Workdir CRUD
+## Workspace CRUD
 
-Add workdir:
+Add workspace:
 
 - User provides an existing filesystem path.
 - Weft must not auto-add the launch directory during state repair or first supervisor start.
-- When an interactive client opens from a launch directory that is already configured, Weft selects that workdir automatically.
+- When an interactive client opens from a launch directory that is already configured, Weft selects that workspace automatically.
 - When an interactive client opens from a launch directory that is not configured, Weft asks whether to add it before mutating state.
-- Dashboard prompt opens with the selected workdir's parent directory prefilled.
+- Dashboard prompt opens with the selected workspace's parent directory prefilled.
 - Dashboard prompt uses the shared bordered form input.
 - Autocomplete opens directly below the input when the user types or presses `Down`.
 - While autocomplete is open, `Up` and `Down` move the highlighted option, `Enter` chooses it, and `Esc` closes the menu.
 - Autocomplete uses a bounded visible menu; moving past the visible rows scrolls the menu to keep the highlighted option visible.
-- When autocomplete is closed and the path is an existing directory, `Enter` adds the workdir.
+- When autocomplete is closed and the path is an existing directory, `Enter` adds the workspace.
 - Choosing an autocomplete option closes the menu; nested directories do not reopen until the user types or asks for options again.
 - Dashboard prompt shows a compact status line for the current path, including an unobtrusive success indicator for existing directories.
 - Prompt inputs support Option/Alt word movement and deletion, including Option-Left, Option-Right, and Option-Backspace, when the terminal sends Option as Meta/Esc rather than plain Backspace.
@@ -475,29 +479,29 @@ Add workdir:
 - Display path using `~` when possible.
 - Do not create a default group.
 
-Remove workdir:
+Remove workspace:
 
-- Remove the workdir from Weft state.
-- Close all running agents in that workdir.
+- Remove the workspace from Weft state.
+- Close all running agents in that workspace.
 - Stop their PTYs.
 - Remove associated groups and agents from state.
 - Do not delete filesystem contents.
 - Confirm before removal if any agent is running, ready, or shipping.
 
-Rename workdir title:
+Rename workspace title:
 
-- Workdirs are still identified by path and stable ID.
-- Pressing `r` while focused on the Workdirs pane opens a workdir-title prompt.
-- Non-empty input stores the optional workdir title override.
+- Workspaces are still identified by path and stable ID.
+- Pressing `r` while focused on the Workspaces pane opens a workspace-title prompt.
+- Non-empty input stores the optional workspace title override.
 - Blank input clears the override and returns display to the default path title.
-- No CLI command is required for workdir title changes in the first implementation.
+- No CLI command is required for workspace title changes in the first implementation.
 
 ## Group CRUD
 
 Create group:
 
-- Creates a flat group name inside the selected workdir.
-- Name must be unique within that workdir.
+- Creates a flat group name inside the selected workspace.
+- Name must be unique within that workspace.
 - Name may include emoji and normal Unicode text.
 - Name must not contain `/` in the first implementation.
 
@@ -505,23 +509,23 @@ Rename group:
 
 - Updates the flat group name.
 - Keeps all agents in that group.
-- Must remain unique within the workdir.
+- Must remain unique within the workspace.
 
 Delete group:
 
 - Allowed only when empty.
 - If non-empty, prompt the user to move agents first.
-- Deleting the last group in a workdir is allowed.
+- Deleting the last group in a workspace is allowed.
 
 ## Agent CRUD
 
 Create agent:
 
-- Requires an existing selected workdir.
-- Creates an agent in the selected workdir.
+- Requires an existing selected workspace.
+- Creates an agent in the selected workspace.
 - If the cursor is on a group or grouped agent, create the agent in that group.
 - Otherwise create a top-level agent with no group.
-- Starts a Codex PTY with the agent workdir as the process working directory.
+- Starts a Codex PTY with the agent workspace as the process working directory.
 - Uses the configured global title template for display.
 
 Rename agent:
@@ -531,18 +535,18 @@ Rename agent:
 
 Move agent:
 
-- Moves the agent to another group in the same workdir.
+- Moves the agent to another group in the same workspace.
 - Can also clear the group, moving the agent back to a top-level row.
-- Dashboard prompt autocompletes existing group names in that workdir after the user types a matching prefix.
+- Dashboard prompt autocompletes existing group names in that workspace after the user types a matching prefix.
 - Does not restart the PTY.
-- Cross-workdir moves are out of scope for the first implementation.
+- Cross-workspace moves are out of scope for the first implementation.
 
 Close/delete agent:
 
 - Stops the PTY if running.
 - Removes the agent from state.
-- If the deleted agent is active, select another agent in the same workdir when one exists.
-- If the deleted agent was the last agent in that workdir, stay in that workdir and show an empty Agent pane.
+- If the deleted agent is active, select another agent in the same workspace when one exists.
+- If the deleted agent was the last agent in that workspace, stay in that workspace and show an empty Agents pane.
 
 ## PTY Lifecycle
 
@@ -558,18 +562,18 @@ agent_id
 PTY working directory:
 
 ```text
-workdir.path
+workspace path
 ```
 
 Rules:
 
-- Starting an agent launches Codex in its workdir.
-- Switching agents changes which PTY is rendered in the Codex pane.
+- Starting an agent launches Codex in its workspace.
+- Switching agents changes which PTY is rendered in the Console pane.
 - Alt-modified keys are forwarded to Codex agent PTYs with an ESC prefix so terminal Meta key bindings keep working in the embedded Codex instance.
 - Forwarded Codex input preserves key order, including rapid typed or pasted text.
 - Moving an agent between groups does not affect its PTY.
 - Top-level agents have no group.
-- Removing a workdir stops every PTY for agents in that workdir.
+- Removing a workspace stops every PTY for agents in that workspace.
 - Codex receives input only in Codex Focus State.
 - The active Codex PTY width matches the visible Codex content width inside the
   frame and left padding, so terminal wrapping aligns with what the user sees.
@@ -641,7 +645,7 @@ Global `--clear`:
 
 `weft --help`, `weft help`, and `weft -h`:
 
-- show the same Weft ASCII mark used by the empty Codex pane
+- show the same Weft ASCII mark used by the empty Console pane
 - leave blank space above the mark and a small left inset before the mark
 - advertise `weft` as the dashboard entry point rather than `weft start`
 - group commands by common dashboard use, agent organization, runtime, and
@@ -660,12 +664,12 @@ The UI should remain usable in small terminals.
 
 Minimum behavior:
 
-- The Workdirs pane has a fixed 64-column width when it is rendered beside the
+- The Workspaces pane has a fixed 64-column width when it is rendered beside the
   Agents pane.
-- At 120 columns and wider, show Workdirs, Agents, and Codex panes together.
-- At medium widths where a fixed Workdirs pane and useful Codex preview cannot
-  both fit, keep Workdirs and Agents visible and hide the Codex preview.
-- If navigation cannot fit, fall back to a single navigation pane that switches between workdirs and agents.
+- At 120 columns and wider, show Workspaces, Agents, and Console panes together.
+- At medium widths where a fixed Workspaces pane and useful Console preview cannot
+  both fit, keep Workspaces and Agents visible and hide the Console preview.
+- If navigation cannot fit, fall back to a single navigation pane that switches between workspaces and agents.
 - Codex Focus State must always give Codex the full available terminal.
 
 Visual style:
@@ -673,7 +677,7 @@ Visual style:
 - Terminal-native borders.
 - Dense layouts.
 - Minimal color.
-- Use bordered cards only for the Workdirs pane.
+- Use bordered cards only for the Workspaces pane.
 - No table layout.
 - No fixed status tags on agent rows.
 
@@ -681,19 +685,19 @@ Visual style:
 
 Existing state with flat tabs and columns should migrate as follows:
 
-- Current runtime workdir becomes the first workdir.
+- Current runtime workspace becomes the first workspace.
 - Each old column becomes one flat group name.
 - Each old tab becomes one agent.
 - Preserve tab ID as agent ID when safe.
 - Preserve title, Codex title, status, created timestamp, and updated timestamp.
 - Preserve active tab as active agent.
-- Set selected workdir and selected group from the active agent when the active agent has a group.
+- Set selected workspace and selected group from the active agent when the active agent has a group.
 - Default `NavOpen` to false if an active agent exists, otherwise true.
 
 Unsupported or legacy state should be archived before writing migrated state.
 
 The supervisor architecture migration should preserve `config.toml`,
-`state.json`, workdirs, groups, agents, titles, generated titles, selected
+`state.json`, workspaces, groups, agents, titles, generated titles, selected
 objects, and focus state. It cannot adopt live Codex PTYs from the old
 legacy tmux-pane runtime. If an old runtime is running during upgrade, Weft
 should explain that saved metadata will migrate but live terminals must be
@@ -715,7 +719,7 @@ focus_right = "Right"
 select_prev = "k"
 select_next = "j"
 open = "Enter"
-new_workdir = "w"
+new_workspace = "w"
 new_group = "g"
 new_agent = "n"
 move_agent = "m"
@@ -740,10 +744,10 @@ Unit tests:
 - client/supervisor protocol handshake
 - version mismatch and upgrade restart decisions
 - command routing from CLI/TUI client to supervisor
-- workdir creation/removal
-- workdir title override set/clear behavior
+- workspace creation/removal
+- workspace title override set/clear behavior
 - group create/rename/delete validation
-- agent move within a workdir
+- agent move within a workspace
 - title template rendering
 - focus transitions
 - layout width calculations
@@ -756,18 +760,18 @@ Integration tests:
 - launch without tmux installed or on `PATH`
 - start supervisor with `weft --no-attach`
 - attach, detach, and reattach while an agent keeps running
-- add workdir, group, agent
+- add workspace, group, agent
 - open agent with `Enter`
 - collapse or open a group with `Enter`
 - verify nav panes collapse and Codex receives input
 - reopen navigation and switch agents
-- remove workdir and verify agents/PTYs close
-- delete every group and agent from a workdir and keep an empty Agents pane
-- persist and reload selected workdir/group/agent state
+- remove workspace and verify agents/PTYs close
+- delete every group and agent from a workspace and keep an empty Agents pane
+- persist and reload selected workspace/group/agent state
 - upgrade with no running agents restarts the supervisor automatically
 - upgrade with running agents preserves the old supervisor and prompts before restart
 
-Integration tests should use temporary `WEFT_HOME`, temporary `WEFT_WORKDIR`,
+Integration tests should use temporary `WEFT_HOME`, temporary `WEFT_WORKSPACE`,
 and a fake `codex_command`. They should not require tmux.
 
 Verification workflow:
@@ -785,8 +789,8 @@ go build ./cmd/weft
 - Nested group names
 - Per-group title templates
 - Per-agent title templates
-- CLI command for workdir title overrides
-- Cross-workdir agent moves
+- CLI command for workspace title overrides
+- Cross-workspace agent moves
 - Emoji picker
 - Automatic group classification
 - Multi-select batch operations

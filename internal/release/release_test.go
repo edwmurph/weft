@@ -28,7 +28,7 @@ func TestInferBumpAndBumpVersion(t *testing.T) {
 
 func TestRenderReleaseNotesGroupsConventionalCommitSubjects(t *testing.T) {
 	notes := RenderReleaseNotes([]Commit{
-		{Subject: "feat: add workdir cards"},
+		{Subject: "feat: add workspace cards"},
 		{Subject: "fix: keep focused panes visible"},
 		{Subject: "docs: document release notes"},
 		{Subject: "chore: refresh generated formula"},
@@ -36,7 +36,7 @@ func TestRenderReleaseNotesGroupsConventionalCommitSubjects(t *testing.T) {
 
 	want := `## Features
 
-- Add workdir cards
+- Add workspace cards
 
 ## Fixes
 

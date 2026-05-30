@@ -176,14 +176,14 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case bindingMatches(m.cfg.KeyBindings.FocusLeft, msg):
-		return m, m.request("focus", map[string]string{"target": string(state.FocusWorkdirs)})
+		return m, m.request("focus", map[string]string{"target": "workspaces"})
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
 		return m, m.request("focus", map[string]string{"target": string(state.FocusFolders)})
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
 		return m, m.request("nav_move", map[string]string{"delta": "-1"})
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
 		return m, m.request("nav_move", map[string]string{"delta": "1"})
-	case bindingMatches(m.cfg.KeyBindings.NewWorkdir, msg):
+	case bindingMatches(m.cfg.KeyBindings.NewWorkspace, msg):
 		m.startPrompt(promptWorkdir, defaultWorkdirPromptValue(m.snapshot.State, m.runtime.Workdir))
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.startPrompt(promptGroup, "")
@@ -296,13 +296,13 @@ func (m *ClientModel) startDeleteConfirm() {
 func (m ClientModel) applyPrompt(value string) tea.Cmd {
 	switch m.prompt {
 	case promptWorkdir:
-		return m.request("add_workdir", map[string]string{"path": value})
+		return m.request("add_workspace", map[string]string{"path": value})
 	case promptGroup:
 		return m.request("add_group", map[string]string{"path": value})
 	case promptRenameGroup:
 		return m.request("rename_group", map[string]string{"id": m.pendingID, "path": value})
 	case promptWorkdirTitle:
-		return m.request("rename_workdir", map[string]string{"id": m.pendingID, "title": value})
+		return m.request("rename_workspace", map[string]string{"id": m.pendingID, "title": value})
 	case promptRenameAgent:
 		return m.request("rename", map[string]string{"id": m.pendingID, "title": value})
 	case promptMoveAgent:
@@ -316,9 +316,9 @@ func (m ClientModel) applyPrompt(value string) tea.Cmd {
 func (m ClientModel) applyConfirm() tea.Cmd {
 	switch m.confirm {
 	case confirmAddLaunchWorkdir:
-		return m.request("add_workdir", map[string]string{"path": m.pendingID})
+		return m.request("add_workspace", map[string]string{"path": m.pendingID})
 	case confirmDeleteWorkdir:
-		return m.request("remove_workdir", map[string]string{"id": m.pendingID})
+		return m.request("remove_workspace", map[string]string{"id": m.pendingID})
 	case confirmDeleteGroup:
 		return m.request("remove_group", map[string]string{"id": m.pendingID})
 	case confirmDeleteAgent:
@@ -333,6 +333,7 @@ func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 	return func() tea.Msg {
 		args = cloneArgs(args)
 		args["client_id"] = clientID
+		args["launch_workspace"] = rt.Workdir
 		args["launch_workdir"] = rt.Workdir
 		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 		return clientResponseMsg{command: command, response: response, err: err}

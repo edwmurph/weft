@@ -231,7 +231,7 @@ func handleRequest(engine *tui.Model, clients *clientCoordinator, request ipc.Re
 		if clientID == "" {
 			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required")), nil
 		}
-		if strings.TrimSpace(request.Args["launch_workdir"]) != "" {
+		if strings.TrimSpace(request.Args["launch_workspace"]) != "" || strings.TrimSpace(request.Args["launch_workdir"]) != "" {
 			engine.HandleSupervisorRequest(ipc.Request{Command: "snapshot", Args: request.Args})
 		}
 		if clients.activeID != "" && clients.activeID != clientID {
@@ -431,6 +431,7 @@ func waitForStop(rt config.Runtime, timeout time.Duration) {
 func supervisorEnv(rt config.Runtime, exe string) []string {
 	env := append([]string{}, os.Environ()...)
 	env = upsertEnv(env, config.AppDirEnv, rt.Dir)
+	env = upsertEnv(env, config.WorkspaceEnv, rt.Workdir)
 	env = upsertEnv(env, config.WorkdirEnv, rt.Workdir)
 	env = upsertEnv(env, "WEFT_EXECUTABLE", exe)
 	return env

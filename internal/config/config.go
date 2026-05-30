@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	AppDirEnv  = "WEFT_HOME"
-	WorkdirEnv = "WEFT_WORKDIR"
+	AppDirEnv    = "WEFT_HOME"
+	WorkspaceEnv = "WEFT_WORKSPACE"
+	WorkdirEnv   = "WEFT_WORKDIR"
 )
 
 var (
@@ -24,20 +25,20 @@ var (
 )
 
 type KeyBindings struct {
-	Drawer     string `toml:"drawer"`
-	FocusLeft  string `toml:"focus_left"`
-	FocusRight string `toml:"focus_right"`
-	SelectPrev string `toml:"select_prev"`
-	SelectNext string `toml:"select_next"`
-	Open       string `toml:"open"`
-	NewWorkdir string `toml:"new_workdir"`
-	NewGroup   string `toml:"new_group"`
-	NewAgent   string `toml:"new_agent"`
-	MoveAgent  string `toml:"move_agent"`
-	Rename     string `toml:"rename"`
-	Delete     string `toml:"delete"`
-	Help       string `toml:"help"`
-	Quit       string `toml:"quit"`
+	Drawer       string `toml:"drawer"`
+	FocusLeft    string `toml:"focus_left"`
+	FocusRight   string `toml:"focus_right"`
+	SelectPrev   string `toml:"select_prev"`
+	SelectNext   string `toml:"select_next"`
+	Open         string `toml:"open"`
+	NewWorkspace string `toml:"new_workspace"`
+	NewGroup     string `toml:"new_group"`
+	NewAgent     string `toml:"new_agent"`
+	MoveAgent    string `toml:"move_agent"`
+	Rename       string `toml:"rename"`
+	Delete       string `toml:"delete"`
+	Help         string `toml:"help"`
+	Quit         string `toml:"quit"`
 }
 
 type Config struct {
@@ -69,20 +70,20 @@ func (e ConfigError) Error() string {
 
 func DefaultKeyBindings() KeyBindings {
 	return KeyBindings{
-		Drawer:     "C-b",
-		FocusLeft:  "Left",
-		FocusRight: "Right",
-		SelectPrev: "k",
-		SelectNext: "j",
-		Open:       "Enter",
-		NewWorkdir: "w",
-		NewGroup:   "g",
-		NewAgent:   "n",
-		MoveAgent:  "m",
-		Rename:     "r",
-		Delete:     "d",
-		Help:       "?",
-		Quit:       "C-c",
+		Drawer:       "C-b",
+		FocusLeft:    "Left",
+		FocusRight:   "Right",
+		SelectPrev:   "k",
+		SelectNext:   "j",
+		Open:         "Enter",
+		NewWorkspace: "w",
+		NewGroup:     "g",
+		NewAgent:     "n",
+		MoveAgent:    "m",
+		Rename:       "r",
+		Delete:       "d",
+		Help:         "?",
+		Quit:         "C-c",
 	}
 }
 
@@ -124,6 +125,9 @@ func (r Runtime) TUISocket() string {
 }
 
 func CurrentWorkdir() (string, error) {
+	if configured := os.Getenv(WorkspaceEnv); configured != "" {
+		return filepath.Abs(expandHome(configured))
+	}
 	if configured := os.Getenv(WorkdirEnv); configured != "" {
 		return filepath.Abs(expandHome(configured))
 	}
@@ -146,7 +150,7 @@ func RuntimeID(workdir string) string {
 	name = regexp.MustCompile(`[^A-Za-z0-9_-]+`).ReplaceAllString(name, "-")
 	name = strings.Trim(name, "-")
 	if name == "" {
-		name = "workdir"
+		name = "workspace"
 	}
 	sum := sha1.Sum([]byte(workdir))
 	return fmt.Sprintf("%s-%s", name, hex.EncodeToString(sum[:])[:8])
@@ -182,30 +186,31 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 		TitleHookTimeoutSeconds int      `toml:"title_hook_timeout_seconds"`
 		Columns                 []string `toml:"columns"`
 		KeyBindings             struct {
-			Drawer       string `toml:"drawer"`
-			FocusLeft    string `toml:"focus_left"`
-			FocusRight   string `toml:"focus_right"`
-			SelectPrev   string `toml:"select_prev"`
-			SelectNext   string `toml:"select_next"`
-			Open         string `toml:"open"`
-			NewWorkdir   string `toml:"new_workdir"`
-			NewGroup     string `toml:"new_group"`
-			NewFolder    string `toml:"new_folder"`
-			NewAgent     string `toml:"new_agent"`
-			MoveAgent    string `toml:"move_agent"`
-			Delete       string `toml:"delete"`
-			DrawerLegacy string `toml:"focus_toggle"`
-			New          string `toml:"new"`
-			Prev         string `toml:"prev"`
-			Previous     string `toml:"previous"`
-			Next         string `toml:"next"`
-			MoveLeft     string `toml:"move_left"`
-			MoveRight    string `toml:"move_right"`
-			Rename       string `toml:"rename"`
-			Close        string `toml:"close"`
-			Help         string `toml:"help"`
-			CloseWeft    string `toml:"close_weft"`
-			Quit         string `toml:"quit"`
+			Drawer           string `toml:"drawer"`
+			FocusLeft        string `toml:"focus_left"`
+			FocusRight       string `toml:"focus_right"`
+			SelectPrev       string `toml:"select_prev"`
+			SelectNext       string `toml:"select_next"`
+			Open             string `toml:"open"`
+			NewWorkspace     string `toml:"new_workspace"`
+			NewWorkdirLegacy string `toml:"new_workdir"`
+			NewGroup         string `toml:"new_group"`
+			NewFolder        string `toml:"new_folder"`
+			NewAgent         string `toml:"new_agent"`
+			MoveAgent        string `toml:"move_agent"`
+			Delete           string `toml:"delete"`
+			DrawerLegacy     string `toml:"focus_toggle"`
+			New              string `toml:"new"`
+			Prev             string `toml:"prev"`
+			Previous         string `toml:"previous"`
+			Next             string `toml:"next"`
+			MoveLeft         string `toml:"move_left"`
+			MoveRight        string `toml:"move_right"`
+			Rename           string `toml:"rename"`
+			Close            string `toml:"close"`
+			Help             string `toml:"help"`
+			CloseWeft        string `toml:"close_weft"`
+			Quit             string `toml:"quit"`
 		} `toml:"key_bindings"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
@@ -259,7 +264,11 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 	} else {
 		applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.New)
 	}
-	applyBinding(&cfg.KeyBindings.NewWorkdir, raw.KeyBindings.NewWorkdir)
+	if raw.KeyBindings.NewWorkspace != "" {
+		applyBinding(&cfg.KeyBindings.NewWorkspace, raw.KeyBindings.NewWorkspace)
+	} else {
+		applyBinding(&cfg.KeyBindings.NewWorkspace, raw.KeyBindings.NewWorkdirLegacy)
+	}
 	if raw.KeyBindings.NewGroup != "" {
 		applyBinding(&cfg.KeyBindings.NewGroup, raw.KeyBindings.NewGroup)
 	} else {
@@ -307,7 +316,7 @@ func (c Config) Validate() error {
 	for name, value := range map[string]string{
 		"drawer": c.KeyBindings.Drawer, "focus_left": c.KeyBindings.FocusLeft, "focus_right": c.KeyBindings.FocusRight,
 		"select_prev": c.KeyBindings.SelectPrev, "select_next": c.KeyBindings.SelectNext, "open": c.KeyBindings.Open,
-		"new_workdir": c.KeyBindings.NewWorkdir, "new_group": c.KeyBindings.NewGroup, "new_agent": c.KeyBindings.NewAgent,
+		"new_workspace": c.KeyBindings.NewWorkspace, "new_group": c.KeyBindings.NewGroup, "new_agent": c.KeyBindings.NewAgent,
 		"move_agent": c.KeyBindings.MoveAgent, "rename": c.KeyBindings.Rename, "delete": c.KeyBindings.Delete,
 		"help": c.KeyBindings.Help, "quit": c.KeyBindings.Quit,
 	} {
@@ -334,6 +343,13 @@ func MigrateDefaultConfig(path string) error {
 	updated = strings.ReplaceAll(updated, `close = "x"`, `close = "c"`)
 	updated = strings.ReplaceAll(updated, `new_folder = "f"`, `new_group = "g"`)
 	updated = regexp.MustCompile(`(?m)^new_folder\s*=\s*"([^"\n]*)"\s*$`).ReplaceAllString(updated, `new_group = "$1"`)
+	workspaceBindingRE := regexp.MustCompile(`(?m)^new_workspace\s*=`)
+	workdirBindingRE := regexp.MustCompile(`(?m)^new_workdir\s*=\s*"([^"\n]*)"\s*$`)
+	if workspaceBindingRE.MatchString(updated) {
+		updated = workdirBindingRE.ReplaceAllString(updated, "")
+	} else {
+		updated = workdirBindingRE.ReplaceAllString(updated, `new_workspace = "$1"`)
+	}
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-a"`, `focus_toggle = "C-g"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-d"`, `focus_toggle = "C-g"`)
 	updated = regexp.MustCompile(`(?m)^sessions\s*=\s*"[^"\n]*"\n?`).ReplaceAllString(updated, "")
@@ -394,7 +410,7 @@ func MigrateDefaultConfig(path string) error {
 		`select_prev = "k"`,
 		`select_next = "j"`,
 		`open = "Enter"`,
-		`new_workdir = "w"`,
+		`new_workspace = "w"`,
 		`new_group = "g"`,
 		`new_agent = "n"`,
 		`move_agent = "m"`,
@@ -436,7 +452,7 @@ focus_right = "Right"
 select_prev = "k"
 select_next = "j"
 open = "Enter"
-new_workdir = "w"
+new_workspace = "w"
 new_group = "g"
 new_agent = "n"
 move_agent = "m"

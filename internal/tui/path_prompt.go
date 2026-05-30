@@ -315,9 +315,9 @@ func defaultWorkdirPromptValue(st state.State, fallback string) string {
 
 func workdirAddMessage(previous state.State, workdir state.Workdir) string {
 	if workdirByPath(previous, workdir.Path) != nil {
-		return "selected existing workdir " + sessions.DisplayPath(workdir.Path)
+		return "selected existing workspace " + sessions.DisplayPath(workdir.Path)
 	}
-	return "added workdir " + sessions.DisplayPath(workdir.Path)
+	return "added workspace " + sessions.DisplayPath(workdir.Path)
 }
 
 func renderPromptInput(label string, input textinput.Model, width int) []string {
@@ -369,11 +369,11 @@ func renderPromptModal(ctx promptContext, input textinput.Model, width int, heig
 func promptTitle(prompt promptKind) string {
 	switch prompt {
 	case promptWorkdir:
-		return "Add workdir"
+		return "Add workspace"
 	case promptGroup:
 		return "Create group"
 	case promptWorkdirTitle:
-		return "Rename workdir"
+		return "Rename workspace"
 	case promptRenameGroup:
 		return "Rename group"
 	case promptRenameAgent:
@@ -399,7 +399,7 @@ func promptLabel(prompt promptKind) string {
 func promptHint(prompt promptKind) string {
 	switch prompt {
 	case promptGroup:
-		return "Flat and unique in this workdir."
+		return "Flat and unique in this workspace."
 	case promptWorkdirTitle:
 		return "Blank uses the path title."
 	case promptMoveAgent:
@@ -426,9 +426,9 @@ func renderConfirmPrompt(confirm confirmKind, target string, width int) string {
 func confirmTitle(confirm confirmKind) string {
 	switch confirm {
 	case confirmAddLaunchWorkdir:
-		return "Add this workdir to Weft?"
+		return "Add this workspace to Weft?"
 	case confirmDeleteWorkdir:
-		return "Delete workdir"
+		return "Delete workspace"
 	case confirmDeleteGroup:
 		return "Delete group"
 	case confirmDeleteAgent:
@@ -646,7 +646,7 @@ func validateGroupPrompt(ctx promptContext, value string) string {
 		workdirID = folder.WorkdirID
 	}
 	if workdirID == "" || state.WorkdirByID(ctx.state, workdirID) == nil {
-		return "Select a workdir first"
+		return "Select a workspace first"
 	}
 	for _, folder := range state.FoldersForWorkdir(ctx.state, workdirID) {
 		if folder.Path == value && folder.ID != ctx.pendingID {

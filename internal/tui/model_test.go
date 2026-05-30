@@ -66,17 +66,17 @@ func TestNewAgentRequiresWorkdir(t *testing.T) {
 	if cmd != nil || len(model.state.Agents) != 0 {
 		t.Fatalf("new agent should be blocked without workdir, cmd=%v agents=%#v", cmd, model.state.Agents)
 	}
-	if model.message != "add a workdir first" {
+	if model.message != "add a workspace first" {
 		t.Fatalf("message = %q", model.message)
 	}
 
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{}})
-	if response.OK || response.Message != "add a workdir first" || cmd != nil {
+	if response.OK || response.Message != "add a workspace first" || cmd != nil {
 		t.Fatalf("ipc new should be blocked without workdir, response=%#v cmd=%v", response, cmd)
 	}
 }
 
-func TestIPCLaunchWorkdirSelectsExistingWorkdir(t *testing.T) {
+func TestIPCLaunchWorkspaceSelectsExistingWorkspace(t *testing.T) {
 	rt := testRuntime(t)
 	other := t.TempDir()
 	launch := t.TempDir()
@@ -88,13 +88,13 @@ func TestIPCLaunchWorkdirSelectsExistingWorkdir(t *testing.T) {
 	next.SelectedWorkdirID = "w"
 	model := NewModel(rt, config.DefaultConfig("weft-test"), next)
 
-	response, _ := model.handleIPC(ipc.Request{Command: "snapshot", Args: map[string]string{"launch_workdir": launch}})
+	response, _ := model.handleIPC(ipc.Request{Command: "snapshot", Args: map[string]string{"launch_workspace": launch}})
 
 	if !response.OK {
 		t.Fatalf("snapshot response = %#v", response)
 	}
 	if model.state.SelectedWorkdirID != "launch" {
-		t.Fatalf("selected workdir = %q, want launch", model.state.SelectedWorkdirID)
+		t.Fatalf("selected workspace = %q, want launch", model.state.SelectedWorkdirID)
 	}
 }
 
@@ -108,13 +108,13 @@ func TestClientPromptsToAddMissingLaunchWorkdir(t *testing.T) {
 		t.Fatalf("prompt state = mode:%s confirm:%s pending:%q", model.mode, model.confirm, model.pendingID)
 	}
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Add this workdir to Weft?", "Current directory", "Y yes", "N no"} {
+	for _, expected := range []string{"Add this workspace to Weft?", "Current directory", "Y yes", "N no"} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("launch workdir prompt missing %q:\n%s", expected, got)
+			t.Fatalf("launch workspace prompt missing %q:\n%s", expected, got)
 		}
 	}
 	if strings.Contains(got, "New agents will start from this directory.") {
-		t.Fatalf("launch workdir prompt should not include agent-start explanation:\n%s", got)
+		t.Fatalf("launch workspace prompt should not include agent-start explanation:\n%s", got)
 	}
 }
 
@@ -571,12 +571,12 @@ func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	if got := model.state.Workdirs[0].Title; got != "" {
 		t.Fatalf("blank input should clear title override, got %q", got)
 	}
-	if model.message != "cleared workdir title" {
+	if model.message != "cleared workspace title" {
 		t.Fatalf("message = %q", model.message)
 	}
 }
 
-func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) {
+func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) {
 	parent := t.TempDir()
 	current := filepath.Join(parent, "current")
 	if err := os.Mkdir(current, 0o700); err != nil {
@@ -592,7 +592,7 @@ func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
 	model = updated.(Model)
 	if cmd != nil {
-		t.Fatalf("workdir prompt should not start command, got %#v", cmd)
+		t.Fatalf("workspace prompt should not start command, got %#v", cmd)
 	}
 	if model.mode != modeInput || model.prompt != promptWorkdir {
 		t.Fatalf("prompt state = mode:%s prompt:%s", model.mode, model.prompt)
@@ -603,7 +603,7 @@ func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) 
 
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Add workdir",
+		"Add workspace",
 		"Path",
 		"✓ ",
 		"Enter add",
@@ -611,17 +611,17 @@ func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) 
 		"Esc cancel",
 	} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("workdir modal missing %q:\n%s", expected, got)
+			t.Fatalf("workspace modal missing %q:\n%s", expected, got)
 		}
 	}
 	if strings.Contains(got, "> current") {
-		t.Fatalf("workdir menu should start closed:\n%s", got)
+		t.Fatalf("workspace menu should start closed:\n%s", got)
 	}
 	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "✓ "+parent {
 		t.Fatalf("path status = %q", status)
 	}
 	if strings.Count(got, "╭") < 2 || strings.Count(got, "╰") < 2 {
-		t.Fatalf("workdir modal should render a bordered input box:\n%s", got)
+		t.Fatalf("workspace modal should render a bordered input box:\n%s", got)
 	}
 	if got := model.input.MatchedSuggestions(); len(got) != 1 || got[0] != withTrailingSeparator(current) {
 		t.Fatalf("matched suggestions = %#v", got)
@@ -638,7 +638,7 @@ func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
 		"Create group",
 		"Group",
 		"Group required",
-		"Flat and unique in this workdir.",
+		"Flat and unique in this workspace.",
 		"Esc cancel",
 	} {
 		if !strings.Contains(got, expected) {
@@ -662,7 +662,7 @@ func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
 
 	model.startPrompt(promptWorkdirTitle, "")
 	got = ansi.Strip(model.View())
-	for _, expected := range []string{"Rename workdir", "Blank uses path title", "Enter clear", "Esc cancel"} {
+	for _, expected := range []string{"Rename workspace", "Blank uses path title", "Enter clear", "Esc cancel"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("blank title prompt missing %q:\n%s", expected, got)
 		}
@@ -740,7 +740,7 @@ func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeNormal {
-		t.Fatalf("second enter should add workdir, mode=%s", model.mode)
+		t.Fatalf("second enter should add workspace, mode=%s", model.mode)
 	}
 	if model.state.SelectedWorkdirID == "" || model.state.Workdirs[len(model.state.Workdirs)-1].Path != beta {
 		t.Fatalf("workdir was not added/selected: %#v", model.state.Workdirs)
@@ -1104,7 +1104,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workdirs") || !strings.Contains(got, "WEFT  C-b command center  C-c to Codex") {
+	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b command center  C-c to Codex") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 

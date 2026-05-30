@@ -143,7 +143,7 @@ func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	stop := runTestSupervisor(t, rt, cfg, store)
 	defer stop()
 
-	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "add_workdir", Args: map[string]string{"path": rt.Workdir}}, 2*time.Second); err != nil {
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "add_workspace", Args: map[string]string{"path": rt.Workdir}}, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "new", Args: map[string]string{"title": "Fake"}}, 2*time.Second); err != nil {

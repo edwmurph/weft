@@ -67,8 +67,10 @@ func Run(args []string) error {
 			action = func() error { return groupCommand(args[1:]) }
 		case "folder":
 			action = func() error { return groupCommand(args[1:]) }
+		case "workspace":
+			action = func() error { return workspaceCommand(args[1:]) }
 		case "workdir":
-			action = func() error { return workdirCommand(args[1:]) }
+			action = func() error { return workspaceCommand(args[1:]) }
 		case "rename":
 			action = func() error { return rename(args[1:]) }
 		case "close":
@@ -152,7 +154,7 @@ func cliHelpText() string {
 		"  weft <command> --clear       Clear runtime state, then run the command.",
 		"  weft --no-attach             Start or reuse the supervisor without opening the dashboard.",
 		"  weft refresh                 Request a fresh dashboard snapshot.",
-		"  weft status [--json]         Show supervisor, workdir, group, and agent state.",
+		"  weft status [--json]         Show supervisor, workspace, group, and agent state.",
 		"  weft doctor                  Check local runtime and Codex command health.",
 		"  weft doctor keys             Diagnose terminal key encoding.",
 		"",
@@ -161,8 +163,8 @@ func cliHelpText() string {
 		"  weft select <id>             Make an agent active.",
 		"  weft rename [id] <title>     Rename the selected agent or the given agent.",
 		"  weft close [id]              Close the active client or a Codex agent.",
-		"  weft group add <name>        Add a group in the current workdir.",
-		"  weft workdir add <path>      Add a workdir to the dashboard.",
+		"  weft group add <name>        Add a group in the current workspace.",
+		"  weft workspace add <path>    Add a workspace to the command center.",
 		"  weft move-left               Move the selected agent out of its group.",
 		"  weft move-right              Move the selected agent into the selected group.",
 		"",
@@ -322,7 +324,7 @@ func status(args []string) error {
 		return json.NewEncoder(os.Stdout).Encode(st)
 	}
 	fmt.Printf("supervisor: down (%v)\n", err)
-	fmt.Printf("launch workdir: %s\nruntime dir: %s\nfocus: %s\nworkdirs: %d\ngroups: %d\nagents: %d\n", rt.Workdir, rt.Dir, displayFocus(st.Focus), len(st.Workdirs), len(st.Folders), len(st.Agents))
+	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\nagents: %d\n", rt.Workdir, rt.Dir, displayFocus(st.Focus), len(st.Workdirs), len(st.Folders), len(st.Agents))
 	return nil
 }
 
@@ -346,28 +348,28 @@ func groupCommand(args []string) error {
 	return callIPC("add_group", map[string]string{"path": strings.Join(args[1:], " ")}, false)
 }
 
-func workdirCommand(args []string) error {
+func workspaceCommand(args []string) error {
 	if len(args) < 2 || args[0] != "add" {
-		return errors.New("workdir requires: add <path>")
+		return errors.New("workspace requires: add <path>")
 	}
-	path, err := validateWorkdirAddPath(strings.Join(args[1:], " "))
+	path, err := validateWorkspaceAddPath(strings.Join(args[1:], " "))
 	if err != nil {
 		return err
 	}
-	return callIPC("add_workdir", map[string]string{"path": path}, false)
+	return callIPC("add_workspace", map[string]string{"path": path}, false)
 }
 
-func validateWorkdirAddPath(path string) (string, error) {
+func validateWorkspaceAddPath(path string) (string, error) {
 	path = state.NormalizeWorkdirPath(path)
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("workdir path does not exist: %s", path)
+			return "", fmt.Errorf("workspace path does not exist: %s", path)
 		}
-		return "", fmt.Errorf("cannot read workdir path %s: %w", path, err)
+		return "", fmt.Errorf("cannot read workspace path %s: %w", path, err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("workdir path is not a directory: %s", path)
+		return "", fmt.Errorf("workspace path is not a directory: %s", path)
 	}
 	return path, nil
 }
@@ -390,7 +392,7 @@ func listSessions() error {
 	if response.State != nil {
 		agents = len(response.State.Agents)
 	}
-	fmt.Printf("%-12s %-7s %-7s %-7s %s\n", "Supervisor", "Status", "Clients", "Agents", "Workdir")
+	fmt.Printf("%-12s %-7s %-7s %-7s %s\n", "Supervisor", "Status", "Clients", "Agents", "Workspace")
 	fmt.Printf("%-12s %-7s %-7d %-7d %s\n", "weftd", "running", clients, agents, sessions.DisplayPath(rt.Workdir))
 	return nil
 }
@@ -479,10 +481,10 @@ func doctor(args []string) error {
 			fmt.Printf("warn Codex command is not on PATH: %s\n", cfg.CodexCommand)
 		}
 	}
-	fmt.Printf("info launch workdir: %s\n", rt.Workdir)
+	fmt.Printf("info launch workspace: %s\n", rt.Workdir)
 	fmt.Printf("info runtime dir: %s\n", rt.Dir)
 	fmt.Printf("ok config: %s\n", rt.ConfigPath)
-	fmt.Printf("ok state: %s (%d workdirs, %d groups, %d agents)\n", rt.StatePath, len(st.Workdirs), len(st.Folders), len(st.Agents))
+	fmt.Printf("ok state: %s (%d workspaces, %d groups, %d agents)\n", rt.StatePath, len(st.Workdirs), len(st.Folders), len(st.Agents))
 	if _, err := supervisor.Status(rt); err == nil {
 		fmt.Println("ok supervisor: running")
 	} else {
@@ -521,7 +523,7 @@ func configCommand(args []string) error {
 	switch args[0] {
 	case "info":
 		fmt.Println("Weft global runtime")
-		fmt.Printf("Launch workdir: %s\n", rt.Workdir)
+		fmt.Printf("Launch workspace: %s\n", rt.Workdir)
 		fmt.Printf("Runtime dir: %s\n", rt.Dir)
 		fmt.Printf("Config: %s\n", rt.ConfigPath)
 		fmt.Printf("State: %s\n", rt.StatePath)
@@ -548,6 +550,7 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 		return err
 	}
 	args = cloneArgs(args)
+	args["launch_workspace"] = rt.Workdir
 	args["launch_workdir"] = rt.Workdir
 	result, err := supervisor.Ensure(rt)
 	if err != nil {
@@ -690,6 +693,9 @@ func looksLikeID(value string) bool {
 }
 
 func displayFocus(focus state.Focus) string {
+	if focus == state.FocusWorkdirs {
+		return "workspaces"
+	}
 	if focus == state.FocusFolders {
 		return "agents"
 	}

@@ -207,9 +207,9 @@ func renderWorkdirsPane(cfg config.Config, st state.State, width int, height int
 		}
 	}
 	if len(content) == 0 {
-		content = renderCenteredPaneHelp(width, height, "No workdirs", "Press "+cfg.KeyBindings.NewWorkdir+" to add one.")
+		content = renderCenteredPaneHelp(width, height, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
-	return renderPaneFrame("Workdirs", "", width, height, st.Focus == state.FocusWorkdirs, content)
+	return renderPaneFrame("Workspaces", "", width, height, st.Focus == state.FocusWorkdirs, content)
 }
 
 type workdirCardCounts struct {
@@ -397,7 +397,7 @@ func renderFoldersPane(cfg config.Config, st state.State, width int, height int,
 	}
 	if len(content) == 0 {
 		if state.ActiveWorkdir(st) == nil {
-			content = renderCenteredPaneHelp(width, height, "No workdir selected", "Press "+cfg.KeyBindings.NewWorkdir+" to add one.")
+			content = renderCenteredPaneHelp(width, height, "No workspace selected", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 		} else {
 			content = renderCenteredPaneHelp(width, height, "No agents", "Press "+cfg.KeyBindings.NewAgent+" to create one.")
 		}
@@ -477,9 +477,9 @@ func renderCodexFrame(
 	innerWidth := max(0, width-2)
 	topLabel := ""
 	if navCollapsed && active {
-		topLabel = "Agent  " + codexCollapsedTopShortcuts(cfg)
+		topLabel = "Console  " + codexCollapsedTopShortcuts(cfg)
 	} else {
-		topLabel = "Agent"
+		topLabel = "Console"
 	}
 	lines := []string{
 		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, "", max(0, innerWidth-2)), innerWidth)),
@@ -525,7 +525,7 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 func renderEmptyCodexContent(width int, height int, canCreateAgent bool) []string {
 	hint := "Press n to create one."
 	if !canCreateAgent {
-		hint = "Add a workdir first."
+		hint = "Add a workspace first."
 	}
 	content := []string{}
 	if logoFits(emptyWeftLogo, width, height) {
@@ -596,7 +596,7 @@ func navShortcuts(cfg config.Config) string {
 	return cfg.KeyBindings.FocusLeft + "/" + cfg.KeyBindings.FocusRight + " panes  " +
 		cfg.KeyBindings.SelectPrev + "/" + cfg.KeyBindings.SelectNext + " select  " +
 		cfg.KeyBindings.Open + " open  " +
-		cfg.KeyBindings.NewWorkdir + " workdir  " +
+		cfg.KeyBindings.NewWorkspace + " workspace  " +
 		cfg.KeyBindings.NewGroup + " group  " +
 		cfg.KeyBindings.NewAgent + " agent"
 }

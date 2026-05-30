@@ -744,7 +744,7 @@ func MoveAgent(st State, agentID string, folderID string) (State, error) {
 			continue
 		}
 		if target != nil && agent.WorkdirID != target.WorkdirID {
-			return st, fmt.Errorf("cross-workdir moves are not supported")
+			return st, fmt.Errorf("cross-workspace moves are not supported")
 		}
 		st.Agents[index].FolderID = folderID
 		st.Agents[index].UpdatedAt = NowISO()
@@ -759,12 +759,12 @@ func AddWorkdir(st State, id string, path string, now string) (State, Workdir, e
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return st, Workdir{}, fmt.Errorf("workdir path does not exist: %s", path)
+			return st, Workdir{}, fmt.Errorf("workspace path does not exist: %s", path)
 		}
-		return st, Workdir{}, fmt.Errorf("cannot read workdir path %s: %w", path, err)
+		return st, Workdir{}, fmt.Errorf("cannot read workspace path %s: %w", path, err)
 	}
 	if !info.IsDir() {
-		return st, Workdir{}, fmt.Errorf("workdir path is not a directory: %s", path)
+		return st, Workdir{}, fmt.Errorf("workspace path is not a directory: %s", path)
 	}
 	if workdir := WorkdirByPath(st, path); workdir != nil {
 		st = SelectWorkdir(st, workdir.ID)
@@ -807,7 +807,7 @@ func SelectWorkdirByPath(st State, path string) (State, bool) {
 
 func RemoveWorkdir(st State, workdirID string) (State, []Agent, error) {
 	if WorkdirByID(st, workdirID) == nil {
-		return st, nil, fmt.Errorf("workdir not found")
+		return st, nil, fmt.Errorf("workspace not found")
 	}
 	var removed []Agent
 	var agents []Agent
@@ -836,7 +836,7 @@ func RemoveWorkdir(st State, workdirID string) (State, []Agent, error) {
 func SetWorkdirTitle(st State, workdirID string, title string) (State, error) {
 	title = strings.TrimSpace(title)
 	if WorkdirByID(st, workdirID) == nil {
-		return st, fmt.Errorf("workdir not found")
+		return st, fmt.Errorf("workspace not found")
 	}
 	for index := range st.Workdirs {
 		if st.Workdirs[index].ID == workdirID {
@@ -845,7 +845,7 @@ func SetWorkdirTitle(st State, workdirID string, title string) (State, error) {
 			return st, nil
 		}
 	}
-	return st, fmt.Errorf("workdir not found")
+	return st, fmt.Errorf("workspace not found")
 }
 
 func AddFolder(st State, id string, workdirID string, path string, now string) (State, Folder, error) {
@@ -857,7 +857,7 @@ func AddFolder(st State, id string, workdirID string, path string, now string) (
 		return st, Folder{}, fmt.Errorf("group names cannot contain /")
 	}
 	if WorkdirByID(st, workdirID) == nil {
-		return st, Folder{}, fmt.Errorf("workdir not found")
+		return st, Folder{}, fmt.Errorf("workspace not found")
 	}
 	for _, folder := range FoldersForWorkdir(st, workdirID) {
 		if folder.Path == path {
@@ -944,7 +944,7 @@ func ToggleGroupCollapsed(st State, folderID string) State {
 
 func AddAgent(st State, id string, workdirID string, folderID string, title string, now string) (State, Agent, error) {
 	if WorkdirByID(st, workdirID) == nil {
-		return st, Agent{}, fmt.Errorf("workdir not found")
+		return st, Agent{}, fmt.Errorf("workspace not found")
 	}
 	if folderID != "" {
 		folder := FolderByID(st, folderID)

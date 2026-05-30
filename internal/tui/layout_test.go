@@ -13,7 +13,7 @@ import (
 	"github.com/muesli/termenv"
 )
 
-func TestWorkspaceNavWidthShrinksWorkdirsFirst(t *testing.T) {
+func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	st := layoutState("/tmp/project")
 	if got := workspaceNavFrameWidth(st, 140); got != fixedWorkdirPaneWidth+defaultAgentsPaneWidth {
 		t.Fatalf("wide nav width = %d", got)
@@ -42,7 +42,7 @@ func TestDesiredWorkdirPaneWidthIsFixed(t *testing.T) {
 	}
 }
 
-func TestRenderWorkspaceShowsWorkdirsAgentsAndAgent(t *testing.T) {
+func TestRenderWorkspaceShowsWorkspacesAgentsAndConsole(t *testing.T) {
 	cfg := config.DefaultConfig("weft-test")
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
@@ -50,9 +50,9 @@ func TestRenderWorkspaceShowsWorkdirsAgentsAndAgent(t *testing.T) {
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 140, 24, "", minTwoPaneNavWidth, 1)
 
 	for _, expected := range []string{
-		"Workdirs",
+		"Workspaces",
 		"Agents",
-		"Agent",
+		"Console",
 		"▾ inbox",
 		"╭ /tmp/project",
 		"1 total",
@@ -87,7 +87,7 @@ func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", minThreePaneWidth, 24, "", workdir)
 
-	for _, expected := range []string{"Workdirs", "Agents", "No Codex agent open", expectedPath} {
+	for _, expected := range []string{"Workspaces", "Agents", "No Codex agent open", expectedPath} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("wide dashboard missing %q:\n%s", expected, got)
 		}
@@ -106,7 +106,7 @@ func TestRenderWorkspaceKeepsFixedWorkdirPaneAtMediumWidth(t *testing.T) {
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", workdir)
 
-	for _, expected := range []string{"Workdirs", "Agents", expectedPath} {
+	for _, expected := range []string{"Workspaces", "Agents", expectedPath} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("medium dashboard missing %q:\n%s", expected, got)
 		}
@@ -212,8 +212,8 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 70, 16, "", 32, 0)
 
-	if !strings.Contains(got, "Workdirs") {
-		t.Fatalf("narrow workdir focus should show workdirs pane:\n%s", got)
+	if !strings.Contains(got, "Workspaces") {
+		t.Fatalf("narrow workspace focus should show workspaces pane:\n%s", got)
 	}
 	if strings.Contains(got, "Agents") {
 		t.Fatalf("narrow nav should use one pane, got agents too:\n%s", got)
@@ -242,23 +242,23 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 
 	st = state.Repair(state.Empty(), "/tmp/project")
 	got = strings.Join(renderFoldersPane(cfg, st, 40, 12, 0), "\n")
-	if !strings.Contains(got, "No workdir selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create one.") {
-		t.Fatalf("no-workdir agents pane should explain workdir requirement:\n%s", got)
+	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create one.") {
+		t.Fatalf("no-workspace agents pane should explain workspace requirement:\n%s", got)
 	}
 }
 
-func TestRenderWorkdirsPaneEmptyStateIsCenteredHelp(t *testing.T) {
+func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	cfg := config.DefaultConfig("weft-test")
 	st := state.Repair(state.Empty(), "/tmp/project")
 
 	got := strings.Join(renderWorkdirsPane(cfg, st, 64, 12), "\n")
 
-	if !strings.Contains(got, "No workdirs") || !strings.Contains(got, "Press w to add one.") {
-		t.Fatalf("empty workdirs pane missing help:\n%s", got)
+	if !strings.Contains(got, "No workspaces") || !strings.Contains(got, "Press w to add one.") {
+		t.Fatalf("empty workspaces pane missing help:\n%s", got)
 	}
 	for _, line := range strings.Split(ansi.Strip(got), "\n") {
-		if strings.Contains(line, "No workdirs") && !strings.Contains(line, "                         No workdirs") {
-			t.Fatalf("empty workdir help should be centered, got line %q\n%s", line, got)
+		if strings.Contains(line, "No workspaces") && strings.Trim(line, " │") != "No workspaces" {
+			t.Fatalf("empty workspace help should be centered, got line %q\n%s", line, got)
 		}
 	}
 }
@@ -269,8 +269,8 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
 
-	if strings.Contains(got, "Press n to create one.") || !strings.Contains(got, "Add a workdir first.") {
-		t.Fatalf("workspace should not advertise agent creation before a workdir exists:\n%s", got)
+	if strings.Contains(got, "Press n to create one.") || !strings.Contains(got, "Add a workspace first.") {
+		t.Fatalf("workspace should not advertise agent creation before a workspace exists:\n%s", got)
 	}
 
 	st = layoutState("/tmp/project")
@@ -362,8 +362,8 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if !strings.Contains(got, "WEFT  C-b command center  C-c to Codex") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
-	if !strings.Contains(got, "Agent") {
-		t.Fatalf("codex pane should render Agent title:\n%s", got)
+	if !strings.Contains(got, "Console") {
+		t.Fatalf("codex pane should render Console title:\n%s", got)
 	}
 	if count := strings.Count(got, "C-c to Codex"); count != 1 {
 		t.Fatalf("collapsed codex should render shortcuts only once, got %d:\n%s", count, got)

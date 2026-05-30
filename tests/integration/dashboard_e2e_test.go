@@ -44,7 +44,7 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 
 	env := append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKDIR="+workdir,
+		"WEFT_WORKSPACE="+workdir,
 		"WEFT_EXECUTABLE="+bin,
 		"SHELL=/missing/zsh",
 		"PATH=/usr/bin:/bin",
@@ -106,12 +106,12 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 		return err == nil
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Add this workdir to Weft?") &&
+		return strings.Contains(capture, "Add this workspace to Weft?") &&
 			strings.Contains(capture, "Y yes")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "y")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Workdirs") &&
+		return strings.Contains(capture, "Workspaces") &&
 			strings.Contains(capture, "Agents")
 	})
 
@@ -213,7 +213,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	env := append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
-		"WEFT_WORKDIR="+workdir,
+		"WEFT_WORKSPACE="+workdir,
 		"WEFT_EXECUTABLE="+bin,
 		"STARTUP_DELAY=1.2",
 		"STARTUP_MARKER="+startupMarker,
@@ -283,7 +283,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	timedStep(t, "initial render", func() {
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Add this workdir to Weft?") &&
+			return strings.Contains(capture, "Add this workspace to Weft?") &&
 				strings.Contains(capture, "Y yes")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
@@ -336,7 +336,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, ">_ OpenAI Codex") &&
 				!strings.Contains(capture, "No Codex agent open") &&
-				!strings.Contains(capture, "Workdirs") &&
+				!strings.Contains(capture, "Workspaces") &&
 				!strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, collapsedCodexToolbar)
 		})
