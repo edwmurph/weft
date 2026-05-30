@@ -195,6 +195,46 @@ func TestActiveOutputSuppressesColorOnlyStartupScreen(t *testing.T) {
 	}
 }
 
+func TestRenameModalListsTitleVariablesAndPreview(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig("codux-test")
+	model := NewModel(rt, cfg, state.State{
+		Version: state.Version,
+		Focus:   state.FocusNav,
+		Tabs: []state.Tab{
+			{ID: "a", Title: "{codex}", Column: "inbox", CodexTitle: "Plan Ready", Status: state.StatusRunning},
+		},
+		ActiveTabID: "a",
+	})
+	model.mode = modeRename
+	model.renameInput.SetValue("Codex {status}")
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Rename tab",
+		"Current",
+		"Plan Ready",
+		"Template",
+		"Codex {status}",
+		"Preview",
+		"Codex ready",
+		"Variables",
+		"{codex}",
+		"{status}",
+		"Enter save",
+		"Esc cancel",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("rename modal missing %q:\n%s", expected, got)
+		}
+	}
+	for _, removed := range []string{"{title}", "{id}", "{column}"} {
+		if strings.Contains(got, removed) {
+			t.Fatalf("rename modal should not list %q:\n%s", removed, got)
+		}
+	}
+}
+
 func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig("codux-test")

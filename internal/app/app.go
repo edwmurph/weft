@@ -43,6 +43,8 @@ Usage:
 Codux is scoped to the directory where you run it. Each launch directory gets
 a runtime directory under ~/.codux/workdirs/<workdir-id>, a config.toml, a
 versioned state.json, an IPC socket, and one tmux session hosting one TUI pane.
+Tab titles passed to new or rename can interpolate {codex} and {status}; status
+uses live Codex activity when available.
 `
 
 func Run(args []string) error {

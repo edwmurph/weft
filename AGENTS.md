@@ -7,7 +7,7 @@
 - For implementation plans, explicitly include creating or using a detached worktree under `./.worktrees/<slug>` unless the user says otherwise.
 - If an implementation change causes drift with docs or agent instructions, update the docs/instructions in the same change to keep them accurate.
 - For broad refactor requests, use the repo-local `$codux-refactor` skill in `skills/codux-refactor/` and update its suggestion log.
-- After verified implementation work, summarize what changed, what verification passed, exactly how the user can test it locally, and offer to ship it. Then stop for review unless the user explicitly says **"ship it"**.
+- After verified implementation work, summarize what changed, what verification passed, exactly how the user can test it locally, include the exact command(s) to retest the changed behavior, and offer to ship it. Then stop for review unless the user explicitly says **"ship it"**.
 - When the user says **"ship it"**, interpret it as: squash-merge the already-reviewed change to `main`, push `main` to `origin/main`, watch the `Publish Homebrew` workflow, and report the commit, release, tap publish status, verification status, and a brief re-explanation of the shipped user-visible change in the same message.
 
 ## Ship It Flow
@@ -25,7 +25,7 @@
 
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
 - Keep all implementation follow-up work in a detached worktree until the user explicitly says `ship it`; do not continue editing `main` after a paused or interrupted ship attempt.
-- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux`; a `git diff` command alone is not enough.
+- After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux`; then include the specific retest command or sequence for the changed behavior, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux rename "Codex {status}"`. A `git diff` command alone is not enough.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".
 

@@ -2,14 +2,28 @@ package titles
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/edwmurph/codux/internal/state"
 )
 
 const (
 	CodexTitleTemplate = "{codex}"
+	StatusTemplate     = "{status}"
 	PendingTitle       = "..."
 )
+
+type TemplateVariable struct {
+	Name        string
+	Description string
+}
+
+func TemplateVariables() []TemplateVariable {
+	return []TemplateVariable{
+		{Name: CodexTitleTemplate, Description: "live Codex title"},
+		{Name: StatusTemplate, Description: "live Codex status"},
+	}
+}
 
 func NormalizeCodexTitle(title string) string {
 	title = strings.TrimSpace(title)
@@ -23,6 +37,33 @@ func UsesCodexPlaceholder(title string) bool {
 	return strings.Contains(title, "{codex}")
 }
 
+func RenderStatus(tab state.Tab) string {
+	switch tab.Status {
+	case state.StatusStarting, state.StatusStopped, state.StatusError:
+		return string(tab.Status)
+	}
+	if status := codexActivityStatus(tab.CodexTitle); status != "" {
+		return status
+	}
+	if tab.Status != "" {
+		return string(tab.Status)
+	}
+	return string(state.StatusStarting)
+}
+
+func codexActivityStatus(title string) string {
+	title = strings.ToLower(NormalizeCodexTitle(title))
+	for _, token := range strings.FieldsFunc(title, func(r rune) bool {
+		return !unicode.IsLetter(r)
+	}) {
+		switch token {
+		case "ready", "working":
+			return token
+		}
+	}
+	return ""
+}
+
 func Render(tab state.Tab) string {
 	title := tab.Title
 	if title == "" {
@@ -32,15 +73,15 @@ func Render(tab state.Tab) string {
 	if codexTitle == "" {
 		codexTitle = PendingTitle
 	}
-	replacements := map[string]string{
-		"{codex}":  codexTitle,
-		"{title}":  tab.Title,
-		"{id}":     tab.ID,
-		"{column}": tab.Column,
-		"{status}": string(tab.Status),
+	replacements := []struct {
+		variable string
+		value    string
+	}{
+		{CodexTitleTemplate, codexTitle},
+		{StatusTemplate, RenderStatus(tab)},
 	}
-	for variable, value := range replacements {
-		title = strings.ReplaceAll(title, variable, value)
+	for _, replacement := range replacements {
+		title = strings.ReplaceAll(title, replacement.variable, replacement.value)
 	}
 	return strings.TrimSpace(title)
 }

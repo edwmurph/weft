@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -42,9 +44,10 @@ const (
 )
 
 const (
-	navAnimationInterval = 12 * time.Millisecond
-	navAnimationStep     = 2
-	loadingInterval      = 90 * time.Millisecond
+	navAnimationInterval  = 12 * time.Millisecond
+	navAnimationStep      = 2
+	loadingInterval       = 90 * time.Millisecond
+	renameModalLabelWidth = 9
 )
 
 type navAnimationTick struct{}
@@ -180,7 +183,7 @@ func (m Model) View() string {
 		return m.modalView(renderHelp(m.cfg, m.migration))
 	}
 	if m.mode == modeRename {
-		return m.modalView("Rename active tab\n\n" + m.renameInput.View() + "\n\nEnter save  Esc cancel")
+		return m.modalView(m.renderRenameModal())
 	}
 	if m.mode == modeClose {
 		title := "active tab"
@@ -210,6 +213,61 @@ func (m Model) modalView(content string) string {
 	w := max(40, min(m.width-4, 82))
 	box := modalStyle.Width(w).Render(content)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func (m Model) renderRenameModal() string {
+	width := max(36, min(m.width-16, 72))
+	input := m.renameInput
+	input.Width = max(16, width-renameModalLabelWidth-3)
+
+	current := "active tab"
+	preview := "title required"
+	if active := state.ActiveTab(m.state); active != nil {
+		current = titles.Render(*active)
+		if value := strings.TrimSpace(input.Value()); value != "" {
+			draft := *active
+			draft.Title = value
+			preview = titles.Render(draft)
+		}
+	}
+
+	lines := []string{
+		modalTitleStyle.Render("Rename tab"),
+		"",
+		renderRenameModalRow("Current", modalValueStyle.Render(clip(current, max(0, width-10))), width),
+		renderRenameModalRow("Template", input.View(), width),
+		renderRenameModalRow("Preview", modalValueStyle.Render(clip(preview, max(0, width-10))), width),
+		"",
+		modalLabelStyle.Render("Variables"),
+	}
+	lines = append(lines, renderTitleVariableRows(width)...)
+	lines = append(lines, "", renderModalActions())
+	return strings.Join(lines, "\n")
+}
+
+func renderRenameModalRow(label string, value string, width int) string {
+	valueWidth := max(0, width-renameModalLabelWidth-1)
+	return modalLabelStyle.Render(padVisual(label, renameModalLabelWidth)) + " " + clip(value, valueWidth)
+}
+
+func renderTitleVariableRows(width int) []string {
+	variables := titles.TemplateVariables()
+	tokenWidth := 0
+	for _, variable := range variables {
+		tokenWidth = max(tokenWidth, lipgloss.Width(variable.Name))
+	}
+	descriptionWidth := max(0, width-tokenWidth-2)
+	lines := make([]string, 0, len(variables))
+	for _, variable := range variables {
+		token := modalTokenStyle.Render(padVisual(variable.Name, tokenWidth))
+		description := mutedStyle.Render(clip(variable.Description, descriptionWidth))
+		lines = append(lines, token+"  "+description)
+	}
+	return lines
+}
+
+func renderModalActions() string {
+	return modalKeyStyle.Render("Enter") + " save  " + modalKeyStyle.Render("Esc") + " cancel"
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -769,7 +827,11 @@ func renderHelp(cfg config.Config, migration string) string {
 }
 
 func shortID() string {
-	return fmt.Sprintf("%08x", time.Now().UnixNano())[:8]
+	var bytes [4]byte
+	if _, err := rand.Read(bytes[:]); err == nil {
+		return hex.EncodeToString(bytes[:])
+	}
+	return fmt.Sprintf("%08x", uint32(time.Now().UnixNano()))
 }
 
 func min(a int, b int) int {

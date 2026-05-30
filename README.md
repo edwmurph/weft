@@ -62,6 +62,15 @@ codux config info
 Run `codux close` without an id to close Codux clients; pass an id to close a
 Codex session.
 
+Tab titles passed to `codux new` or `codux rename` can interpolate:
+
+- `{codex}`: live Codex terminal title
+- `{status}`: live Codex status (`ready` or `working`), falling back to tab
+  lifecycle status (`starting`, `running`, `stopped`, or `error`)
+
+For example, `codux rename "Codex {status}"` keeps a fixed title while showing
+the current tab status.
+
 When NAV is focused, press `?` for dashboard shortcuts. Defaults:
 
 ```toml

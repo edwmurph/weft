@@ -91,6 +91,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"  i=0; while [ \"$i\" -lt 220 ]; do printf 'y'; i=$((i + 1)); done; printf '\\n'\n"+
 			"  printf 'received:%s\\n' \"$line\"\n"+
 			"  printf '\\033[10;5Hprompt'\n"+
+			"  sleep 1\n"+
+			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
 			"done\n"+
 			"while :; do sleep 1; done\n",
 	), 0o700); err != nil {
@@ -276,22 +278,52 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
-	timedStep(t, "rename modal saves title", func() {
+	timedStep(t, "rename modal saves status template", func() {
+		waitState(t, env, bin, func(st state.State) bool {
+			tab := findTab(st, firstID)
+			return tab != nil && strings.Contains(tab.CodexTitle, "Ready")
+		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "r")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Rename active tab")
+			return strings.Contains(capture, "Rename tab") &&
+				strings.Contains(capture, "Variables") &&
+				strings.Contains(capture, "{status}")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "C-u")
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "Renamed")
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "Codex {status}")
 		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			tab := findTab(st, firstID)
-			return tab != nil && tab.Title == "Renamed"
+			return tab != nil && tab.Title == "Codex {status}"
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Renamed") && !strings.Contains(capture, "Rename active tab")
+			return strings.Contains(capture, "Codex ready") && !strings.Contains(capture, "Rename tab")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
+	})
+
+	timedStep(t, "status template follows Codex activity", func() {
+		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "status check")
+		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			tab := findTab(st, firstID)
+			return tab != nil && strings.Contains(tab.CodexTitle, "Working")
+		})
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Codex working")
+		})
+		assertDashboardNotCorrupt(t, capture, false)
+		waitState(t, env, bin, func(st state.State) bool {
+			tab := findTab(st, firstID)
+			return tab != nil && strings.Contains(tab.CodexTitle, "Ready")
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Codex ready")
+		})
+		tmuxRun(t, env, "send-keys", "-t", pane, "C-g")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusNav })
 	})
 
 	timedStep(t, "help modal closes", func() {
@@ -308,7 +340,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	timedStep(t, "close confirmation cancels then closes", func() {
 		tmuxRun(t, env, "send-keys", "-t", pane, "c")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Close Renamed?")
+			return strings.Contains(capture, "Close Codex ready?")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Tabs) == 1 })

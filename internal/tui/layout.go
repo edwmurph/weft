@@ -24,10 +24,15 @@ const (
 )
 
 var (
-	mutedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	headerStyle    = lipgloss.NewStyle().Underline(true)
-	activeTabStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
-	modalStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
+	mutedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	headerStyle     = lipgloss.NewStyle().Underline(true)
+	activeTabStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
+	modalStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
+	modalTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+	modalLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	modalValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	modalTokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	modalKeyStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 )
 
 type framePalette struct {
