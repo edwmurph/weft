@@ -195,6 +195,33 @@ func TestActiveOutputSuppressesColorOnlyStartupScreen(t *testing.T) {
 	}
 }
 
+func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig("codux-test")
+	model := NewModel(rt, cfg, state.State{
+		Version: state.Version,
+		Focus:   state.FocusCodex,
+		Tabs: []state.Tab{
+			{ID: "a", Title: "alpha", Column: "inbox", Status: state.StatusRunning},
+		},
+		ActiveTabID: "a",
+	})
+	screen := NewTerminalScreen(20, 3)
+	screen.Write("prompt")
+	model.screens["a"] = screen
+
+	output := model.activeOutput()
+	if !strings.Contains(output, "48;2;255;255;255") {
+		t.Fatalf("codex-focused output should paint terminal cursor:\n%q", output)
+	}
+
+	model.state.Focus = state.FocusNav
+	output = model.activeOutput()
+	if strings.Contains(output, "48;2;255;255;255") {
+		t.Fatalf("nav-focused output should not paint Codex cursor:\n%q", output)
+	}
+}
+
 func TestLoadingTickAnimatesStartupView(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig("codux-test")

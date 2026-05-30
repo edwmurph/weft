@@ -16,20 +16,21 @@ type terminalCell struct {
 }
 
 type TerminalScreen struct {
-	cols     int
-	rows     int
-	cells    [][]terminalCell
-	row      int
-	col      int
-	savedRow int
-	savedCol int
-	style    cellbuf.Style
-	defaults cellbuf.Style
-	parser   *ansi.Parser
+	cols          int
+	rows          int
+	cells         [][]terminalCell
+	row           int
+	col           int
+	cursorVisible bool
+	savedRow      int
+	savedCol      int
+	style         cellbuf.Style
+	defaults      cellbuf.Style
+	parser        *ansi.Parser
 }
 
 func NewTerminalScreen(cols int, rows int) *TerminalScreen {
-	screen := &TerminalScreen{cols: max(1, cols), rows: max(1, rows)}
+	screen := &TerminalScreen{cols: max(1, cols), rows: max(1, rows), cursorVisible: true}
 	screen.clearAll()
 	parser := ansi.NewParser()
 	parser.SetHandler(ansi.Handler{
@@ -81,9 +82,21 @@ func (s *TerminalScreen) String() string {
 }
 
 func (s *TerminalScreen) ANSIString() string {
+	return s.ansiString(false)
+}
+
+func (s *TerminalScreen) ANSIStringWithCursor(showCursor bool) string {
+	return s.ansiString(showCursor && s.cursorVisible)
+}
+
+func (s *TerminalScreen) ansiString(showCursor bool) string {
 	lines := make([]string, len(s.cells))
 	for row, cells := range s.cells {
-		lines[row] = styledCells(cells, s.defaults)
+		cursorCol := -1
+		if showCursor && row == s.row {
+			cursorCol = s.col
+		}
+		lines[row] = styledCells(cells, s.defaults, cursorCol)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -198,8 +211,13 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 	case 'u':
 		s.row, s.col = s.savedRow, s.savedCol
 	case 'h', 'l':
-		if prefix == '?' && paramsContain(params, 47, 1047, 1049) {
-			s.clearAll()
+		if prefix == '?' {
+			if paramsContain(params, 47, 1047, 1049) {
+				s.clearAll()
+			}
+			if paramsContain(params, 25) {
+				s.cursorVisible = final == 'h'
+			}
 		}
 	case 'm':
 		cellbuf.ReadStyle(params, &s.style)
@@ -408,11 +426,11 @@ func plainCells(cells []terminalCell) string {
 	return string(runes)
 }
 
-func styledCells(cells []terminalCell, defaults cellbuf.Style) string {
+func styledCells(cells []terminalCell, defaults cellbuf.Style, cursorCol int) string {
 	last := -1
 	for index, cell := range cells {
 		style := styleWithDefaults(cell.style, defaults)
-		if cell.r != ' ' || !style.Clear() {
+		if index == cursorCol || cell.r != ' ' || !style.Clear() {
 			last = index
 		}
 	}
@@ -422,8 +440,11 @@ func styledCells(cells []terminalCell, defaults cellbuf.Style) string {
 
 	var builder strings.Builder
 	var active cellbuf.Style
-	for _, cell := range cells[:last+1] {
+	for index, cell := range cells[:last+1] {
 		style := styleWithDefaults(cell.style, defaults)
+		if index == cursorCol {
+			style = cursorCellStyle(style)
+		}
 		if !style.Equal(&active) {
 			if !active.Empty() {
 				builder.WriteString(ansi.ResetStyle)
@@ -443,6 +464,12 @@ func styledCells(cells []terminalCell, defaults cellbuf.Style) string {
 		builder.WriteString(ansi.ResetStyle)
 	}
 	return builder.String()
+}
+
+func cursorCellStyle(style cellbuf.Style) cellbuf.Style {
+	style.Fg = color.Black
+	style.Bg = color.White
+	return style
 }
 
 func styleWithDefaults(style cellbuf.Style, defaults cellbuf.Style) cellbuf.Style {

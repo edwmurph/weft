@@ -153,3 +153,34 @@ func TestTerminalScreenOSCDefaultBackgroundSurvivesResetAndClear(t *testing.T) {
 		t.Fatalf("default background clear should strip to spaces, got %q", stripped)
 	}
 }
+
+func TestTerminalScreenANSIStringWithCursorPaintsWhiteCursor(t *testing.T) {
+	screen := NewTerminalScreen(6, 2)
+
+	screen.Write("abc")
+	styled := screen.ANSIStringWithCursor(true)
+	firstLine := strings.Split(ansi.Strip(styled), "\n")[0]
+
+	if !strings.Contains(styled, "38;2;0;0;0") || !strings.Contains(styled, "48;2;255;255;255") {
+		t.Fatalf("styled screen should paint a white cursor cell:\n%q", styled)
+	}
+	if firstLine != "abc " {
+		t.Fatalf("cursor should occupy the current terminal cell, got %q", firstLine)
+	}
+}
+
+func TestTerminalScreenANSIStringWithCursorRespectsVisibilityMode(t *testing.T) {
+	screen := NewTerminalScreen(6, 1)
+
+	screen.Write("abc\x1b[?25l")
+	hidden := screen.ANSIStringWithCursor(true)
+	if strings.Contains(hidden, "48;2;255;255;255") {
+		t.Fatalf("hidden terminal cursor should not be painted:\n%q", hidden)
+	}
+
+	screen.Write("\x1b[?25h")
+	shown := screen.ANSIStringWithCursor(true)
+	if !strings.Contains(shown, "48;2;255;255;255") {
+		t.Fatalf("shown terminal cursor should be painted:\n%q", shown)
+	}
+}

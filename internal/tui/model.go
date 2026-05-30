@@ -558,7 +558,7 @@ func (m *Model) activeOutput() string {
 		if !screen.HasVisibleContent() && !m.visible[active.ID] {
 			return ""
 		}
-		return screen.ANSIString()
+		return screen.ANSIStringWithCursor(m.state.Focus == state.FocusCodex)
 	}
 	return ""
 }

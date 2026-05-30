@@ -227,6 +227,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitForEscapedCapture(t, env, pane, func(capture string) bool {
 			return strings.Contains(capture, "38;2;237;239;241") &&
 				strings.Contains(capture, "48;2;40;49;56") &&
+				strings.Contains(capture, "38;2;0;0;0") &&
+				strings.Contains(capture, "48;2;255;255;255") &&
 				strings.Contains(capture, "48;2;40;40;49") &&
 				strings.Contains(capture, "Summarize recent commits")
 		})
