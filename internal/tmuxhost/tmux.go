@@ -13,7 +13,7 @@ const (
 	WorkdirOption     = "@codux-workdir"
 	RuntimeOption     = "@codux-runtime-dir"
 	HostVersionOption = "@codux-host-version"
-	HostVersion       = "go-tui-v2"
+	HostVersion       = "go-tui-v3"
 )
 
 type Controller struct {
@@ -86,6 +86,9 @@ func (c Controller) EnsureSession(cfg config.Config, rt config.Runtime, headless
 		{"set-option", "-t", c.Session, "status", "off"},
 		{"set-option", "-t", c.Session, "destroy-unattached", "off"},
 		{"set-option", "-t", c.Session, "allow-rename", "off"},
+		{"set-option", "-t", c.Session, "prefix", "None"},
+		{"set-option", "-t", c.Session, "prefix2", "None"},
+		{"unbind-key", "-T", "prefix", "C-b"},
 		{"set-option", "-t", c.Session, WorkdirOption, rt.Workdir},
 		{"set-option", "-t", c.Session, RuntimeOption, rt.Dir},
 		{"set-option", "-t", c.Session, HostVersionOption, HostVersion},

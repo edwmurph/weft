@@ -6,57 +6,43 @@ import (
 	"github.com/edwmurph/codux/internal/state"
 )
 
-func TestRenderCodexTemplateUsesLiveTitle(t *testing.T) {
-	tab := state.Tab{ID: "abc", Title: "{codex}", Column: "inbox", CodexTitle: "Plan Ready", Status: state.StatusRunning}
+func TestRenderAgentDefaultTemplateUsesConfiguredTitle(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Plan", CodexTitle: "Plan Ready", Status: state.StatusRunning}
 
-	if got := Render(tab); got != "Plan Ready" {
+	if got := RenderAgent(agent, state.Workdir{Path: "/tmp/project"}, state.Folder{Path: "inbox"}, "{title}"); got != "Plan" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderCodexTemplateFallsBackToPending(t *testing.T) {
-	tab := state.Tab{ID: "abc", Title: "{codex}", Column: "inbox"}
+func TestRenderAgentSupportsLiveVariables(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
 
-	if got := Render(tab); got != PendingTitle {
+	got := RenderAgent(agent, state.Workdir{Path: "/tmp/project"}, state.Folder{Path: "ship"}, "{group}: {status} {codex}")
+
+	if got != "ship: working Fake Codex Working" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderStatusTemplateFallsBackToTabStatus(t *testing.T) {
-	tab := state.Tab{ID: "abc", Title: StatusTemplate, Column: "inbox", Status: state.StatusStopped}
+func TestRenderAgentKeepsLegacyVariablesInsideBaseTitle(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex {status}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
-	if got := Render(tab); got != string(state.StatusStopped) {
+	if got := RenderAgent(agent, state.Workdir{}, state.Folder{}, "{title}"); got != "Codex ready" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderStatusTemplateUsesCodexActivityStatus(t *testing.T) {
-	tab := state.Tab{ID: "abc", Title: StatusTemplate, Column: "inbox", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
+func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusStopped}
 
-	if got := Render(tab); got != "ready" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestRenderFixedTitleWithStatusTemplate(t *testing.T) {
-	tab := state.Tab{ID: "abc", Title: "Codex " + StatusTemplate, Column: "inbox", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
-
-	if got := Render(tab); got != "Codex working" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestRenderFixedTitleWithStatusTemplateFallsBackToRunning(t *testing.T) {
-	tab := state.Tab{ID: "abc", Title: "Codex " + StatusTemplate, Column: "inbox", Status: state.StatusRunning}
-
-	if got := Render(tab); got != "Codex running" {
+	if got := RenderAgent(agent, state.Workdir{}, state.Folder{}, StatusTemplate); got != string(state.StatusStopped) {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestTemplateVariablesListsSupportedPlaceholders(t *testing.T) {
 	got := TemplateVariables()
-	want := []string{CodexTitleTemplate, StatusTemplate}
+	want := []string{TitleTemplate, CodexTemplate, StatusTemplate, WorkdirTemplate, GroupTemplate, FolderTemplate}
 	if len(got) != len(want) {
 		t.Fatalf("got %d variables, want %d: %#v", len(got), len(want), got)
 	}

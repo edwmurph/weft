@@ -8,9 +8,13 @@ import (
 )
 
 const (
-	CodexTitleTemplate = "{codex}"
-	StatusTemplate     = "{status}"
-	PendingTitle       = "..."
+	TitleTemplate   = "{title}"
+	CodexTemplate   = "{codex}"
+	StatusTemplate  = "{status}"
+	WorkdirTemplate = "{workdir}"
+	GroupTemplate   = "{group}"
+	FolderTemplate  = "{folder}"
+	PendingTitle    = "..."
 )
 
 type TemplateVariable struct {
@@ -20,8 +24,12 @@ type TemplateVariable struct {
 
 func TemplateVariables() []TemplateVariable {
 	return []TemplateVariable{
-		{Name: CodexTitleTemplate, Description: "live Codex title"},
+		{Name: TitleTemplate, Description: "configured agent title"},
+		{Name: CodexTemplate, Description: "live Codex title"},
 		{Name: StatusTemplate, Description: "live Codex status"},
+		{Name: WorkdirTemplate, Description: "workdir path"},
+		{Name: GroupTemplate, Description: "group name"},
+		{Name: FolderTemplate, Description: "legacy group alias"},
 	}
 }
 
@@ -33,22 +41,18 @@ func NormalizeCodexTitle(title string) string {
 	return title
 }
 
-func UsesCodexPlaceholder(title string) bool {
-	return strings.Contains(title, "{codex}")
-}
-
-func RenderStatus(tab state.Tab) string {
-	switch tab.Status {
-	case state.StatusStarting, state.StatusStopped, state.StatusError:
-		return string(tab.Status)
+func RenderStatus(agent state.Agent) string {
+	switch agent.Status {
+	case state.StatusStarting, state.StatusStopped, state.StatusError, state.StatusReady, state.StatusSitting, state.StatusShipping:
+		return string(agent.Status)
 	}
-	if status := codexActivityStatus(tab.CodexTitle); status != "" {
+	if status := codexActivityStatus(agent.CodexTitle); status != "" {
 		return status
 	}
-	if tab.Status != "" {
-		return string(tab.Status)
+	if agent.Status != "" {
+		return string(agent.Status)
 	}
-	return string(state.StatusStarting)
+	return "unknown"
 }
 
 func codexActivityStatus(title string) string {
@@ -64,24 +68,55 @@ func codexActivityStatus(title string) string {
 	return ""
 }
 
-func Render(tab state.Tab) string {
-	title := tab.Title
-	if title == "" {
-		title = CodexTitleTemplate
+func RenderAgent(agent state.Agent, workdir state.Workdir, folder state.Folder, template string) string {
+	if strings.TrimSpace(template) == "" {
+		template = TitleTemplate
 	}
-	codexTitle := NormalizeCodexTitle(tab.CodexTitle)
+	title := strings.TrimSpace(agent.Title)
+	if title == "" {
+		title = PendingTitle
+	}
+	codexTitle := NormalizeCodexTitle(agent.CodexTitle)
 	if codexTitle == "" {
 		codexTitle = PendingTitle
 	}
-	replacements := []struct {
-		variable string
-		value    string
-	}{
-		{CodexTitleTemplate, codexTitle},
-		{StatusTemplate, RenderStatus(tab)},
+	values := map[string]string{
+		TitleTemplate:   title,
+		CodexTemplate:   codexTitle,
+		StatusTemplate:  RenderStatus(agent),
+		WorkdirTemplate: fallback(workdir.Path, PendingTitle),
+		GroupTemplate:   fallback(folder.Path, PendingTitle),
+		FolderTemplate:  fallback(folder.Path, PendingTitle),
 	}
-	for _, replacement := range replacements {
-		title = strings.ReplaceAll(title, replacement.variable, replacement.value)
+	renderedTitle := replaceVariables(title, values)
+	values[TitleTemplate] = renderedTitle
+	rendered := replaceVariables(template, values)
+	rendered = strings.TrimSpace(rendered)
+	if rendered == "" {
+		return PendingTitle
 	}
-	return strings.TrimSpace(title)
+	return rendered
+}
+
+func replaceVariables(value string, values map[string]string) string {
+	for _, variable := range TemplateVariables() {
+		replacement := values[variable.Name]
+		if replacement == "" {
+			switch variable.Name {
+			case StatusTemplate:
+				replacement = "unknown"
+			default:
+				replacement = PendingTitle
+			}
+		}
+		value = strings.ReplaceAll(value, variable.Name, replacement)
+	}
+	return value
+}
+
+func fallback(value string, defaultValue string) string {
+	if strings.TrimSpace(value) == "" {
+		return defaultValue
+	}
+	return value
 }

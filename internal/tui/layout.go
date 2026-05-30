@@ -13,8 +13,9 @@ import (
 const (
 	appTitle             = "CODUX"
 	codexLeftPadding     = 1
-	navHorizontalPadding = 2
-	navColumnGap         = 2
+	navHorizontalPadding = 1
+	maxWorkdirPaneWidth  = 64
+	minAgentsPaneWidth   = 34
 	borderHorizontal     = "─"
 	borderVertical       = "│"
 	borderTopLeft        = "╭"
@@ -24,15 +25,17 @@ const (
 )
 
 var (
-	mutedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	headerStyle     = lipgloss.NewStyle().Underline(true)
-	activeTabStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
-	modalStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
-	modalTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
-	modalLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
-	modalValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	modalTokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	modalKeyStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	mutedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	headerStyle      = lipgloss.NewStyle().Underline(true)
+	activeTabStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
+	activePaneStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	groupHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	modalStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
+	modalTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+	modalLabelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	modalValueStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	modalTokenStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	modalKeyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 )
 
 type framePalette struct {
@@ -44,30 +47,21 @@ var (
 	inactivePalette = framePalette{border: lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true)}
 )
 
-func workspaceNavFrameHeight(cfg config.Config, st state.State, height int) int {
-	if height < 8 {
-		return max(2, height/3)
+func workspaceNavFrameWidth(st state.State, width int) int {
+	if !st.NavOpen {
+		return 0
 	}
-	wanted := navContentHeight(cfg, st) + 1
-	if wanted < 3 {
-		wanted = 3
+	if width < 42 {
+		return width
 	}
-	limit := max(3, height/3)
-	if limit > 10 {
-		limit = 10
+	if width < 76 {
+		return min(width-20, 32)
 	}
-	return min(wanted, limit)
-}
-
-func navFrameHeight(height int, tabCount int) int {
-	wanted := 3 + tabCount/3
-	if wanted > 10 {
-		wanted = 10
+	if width < 110 {
+		return min(width-24, 44)
 	}
-	if height < 18 {
-		return max(3, height/3)
-	}
-	return min(wanted, max(3, height/3))
+	desired := desiredWorkdirPaneWidth(st) + 48
+	return min(width-28, min(desired, 112))
 }
 
 func renderWorkspace(
@@ -78,12 +72,12 @@ func renderWorkspace(
 	width int,
 	height int,
 	message string,
-	workdir string,
+	_ string,
 ) string {
-	return renderWorkspaceWithNavHeight(cfg, st, codexTitle, codexContent, width, height, message, workdir, workspaceNavFrameHeight(cfg, st, height))
+	return renderWorkspaceWithNavWidth(cfg, st, codexTitle, codexContent, width, height, message, workspaceNavFrameWidth(st, width), 0)
 }
 
-func renderWorkspaceWithNavHeight(
+func renderWorkspaceWithNavWidth(
 	cfg config.Config,
 	st state.State,
 	codexTitle string,
@@ -91,13 +85,13 @@ func renderWorkspaceWithNavHeight(
 	width int,
 	height int,
 	message string,
-	workdir string,
-	navHeight int,
+	navWidth int,
+	folderCursor int,
 ) string {
-	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, workdir, navHeight, "")
+	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, navWidth, folderCursor, "")
 }
 
-func renderLoadingWorkspaceWithNavHeight(
+func renderLoadingWorkspaceWithNavWidth(
 	cfg config.Config,
 	st state.State,
 	codexTitle string,
@@ -105,10 +99,10 @@ func renderLoadingWorkspaceWithNavHeight(
 	width int,
 	height int,
 	message string,
-	workdir string,
-	navHeight int,
+	navWidth int,
+	folderCursor int,
 ) string {
-	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, workdir, navHeight, loadingText)
+	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, folderCursor, loadingText)
 }
 
 func renderWorkspaceView(
@@ -119,58 +113,150 @@ func renderWorkspaceView(
 	width int,
 	height int,
 	message string,
-	workdir string,
-	navHeight int,
+	navWidth int,
+	folderCursor int,
 	loadingText string,
 ) string {
 	if width <= 0 || height <= 0 {
 		return ""
 	}
-	navHeight = max(0, navHeight)
-	if navHeight > height-3 {
-		navHeight = max(0, height-3)
+	navWidth = min(max(0, navWidth), width)
+	codexWidth := width - navWidth
+	if codexWidth < 20 && navWidth > 0 {
+		codexWidth = min(width, 20)
+		navWidth = width - codexWidth
 	}
-	codexHeight := height - navHeight
-	if codexHeight < 3 {
-		codexHeight = 3
-		navHeight = max(0, height-codexHeight)
+	if navWidth <= 0 {
+		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, loadingText), "\n")
 	}
-
-	lines := []string{}
-	if navHeight > 0 {
-		lines = append(lines, renderNavFrame(cfg, st, width, navHeight, st.Focus == state.FocusNav, workdir)...)
+	if codexWidth <= 0 {
+		return strings.Join(renderNavSection(cfg, st, navWidth, height, folderCursor), "\n")
 	}
-	lines = append(lines, renderCodexFrame(cfg, st, codexTitle, codexContent, width, codexHeight, st.Focus == state.FocusCodex, message, navHeight == 0, workdir, loadingText)...)
-	if len(lines) > height {
-		lines = lines[:height]
-	}
-	for len(lines) < height {
-		lines = append(lines, strings.Repeat(" ", width))
+	nav := renderNavSection(cfg, st, navWidth, height, folderCursor)
+	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, loadingText)
+	lines := make([]string, 0, height)
+	for index := 0; index < height; index++ {
+		left := lineAt(nav, index, navWidth)
+		right := lineAt(codex, index, codexWidth)
+		lines = append(lines, clip(left+right, width))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func renderNavFrame(cfg config.Config, st state.State, width int, height int, active bool, workdir string) []string {
+func renderNavSection(cfg config.Config, st state.State, width int, height int, folderCursor int) []string {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	if width >= 62 {
+		workdirWidth := min(desiredWorkdirPaneWidth(st), max(22, width-minAgentsPaneWidth))
+		folderWidth := width - workdirWidth
+		workdirs := renderWorkdirsPane(cfg, st, workdirWidth, height)
+		folders := renderFoldersPane(cfg, st, folderWidth, height, folderCursor)
+		lines := make([]string, 0, height)
+		for index := 0; index < height; index++ {
+			lines = append(lines, lineAt(workdirs, index, workdirWidth)+lineAt(folders, index, folderWidth))
+		}
+		return lines
+	}
+	if st.Focus == state.FocusWorkdirs {
+		return renderWorkdirsPane(cfg, st, width, height)
+	}
+	return renderFoldersPane(cfg, st, width, height, folderCursor)
+}
+
+func renderWorkdirsPane(_ config.Config, st state.State, width int, height int) []string {
+	content := []string{}
+	for _, workdir := range st.Workdirs {
+		marker := "  "
+		if workdir.ID == st.SelectedWorkdirID {
+			marker = "▶ "
+		}
+		left := marker + "📁 " + sessions.DisplayPath(workdir.Path)
+		right := fmtInt(state.AgentCountForWorkdir(st, workdir.ID))
+		row := rowLine(left, right, max(0, width-2-(navHorizontalPadding*2)))
+		if workdir.ID == st.SelectedWorkdirID && st.Focus == state.FocusWorkdirs {
+			row = activeTabStyle.Render(padVisual(row, max(0, width-2-(navHorizontalPadding*2))))
+		} else if workdir.ID == st.SelectedWorkdirID {
+			row = activePaneStyle.Render(row)
+		}
+		content = append(content, strings.Repeat(" ", navHorizontalPadding)+row)
+	}
+	if len(content) == 0 {
+		content = append(content, mutedStyle.Render("No workdirs"))
+	}
+	return renderPaneFrame("Workdirs", "", width, height, st.Focus == state.FocusWorkdirs, content)
+}
+
+func renderFoldersPane(cfg config.Config, st state.State, width int, height int, folderCursor int) []string {
+	content := []string{}
+	rowIndex := 0
+	for _, agent := range state.UngroupedAgentsForWorkdir(st, st.SelectedWorkdirID) {
+		title := titles.RenderAgent(agent, workdirForRender(st, agent), state.Folder{}, cfg.TitleTemplate)
+		agentRow := "• " + title
+		agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
+		if rowIndex == folderCursor && st.Focus == state.FocusFolders {
+			agentRow = activeTabStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
+		} else if agent.ID == st.ActiveAgentID {
+			agentRow = activePaneStyle.Render(agentRow)
+		}
+		content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
+		rowIndex++
+	}
+	for _, folder := range state.FoldersForWorkdir(st, st.SelectedWorkdirID) {
+		if rowIndex > 0 {
+			content = append(content, "")
+		}
+		indicator := "▾ "
+		if state.IsGroupCollapsed(st, folder.ID) {
+			indicator = "▸ "
+		}
+		folderRow := rowLine(indicator+folder.Path, fmtInt(state.AgentCountForFolder(st, folder.ID)), max(0, width-2-(navHorizontalPadding*2)))
+		if rowIndex == folderCursor && st.Focus == state.FocusFolders {
+			folderRow = activeTabStyle.Render(padVisual(folderRow, max(0, width-2-(navHorizontalPadding*2))))
+		} else {
+			folderRow = groupHeaderStyle.Render(folderRow)
+		}
+		content = append(content, strings.Repeat(" ", navHorizontalPadding)+folderRow)
+		rowIndex++
+		if state.IsGroupCollapsed(st, folder.ID) {
+			continue
+		}
+		for _, agent := range state.AgentsForFolder(st, folder.ID) {
+			title := titles.RenderAgent(agent, workdirForRender(st, agent), folder, cfg.TitleTemplate)
+			agentRow := "  • " + title
+			agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
+			if rowIndex == folderCursor && st.Focus == state.FocusFolders {
+				agentRow = activeTabStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
+			} else if agent.ID == st.ActiveAgentID {
+				agentRow = activePaneStyle.Render(agentRow)
+			}
+			content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
+			rowIndex++
+		}
+	}
+	if len(content) == 0 {
+		content = append(content, mutedStyle.Render("No agents"))
+	}
+	return renderPaneFrame("Agents", "", width, height, st.Focus == state.FocusFolders, content)
+}
+
+func renderPaneFrame(title string, right string, width int, height int, active bool, content []string) []string {
 	if width < 2 || height <= 0 {
 		return nil
 	}
 	palette := paletteFor(active)
 	innerWidth := max(0, width-2)
-	topLabel := appTitle + "  " + focusHintLabel(cfg)
-	if active {
-		topLabel = appTitle + "  " + navShortcuts(cfg)
-	}
 	lines := []string{
-		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, sessions.DisplayPath(workdir), max(0, innerWidth-2)), innerWidth)),
+		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(title, right, max(0, innerWidth-2)), innerWidth)),
 	}
-	contentHeight := max(0, height-1)
-	content := renderNavContent(cfg, st, innerWidth, contentHeight)
+	contentHeight := max(0, height-2)
 	for len(content) < contentHeight {
 		content = append(content, "")
 	}
 	for _, line := range content[:contentHeight] {
 		lines = append(lines, palette.border.Render(borderVertical)+padVisual(clip(line, innerWidth), innerWidth)+palette.border.Render(borderVertical))
 	}
+	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, "", innerWidth)))
 	return lines
 }
 
@@ -184,7 +270,6 @@ func renderCodexFrame(
 	active bool,
 	_ string,
 	navCollapsed bool,
-	workdir string,
 	loadingText string,
 ) []string {
 	if width < 2 || height <= 0 {
@@ -194,123 +279,29 @@ func renderCodexFrame(
 	innerWidth := max(0, width-2)
 	topLabel := ""
 	if navCollapsed && active {
-		topLabel = codexCollapsedTopShortcuts(cfg)
+		topLabel = "Agent  " + codexCollapsedTopShortcuts(cfg)
+	} else {
+		topLabel = "Agent"
 	}
-	contentHeight := max(0, height-1)
-	if topLabel != "" {
-		contentHeight = max(0, height-2)
+	lines := []string{
+		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, "", max(0, innerWidth-2)), innerWidth)),
 	}
-	lines := []string{}
-	if topLabel != "" {
-		lines = append(lines, palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, sessions.DisplayPath(workdir), max(0, innerWidth-2)), innerWidth)))
-	}
-	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, len(st.Tabs) == 0, loadingText)
+	contentHeight := max(0, height-2)
+	empty := state.ActiveAgent(st) == nil
+	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, empty, loadingText)
 	for len(contentLines) < contentHeight {
 		contentLines = append(contentLines, "")
 	}
-	for index, line := range contentLines[:contentHeight] {
-		left, right := borderVertical, borderVertical
-		lineWidth := innerWidth
-		if index == 0 && topLabel == "" {
-			left, right = borderTopLeft+borderHorizontal, borderHorizontal+borderTopRight
-			lineWidth = max(0, innerWidth-2)
-		}
-		contentWidth := codexLineContentWidth(lineWidth)
-		lines = append(lines, palette.border.Render(left)+codexLeftPad(lineWidth)+padVisual(clip(line, contentWidth), contentWidth)+palette.border.Render(right))
+	for _, line := range contentLines[:contentHeight] {
+		contentWidth := codexLineContentWidth(innerWidth)
+		lines = append(lines, palette.border.Render(borderVertical)+codexLeftPad(innerWidth)+padVisual(clip(line, contentWidth), contentWidth)+palette.border.Render(borderVertical))
 	}
-
-	leftLabel := ""
 	rightLabel := ""
-	if state.ActiveTab(st) != nil {
+	if state.ActiveAgent(st) != nil {
 		rightLabel = title
 	}
-	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine(leftLabel, rightLabel, max(0, innerWidth-2)), innerWidth)))
+	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))
 	return lines
-}
-
-func renderNavContent(cfg config.Config, st state.State, width int, height int) []string {
-	if len(cfg.Columns) == 0 || width <= 0 || height <= 0 {
-		return nil
-	}
-	contentWidth := max(1, width-(navHorizontalPadding*2))
-	columnWidths := navColumnWidths(len(cfg.Columns), contentWidth, navColumnGap)
-	tabsByColumn := map[string][]state.Tab{}
-	for _, column := range cfg.Columns {
-		tabsByColumn[column] = nil
-	}
-	for _, tab := range st.Tabs {
-		tabsByColumn[tab.Column] = append(tabsByColumn[tab.Column], tab)
-	}
-
-	lines := make([]string, 0, height)
-	headerParts := make([]string, 0, len(cfg.Columns))
-	for index, column := range cfg.Columns {
-		headerParts = append(headerParts, padVisual(headerStyle.Render(clip(strings.ToUpper(column), columnWidths[index])), columnWidths[index]))
-	}
-	lines = append(lines, strings.Repeat(" ", navHorizontalPadding)+strings.Join(headerParts, strings.Repeat(" ", navColumnGap))+strings.Repeat(" ", navHorizontalPadding))
-
-	maxRows := 1
-	for _, column := range cfg.Columns {
-		if len(tabsByColumn[column]) > maxRows {
-			maxRows = len(tabsByColumn[column])
-		}
-	}
-	for row := 0; row < maxRows && len(lines) < height; row++ {
-		parts := make([]string, 0, len(cfg.Columns))
-		for columnIndex, column := range cfg.Columns {
-			cell := strings.Repeat(" ", columnWidths[columnIndex])
-			tabs := tabsByColumn[column]
-			if row < len(tabs) {
-				tab := tabs[row]
-				label := clip(titles.Render(tab), columnWidths[columnIndex])
-				cell = padVisual(label, columnWidths[columnIndex])
-				if tab.ID == st.ActiveTabID {
-					cell = activeTabStyle.Render(cell)
-				}
-			}
-			parts = append(parts, cell)
-		}
-		lines = append(lines, strings.Repeat(" ", navHorizontalPadding)+strings.Join(parts, strings.Repeat(" ", navColumnGap))+strings.Repeat(" ", navHorizontalPadding))
-	}
-	for len(lines) < height {
-		lines = append(lines, strings.Repeat(" ", width))
-	}
-	for index := range lines {
-		lines[index] = clip(lines[index], width)
-	}
-	return lines
-}
-
-func navContentHeight(cfg config.Config, st state.State) int {
-	maxRows := 1
-	for _, column := range cfg.Columns {
-		count := 0
-		for _, tab := range st.Tabs {
-			if tab.Column == column {
-				count++
-			}
-		}
-		if count > maxRows {
-			maxRows = count
-		}
-	}
-	return 1 + maxRows
-}
-
-func navColumnWidths(count int, width int, gap int) []int {
-	if count <= 0 {
-		return nil
-	}
-	available := max(0, width-gap*(count-1))
-	base, remainder := available/count, available%count
-	widths := make([]int, count)
-	for index := range widths {
-		widths[index] = base
-		if index < remainder {
-			widths[index]++
-		}
-	}
-	return widths
 }
 
 func renderCodexContent(content string, width int, height int, empty bool, loadingText string) []string {
@@ -334,7 +325,7 @@ func renderCodexContent(content string, width int, height int, empty bool, loadi
 }
 
 func renderEmptyCodexContent(width int, height int) []string {
-	return renderCenteredCodexContent([]string{"No Codex tabs open", "Press n to create one."}, width, height)
+	return renderCenteredCodexContent([]string{"No Codex agent open", "Press n to create one."}, width, height)
 }
 
 func renderCenteredCodexContent(content []string, width int, height int) []string {
@@ -353,18 +344,20 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 }
 
 func navShortcuts(cfg config.Config) string {
-	return "←↑↓→ select  S-←/→ move  Enter  " +
-		cfg.KeyBindings.New + " new  " +
-		cfg.KeyBindings.Close + " close  " +
-		cfg.KeyBindings.CloseCodux + " close codux"
+	return cfg.KeyBindings.FocusLeft + "/" + cfg.KeyBindings.FocusRight + " panes  " +
+		cfg.KeyBindings.SelectPrev + "/" + cfg.KeyBindings.SelectNext + " select  " +
+		cfg.KeyBindings.Open + " open  " +
+		cfg.KeyBindings.NewWorkdir + " workdir  " +
+		cfg.KeyBindings.NewGroup + " group  " +
+		cfg.KeyBindings.NewAgent + " agent"
 }
 
 func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return appTitle + "  " + cfg.KeyBindings.FocusToggle + " focus nav  " + cfg.KeyBindings.CloseCodux + " interrupt/close"
+	return appTitle + "  " + cfg.KeyBindings.Drawer + " command center  " + cfg.KeyBindings.Quit + " interrupt/close"
 }
 
 func focusHintLabel(cfg config.Config) string {
-	return cfg.KeyBindings.FocusToggle + " focus nav"
+	return cfg.KeyBindings.Drawer + " command center"
 }
 
 func paletteFor(active bool) framePalette {
@@ -409,6 +402,10 @@ func borderTextLine(left string, right string, width int) string {
 		remaining = width - lipgloss.Width(left)
 	}
 	return left + strings.Repeat(" ", max(0, remaining)) + right
+}
+
+func rowLine(left string, right string, width int) string {
+	return borderTextLine(left, right, width)
 }
 
 func centerVisual(value string, width int) string {
@@ -467,4 +464,42 @@ func clip(value string, width int) string {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes) + "…"
+}
+
+func lineAt(lines []string, index int, width int) string {
+	if index < 0 || index >= len(lines) {
+		return strings.Repeat(" ", width)
+	}
+	return padVisual(clip(lines[index], width), width)
+}
+
+func workdirForRender(st state.State, agent state.Agent) state.Workdir {
+	if workdir := state.WorkdirForAgent(st, agent); workdir != nil {
+		return *workdir
+	}
+	return state.Workdir{}
+}
+
+func fmtInt(value int) string {
+	if value == 0 {
+		return "0"
+	}
+	var digits []byte
+	for value > 0 {
+		digits = append(digits, byte('0'+value%10))
+		value /= 10
+	}
+	for left, right := 0, len(digits)-1; left < right; left, right = left+1, right-1 {
+		digits[left], digits[right] = digits[right], digits[left]
+	}
+	return string(digits)
+}
+
+func desiredWorkdirPaneWidth(st state.State) int {
+	width := 26
+	for _, workdir := range st.Workdirs {
+		label := "▶ 📁 " + sessions.DisplayPath(workdir.Path) + " " + fmtInt(state.AgentCountForWorkdir(st, workdir.ID))
+		width = max(width, lipgloss.Width(label)+2+(navHorizontalPadding*2))
+	}
+	return min(width, maxWorkdirPaneWidth)
 }

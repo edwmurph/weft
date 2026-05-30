@@ -16,8 +16,7 @@ import (
 )
 
 const (
-	navToolbar            = "CODUX  ←↑↓→ select  S-←/→ move  Enter  n new  c close  C-c close codux"
-	collapsedCodexToolbar = "CODUX  C-g focus nav  C-c interrupt/close"
+	collapsedCodexToolbar = "CODUX  C-b command center  C-c interrupt/close"
 )
 
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
@@ -176,29 +175,31 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	timedStep(t, "initial render", func() {
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "CODUX") && strings.Contains(capture, "No Codex tabs open")
+			return strings.Contains(capture, "Workdirs") &&
+				strings.Contains(capture, "Agents") &&
+				strings.Contains(capture, "No Codex agent open")
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), true)
 	})
 
 	var firstID string
-	timedStep(t, "keyboard n creates tab", func() {
+	timedStep(t, "keyboard n creates agent", func() {
 		started := time.Now()
 		tmuxRun(t, env, "send-keys", "-t", pane, "n")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Starting Codex") &&
 				strings.Contains(capture, collapsedCodexToolbar) &&
-				!strings.Contains(capture, "No Codex tabs open")
+				!strings.Contains(capture, "No Codex agent open")
 		})
 		placeholderDuration := time.Since(started)
-		t.Logf("dashboard_e2e metric=%q duration=%s", "new tab startup placeholder visible", placeholderDuration.Round(time.Millisecond))
+		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent startup placeholder visible", placeholderDuration.Round(time.Millisecond))
 		if placeholderDuration > 500*time.Millisecond {
 			t.Fatalf("startup placeholder took too long: %s", placeholderDuration.Round(time.Millisecond))
 		}
 		st := waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Tabs) == 1 && st.Tabs[0].Status == state.StatusRunning && st.Focus == state.FocusCodex
+			return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning && st.Focus == state.FocusCodex
 		})
-		firstID = st.Tabs[0].ID
+		firstID = st.Agents[0].ID
 		if !waitForBool(2*time.Second, func() bool {
 			_, err := os.Stat(startupMarker)
 			return err == nil
@@ -219,14 +220,15 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		if !loadingLineIsCentered(colorOnlyCapture) {
 			t.Fatalf("dashboard should center startup loading state:\n%s", colorOnlyCapture)
 		}
-		t.Logf("dashboard_e2e metric=%q duration=%s", "new tab color-only startup covered", time.Since(started).Round(time.Millisecond))
+		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent color-only startup covered", time.Since(started).Round(time.Millisecond))
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, ">_ OpenAI Codex") &&
-				!strings.Contains(capture, "No Codex tabs open") &&
-				!strings.Contains(capture, "INBOX") &&
+				!strings.Contains(capture, "No Codex agent open") &&
+				!strings.Contains(capture, "Workdirs") &&
+				!strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, collapsedCodexToolbar)
 		})
-		t.Logf("dashboard_e2e metric=%q duration=%s", "new tab first Codex content visible", time.Since(started).Round(time.Millisecond))
+		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent first Codex content visible", time.Since(started).Round(time.Millisecond))
 		waitForEscapedCapture(t, env, pane, func(capture string) bool {
 			return strings.Contains(capture, "38;2;237;239;241") &&
 				strings.Contains(capture, "48;2;40;49;56") &&
@@ -239,12 +241,12 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertCodexBoxNotDrifted(t, clientOutput())
 	})
 
-	timedStep(t, "shift-right stays inside codex focus", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "S-Right")
+	timedStep(t, "nav shortcut keys stay inside codex focus", func() {
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "lj")
 		time.Sleep(250 * time.Millisecond)
 		waitState(t, env, bin, func(st state.State) bool {
-			tab := findTab(st, firstID)
-			return tab != nil && tab.Column == "inbox" && st.Focus == state.FocusCodex
+			agent := findAgent(st, firstID)
+			return agent != nil && agent.FolderID == "" && st.Focus == state.FocusCodex
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
@@ -253,52 +255,67 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "s?n")
 		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "received:s?n") &&
+			return strings.Contains(capture, "received:ljs?n") &&
 				!strings.Contains(capture, "Codux shortcuts") &&
 				!strings.Contains(capture, "Other Codux sessions")
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
-	timedStep(t, "C-g focuses nav", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-g")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusNav })
+	timedStep(t, "C-b opens command center", func() {
+		tmuxRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, navToolbar) &&
+			return strings.Contains(capture, "Workdirs") &&
+				strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, ">_ OpenAI Codex")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 	})
 
-	timedStep(t, "shift-right moves active tab in nav focus", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "S-Right")
+	timedStep(t, "group prompt and move agent update structure", func() {
+		tmuxRun(t, env, "send-keys", "-t", pane, "g")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Create group")
+		})
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "release")
+		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			tab := findTab(st, firstID)
-			return tab != nil && tab.Column == "implement"
+			return folderByPath(st, "release") != nil
+		})
+		tmuxRun(t, env, "send-keys", "-t", pane, "m")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Move agent")
+		})
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "release")
+		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			folder := folderForAgent(st, agent)
+			return agent != nil && folder != nil && folder.Path == "release"
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
 	timedStep(t, "rename modal saves status template", func() {
 		waitState(t, env, bin, func(st state.State) bool {
-			tab := findTab(st, firstID)
-			return tab != nil && strings.Contains(tab.CodexTitle, "Ready")
+			agent := findAgent(st, firstID)
+			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "r")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Rename tab") &&
-				strings.Contains(capture, "Variables") &&
-				strings.Contains(capture, "{status}")
+			return strings.Contains(capture, "Rename agent") &&
+				strings.Contains(capture, "Preview")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "C-u")
 		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "Codex {status}")
 		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			tab := findTab(st, firstID)
-			return tab != nil && tab.Title == "Codex {status}"
+			agent := findAgent(st, firstID)
+			return agent != nil && agent.Title == "Codex {status}"
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codex ready") && !strings.Contains(capture, "Rename tab")
+			return strings.Contains(capture, "Codex ready") && !strings.Contains(capture, "Rename agent")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 	})
@@ -309,22 +326,22 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "status check")
 		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			tab := findTab(st, firstID)
-			return tab != nil && strings.Contains(tab.CodexTitle, "Working")
+			agent := findAgent(st, firstID)
+			return agent != nil && strings.Contains(agent.CodexTitle, "Working")
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex working")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 		waitState(t, env, bin, func(st state.State) bool {
-			tab := findTab(st, firstID)
-			return tab != nil && strings.Contains(tab.CodexTitle, "Ready")
+			agent := findAgent(st, firstID)
+			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex ready")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-g")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusNav })
+		tmuxRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
 	})
 
 	timedStep(t, "help modal closes", func() {
@@ -339,35 +356,46 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "close confirmation cancels then closes", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "c")
+		tmuxRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Close Codex ready?")
+			return strings.Contains(capture, "Delete agent Codex ready?")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "n")
-		waitState(t, env, bin, func(st state.State) bool { return len(st.Tabs) == 1 })
-		tmuxRun(t, env, "send-keys", "-t", pane, "c")
+		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 1 })
+		tmuxRun(t, env, "send-keys", "-t", pane, "d")
 		tmuxRun(t, env, "send-keys", "-t", pane, "y")
-		waitState(t, env, bin, func(st state.State) bool { return len(st.Tabs) == 0 })
+		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 0 })
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "No Codex tabs open")
+			return strings.Contains(capture, "No Codex agent open")
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), true)
+		tmuxRun(t, env, "send-keys", "-t", pane, "d")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Delete group release?")
+		})
+		tmuxRun(t, env, "send-keys", "-t", pane, "y")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Agents) == 0 && len(st.Folders) == 0 && st.SelectedWorkdirID != ""
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "No agents")
+		})
 	})
 
 	timedStep(t, "C-c interrupts working codex before ready codex closes codux", func() {
 		tmuxRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Tabs) == 1 &&
+			return len(st.Agents) == 1 &&
 				st.Focus == state.FocusCodex &&
-				strings.Contains(st.Tabs[0].CodexTitle, "Ready")
+				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
 		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "interrupt me")
 		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Tabs) == 1 &&
+			return len(st.Agents) == 1 &&
 				st.Focus == state.FocusCodex &&
-				st.Tabs[0].Status == state.StatusRunning &&
-				strings.Contains(st.Tabs[0].CodexTitle, "Working")
+				st.Agents[0].Status == state.StatusRunning &&
+				strings.Contains(st.Agents[0].CodexTitle, "Working")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
 		time.Sleep(250 * time.Millisecond)
@@ -376,10 +404,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatalf("C-c should stay with Codex while CODEX is running: %v", attached)
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Tabs) == 1 &&
+			return len(st.Agents) == 1 &&
 				st.Focus == state.FocusCodex &&
-				st.Tabs[0].Status == state.StatusRunning &&
-				strings.Contains(st.Tabs[0].CodexTitle, "Ready")
+				st.Agents[0].Status == state.StatusRunning &&
+				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
 		if !waitForBool(2*time.Second, func() bool {
@@ -392,10 +420,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Tabs) == 1 &&
+			return len(st.Agents) == 1 &&
 				st.Focus == state.FocusCodex &&
-				st.Tabs[0].Status == state.StatusRunning &&
-				strings.Contains(st.Tabs[0].CodexTitle, "Ready")
+				st.Agents[0].Status == state.StatusRunning &&
+				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
 	})
 }
@@ -529,14 +557,14 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 			t.Fatalf("dashboard join should not use sideways T fragment %q:\n%s", forbidden, capture)
 		}
 	}
-	if count := strings.Count(capture, "CODUX"); count > 1 || (empty && count != 1) {
+	if count := strings.Count(capture, "CODUX"); count > 1 {
 		t.Fatalf("dashboard should render at most one CODUX frame label, got %d:\n%s", count, capture)
 	}
-	if count := strings.Count(capture, "C-c close codux"); count > 2 {
+	if count := strings.Count(capture, "C-c interrupt/close"); count > 1 {
 		t.Fatalf("dashboard rendered duplicate footer/header labels, got %d:\n%s", count, capture)
 	}
-	if !empty && strings.Contains(capture, "No Codex tabs open") {
-		t.Fatalf("dashboard kept empty state after tab was created:\n%s", capture)
+	if !empty && strings.Contains(capture, "No Codex agent open") {
+		t.Fatalf("dashboard kept empty state after agent was created:\n%s", capture)
 	}
 }
 
@@ -574,10 +602,31 @@ func assertCodexBoxNotDrifted(t *testing.T, capture string) {
 	}
 }
 
-func findTab(st state.State, id string) *state.Tab {
-	for index := range st.Tabs {
-		if st.Tabs[index].ID == id {
-			return &st.Tabs[index]
+func findAgent(st state.State, id string) *state.Agent {
+	for index := range st.Agents {
+		if st.Agents[index].ID == id {
+			return &st.Agents[index]
+		}
+	}
+	return nil
+}
+
+func folderForAgent(st state.State, agent *state.Agent) *state.Folder {
+	if agent == nil {
+		return nil
+	}
+	for index := range st.Folders {
+		if st.Folders[index].ID == agent.FolderID {
+			return &st.Folders[index]
+		}
+	}
+	return nil
+}
+
+func folderByPath(st state.State, path string) *state.Folder {
+	for index := range st.Folders {
+		if st.Folders[index].Path == path {
+			return &st.Folders[index]
 		}
 	}
 	return nil

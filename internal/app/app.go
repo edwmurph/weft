@@ -28,6 +28,8 @@ Usage:
   codux refresh
   codux status [--json]
   codux new [title]
+  codux group add <name>
+  codux workdir add <path>
   codux rename [id] <title>
   codux close [id]
   codux close --kill
@@ -40,11 +42,10 @@ Usage:
   codux doctor
   codux config <info|path|show|init>
 
-Codux is scoped to the directory where you run it. Each launch directory gets
-a runtime directory under ~/.codux/workdirs/<workdir-id>, a config.toml, a
-versioned state.json, an IPC socket, and one tmux session hosting one TUI pane.
-Tab titles passed to new or rename can interpolate {codex} and {status}; status
-uses live Codex activity when available.
+Codux runs one global command center. The launch directory is added as an
+initial workdir, while config.toml, state.json, the IPC socket, and the tmux
+session live in the global Codux runtime. Agent rows use title_template and can
+interpolate {title}, {codex}, {status}, {workdir}, and {group}.
 `
 
 func Run(args []string) error {
@@ -74,13 +75,19 @@ func Run(args []string) error {
 			title = strings.Join(args[1:], " ")
 		}
 		return callIPC("new", map[string]string{"title": title}, false)
+	case "group":
+		return groupCommand(args[1:])
+	case "folder":
+		return groupCommand(args[1:])
+	case "workdir":
+		return workdirCommand(args[1:])
 	case "rename":
 		return rename(args[1:])
 	case "close":
 		return closeCommand(args[1:])
 	case "select":
 		if len(args) < 2 {
-			return errors.New("select requires a tab id")
+			return errors.New("select requires an agent id")
 		}
 		return callIPC("select", map[string]string{"id": args[1]}, false)
 	case "move-left":
@@ -135,7 +142,7 @@ func start(args []string) error {
 	if *attach {
 		return controller.Attach()
 	}
-	fmt.Printf("Prepared tmux session %s for %s.\n", cfg.TmuxSession, rt.Workdir)
+	fmt.Printf("Prepared tmux session %s for global Codux.\n", cfg.TmuxSession)
 	fmt.Printf("Config: %s\n", rt.ConfigPath)
 	fmt.Printf("State: %s\n", rt.StatePath)
 	return nil
@@ -173,7 +180,7 @@ func closeCommand(args []string) error {
 		return closeCodux("close", args)
 	}
 	if len(args) > 1 {
-		return errors.New("close accepts at most one tab id")
+		return errors.New("close accepts at most one agent id")
 	}
 	return callIPC("close", map[string]string{"id": args[0]}, false)
 }
@@ -186,7 +193,7 @@ func closeCodux(command string, args []string) error {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("%s accepts only --kill without a tab id", command)
+		return fmt.Errorf("%s accepts only --kill without an agent id", command)
 	}
 	_, cfg, _, err := resolveRuntime()
 	if err != nil {
@@ -258,7 +265,7 @@ func status(args []string) error {
 	}
 	controller := tmuxhost.New(cfg.TmuxSession)
 	fmt.Printf("tmux session: %s (%s)\n", cfg.TmuxSession, upDown(controller.HasSession()))
-	fmt.Printf("workdir: %s\nruntime dir: %s\nfocus: %s\ntabs: %d\n", rt.Workdir, rt.Dir, st.Focus, len(st.Tabs))
+	fmt.Printf("launch workdir: %s\nruntime dir: %s\nfocus: %s\nworkdirs: %d\ngroups: %d\nagents: %d\n", rt.Workdir, rt.Dir, displayFocus(st.Focus), len(st.Workdirs), len(st.Folders), len(st.Agents))
 	return nil
 }
 
@@ -273,6 +280,20 @@ func rename(args []string) error {
 		title = strings.Join(args[1:], " ")
 	}
 	return callIPC("rename", map[string]string{"id": id, "title": title}, false)
+}
+
+func groupCommand(args []string) error {
+	if len(args) < 2 || args[0] != "add" {
+		return errors.New("group requires: add <name>")
+	}
+	return callIPC("add_group", map[string]string{"path": strings.Join(args[1:], " ")}, false)
+}
+
+func workdirCommand(args []string) error {
+	if len(args) < 2 || args[0] != "add" {
+		return errors.New("workdir requires: add <path>")
+	}
+	return callIPC("add_workdir", map[string]string{"path": strings.Join(args[1:], " ")}, false)
 }
 
 func listSessions() error {
@@ -356,11 +377,11 @@ func doctor() error {
 			fmt.Printf("warn Codex command is not on PATH: %s\n", cfg.CodexCommand)
 		}
 	}
-	fmt.Printf("info workdir: %s\n", rt.Workdir)
+	fmt.Printf("info launch workdir: %s\n", rt.Workdir)
 	fmt.Printf("info runtime dir: %s\n", rt.Dir)
 	fmt.Printf("ok config: %s\n", rt.ConfigPath)
-	fmt.Printf("ok state: %s (%d tabs)\n", rt.StatePath, len(st.Tabs))
-	fmt.Println("info tmux hosts one full-screen Codux TUI pane; Codex sessions run as TUI-owned PTYs.")
+	fmt.Printf("ok state: %s (%d workdirs, %d groups, %d agents)\n", rt.StatePath, len(st.Workdirs), len(st.Folders), len(st.Agents))
+	fmt.Println("info tmux hosts one full-screen Codux TUI pane; Codex agents run as TUI-owned PTYs.")
 	if problems > 0 {
 		return errors.New("doctor found problems")
 	}
@@ -395,14 +416,15 @@ func configCommand(args []string) error {
 	}
 	switch args[0] {
 	case "info":
-		fmt.Println("Codux workdir runtime")
-		fmt.Printf("Workdir: %s\n", rt.Workdir)
+		fmt.Println("Codux global runtime")
+		fmt.Printf("Launch workdir: %s\n", rt.Workdir)
 		fmt.Printf("Runtime dir: %s\n", rt.Dir)
 		fmt.Printf("Config: %s\n", rt.ConfigPath)
 		fmt.Printf("State: %s\n", rt.StatePath)
 		fmt.Printf("IPC socket: %s\n", rt.SocketPath)
 		fmt.Printf("tmux session: %s\n", cfg.TmuxSession)
 		fmt.Printf("Codex command: %s\n", cfg.CodexCommand)
+		fmt.Printf("Title template: %s\n", cfg.TitleTemplate)
 	case "path":
 		fmt.Println(rt.ConfigPath)
 	case "show":
@@ -452,7 +474,7 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
-	store := state.NewStore(rt.StatePath)
+	store := state.NewStore(rt.StatePath, rt.Workdir)
 	return rt, cfg, store, nil
 }
 
@@ -473,4 +495,11 @@ func looksLikeID(value string) bool {
 		}
 	}
 	return true
+}
+
+func displayFocus(focus state.Focus) string {
+	if focus == state.FocusFolders {
+		return "agents"
+	}
+	return string(focus)
 }

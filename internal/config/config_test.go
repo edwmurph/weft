@@ -26,33 +26,45 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.CodexCommand != "codex" {
 		t.Fatalf("CodexCommand = %q", cfg.CodexCommand)
 	}
-	if cfg.KeyBindings.FocusToggle != "C-g" {
-		t.Fatalf("FocusToggle = %q", cfg.KeyBindings.FocusToggle)
+	if cfg.TitleTemplate != "{title}" {
+		t.Fatalf("TitleTemplate = %q", cfg.TitleTemplate)
 	}
-	if cfg.KeyBindings.CloseCodux != "C-c" {
-		t.Fatalf("CloseCodux = %q", cfg.KeyBindings.CloseCodux)
+	if cfg.KeyBindings.Drawer != "C-b" {
+		t.Fatalf("Drawer = %q", cfg.KeyBindings.Drawer)
+	}
+	if cfg.KeyBindings.FocusLeft != "Left" || cfg.KeyBindings.FocusRight != "Right" {
+		t.Fatalf("focus bindings = %q/%q", cfg.KeyBindings.FocusLeft, cfg.KeyBindings.FocusRight)
+	}
+	if cfg.KeyBindings.NewGroup != "g" {
+		t.Fatalf("NewGroup = %q", cfg.KeyBindings.NewGroup)
+	}
+	if cfg.KeyBindings.NewAgent != "n" {
+		t.Fatalf("NewAgent = %q", cfg.KeyBindings.NewAgent)
+	}
+	if cfg.KeyBindings.Quit != "C-c" {
+		t.Fatalf("Quit = %q", cfg.KeyBindings.Quit)
 	}
 	data, err := os.ReadFile(rt.ConfigPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "quit =") {
-		t.Fatalf("default config should not include legacy quit binding:\n%s", data)
-	}
-	if strings.Contains(string(data), "sessions =") {
-		t.Fatalf("default config should not include dashboard sessions binding:\n%s", data)
+	if strings.Contains(string(data), "quit = \"C-q\"") || strings.Contains(string(data), "focus_toggle =") {
+		t.Fatalf("default config should not include legacy exit bindings:\n%s", data)
 	}
 }
 
-func TestLoadConfigMigratesLegacyColumnsAndBindings(t *testing.T) {
+func TestLoadConfigMapsLegacyBindings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	err := os.WriteFile(path, []byte(`
 columns = ["Backlog", "Active", "Review", "Done"]
 
 [key_bindings]
-previous = "h"
-next = "l"
+previous = "Left"
+next = "Right"
+new = "a"
+new_folder = "x"
 close = "x"
+focus_toggle = "C-g"
 quit = "C-q"
 `), 0o600)
 	if err != nil {
@@ -67,24 +79,36 @@ quit = "C-q"
 	if strings.Join(cfg.Columns, ",") != "inbox,implement,ship" {
 		t.Fatalf("columns = %#v", cfg.Columns)
 	}
-	if cfg.KeyBindings.Prev != "h" {
-		t.Fatalf("prev = %q", cfg.KeyBindings.Prev)
+	if cfg.KeyBindings.SelectPrev != "Left" {
+		t.Fatalf("select_prev = %q", cfg.KeyBindings.SelectPrev)
 	}
-	if cfg.KeyBindings.Close != "x" {
-		t.Fatalf("close = %q", cfg.KeyBindings.Close)
+	if cfg.KeyBindings.NewAgent != "a" {
+		t.Fatalf("new_agent = %q", cfg.KeyBindings.NewAgent)
 	}
-	if cfg.KeyBindings.CloseCodux != "C-c" {
-		t.Fatalf("close_codux = %q", cfg.KeyBindings.CloseCodux)
+	if cfg.KeyBindings.NewGroup != "x" {
+		t.Fatalf("new_group = %q", cfg.KeyBindings.NewGroup)
+	}
+	if cfg.KeyBindings.Delete != "x" {
+		t.Fatalf("delete = %q", cfg.KeyBindings.Delete)
+	}
+	if cfg.KeyBindings.Drawer != "C-g" {
+		t.Fatalf("drawer = %q", cfg.KeyBindings.Drawer)
+	}
+	if cfg.KeyBindings.Quit != "C-c" {
+		t.Fatalf("quit = %q", cfg.KeyBindings.Quit)
 	}
 }
 
-func TestMigrateDefaultConfigRemovesLegacyExitBindings(t *testing.T) {
+func TestMigrateDefaultConfigAddsGlobalCommandCenterKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	err := os.WriteFile(path, []byte(`
+codex_command = "codex"
+
 [key_bindings]
 close = "c"
 sessions = "s"
 focus_toggle = "C-g"
+new_folder = "f"
 quit = "C-q"
 `), 0o600)
 	if err != nil {
@@ -99,14 +123,25 @@ quit = "C-q"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "sessions =") {
+	text := string(data)
+	for _, expected := range []string{
+		`title_template = "{title}"`,
+		`drawer = "C-b"`,
+		`select_prev = "k"`,
+		`new_workdir = "w"`,
+		`new_group = "g"`,
+		`new_agent = "n"`,
+		`quit = "C-c"`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("migrated config missing %s:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "sessions =") {
 		t.Fatalf("migrated config should remove dashboard sessions binding:\n%s", data)
 	}
-	if strings.Contains(string(data), "quit =") {
-		t.Fatalf("migrated config should remove legacy quit binding:\n%s", data)
-	}
-	if !strings.Contains(string(data), `close_codux = "C-c"`) {
-		t.Fatalf("migrated config should add close_codux binding:\n%s", data)
+	if strings.Contains(text, "new_folder =") {
+		t.Fatalf("migrated config should rename new_folder:\n%s", data)
 	}
 }
 
@@ -117,5 +152,19 @@ func TestRuntimeIDIncludesSanitizedNameAndDigest(t *testing.T) {
 	}
 	if len(id) <= len("my-repo-") {
 		t.Fatalf("RuntimeID missing digest: %q", id)
+	}
+}
+
+func TestDefaultRuntimeIsGlobal(t *testing.T) {
+	t.Setenv(AppDirEnv, "")
+	dir, err := AppDir("/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasSuffix(dir, "workdirs") || strings.Contains(dir, "project-") {
+		t.Fatalf("AppDir should be global, got %q", dir)
+	}
+	if got := DefaultTmuxSession("/tmp/project"); got != "codux" {
+		t.Fatalf("DefaultTmuxSession = %q", got)
 	}
 }

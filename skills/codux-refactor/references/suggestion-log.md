@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-29 - Global command center layout
+
+- Request: Implement `spec.md`, preserving the working Go/tmux/PTX building blocks while redoing and extending the layout.
+- Suggestions: Keep the single tmux-hosted Bubble Tea pane, terminal screen renderer, IPC loop, startup loading, and TUI-owned Codex PTYs; replace the tab/column state and renderer with global workdirs, optional flat groups inside an Agents pane, top-level agents, command-center navigation, and full Codex focus.
+- Outcome: Implemented in `.worktrees/spec-command-center`; awaiting review.
+- Evidence: `internal/state`, `internal/tui`, `internal/titles`, `internal/config`, `internal/tmuxhost`, `tests/integration`, `README.md`.
+
 ## 2026-05-29 - Close-Codux shortcut rename
 
 - Request: Make `C-c` interrupt Codex first and close Codux on the next press, remove `C-q` from the shortcut surface, and merge the close-Codux CLI into `codux close`.

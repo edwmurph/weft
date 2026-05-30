@@ -24,23 +24,28 @@ var (
 )
 
 type KeyBindings struct {
-	New         string `toml:"new"`
-	Prev        string `toml:"prev"`
-	Next        string `toml:"next"`
-	MoveLeft    string `toml:"move_left"`
-	MoveRight   string `toml:"move_right"`
-	Rename      string `toml:"rename"`
-	Close       string `toml:"close"`
-	Help        string `toml:"help"`
-	FocusToggle string `toml:"focus_toggle"`
-	CloseCodux  string `toml:"close_codux"`
+	Drawer     string `toml:"drawer"`
+	FocusLeft  string `toml:"focus_left"`
+	FocusRight string `toml:"focus_right"`
+	SelectPrev string `toml:"select_prev"`
+	SelectNext string `toml:"select_next"`
+	Open       string `toml:"open"`
+	NewWorkdir string `toml:"new_workdir"`
+	NewGroup   string `toml:"new_group"`
+	NewAgent   string `toml:"new_agent"`
+	MoveAgent  string `toml:"move_agent"`
+	Rename     string `toml:"rename"`
+	Delete     string `toml:"delete"`
+	Help       string `toml:"help"`
+	Quit       string `toml:"quit"`
 }
 
 type Config struct {
-	TmuxSession  string      `toml:"tmux_session"`
-	CodexCommand string      `toml:"codex_command"`
-	Columns      []string    `toml:"columns"`
-	KeyBindings  KeyBindings `toml:"key_bindings"`
+	TmuxSession   string      `toml:"tmux_session"`
+	CodexCommand  string      `toml:"codex_command"`
+	TitleTemplate string      `toml:"title_template"`
+	Columns       []string    `toml:"columns"`
+	KeyBindings   KeyBindings `toml:"key_bindings"`
 }
 
 type Runtime struct {
@@ -61,25 +66,30 @@ func (e ConfigError) Error() string {
 
 func DefaultKeyBindings() KeyBindings {
 	return KeyBindings{
-		New:         "n",
-		Prev:        "Left",
-		Next:        "Right",
-		MoveLeft:    "S-Left",
-		MoveRight:   "S-Right",
-		Rename:      "r",
-		Close:       "c",
-		Help:        "?",
-		FocusToggle: "C-g",
-		CloseCodux:  "C-c",
+		Drawer:     "C-b",
+		FocusLeft:  "Left",
+		FocusRight: "Right",
+		SelectPrev: "k",
+		SelectNext: "j",
+		Open:       "Enter",
+		NewWorkdir: "w",
+		NewGroup:   "g",
+		NewAgent:   "n",
+		MoveAgent:  "m",
+		Rename:     "r",
+		Delete:     "d",
+		Help:       "?",
+		Quit:       "C-c",
 	}
 }
 
 func DefaultConfig(defaultSession string) Config {
 	return Config{
-		TmuxSession:  defaultSession,
-		CodexCommand: "codex",
-		Columns:      append([]string(nil), DefaultColumns...),
-		KeyBindings:  DefaultKeyBindings(),
+		TmuxSession:   defaultSession,
+		CodexCommand:  "codex",
+		TitleTemplate: "{title}",
+		Columns:       append([]string(nil), DefaultColumns...),
+		KeyBindings:   DefaultKeyBindings(),
 	}
 }
 
@@ -116,7 +126,7 @@ func AppDir(workdir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".codux", "workdirs", RuntimeID(workdir)), nil
+	return filepath.Join(home, ".codux"), nil
 }
 
 func RuntimeID(workdir string) string {
@@ -131,10 +141,7 @@ func RuntimeID(workdir string) string {
 }
 
 func DefaultTmuxSession(workdir string) string {
-	if os.Getenv(AppDirEnv) != "" && os.Getenv(WorkdirEnv) == "" {
-		return "codux"
-	}
-	return "codux-" + RuntimeID(workdir)
+	return "codux"
 }
 
 func EnsureConfig(rt Runtime) (Config, error) {
@@ -156,22 +163,35 @@ func EnsureConfig(rt Runtime) (Config, error) {
 func LoadConfig(path string, defaultSession string) (Config, error) {
 	cfg := DefaultConfig(defaultSession)
 	var raw struct {
-		TmuxSession  string   `toml:"tmux_session"`
-		CodexCommand string   `toml:"codex_command"`
-		Columns      []string `toml:"columns"`
-		KeyBindings  struct {
-			New         string `toml:"new"`
-			Prev        string `toml:"prev"`
-			Previous    string `toml:"previous"`
-			Next        string `toml:"next"`
-			MoveLeft    string `toml:"move_left"`
-			MoveRight   string `toml:"move_right"`
-			Rename      string `toml:"rename"`
-			Close       string `toml:"close"`
-			Help        string `toml:"help"`
-			FocusToggle string `toml:"focus_toggle"`
-			CloseCodux  string `toml:"close_codux"`
-			Quit        string `toml:"quit"`
+		TmuxSession   string   `toml:"tmux_session"`
+		CodexCommand  string   `toml:"codex_command"`
+		TitleTemplate string   `toml:"title_template"`
+		Columns       []string `toml:"columns"`
+		KeyBindings   struct {
+			Drawer       string `toml:"drawer"`
+			FocusLeft    string `toml:"focus_left"`
+			FocusRight   string `toml:"focus_right"`
+			SelectPrev   string `toml:"select_prev"`
+			SelectNext   string `toml:"select_next"`
+			Open         string `toml:"open"`
+			NewWorkdir   string `toml:"new_workdir"`
+			NewGroup     string `toml:"new_group"`
+			NewFolder    string `toml:"new_folder"`
+			NewAgent     string `toml:"new_agent"`
+			MoveAgent    string `toml:"move_agent"`
+			Delete       string `toml:"delete"`
+			DrawerLegacy string `toml:"focus_toggle"`
+			New          string `toml:"new"`
+			Prev         string `toml:"prev"`
+			Previous     string `toml:"previous"`
+			Next         string `toml:"next"`
+			MoveLeft     string `toml:"move_left"`
+			MoveRight    string `toml:"move_right"`
+			Rename       string `toml:"rename"`
+			Close        string `toml:"close"`
+			Help         string `toml:"help"`
+			CloseCodux   string `toml:"close_codux"`
+			Quit         string `toml:"quit"`
 		} `toml:"key_bindings"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
@@ -183,6 +203,9 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 	if raw.CodexCommand != "" {
 		cfg.CodexCommand = raw.CodexCommand
 	}
+	if raw.TitleTemplate != "" {
+		cfg.TitleTemplate = raw.TitleTemplate
+	}
 	if raw.Columns != nil {
 		cfg.Columns = normalizeColumns(raw.Columns)
 	}
@@ -191,23 +214,49 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 			*target = value
 		}
 	}
-	applyBinding(&cfg.KeyBindings.New, raw.KeyBindings.New)
-	if raw.KeyBindings.Prev != "" {
-		applyBinding(&cfg.KeyBindings.Prev, raw.KeyBindings.Prev)
-	} else {
-		applyBinding(&cfg.KeyBindings.Prev, raw.KeyBindings.Previous)
+	if raw.KeyBindings.Drawer != "" {
+		applyBinding(&cfg.KeyBindings.Drawer, raw.KeyBindings.Drawer)
+	} else if raw.KeyBindings.DrawerLegacy != "" {
+		applyBinding(&cfg.KeyBindings.Drawer, raw.KeyBindings.DrawerLegacy)
 	}
-	applyBinding(&cfg.KeyBindings.Next, raw.KeyBindings.Next)
-	applyBinding(&cfg.KeyBindings.MoveLeft, raw.KeyBindings.MoveLeft)
-	applyBinding(&cfg.KeyBindings.MoveRight, raw.KeyBindings.MoveRight)
+	applyBinding(&cfg.KeyBindings.FocusLeft, raw.KeyBindings.FocusLeft)
+	applyBinding(&cfg.KeyBindings.FocusRight, raw.KeyBindings.FocusRight)
+	if raw.KeyBindings.SelectPrev != "" {
+		applyBinding(&cfg.KeyBindings.SelectPrev, raw.KeyBindings.SelectPrev)
+	} else if raw.KeyBindings.Prev != "" {
+		applyBinding(&cfg.KeyBindings.SelectPrev, raw.KeyBindings.Prev)
+	} else {
+		applyBinding(&cfg.KeyBindings.SelectPrev, raw.KeyBindings.Previous)
+	}
+	if raw.KeyBindings.SelectNext != "" {
+		applyBinding(&cfg.KeyBindings.SelectNext, raw.KeyBindings.SelectNext)
+	} else {
+		applyBinding(&cfg.KeyBindings.SelectNext, raw.KeyBindings.Next)
+	}
+	applyBinding(&cfg.KeyBindings.Open, raw.KeyBindings.Open)
+	if raw.KeyBindings.NewAgent != "" {
+		applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.NewAgent)
+	} else {
+		applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.New)
+	}
+	applyBinding(&cfg.KeyBindings.NewWorkdir, raw.KeyBindings.NewWorkdir)
+	if raw.KeyBindings.NewGroup != "" {
+		applyBinding(&cfg.KeyBindings.NewGroup, raw.KeyBindings.NewGroup)
+	} else {
+		applyBinding(&cfg.KeyBindings.NewGroup, raw.KeyBindings.NewFolder)
+	}
+	applyBinding(&cfg.KeyBindings.MoveAgent, raw.KeyBindings.MoveAgent)
 	applyBinding(&cfg.KeyBindings.Rename, raw.KeyBindings.Rename)
-	applyBinding(&cfg.KeyBindings.Close, raw.KeyBindings.Close)
+	if raw.KeyBindings.Delete != "" {
+		applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
+	} else {
+		applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Close)
+	}
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
-	applyBinding(&cfg.KeyBindings.FocusToggle, raw.KeyBindings.FocusToggle)
-	if raw.KeyBindings.CloseCodux != "" {
-		applyBinding(&cfg.KeyBindings.CloseCodux, raw.KeyBindings.CloseCodux)
-	} else if raw.KeyBindings.Quit != "" {
-		applyBinding(&cfg.KeyBindings.CloseCodux, legacyCloseCoduxBinding(raw.KeyBindings.Quit))
+	if raw.KeyBindings.Quit != "" {
+		applyBinding(&cfg.KeyBindings.Quit, legacyCloseCoduxBinding(raw.KeyBindings.Quit))
+	} else if raw.KeyBindings.CloseCodux != "" {
+		applyBinding(&cfg.KeyBindings.Quit, legacyCloseCoduxBinding(raw.KeyBindings.CloseCodux))
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -222,8 +271,8 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.CodexCommand) == "" {
 		return ConfigError{Message: "codex_command must be a non-empty string"}
 	}
-	if len(c.Columns) == 0 {
-		return ConfigError{Message: "columns must include at least one column"}
+	if strings.TrimSpace(c.TitleTemplate) == "" {
+		return ConfigError{Message: "title_template must be a non-empty string"}
 	}
 	seen := map[string]bool{}
 	for _, column := range c.Columns {
@@ -236,10 +285,11 @@ func (c Config) Validate() error {
 		seen[column] = true
 	}
 	for name, value := range map[string]string{
-		"new": c.KeyBindings.New, "prev": c.KeyBindings.Prev, "next": c.KeyBindings.Next,
-		"move_left": c.KeyBindings.MoveLeft, "move_right": c.KeyBindings.MoveRight,
-		"rename": c.KeyBindings.Rename, "close": c.KeyBindings.Close, "help": c.KeyBindings.Help,
-		"focus_toggle": c.KeyBindings.FocusToggle, "close_codux": c.KeyBindings.CloseCodux,
+		"drawer": c.KeyBindings.Drawer, "focus_left": c.KeyBindings.FocusLeft, "focus_right": c.KeyBindings.FocusRight,
+		"select_prev": c.KeyBindings.SelectPrev, "select_next": c.KeyBindings.SelectNext, "open": c.KeyBindings.Open,
+		"new_workdir": c.KeyBindings.NewWorkdir, "new_group": c.KeyBindings.NewGroup, "new_agent": c.KeyBindings.NewAgent,
+		"move_agent": c.KeyBindings.MoveAgent, "rename": c.KeyBindings.Rename, "delete": c.KeyBindings.Delete,
+		"help": c.KeyBindings.Help, "quit": c.KeyBindings.Quit,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return ConfigError{Message: fmt.Sprintf("key binding %q must be a non-empty string", name)}
@@ -257,13 +307,27 @@ func MigrateDefaultConfig(path string) error {
 	updated := strings.ReplaceAll(text, `columns = ["Backlog", "Active", "Review", "Done"]`, `columns = ["inbox", "implement", "ship"]`)
 	updated = strings.ReplaceAll(updated, `prev = "h"`, `prev = "Left"`)
 	updated = strings.ReplaceAll(updated, `next = "l"`, `next = "Right"`)
+	updated = strings.ReplaceAll(updated, `focus_left = "h"`, `focus_left = "Left"`)
+	updated = strings.ReplaceAll(updated, `focus_right = "l"`, `focus_right = "Right"`)
 	updated = strings.ReplaceAll(updated, `move_left = "H"`, `move_left = "S-Left"`)
 	updated = strings.ReplaceAll(updated, `move_right = "L"`, `move_right = "S-Right"`)
 	updated = strings.ReplaceAll(updated, `close = "x"`, `close = "c"`)
+	updated = strings.ReplaceAll(updated, `new_folder = "f"`, `new_group = "g"`)
+	updated = regexp.MustCompile(`(?m)^new_folder\s*=\s*"([^"\n]*)"\s*$`).ReplaceAllString(updated, `new_group = "$1"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-a"`, `focus_toggle = "C-g"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-d"`, `focus_toggle = "C-g"`)
 	updated = regexp.MustCompile(`(?m)^sessions\s*=\s*"[^"\n]*"\n?`).ReplaceAllString(updated, "")
 	updated = strings.ReplaceAll(updated, `close_codux = "C-q"`, `close_codux = "C-c"`)
+	if !strings.Contains(updated, "\ntitle_template =") {
+		codexCommandRE := regexp.MustCompile(`(?m)^codex_command\s*=\s*"[^"\n]*"\n`)
+		if codexCommandRE.MatchString(updated) {
+			updated = codexCommandRE.ReplaceAllStringFunc(updated, func(match string) string {
+				return match + `title_template = "{title}"` + "\n"
+			})
+		} else {
+			updated = `title_template = "{title}"` + "\n" + updated
+		}
+	}
 	quitRE := regexp.MustCompile(`(?m)^quit\s*=\s*"([^"\n]*)"\s*$`)
 	if strings.Contains(updated, "\nclose_codux =") {
 		updated = quitRE.ReplaceAllString(updated, "")
@@ -279,6 +343,25 @@ func MigrateDefaultConfig(path string) error {
 	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nclose_codux =") {
 		updated = insertKeyBinding(updated, `close_codux = "C-c"`)
 	}
+	for _, line := range []string{
+		`drawer = "C-b"`,
+		`focus_left = "Left"`,
+		`focus_right = "Right"`,
+		`select_prev = "k"`,
+		`select_next = "j"`,
+		`open = "Enter"`,
+		`new_workdir = "w"`,
+		`new_group = "g"`,
+		`new_agent = "n"`,
+		`move_agent = "m"`,
+		`delete = "d"`,
+		`quit = "C-c"`,
+	} {
+		name := strings.SplitN(line, " ", 2)[0]
+		if strings.Contains(updated, "[key_bindings]") && !regexp.MustCompile(`(?m)^`+regexp.QuoteMeta(name)+`\s*=`).MatchString(updated) {
+			updated = insertKeyBinding(updated, line)
+		}
+	}
 	if updated == text {
 		return nil
 	}
@@ -286,27 +369,31 @@ func MigrateDefaultConfig(path string) error {
 }
 
 func DefaultConfigText() string {
-	return `# Codux runtime configuration for one launch directory.
-# Run ` + "`codux config info`" + ` to see the workdir, runtime directory, state file, and
-# generated tmux session. Set tmux_session only when you need to override it.
+	return `# Codux global runtime configuration.
+# Run ` + "`codux config info`" + ` to see the runtime directory, state file, and
+# tmux session. Set tmux_session only when you need to override it.
 
 # Command launched inside each Codex PTY owned by the dashboard TUI.
 codex_command = "codex"
 
-# Ordered columns shown in the dashboard.
-columns = ["inbox", "implement", "ship"]
+# Global title template for agent rows.
+title_template = "{title}"
 
 [key_bindings]
-new = "n"
-prev = "Left"
-next = "Right"
-move_left = "S-Left"
-move_right = "S-Right"
+drawer = "C-b"
+focus_left = "Left"
+focus_right = "Right"
+select_prev = "k"
+select_next = "j"
+open = "Enter"
+new_workdir = "w"
+new_group = "g"
+new_agent = "n"
+move_agent = "m"
 rename = "r"
-close = "c"
+delete = "d"
 help = "?"
-focus_toggle = "C-g"
-close_codux = "C-c"
+quit = "C-c"
 `
 }
 

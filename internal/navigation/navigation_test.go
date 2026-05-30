@@ -1,30 +1,24 @@
 package navigation
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/edwmurph/codux/internal/state"
-)
-
-func TestSelectGridTabMovesAcrossColumnsAtSameRow(t *testing.T) {
-	tabs := []state.Tab{
-		{ID: "a", Column: "inbox"},
-		{ID: "b", Column: "inbox"},
-		{ID: "c", Column: "implement"},
-		{ID: "d", Column: "implement"},
+func TestMoveIndexClamps(t *testing.T) {
+	if got := MoveIndex(0, 3, -1); got != 0 {
+		t.Fatalf("left clamp = %d", got)
 	}
-
-	got := SelectGridTab(tabs, "b", []string{"inbox", "implement", "ship"}, 1, 0)
-
-	if got != "d" {
-		t.Fatalf("got %q", got)
+	if got := MoveIndex(1, 3, 1); got != 2 {
+		t.Fatalf("move = %d", got)
+	}
+	if got := MoveIndex(2, 3, 1); got != 2 {
+		t.Fatalf("right clamp = %d", got)
 	}
 }
 
-func TestSelectRelativeWraps(t *testing.T) {
-	tabs := []state.Tab{{ID: "a"}, {ID: "b"}}
-
-	if got := SelectRelative(tabs, "a", -1); got != "b" {
-		t.Fatalf("got %q", got)
+func TestIndexByIDFallsBackToZero(t *testing.T) {
+	if got := IndexByID([]string{"a", "b"}, "b"); got != 1 {
+		t.Fatalf("index = %d", got)
+	}
+	if got := IndexByID([]string{"a", "b"}, "missing"); got != 0 {
+		t.Fatalf("missing index = %d", got)
 	}
 }

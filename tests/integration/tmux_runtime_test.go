@@ -101,24 +101,27 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 
 	runCodux(t, env, bin, "new", "Alpha")
 	first := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Tabs) == 1 && st.Tabs[0].Status == state.StatusRunning
+		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
 	})
-	firstID := first.Tabs[0].ID
+	firstID := first.Agents[0].ID
+	runCodux(t, env, bin, "group", "add", "release")
 	runCodux(t, env, bin, "new", "Beta")
 	runCodux(t, env, bin, "move-right")
 	runCodux(t, env, bin, "rename", "Renamed")
 	runCodux(t, env, bin, "select", firstID)
 	afterOps := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Tabs) == 2 && st.ActiveTabID == firstID
+		return len(st.Agents) == 2 && st.ActiveAgentID == firstID
 	})
 	foundRenamed := false
-	for _, tab := range afterOps.Tabs {
-		if tab.Title == "Renamed" && tab.Column == "implement" {
+	for index := range afterOps.Agents {
+		agent := &afterOps.Agents[index]
+		folder := folderForAgent(afterOps, agent)
+		if agent.Title == "Renamed" && folder != nil && folder.Path == "release" {
 			foundRenamed = true
 		}
 	}
 	if !foundRenamed {
-		t.Fatalf("renamed/moved tab not found: %#v", afterOps.Tabs)
+		t.Fatalf("renamed agent not found in release group: %#v", afterOps)
 	}
 
 	runCodux(t, env, bin, "close")
@@ -126,11 +129,11 @@ func TestSinglePaneTUITmuxRuntime(t *testing.T) {
 		t.Fatalf("pane count after detach = %d (%v), want 1", len(panes), panes)
 	}
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Tabs) == 2
+		return len(st.Agents) == 2
 	})
 	runCodux(t, env, bin, "close", firstID)
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Tabs) == 1
+		return len(st.Agents) == 1
 	})
 }
 
