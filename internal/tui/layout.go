@@ -177,7 +177,7 @@ func renderCodexFrame(
 	width int,
 	height int,
 	active bool,
-	message string,
+	_ string,
 	navCollapsed bool,
 	workdir string,
 	loadingText string,
@@ -218,9 +218,6 @@ func renderCodexFrame(
 	rightLabel := ""
 	if state.ActiveTab(st) != nil {
 		rightLabel = title
-	}
-	if strings.TrimSpace(message) != "" {
-		leftLabel = message
 	}
 	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine(leftLabel, rightLabel, max(0, innerWidth-2)), innerWidth)))
 	return lines

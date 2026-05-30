@@ -109,6 +109,31 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	}
 }
 
+func TestCodexFooterDoesNotRenderMessages(t *testing.T) {
+	cfg := config.DefaultConfig("codux-test")
+	for _, focus := range []state.Focus{state.FocusNav, state.FocusCodex} {
+		st := state.State{
+			Version:     state.Version,
+			ActiveTabID: "a",
+			Focus:       focus,
+			Tabs:        []state.Tab{{ID: "a", Title: "alpha", Column: "inbox"}},
+		}
+
+		got := renderWorkspaceWithNavHeight(cfg, st, "alpha", "output", 80, 24, "closed Codux clients", "/tmp/project", 0)
+		if focus == state.FocusNav {
+			got = renderWorkspace(cfg, st, "alpha", "output", 80, 24, "closed Codux clients", "/tmp/project")
+		}
+
+		if strings.Contains(got, "closed Codux clients") {
+			t.Fatalf("%s focus should not render message in codex footer:\n%s", focus, got)
+		}
+		lines := strings.Split(ansi.Strip(got), "\n")
+		if !strings.Contains(lines[len(lines)-1], "alpha") {
+			t.Fatalf("%s focus should still render active tab title in codex footer:\n%s", focus, got)
+		}
+	}
+}
+
 func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
 	cfg := config.DefaultConfig("codux-test")
 	st := state.State{
