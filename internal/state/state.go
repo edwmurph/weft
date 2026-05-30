@@ -758,9 +758,16 @@ func MoveAgent(st State, agentID string, folderID string) (State, error) {
 }
 
 func AddWorkdir(st State, id string, path string, now string) (State, Workdir, error) {
-	path = absolutePath(path)
-	if info, err := os.Stat(path); err != nil || !info.IsDir() {
-		return st, Workdir{}, fmt.Errorf("workdir must be an existing directory")
+	path = NormalizeWorkdirPath(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return st, Workdir{}, fmt.Errorf("workdir path does not exist: %s", path)
+		}
+		return st, Workdir{}, fmt.Errorf("cannot read workdir path %s: %w", path, err)
+	}
+	if !info.IsDir() {
+		return st, Workdir{}, fmt.Errorf("workdir path is not a directory: %s", path)
 	}
 	for _, workdir := range st.Workdirs {
 		if workdir.Path == path {
@@ -977,6 +984,10 @@ func folderWorkdir(st State, folderID string) string {
 func StableID(parts ...string) string {
 	sum := sha1.Sum([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+func NormalizeWorkdirPath(path string) string {
+	return absolutePath(path)
 }
 
 func absolutePath(path string) string {

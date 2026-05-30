@@ -22,69 +22,115 @@ import (
 )
 
 func Run(args []string) error {
+	clearBeforeCommand, args := extractClearFlag(args)
+	clearApplies := true
+	var action func() error
+
 	if len(args) == 0 {
-		return start([]string{})
+		action = func() error { return start([]string{}) }
+	} else {
+		switch args[0] {
+		case "-h", "--help", "help":
+			clearApplies = false
+			action = func() error {
+				fmt.Print(cliHelpText())
+				return nil
+			}
+		case "--version", "version":
+			clearApplies = false
+			action = func() error {
+				fmt.Println(version.Version)
+				return nil
+			}
+		case "start":
+			action = func() error { return start(args[1:]) }
+		case "tui":
+			action = runTUI
+		case supervisor.CommandName:
+			clearApplies = false
+			action = runSupervisor
+		case "quit":
+			action = func() error { return closeWeft("quit", args[1:]) }
+		case "refresh":
+			action = func() error { return callIPC("refresh", nil, false) }
+		case "status":
+			action = func() error { return status(args[1:]) }
+		case "new":
+			action = func() error {
+				title := ""
+				if len(args) > 1 {
+					title = strings.Join(args[1:], " ")
+				}
+				return callIPC("new", map[string]string{"title": title}, false)
+			}
+		case "group":
+			action = func() error { return groupCommand(args[1:]) }
+		case "folder":
+			action = func() error { return groupCommand(args[1:]) }
+		case "workdir":
+			action = func() error { return workdirCommand(args[1:]) }
+		case "rename":
+			action = func() error { return rename(args[1:]) }
+		case "close":
+			action = func() error { return closeCommand(args[1:]) }
+		case "select":
+			action = func() error {
+				if len(args) < 2 {
+					return errors.New("select requires an agent id")
+				}
+				return callIPC("select", map[string]string{"id": args[1]}, false)
+			}
+		case "move-left":
+			action = func() error { return callIPC("move", map[string]string{"direction": "left"}, false) }
+		case "move-right":
+			action = func() error { return callIPC("move", map[string]string{"direction": "right"}, false) }
+		case "sessions":
+			action = listSessions
+		case "delete-session":
+			action = func() error { return deleteSession(args[1:]) }
+		case "clear":
+			clearApplies = false
+			action = clear
+		case "doctor":
+			action = func() error { return doctor(args[1:]) }
+		case "config":
+			action = func() error { return configCommand(args[1:]) }
+		default:
+			if strings.HasPrefix(args[0], "--") {
+				action = func() error { return start(args) }
+			} else {
+				return fmt.Errorf("unknown command %q\n\n%s", args[0], cliHelpText())
+			}
+		}
 	}
-	switch args[0] {
-	case "-h", "--help", "help":
-		fmt.Print(cliHelpText())
-		return nil
-	case "--version", "version":
-		fmt.Println(version.Version)
-		return nil
-	case "start":
-		return start(args[1:])
-	case "tui":
-		return runTUI()
-	case supervisor.CommandName:
-		return runSupervisor()
-	case "quit":
-		return closeWeft("quit", args[1:])
-	case "refresh":
-		return callIPC("refresh", nil, false)
-	case "status":
-		return status(args[1:])
-	case "new":
-		title := ""
-		if len(args) > 1 {
-			title = strings.Join(args[1:], " ")
+
+	if clearBeforeCommand && clearApplies {
+		if err := clearBeforeRunningCommand(); err != nil {
+			return err
 		}
-		return callIPC("new", map[string]string{"title": title}, false)
-	case "group":
-		return groupCommand(args[1:])
-	case "folder":
-		return groupCommand(args[1:])
-	case "workdir":
-		return workdirCommand(args[1:])
-	case "rename":
-		return rename(args[1:])
-	case "close":
-		return closeCommand(args[1:])
-	case "select":
-		if len(args) < 2 {
-			return errors.New("select requires an agent id")
-		}
-		return callIPC("select", map[string]string{"id": args[1]}, false)
-	case "move-left":
-		return callIPC("move", map[string]string{"direction": "left"}, false)
-	case "move-right":
-		return callIPC("move", map[string]string{"direction": "right"}, false)
-	case "sessions":
-		return listSessions()
-	case "delete-session":
-		return deleteSession(args[1:])
-	case "clear":
-		return clear()
-	case "doctor":
-		return doctor()
-	case "config":
-		return configCommand(args[1:])
-	default:
-		if strings.HasPrefix(args[0], "--") {
-			return start(args)
-		}
-		return fmt.Errorf("unknown command %q\n\n%s", args[0], cliHelpText())
 	}
+	return action()
+}
+
+func extractClearFlag(args []string) (bool, []string) {
+	clear := false
+	clean := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--clear" {
+			clear = true
+			continue
+		}
+		clean = append(clean, arg)
+	}
+	return clear, clean
+}
+
+func clearBeforeRunningCommand() error {
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		return err
+	}
+	return clearRuntime(rt, false)
 }
 
 func cliHelpText() string {
@@ -97,15 +143,18 @@ func cliHelpText() string {
 		"Supervisor-backed Codex command center.",
 		"",
 		"Usage:",
-		"  weft [--attach|--no-attach] [--clear]",
+		"  weft [--clear] [--attach|--no-attach]",
+		"  weft <command> [--clear]",
 		"",
 		"Common commands:",
 		"  weft                         Open the dashboard and attach to the supervisor.",
 		"  weft --clear                 Clear runtime state, then open a fresh dashboard.",
+		"  weft <command> --clear       Clear runtime state, then run the command.",
 		"  weft --no-attach             Start or reuse the supervisor without opening the dashboard.",
 		"  weft refresh                 Request a fresh dashboard snapshot.",
 		"  weft status [--json]         Show supervisor, workdir, group, and agent state.",
 		"  weft doctor                  Check local runtime and Codex command health.",
+		"  weft doctor keys             Diagnose terminal key encoding.",
 		"",
 		"Agents and organization:",
 		"  weft new [title]             Create a Codex agent.",
@@ -301,7 +350,26 @@ func workdirCommand(args []string) error {
 	if len(args) < 2 || args[0] != "add" {
 		return errors.New("workdir requires: add <path>")
 	}
-	return callIPC("add_workdir", map[string]string{"path": strings.Join(args[1:], " ")}, false)
+	path, err := validateWorkdirAddPath(strings.Join(args[1:], " "))
+	if err != nil {
+		return err
+	}
+	return callIPC("add_workdir", map[string]string{"path": path}, false)
+}
+
+func validateWorkdirAddPath(path string) (string, error) {
+	path = state.NormalizeWorkdirPath(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("workdir path does not exist: %s", path)
+		}
+		return "", fmt.Errorf("cannot read workdir path %s: %w", path, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir path is not a directory: %s", path)
+	}
+	return path, nil
 }
 
 func listSessions() error {
@@ -391,7 +459,13 @@ func waitForSupervisorStop(rt config.Runtime, timeout time.Duration) {
 	}
 }
 
-func doctor() error {
+func doctor(args []string) error {
+	if len(args) > 0 {
+		if len(args) == 1 && args[0] == "keys" {
+			return doctorKeys(os.Stdin, os.Stdout)
+		}
+		return fmt.Errorf("unknown doctor command %q", strings.Join(args, " "))
+	}
 	rt, cfg, store, err := resolveRuntime()
 	if err != nil {
 		return err
@@ -482,6 +556,9 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 	}
 	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 	if err != nil {
+		if !response.OK && response.Message != "" {
+			return errors.New(response.Message)
+		}
 		return fmt.Errorf("Weft supervisor is not accepting IPC requests; start it with `weft --no-attach`: %w", err)
 	}
 	if !quiet && response.Message != "" {

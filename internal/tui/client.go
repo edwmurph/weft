@@ -21,6 +21,7 @@ import (
 const clientSnapshotInterval = 120 * time.Millisecond
 
 type clientResponseMsg struct {
+	command  string
 	response ipc.Response
 	err      error
 }
@@ -38,10 +39,13 @@ type ClientModel struct {
 	message  string
 	loading  int
 
-	input     textinput.Model
-	prompt    promptKind
-	confirm   confirmKind
-	pendingID string
+	input                 textinput.Model
+	prompt                promptKind
+	confirm               confirmKind
+	pendingID             string
+	workdirSuggestionOpen bool
+	codexInputQueue       []map[string]string
+	codexInputInFlight    bool
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
@@ -86,15 +90,19 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = typed.Height
 		return m, m.request("resize", map[string]string{"width": strconv.Itoa(typed.Width), "height": strconv.Itoa(typed.Height)})
 	case clientResponseMsg:
+		if typed.command == "codex_input" {
+			m.codexInputInFlight = false
+		}
 		if typed.err != nil {
 			m.message = typed.err.Error()
-			return m, nil
+			return m, m.nextCodexInputRequest()
 		}
 		m.applyResponse(typed.response)
+		nextCodexInput := m.nextCodexInputRequest()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
-			return m, tea.Batch(m.request("client_detached", nil), tea.Quit)
+			return m, tea.Batch(nextCodexInput, m.request("client_detached", nil), tea.Quit)
 		}
-		return m, nil
+		return m, nextCodexInput
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
 	case loadingTick:
@@ -152,7 +160,7 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.request("toggle_drawer", nil)
 	}
 	if m.snapshot.State.Focus == state.FocusCodex && state.ActiveAgent(m.snapshot.State) != nil {
-		return m, m.request("codex_input", codexInputArgs(msg))
+		return m.enqueueCodexInput(codexInputArgs(msg))
 	}
 	if m.snapshot.State.Focus == state.FocusCodex {
 		return m, m.request("toggle_drawer", nil)
@@ -175,7 +183,7 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
 		return m, m.request("nav_move", map[string]string{"delta": "1"})
 	case bindingMatches(m.cfg.KeyBindings.NewWorkdir, msg):
-		m.startPrompt(promptWorkdir, "")
+		m.startPrompt(promptWorkdir, defaultWorkdirPromptValue(m.snapshot.State, m.runtime.Workdir))
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
@@ -195,11 +203,30 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if handlePromptWordKey(&m.input, m.prompt, msg) {
+		refreshPromptInput(&m.input, m.prompt)
+		if m.prompt == promptWorkdir {
+			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
+		}
+		return m, nil
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
+		if m.prompt == promptWorkdir && m.workdirSuggestionOpen {
+			m.workdirSuggestionOpen = false
+			return m, nil
+		}
 		m.mode = modeNormal
 		return m, nil
 	case tea.KeyEnter:
+		if m.prompt == promptWorkdir && m.workdirSuggestionOpen && completeWorkdirSuggestion(&m.input) {
+			m.workdirSuggestionOpen = false
+			return m, nil
+		}
+		if m.prompt == promptWorkdir && !workdirInputIsExistingDirectory(m.input.Value()) {
+			m.message = inspectWorkdirPromptPath(m.snapshot.State, m.input.Value()).message
+			return m, nil
+		}
 		value := strings.TrimSpace(m.input.Value())
 		if value == "" && m.prompt != promptMoveAgent && m.prompt != promptWorkdirTitle {
 			m.message = "value is required"
@@ -208,9 +235,33 @@ func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd := m.applyPrompt(value)
 		m.mode = modeNormal
 		return m, cmd
+	case tea.KeyTab:
+		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 {
+			if m.workdirSuggestionOpen {
+				completeWorkdirSuggestion(&m.input)
+				m.workdirSuggestionOpen = false
+				return m, nil
+			}
+			m.workdirSuggestionOpen = true
+			return m, nil
+		}
+	case tea.KeyUp, tea.KeyDown:
+		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 && !m.workdirSuggestionOpen {
+			m.workdirSuggestionOpen = true
+			return m, nil
+		}
 	}
+	oldValue := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	refreshPromptInput(&m.input, m.prompt)
+	if m.prompt == promptWorkdir {
+		if m.input.Value() != oldValue {
+			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
+		} else if len(m.input.MatchedSuggestions()) == 0 {
+			m.workdirSuggestionOpen = false
+		}
+	}
 	return m, cmd
 }
 
@@ -228,9 +279,8 @@ func (m ClientModel) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 	m.prompt = prompt
-	m.input.SetValue(value)
-	m.input.CursorEnd()
-	m.input.Focus()
+	configurePromptInput(&m.input, prompt, value)
+	m.workdirSuggestionOpen = false
 	m.mode = modeInput
 }
 
@@ -324,8 +374,23 @@ func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 		args = cloneArgs(args)
 		args["client_id"] = clientID
 		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
-		return clientResponseMsg{response: response, err: err}
+		return clientResponseMsg{command: command, response: response, err: err}
 	}
+}
+
+func (m ClientModel) enqueueCodexInput(args map[string]string) (ClientModel, tea.Cmd) {
+	m.codexInputQueue = append(m.codexInputQueue, cloneArgs(args))
+	return m, m.nextCodexInputRequest()
+}
+
+func (m *ClientModel) nextCodexInputRequest() tea.Cmd {
+	if m.codexInputInFlight || len(m.codexInputQueue) == 0 {
+		return nil
+	}
+	args := m.codexInputQueue[0]
+	m.codexInputQueue = m.codexInputQueue[1:]
+	m.codexInputInFlight = true
+	return m.request("codex_input", args)
 }
 
 func cloneArgs(args map[string]string) map[string]string {
@@ -366,8 +431,16 @@ func (m ClientModel) renderInputModal() string {
 	input := m.input
 	input.Width = max(16, width-inputModalLabelWidth-3)
 	lines := []string{modalTitleStyle.Render(m.promptTitle()), ""}
-	label := m.promptLabel()
-	lines = append(lines, renderInputModalRow(label, input.View(), width))
+	if m.prompt == promptWorkdir {
+		lines = append(lines, renderWorkdirPromptInput(input, width)...)
+		if suggestions := renderWorkdirSuggestionMenu(input, width, m.workdirSuggestionOpen, workdirSuggestionRows(m.height)); len(suggestions) > 0 {
+			lines = append(lines, suggestions...)
+		}
+		lines = append(lines, renderWorkdirPromptStatus(m.snapshot.State, input.Value(), width))
+	} else {
+		label := m.promptLabel()
+		lines = append(lines, renderInputModalRow(label, input.View(), width))
+	}
 	if hint := m.promptHint(); hint != "" {
 		lines = append(lines, "", mutedStyle.Render(clip(hint, width)))
 	}
@@ -386,7 +459,11 @@ func (m ClientModel) renderInputModal() string {
 		lines = append(lines, "", modalLabelStyle.Render("Variables"))
 		lines = append(lines, m.renderTitleVariables(width)...)
 	}
-	lines = append(lines, "", renderModalActions())
+	if m.prompt == promptWorkdir {
+		lines = append(lines, "", renderWorkdirModalActions(input, m.workdirSuggestionOpen))
+	} else {
+		lines = append(lines, "", renderModalActions(m.prompt))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -528,7 +605,17 @@ func codexInputArgs(msg tea.KeyMsg) map[string]string {
 	case tea.KeySpace:
 		args["input"] = "space"
 	case tea.KeyBackspace:
-		args["input"] = "backspace"
+		if msg.Alt {
+			args["input"] = "alt+backspace"
+		} else {
+			args["input"] = "backspace"
+		}
+	case tea.KeyCtrlH:
+		if msg.Alt {
+			args["input"] = "alt+backspace"
+		} else {
+			args["input"] = "ctrl+h"
+		}
 	case tea.KeyEnter:
 		args["input"] = "enter"
 	default:

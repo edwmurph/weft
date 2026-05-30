@@ -20,6 +20,14 @@ func normalizeBinding(binding string) string {
 }
 
 func encodeKey(msg tea.KeyMsg) []byte {
+	encoded := encodeKeyWithoutAlt(msg)
+	if msg.Alt && len(encoded) > 0 {
+		return append([]byte{0x1b}, encoded...)
+	}
+	return encoded
+}
+
+func encodeKeyWithoutAlt(msg tea.KeyMsg) []byte {
 	switch msg.Type {
 	case tea.KeyRunes:
 		return []byte(string(msg.Runes))
@@ -52,6 +60,7 @@ func encodeKey(msg tea.KeyMsg) []byte {
 	case tea.KeyPgDown:
 		return []byte("\x1b[6~")
 	}
+	msg.Alt = false
 	key := strings.ToLower(msg.String())
 	if strings.HasPrefix(key, "ctrl+") && len(key) == len("ctrl+x") {
 		ch := key[len(key)-1]

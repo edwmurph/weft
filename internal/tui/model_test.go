@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,6 +183,29 @@ func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"first_message":"fix login"`) {
 		t.Fatalf("payload missing reconstructed message:\n%s", raw)
+	}
+}
+
+func TestTitleHookCaptureTracksAltBackspaceAsPreviousTokenDelete(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+
+	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix loginx")})
+	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
+	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix "; got != want {
+		t.Fatalf("direct capture buffer = %q, want %q", got, want)
+	}
+
+	model.codexInputBuffers[model.state.Agents[0].ID] = []rune("fix loginx")
+	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})
+	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix "; got != want {
+		t.Fatalf("direct alt ctrl-h capture buffer = %q, want %q", got, want)
+	}
+
+	model.codexInputBuffers[model.state.Agents[0].ID] = []rune("fix loginx")
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "alt+backspace"})
+	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix "; got != want {
+		t.Fatalf("forwarded capture buffer = %q, want %q", got, want)
 	}
 }
 
@@ -475,6 +499,317 @@ func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 		t.Fatalf("blank input should clear title override, got %q", got)
 	}
 	if model.message != "cleared workdir title" {
+		t.Fatalf("message = %q", model.message)
+	}
+}
+
+func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) {
+	parent := t.TempDir()
+	current := filepath.Join(parent, "current")
+	if err := os.Mkdir(current, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rt := testRuntime(t)
+	rt.Workdir = current
+	cfg := config.DefaultConfig("weft-test")
+	model := NewModel(rt, cfg, state.Empty())
+	model.state.Focus = state.FocusWorkdirs
+	model.state.NavOpen = true
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatalf("workdir prompt should not start command, got %#v", cmd)
+	}
+	if model.mode != modeInput || model.prompt != promptWorkdir {
+		t.Fatalf("prompt state = mode:%s prompt:%s", model.mode, model.prompt)
+	}
+	if want := withTrailingSeparator(displayPathForPrompt(parent)); model.input.Value() != want {
+		t.Fatalf("prompt value = %q, want %q", model.input.Value(), want)
+	}
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Add workdir",
+		"Path",
+		"✓ ",
+		"Enter add",
+		"Down open options",
+		"Esc cancel",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("workdir modal missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "> current") {
+		t.Fatalf("workdir menu should start closed:\n%s", got)
+	}
+	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "✓ "+parent {
+		t.Fatalf("path status = %q", status)
+	}
+	if strings.Count(got, "╭") < 2 || strings.Count(got, "╰") < 2 {
+		t.Fatalf("workdir modal should render a bordered input box:\n%s", got)
+	}
+	if got := model.input.MatchedSuggestions(); len(got) != 1 || got[0] != withTrailingSeparator(current) {
+		t.Fatalf("matched suggestions = %#v", got)
+	}
+}
+
+func TestWorkdirPromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
+	parent := t.TempDir()
+	alpha := filepath.Join(parent, "alpha-project")
+	beta := filepath.Join(parent, "beta-project")
+	if err := os.Mkdir(alpha, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(beta, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(beta, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	model.startPrompt(promptWorkdir, withTrailingSeparator(parent))
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Down open options", "Enter add", "Esc cancel"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("closed suggestion state missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "> alpha-project") || strings.Contains(got, "beta-project") {
+		t.Fatalf("suggestion menu should start closed:\n%s", got)
+	}
+
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if got, want := model.input.CurrentSuggestion(), withTrailingSeparator(alpha); got != want {
+		t.Fatalf("opened suggestion = %q, want %q", got, want)
+	}
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{"> alpha-project", "beta-project", "Enter choose", "Up/Down move", "Esc close options"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("open suggestion state missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "alpha-project/") || strings.Contains(got, "beta-project/") {
+		t.Fatalf("suggestion labels should not render trailing slashes:\n%s", got)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if got, want := model.input.CurrentSuggestion(), withTrailingSeparator(beta); got != want {
+		t.Fatalf("down arrow suggestion = %q, want %q", got, want)
+	}
+	if got := ansi.Strip(model.View()); !strings.Contains(got, "> beta-project") {
+		t.Fatalf("down arrow should highlight beta:\n%s", got)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeInput {
+		t.Fatalf("enter on highlighted suggestion should keep prompt open, mode=%s", model.mode)
+	}
+	if want := beta; model.input.Value() != want {
+		t.Fatalf("selected suggestion = %q, want %q", model.input.Value(), want)
+	}
+	got = ansi.Strip(model.View())
+	if strings.Contains(got, "> nested") || !strings.Contains(got, "Enter add") {
+		t.Fatalf("selection should close nested suggestions and show submit action:\n%s", got)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeNormal {
+		t.Fatalf("second enter should add workdir, mode=%s", model.mode)
+	}
+	if model.state.SelectedWorkdirID == "" || model.state.Workdirs[len(model.state.Workdirs)-1].Path != beta {
+		t.Fatalf("workdir was not added/selected: %#v", model.state.Workdirs)
+	}
+}
+
+func TestWorkdirPromptSuggestionMenuScrollsWithSelection(t *testing.T) {
+	parent := t.TempDir()
+	for index := 0; index < 12; index++ {
+		if err := os.Mkdir(filepath.Join(parent, fmt.Sprintf("project-%02d", index)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	model.height = 32
+	model.startPrompt(promptWorkdir, withTrailingSeparator(parent))
+
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	for index := 0; index < 9; index++ {
+		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+
+	if got, want := model.input.CurrentSuggestion(), withTrailingSeparator(filepath.Join(parent, "project-09")); got != want {
+		t.Fatalf("current suggestion = %q, want %q", got, want)
+	}
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "> project-09") {
+		t.Fatalf("selected suggestion should remain visible after scrolling:\n%s", got)
+	}
+	if strings.Contains(got, "project-00") {
+		t.Fatalf("menu should scroll past the first row:\n%s", got)
+	}
+}
+
+func TestWorkdirPromptTabOpensAndChoosesDirectory(t *testing.T) {
+	parent := t.TempDir()
+	alpha := filepath.Join(parent, "alpha-project")
+	if err := os.Mkdir(alpha, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(parent, "beta-project"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	model.startPrompt(promptWorkdir, filepath.Join(parent, "alp"))
+
+	if got, want := model.input.MatchedSuggestions(), []string{withTrailingSeparator(alpha)}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("matched suggestions = %#v, want %#v", got, want)
+	}
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(Model)
+	if !model.workdirSuggestionOpen {
+		t.Fatal("first tab should open suggestions")
+	}
+	if model.input.Value() != filepath.Join(parent, "alp") {
+		t.Fatalf("first tab should not change input, got %q", model.input.Value())
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(Model)
+	if want := alpha; model.input.Value() != want {
+		t.Fatalf("completed path = %q, want %q", model.input.Value(), want)
+	}
+	if model.workdirSuggestionOpen {
+		t.Fatal("second tab should close suggestions after choosing")
+	}
+	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "✓ "+alpha {
+		t.Fatalf("completed path status = %q", status)
+	}
+}
+
+func TestPromptInputSupportsOptionWordEditing(t *testing.T) {
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Position(), len("/alpha-beta/gamma_"); got != want {
+		t.Fatalf("option-left cursor = %d, want %d", got, want)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRight, Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Position(), len("/alpha-beta/gamma_delta"); got != want {
+		t.Fatalf("option-right cursor = %d, want %d", got, want)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+		t.Fatalf("option-backspace value = %q, want %q", got, want)
+	}
+}
+
+func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b"), Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Position(), len("/alpha-beta/gamma_"); got != want {
+		t.Fatalf("alt-b cursor = %d, want %d", got, want)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f"), Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Position(), len("/alpha-beta/gamma_delta"); got != want {
+		t.Fatalf("alt-f cursor = %d, want %d", got, want)
+	}
+
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+		t.Fatalf("alt-ctrl-h value = %q, want %q", got, want)
+	}
+
+	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x7f}, Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+		t.Fatalf("alt-del rune value = %q, want %q", got, want)
+	}
+
+	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\b'}, Alt: true})
+	model = updated.(Model)
+	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+		t.Fatalf("alt-backspace rune value = %q, want %q", got, want)
+	}
+
+	for _, r := range []rune{'⌫', '←'} {
+		model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		model = updated.(Model)
+		if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+			t.Fatalf("option-backspace glyph %q value = %q, want %q", r, got, want)
+		}
+	}
+
+	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyCtrlH})
+	model = updated.(Model)
+	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+		t.Fatalf("ctrl-h value = %q, want %q", got, want)
+	}
+
+	model.startPrompt(promptWorkdir, "/alpha-beta/gamma_delta")
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'➜'}})
+	model = updated.(Model)
+	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+		t.Fatalf("option-backspace arrow glyph value = %q, want %q", got, want)
+	}
+
+	model.startPrompt(promptWorkdirTitle, "/alpha-beta/gamma_delta")
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'∂'}})
+	model = updated.(Model)
+	if got, want := model.input.Value(), "/alpha-beta/gamma_delta∂"; got != want {
+		t.Fatalf("sanity glyph insert value = %q, want %q", got, want)
+	}
+}
+
+func TestWorkdirPromptShowsInvalidPathStatus(t *testing.T) {
+	parent := t.TempDir()
+	filePath := filepath.Join(parent, "notes.txt")
+	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+
+	model.startPrompt(promptWorkdir, filePath)
+	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "! Not a directory: "+filePath {
+		t.Fatalf("file path status = %q", status)
+	}
+
+	missing := filepath.Join(parent, "missing")
+	model.startPrompt(promptWorkdir, missing)
+	if status := inspectWorkdirPromptPath(model.state, model.input.Value()).message; status != "! Parent exists: "+parent {
+		t.Fatalf("missing path status = %q", status)
+	}
+
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeInput {
+		t.Fatalf("invalid path should keep prompt open, mode=%s", model.mode)
+	}
+	if model.message != "! Parent exists: "+parent {
 		t.Fatalf("message = %q", model.message)
 	}
 }

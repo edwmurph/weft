@@ -249,7 +249,7 @@ Enter   Open selected agent and maximize Codex
 C-b     Toggle command center navigation
 Left/Right Move focus between workdirs and agents panes
 j/k     Move selection within the focused navigation pane
-w       Create workdir
+w       Add workdir
 g       Create group in selected workdir
 n       Create agent in the current group when the cursor is on a group or grouped agent; otherwise create a top-level agent
 m       Move selected agent to another group in the same workdir, or clear its group
@@ -432,9 +432,19 @@ Rules:
 
 ## Workdir CRUD
 
-Create workdir:
+Add workdir:
 
 - User provides an existing filesystem path.
+- Dashboard prompt opens with the selected workdir's parent directory prefilled.
+- Dashboard prompt uses a bordered path input.
+- Autocomplete opens directly below the input when the user types or presses `Down`.
+- While autocomplete is open, `Up` and `Down` move the highlighted option, `Enter` chooses it, and `Esc` closes the menu.
+- Autocomplete uses a bounded visible menu; moving past the visible rows scrolls the menu to keep the highlighted option visible.
+- When autocomplete is closed and the path is an existing directory, `Enter` adds the workdir.
+- Choosing an autocomplete option closes the menu; nested directories do not reopen until the user types or asks for options again.
+- Dashboard prompt shows a compact status line for the current path, including an unobtrusive success indicator for existing directories.
+- Prompt inputs support Option/Alt word movement and deletion, including Option-Left, Option-Right, and Option-Backspace, when the terminal sends Option as Meta/Esc rather than plain Backspace.
+- CLI validation reports missing paths and file paths before adding.
 - Store the absolute path.
 - Display path using `~` when possible.
 - Do not create a default group.
@@ -527,6 +537,8 @@ Rules:
 
 - Starting an agent launches Codex in its workdir.
 - Switching agents changes which PTY is rendered in the Codex pane.
+- Alt-modified keys are forwarded to Codex agent PTYs with an ESC prefix so terminal Meta key bindings keep working in the embedded Codex instance.
+- Forwarded Codex input preserves key order, including rapid typed or pasted text.
 - Moving an agent between groups does not affect its PTY.
 - Top-level agents have no group.
 - Removing a workdir stops every PTY for agents in that workdir.
@@ -547,6 +559,15 @@ Rules:
 - when `--clear` is provided, stop the supervisor, delete runtime state without
   a separate confirmation prompt, then start fresh
 - do not require tmux
+
+Global `--clear`:
+
+- may be provided before or after any non-internal command, for example
+  `weft --clear doctor keys` or `weft doctor keys --clear`
+- stops the supervisor and deletes runtime state without a separate confirmation
+  prompt before running the requested command
+- is ignored for help, version, the internal supervisor command, and
+  `weft clear`
 
 `weft close`:
 
@@ -572,6 +593,18 @@ Rules:
 - remains destructive
 - stops the supervisor and all agent PTYs
 - deletes Weft runtime state after explicit confirmation
+
+`weft doctor keys`:
+
+- interactively captures Backspace, Option+Backspace, and Ctrl+Backspace from the current terminal
+- reports the raw bytes and interpreted key label for each key
+- warns when Option+Backspace is indistinguishable from plain Backspace
+- recommends configuring the terminal to send Option as Meta/Esc, including iTerm2 Left/Right Option Key set to Esc+ and the `1b 7f` custom mapping for Option+Backspace
+- detects known terminal emulators from environment metadata
+- for detected iTerm2 sessions on macOS, offers to set Left/Right Option Key to Esc+, add the Option+Backspace fallback key mapping to the current iTerm profile, remove obsolete mappings written by earlier Weft attempts, write a plist backup first, and requires explicit confirmation
+- when iTerm2 preferences already contain the full fix but the captured key still reports plain Backspace, explains that the current tab has not picked up the preference; for custom iTerm2 settings folders, recommends quitting and reopening iTerm2 because new tabs may keep using the in-memory profile
+- if automatic terminal configuration fails, reports the failed step, preferences path, profile, wrapped command/output when available, and the manual fallback
+- does not mutate terminal profiles or Weft configuration without explicit confirmation
 
 `weft sessions`:
 

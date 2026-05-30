@@ -116,12 +116,13 @@ type Model struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 
-	input        textinput.Model
-	prompt       promptKind
-	confirm      confirmKind
-	pendingID    string
-	folderCursor int
-	lastNavFocus state.Focus
+	input                 textinput.Model
+	prompt                promptKind
+	confirm               confirmKind
+	pendingID             string
+	folderCursor          int
+	lastNavFocus          state.Focus
+	workdirSuggestionOpen bool
 }
 
 func Run(rt config.Runtime, cfg config.Config, st state.State, migration *state.Migration) error {
@@ -330,8 +331,16 @@ func (m Model) renderInputModal() string {
 	input := m.input
 	input.Width = max(16, width-inputModalLabelWidth-3)
 	lines := []string{modalTitleStyle.Render(m.promptTitle()), ""}
-	label := m.promptLabel()
-	lines = append(lines, renderInputModalRow(label, input.View(), width))
+	if m.prompt == promptWorkdir {
+		lines = append(lines, renderWorkdirPromptInput(input, width)...)
+		if suggestions := renderWorkdirSuggestionMenu(input, width, m.workdirSuggestionOpen, workdirSuggestionRows(m.height)); len(suggestions) > 0 {
+			lines = append(lines, suggestions...)
+		}
+		lines = append(lines, renderWorkdirPromptStatus(m.state, input.Value(), width))
+	} else {
+		label := m.promptLabel()
+		lines = append(lines, renderInputModalRow(label, input.View(), width))
+	}
 	if hint := m.promptHint(); hint != "" {
 		lines = append(lines, "", mutedStyle.Render(clip(hint, width)))
 	}
@@ -350,7 +359,11 @@ func (m Model) renderInputModal() string {
 		lines = append(lines, "", modalLabelStyle.Render("Variables"))
 		lines = append(lines, m.renderTitleVariables(width)...)
 	}
-	lines = append(lines, "", renderModalActions())
+	if m.prompt == promptWorkdir {
+		lines = append(lines, "", renderWorkdirModalActions(input, m.workdirSuggestionOpen))
+	} else {
+		lines = append(lines, "", renderModalActions(m.prompt))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -367,14 +380,17 @@ func renderInputModalRow(label string, value string, width int) string {
 	return modalLabelStyle.Render(padVisual(label, inputModalLabelWidth)) + " " + clip(value, valueWidth)
 }
 
-func renderModalActions() string {
+func renderModalActions(prompt promptKind) string {
+	if prompt == promptWorkdir {
+		return modalKeyStyle.Render("Enter") + " select/add  " + modalKeyStyle.Render("Up/Down") + " choose  " + modalKeyStyle.Render("Esc") + " cancel"
+	}
 	return modalKeyStyle.Render("Enter") + " save  " + modalKeyStyle.Render("Esc") + " cancel"
 }
 
 func (m Model) promptTitle() string {
 	switch m.prompt {
 	case promptWorkdir:
-		return "Create workdir"
+		return "Add workdir"
 	case promptGroup:
 		return "Create group"
 	case promptWorkdirTitle:
@@ -404,7 +420,7 @@ func (m Model) promptLabel() string {
 func (m Model) promptHint() string {
 	switch m.prompt {
 	case promptWorkdir:
-		return "Path must exist. Weft stores the absolute path and never deletes project files."
+		return ""
 	case promptGroup:
 		return "Group names are flat and unique within the selected workdir."
 	case promptWorkdirTitle:
@@ -479,11 +495,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if handlePromptWordKey(&m.input, m.prompt, msg) {
+		refreshPromptInput(&m.input, m.prompt)
+		if m.prompt == promptWorkdir {
+			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
+		}
+		return m, nil
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
+		if m.prompt == promptWorkdir && m.workdirSuggestionOpen {
+			m.workdirSuggestionOpen = false
+			return m, nil
+		}
 		m.mode = modeNormal
 		return m, nil
 	case tea.KeyEnter:
+		if m.prompt == promptWorkdir && m.workdirSuggestionOpen && completeWorkdirSuggestion(&m.input) {
+			m.workdirSuggestionOpen = false
+			return m, nil
+		}
+		if m.prompt == promptWorkdir && !workdirInputIsExistingDirectory(m.input.Value()) {
+			m.message = inspectWorkdirPromptPath(m.state, m.input.Value()).message
+			return m, nil
+		}
 		value := strings.TrimSpace(m.input.Value())
 		if value == "" && m.prompt != promptMoveAgent && m.prompt != promptWorkdirTitle {
 			m.message = "value is required"
@@ -492,9 +527,33 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd := m.applyPrompt(value)
 		m.mode = modeNormal
 		return m, cmd
+	case tea.KeyTab:
+		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 {
+			if m.workdirSuggestionOpen {
+				completeWorkdirSuggestion(&m.input)
+				m.workdirSuggestionOpen = false
+				return m, nil
+			}
+			m.workdirSuggestionOpen = true
+			return m, nil
+		}
+	case tea.KeyUp, tea.KeyDown:
+		if m.prompt == promptWorkdir && len(m.input.MatchedSuggestions()) > 0 && !m.workdirSuggestionOpen {
+			m.workdirSuggestionOpen = true
+			return m, nil
+		}
 	}
+	oldValue := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	refreshPromptInput(&m.input, m.prompt)
+	if m.prompt == promptWorkdir {
+		if m.input.Value() != oldValue {
+			m.workdirSuggestionOpen = len(m.input.MatchedSuggestions()) > 0
+		} else if len(m.input.MatchedSuggestions()) == 0 {
+			m.workdirSuggestionOpen = false
+		}
+	}
 	return m, cmd
 }
 
@@ -532,7 +591,7 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
 		m.moveSelection(1)
 	case bindingMatches(m.cfg.KeyBindings.NewWorkdir, msg):
-		m.startPrompt(promptWorkdir, "")
+		m.startPrompt(promptWorkdir, defaultWorkdirPromptValue(m.state, m.runtime.Workdir))
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.focusNavPane(state.FocusFolders)
 		m.startPrompt(promptGroup, "")
@@ -618,9 +677,8 @@ func (m *Model) applyFolderCursor(row folderRow) {
 
 func (m *Model) startPrompt(prompt promptKind, value string) {
 	m.prompt = prompt
-	m.input.SetValue(value)
-	m.input.CursorEnd()
-	m.input.Focus()
+	configurePromptInput(&m.input, prompt, value)
+	m.workdirSuggestionOpen = false
 	m.mode = modeInput
 }
 
@@ -681,8 +739,9 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 			m.message = err.Error()
 			return nil
 		}
+		message := workdirAddMessage(m.state, workdir)
 		m.state = next
-		m.message = "added workdir " + workdir.Path
+		m.message = message
 		m.syncFolderCursor()
 		m.save()
 	case promptGroup:
@@ -978,7 +1037,15 @@ func (m *Model) captureCodexInput(agent state.Agent, msg tea.KeyMsg) tea.Cmd {
 	case tea.KeySpace:
 		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], ' ')
 	case tea.KeyBackspace:
-		m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+		if msg.Alt {
+			m.codexInputBuffers[agent.ID] = trimPreviousInputToken(m.codexInputBuffers[agent.ID])
+		} else {
+			m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+		}
+	case tea.KeyCtrlH:
+		if msg.Alt {
+			m.codexInputBuffers[agent.ID] = trimPreviousInputToken(m.codexInputBuffers[agent.ID])
+		}
 	case tea.KeyEnter:
 		firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
 		delete(m.codexInputBuffers, agent.ID)
@@ -1519,14 +1586,15 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		return m.ipcResponse("moved Codex agent"), nil
 	case "add_workdir":
 		path := request.Args["path"]
-		next, _, err := state.AddWorkdir(m.state, shortID(), path, state.NowISO())
+		next, workdir, err := state.AddWorkdir(m.state, shortID(), path, state.NowISO())
 		if err != nil {
 			return ipcError("add_workdir_failed", err), nil
 		}
+		message := workdirAddMessage(m.state, workdir)
 		m.state = next
 		m.syncFolderCursor()
 		m.save()
-		return m.ipcResponse("added workdir"), nil
+		return m.ipcResponse(message), nil
 	case "add_group", "add_folder":
 		path := request.Args["path"]
 		workdirID := request.Args["workdir_id"]
@@ -1613,6 +1681,8 @@ func (m *Model) captureCodexInputArgs(agent state.Agent, args map[string]string)
 		m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
 	case codexInputShiftEnter:
 		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], '\n')
+	case "alt+backspace":
+		m.codexInputBuffers[agent.ID] = trimPreviousInputToken(m.codexInputBuffers[agent.ID])
 	case "enter":
 		firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
 		delete(m.codexInputBuffers, agent.ID)
@@ -1645,6 +1715,11 @@ func (m *Model) captureCodexInputArgs(agent state.Agent, args map[string]string)
 		m.codexInputBuffers[agent.ID] = trimLastWord(m.codexInputBuffers[agent.ID])
 	}
 	return nil
+}
+
+func trimPreviousInputToken(value []rune) []rune {
+	start := previousPromptTokenBoundary(string(value), len(value))
+	return append([]rune{}, value[:start]...)
 }
 
 func (m Model) destinationGroupIDForMove(agent state.Agent, args map[string]string) (string, bool) {

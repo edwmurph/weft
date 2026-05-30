@@ -71,6 +71,39 @@ func TestEnhancedKeyboardInputIgnoresReleaseEvents(t *testing.T) {
 	}
 }
 
+func TestEncodeKeyPreservesAltModifierForCodexPTY(t *testing.T) {
+	if got, want := string(encodeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b"), Alt: true})), "\x1bb"; got != want {
+		t.Fatalf("alt-b = %q, want %q", got, want)
+	}
+	if got, want := string(encodeKey(tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})), "\x1b\x7f"; got != want {
+		t.Fatalf("alt-backspace = %q, want %q", got, want)
+	}
+	if got, want := string(encodeKey(tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})), "\x1b\b"; got != want {
+		t.Fatalf("alt-ctrl-h = %q, want %q", got, want)
+	}
+	if got, want := string(encodeKey(tea.KeyMsg{Type: tea.KeyDelete, Alt: true})), "\x1b\x1b[3~"; got != want {
+		t.Fatalf("alt-delete = %q, want %q", got, want)
+	}
+}
+
+func TestCodexInputArgsPreservesAltBackspace(t *testing.T) {
+	args := codexInputArgs(tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
+	if got, want := args["encoded"], "\x1b\x7f"; got != want {
+		t.Fatalf("encoded = %q, want %q", got, want)
+	}
+	if got, want := args["input"], "alt+backspace"; got != want {
+		t.Fatalf("input = %q, want %q", got, want)
+	}
+
+	args = codexInputArgs(tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})
+	if got, want := args["encoded"], "\x1b\b"; got != want {
+		t.Fatalf("alt ctrl-h encoded = %q, want %q", got, want)
+	}
+	if got, want := args["input"], "alt+backspace"; got != want {
+		t.Fatalf("alt ctrl-h input = %q, want %q", got, want)
+	}
+}
+
 func unknownCSIString(raw string) string {
 	var builder strings.Builder
 	builder.WriteString("?CSI[")

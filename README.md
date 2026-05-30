@@ -48,11 +48,11 @@ go -C /path/to/weft-or-worktree run ./cmd/weft
 
 `weft` ensures the local supervisor is running and attaches a terminal UI
 client. `--no-attach` starts or reuses the supervisor without attaching.
-`--clear` deletes runtime state before starting, which is useful for fresh
-dashboard testing.
+`--clear` deletes runtime state before the requested command runs, which is
+useful for fresh dashboard or doctor-command testing.
 
 ```text
-weft [--attach|--no-attach] [--clear]
+weft [--clear] [--attach|--no-attach]
 weft refresh
 weft status [--json]
 weft new [title]
@@ -63,6 +63,8 @@ weft close [id]
 weft close --kill
 weft sessions
 weft clear
+weft doctor keys
+weft doctor keys --clear
 weft config info
 ```
 
@@ -70,6 +72,18 @@ Run `weft close` without an id to detach the active Weft client while the
 supervisor and Codex PTYs keep running. Pass an id to close a Codex agent. Use
 `weft close --kill` to stop the supervisor and all Codex PTYs after
 confirmation.
+
+Use `weft doctor keys` when Option/Alt shortcuts do not behave like the rest of
+your terminal. It compares Backspace, Option+Backspace, and Ctrl+Backspace and
+prints the terminal setting needed when Option is being sent as plain
+Backspace. In iTerm2, it can offer to add the needed Option+Backspace key
+fix to the current/default profile after writing a plist backup: Left/Right
+Option Key are set to Esc+, a fallback Option+Backspace mapping is added, and
+obsolete mappings from earlier Weft attempts are removed. If the profile is
+already configured but the current tab still sends plain Backspace, it reports
+that the running iTerm2 session has not picked up the preference yet. For
+custom iTerm2 settings folders, it tells the user to quit and reopen iTerm2
+because new tabs may keep using the in-memory profile.
 
 Agent rows render through the global `title_template`, which defaults to
 `{status} {auto}`. New agents default their base title to `{codex}`, so they
@@ -119,8 +133,12 @@ outside the agent workdir.
 The command center has `Workdirs` and `Agents` navigation panes. Agents can sit
 directly in a workdir as top-level rows. Groups are optional collapsible
 sections inside the `Agents` pane, and `Enter` on a group opens or collapses it.
-In the `Workdirs` pane, `r` sets an optional card title and blank input clears
-it back to the display path.
+In the `Workdirs` pane, `w` opens an add-workdir path prompt with a bordered
+input, a scrolling below-input autocomplete menu, arrow-key selection, and
+compact path status. Prompt inputs support Option/Alt word movement and
+deletion when the terminal sends Option as Meta/Esc. Alt-modified keys are
+also preserved when forwarded into Codex agent panes. `r` sets an optional card
+title and blank input clears it back to the display path.
 
 When the command center is open, press `?` for shortcuts. Defaults:
 
