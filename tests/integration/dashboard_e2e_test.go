@@ -80,7 +80,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"printf '\\n  gpt-5.5 xhigh · ~/code/personal/codux/.worktrees/single-pane-tui-dashboard · Context 100%% left\\n'\n"+
 			"i=0; while [ \"$i\" -lt 220 ]; do printf 'x'; i=$((i + 1)); done; printf '\\n'\n"+
 			"printf '\\033[20;8Hready'\n"+
-			"trap 'exit 0' HUP INT TERM\n"+
+			"trap 'exit 0' HUP TERM\n"+
+			"trap 'printf \"\\033]2;Fake Codex Ready\\007\"' INT\n"+
 			"while IFS= read -r line; do\n"+
 			"  printf '\\033]2;Fake Codex Working\\007'\n"+
 			"  printf '\\033[2J\\033[H'\n"+
@@ -353,19 +354,33 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, clientOutput(), true)
 	})
 
-	timedStep(t, "C-c interrupts codex before second C-c closes codux", func() {
+	timedStep(t, "C-c interrupts working codex before ready codex closes codux", func() {
 		tmuxRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Tabs) == 1 &&
 				st.Focus == state.FocusCodex &&
 				strings.Contains(st.Tabs[0].CodexTitle, "Ready")
 		})
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "interrupt me")
+		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Tabs) == 1 &&
+				st.Focus == state.FocusCodex &&
+				st.Tabs[0].Status == state.StatusRunning &&
+				strings.Contains(st.Tabs[0].CodexTitle, "Working")
+		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
 		time.Sleep(250 * time.Millisecond)
 		attached := tmuxLines(t, env, "display-message", "-p", "-t", runID+":", "#{session_attached}")
 		if len(attached) != 1 || attached[0] != "1" {
-			t.Fatalf("C-c should stay with Codex while CODEX is focused: %v", attached)
+			t.Fatalf("C-c should stay with Codex while CODEX is running: %v", attached)
 		}
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Tabs) == 1 &&
+				st.Focus == state.FocusCodex &&
+				st.Tabs[0].Status == state.StatusRunning &&
+				strings.Contains(st.Tabs[0].CodexTitle, "Ready")
+		})
 		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
 		if !waitForBool(2*time.Second, func() bool {
 			attached := tmuxLines(t, env, "display-message", "-p", "-t", runID+":", "#{session_attached}")
@@ -377,7 +392,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Tabs) == 1 && st.Focus == state.FocusCodex
+			return len(st.Tabs) == 1 &&
+				st.Focus == state.FocusCodex &&
+				st.Tabs[0].Status == state.StatusRunning &&
+				strings.Contains(st.Tabs[0].CodexTitle, "Ready")
 		})
 	})
 }

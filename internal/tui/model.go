@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -77,10 +78,9 @@ type Model struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 
-	renameInput   textinput.Model
-	viewport      viewport.Model
-	pendingClose  string
-	closeArmedTab string
+	renameInput  textinput.Model
+	viewport     viewport.Model
+	pendingClose string
 }
 
 func Run(rt config.Runtime, cfg config.Config, st state.State, migration *state.Migration) error {
@@ -293,27 +293,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	closeCoduxPressed := bindingMatches(m.cfg.KeyBindings.CloseCodux, msg)
-	if closeCoduxPressed && !m.activeCodexOwnsCloseBinding() {
+	if closeCoduxPressed && !m.activeCodexReceivesCloseBinding() {
 		m.closeCodux()
 		return m, nil
 	}
-	if closeCoduxPressed {
-		if active := state.ActiveTab(m.state); active != nil && m.closeArmedTab == active.ID {
-			m.closeCodux()
-			return m, nil
-		}
-	}
 	if bindingMatches(m.cfg.KeyBindings.FocusToggle, msg) {
-		m.closeArmedTab = ""
 		return m, m.toggleFocus()
 	}
 	if m.state.Focus == state.FocusCodex && state.ActiveTab(m.state) != nil {
 		if active := state.ActiveTab(m.state); active != nil {
-			if closeCoduxPressed {
-				m.closeArmedTab = active.ID
-			} else {
-				m.closeArmedTab = ""
-			}
 			if pty := m.ptys[active.ID]; pty != nil {
 				_ = pty.Write(encodeKey(msg))
 			}
@@ -332,23 +320,35 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleNavKey(msg)
 }
 
-func (m Model) activeCodexOwnsCloseBinding() bool {
+func (m Model) activeCodexReceivesCloseBinding() bool {
 	if m.state.Focus != state.FocusCodex {
 		return false
 	}
 	active := state.ActiveTab(m.state)
-	if active == nil {
-		return false
-	}
-	if m.ptys[active.ID] == nil {
+	if active == nil || m.ptys[active.ID] == nil {
 		return false
 	}
 	switch active.Status {
-	case state.StatusStarting, state.StatusRunning:
+	case state.StatusStarting:
 		return true
+	case state.StatusRunning:
+		return codexActivityStatus(active.CodexTitle) != "ready"
 	default:
 		return false
 	}
+}
+
+func codexActivityStatus(title string) string {
+	title = strings.ToLower(titles.NormalizeCodexTitle(title))
+	for _, token := range strings.FieldsFunc(title, func(r rune) bool {
+		return !unicode.IsLetter(r)
+	}) {
+		switch token {
+		case "ready", "working":
+			return token
+		}
+	}
+	return ""
 }
 
 func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -411,7 +411,6 @@ func (m Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) newTab(title string) tea.Cmd {
 	now := state.NowISO()
-	m.closeArmedTab = ""
 	tab := state.Tab{
 		ID: shortID(), Title: title, Column: m.cfg.Columns[0],
 		CreatedAt: now, UpdatedAt: now, Status: state.StatusStarting,
@@ -426,9 +425,6 @@ func (m *Model) newTab(title string) tea.Cmd {
 func (m *Model) closeTab(tabID string) tea.Cmd {
 	if tabID == "" {
 		return nil
-	}
-	if m.closeArmedTab == tabID {
-		m.closeArmedTab = ""
 	}
 	if pty := m.ptys[tabID]; pty != nil {
 		pty.Kill()
@@ -458,9 +454,6 @@ func (m *Model) selectTab(tabID string) {
 	}
 	for _, tab := range m.state.Tabs {
 		if tab.ID == tabID {
-			if m.state.ActiveTabID != tabID {
-				m.closeArmedTab = ""
-			}
 			m.state.ActiveTabID = tabID
 			m.save()
 			return
@@ -476,9 +469,6 @@ func (m *Model) toggleFocus() tea.Cmd {
 }
 
 func (m *Model) setFocus(focus state.Focus) tea.Cmd {
-	if m.state.Focus != focus {
-		m.closeArmedTab = ""
-	}
 	m.state.Focus = focus
 	m.save()
 	return m.startNavAnimation()

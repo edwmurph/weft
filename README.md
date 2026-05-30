@@ -87,10 +87,10 @@ focus_toggle = "C-g"
 close_codux = "C-c"
 ```
 
-In CODEX focus, Codux keeps Codex-owned shortcuts available. For a live Codex
-tab, the first `C-c` is forwarded to Codex and arms Codux close; the next `C-c`
-closes Codux. Press any other key first to keep sending input to Codex. Use
-`codux close` from another shell to close Codux directly.
+In CODEX focus, Codux keeps Codex-owned interrupts available while the active
+Codex agent is working. Press `C-c` to interrupt that agent. Once Codex reports
+ready, `C-c` closes Codux clients. Use `codux close` from another shell to close
+Codux directly.
 
 ## Config And State
 

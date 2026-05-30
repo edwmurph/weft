@@ -122,18 +122,17 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
 	if model.message != "" {
-		t.Fatalf("C-c should forward while Codex is busy, message=%q", model.message)
+		t.Fatalf("C-c should forward while Codex is running, message=%q", model.message)
 	}
 
 	model.state.Tabs[0].CodexTitle = "Fake Codex Ready"
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
 	if model.message != "closed Codux clients" {
-		t.Fatalf("second C-c should close Codux clients, message=%q", model.message)
+		t.Fatalf("C-c should close Codux clients when Codex is ready, message=%q", model.message)
 	}
 
 	model.message = ""
-	model.closeArmedTab = ""
 	model.state.Focus = state.FocusNav
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
