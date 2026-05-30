@@ -16,9 +16,20 @@ var (
 	patchRE        = regexp.MustCompile(`(?im)^(fix|docs?|chore|test|tests|refactor|update|remove|repair)\b`)
 	semverRE       = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`)
 	goVersionRE    = regexp.MustCompile(`(?m)^var Version = "([^"]+)"$`)
+	conventionalRE = regexp.MustCompile(`^([a-z][a-z0-9-]*)(?:\([^)]*\))?(!)?:\s*(.+)$`)
+	footerRE       = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9- ]*:\s+`)
+	releaseNotesRE = regexp.MustCompile(`(?i)^Release-Notes:\s*(.*)$`)
+	bulletRE       = regexp.MustCompile(`^(?:[-*]|\d+\.)\s+`)
+	releaseMetaRE  = regexp.MustCompile(`(?i)^release v?\d+\.\d+\.\d+(?:\s|$)`)
 )
 
 const EmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+type Commit struct {
+	Hash    string
+	Subject string
+	Body    string
+}
 
 func InferBump(messages string, changedFiles []string) string {
 	if match := explicitBumpRE.FindStringSubmatch(messages); len(match) > 1 {
@@ -106,6 +117,103 @@ func CommitMessages(base string, head string) (string, error) {
 	return git("log", "--format=%B%n---END-COMMIT---", base+".."+head)
 }
 
+func Commits(base string, head string) ([]Commit, error) {
+	args := []string{"log", "--reverse", "--format=%H%x00%B%x1e"}
+	if base == EmptyTree {
+		args = append(args, head)
+	} else {
+		args = append(args, base+".."+head)
+	}
+	out, err := git(args...)
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	for _, record := range strings.Split(out, "\x1e") {
+		record = strings.TrimSpace(record)
+		if record == "" {
+			continue
+		}
+		fields := strings.SplitN(record, "\x00", 2)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("could not parse git log record %q", record)
+		}
+		subject, body := splitCommitMessage(fields[1])
+		commits = append(commits, Commit{
+			Hash:    strings.TrimSpace(fields[0]),
+			Subject: subject,
+			Body:    body,
+		})
+	}
+	return commits, nil
+}
+
+func ReleaseNotes(base string, head string) (string, error) {
+	commits, err := Commits(base, head)
+	if err != nil {
+		return "", err
+	}
+	return RenderReleaseNotes(commits), nil
+}
+
+func RenderReleaseNotes(commits []Commit) string {
+	sections := map[string][]string{}
+	for _, commit := range commits {
+		if ignoreReleaseNoteCommit(commit) {
+			continue
+		}
+		details := parseConventionalSubject(commit.Subject)
+		notes := explicitReleaseNotes(commit.Body)
+		if len(notes) == 0 {
+			notes = []string{details.Description}
+		}
+		section := releaseNoteSection(details)
+		if details.Breaking || breakingRE.MatchString(commit.Body) {
+			section = "breaking"
+		}
+		for _, note := range notes {
+			normalized := normalizeReleaseNote(note)
+			if normalized == "" {
+				continue
+			}
+			sections[section] = append(sections[section], normalized)
+		}
+	}
+
+	order := []struct {
+		key   string
+		title string
+	}{
+		{key: "breaking", title: "Breaking Changes"},
+		{key: "features", title: "Features"},
+		{key: "fixes", title: "Fixes"},
+		{key: "documentation", title: "Documentation"},
+		{key: "maintenance", title: "Maintenance"},
+	}
+	var builder strings.Builder
+	for _, section := range order {
+		notes := sections[section.key]
+		if len(notes) == 0 {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString("## ")
+		builder.WriteString(section.title)
+		builder.WriteString("\n\n")
+		for _, note := range notes {
+			builder.WriteString("- ")
+			builder.WriteString(note)
+			builder.WriteString("\n")
+		}
+	}
+	if builder.Len() == 0 {
+		return "## Maintenance\n\n- No user-facing changes.\n"
+	}
+	return builder.String()
+}
+
 func UsableBase(base string, head string) string {
 	if base == "" || strings.Trim(base, "0") == "" {
 		return FallbackBase(head)
@@ -156,6 +264,115 @@ class %s < Formula
   end
 end
 `, className, versionURL, sha256, formulaName, formulaName, formulaName)
+}
+
+type conventionalSubject struct {
+	Type        string
+	Description string
+	Breaking    bool
+}
+
+func splitCommitMessage(message string) (string, string) {
+	message = strings.TrimSpace(message)
+	subject, body, found := strings.Cut(message, "\n")
+	if !found {
+		return strings.TrimSpace(subject), ""
+	}
+	return strings.TrimSpace(subject), strings.TrimSpace(body)
+}
+
+func parseConventionalSubject(subject string) conventionalSubject {
+	subject = strings.TrimSpace(subject)
+	match := conventionalRE.FindStringSubmatch(subject)
+	if len(match) == 0 {
+		return conventionalSubject{Description: subject}
+	}
+	return conventionalSubject{
+		Type:        strings.ToLower(match[1]),
+		Breaking:    match[2] == "!",
+		Description: strings.TrimSpace(match[3]),
+	}
+}
+
+func releaseNoteSection(subject conventionalSubject) string {
+	switch subject.Type {
+	case "feat":
+		return "features"
+	case "fix":
+		return "fixes"
+	case "docs":
+		return "documentation"
+	default:
+		return "maintenance"
+	}
+}
+
+func explicitReleaseNotes(body string) []string {
+	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	var notes []string
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		match := releaseNotesRE.FindStringSubmatch(line)
+		if len(match) == 0 {
+			continue
+		}
+		sectionStart := len(notes)
+		if inline := stripBullet(match[1]); inline != "" {
+			notes = append(notes, inline)
+		}
+		for j := i + 1; j < len(lines); j++ {
+			next := strings.TrimSpace(lines[j])
+			if next == "" {
+				if len(notes) > sectionStart {
+					i = j
+					break
+				}
+				continue
+			}
+			if releaseNotesRE.MatchString(next) {
+				i = j - 1
+				break
+			}
+			if footerRE.MatchString(next) && !bulletRE.MatchString(next) {
+				i = j - 1
+				break
+			}
+			notes = append(notes, stripBullet(next))
+			i = j
+		}
+	}
+	return notes
+}
+
+func normalizeReleaseNote(note string) string {
+	note = stripConventionalPrefix(stripBullet(note))
+	if note == "" {
+		return ""
+	}
+	if note[0] >= 'a' && note[0] <= 'z' {
+		note = string(note[0]-'a'+'A') + note[1:]
+	}
+	return note
+}
+
+func stripConventionalPrefix(note string) string {
+	note = strings.TrimSpace(note)
+	match := conventionalRE.FindStringSubmatch(note)
+	if len(match) == 0 {
+		return note
+	}
+	return strings.TrimSpace(match[3])
+}
+
+func stripBullet(note string) string {
+	return strings.TrimSpace(bulletRE.ReplaceAllString(strings.TrimSpace(note), ""))
+}
+
+func ignoreReleaseNoteCommit(commit Commit) bool {
+	message := strings.ToLower(commit.Subject + "\n" + commit.Body)
+	return strings.Contains(message, "[skip ci]") ||
+		strings.Contains(message, "[ci skip]") ||
+		releaseMetaRE.MatchString(strings.TrimSpace(commit.Subject))
 }
 
 func git(args ...string) (string, error) {

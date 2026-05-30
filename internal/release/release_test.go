@@ -26,6 +26,87 @@ func TestInferBumpAndBumpVersion(t *testing.T) {
 	}
 }
 
+func TestRenderReleaseNotesGroupsConventionalCommitSubjects(t *testing.T) {
+	notes := RenderReleaseNotes([]Commit{
+		{Subject: "feat: add workdir cards"},
+		{Subject: "fix: keep focused panes visible"},
+		{Subject: "docs: document release notes"},
+		{Subject: "chore: refresh generated formula"},
+	})
+
+	want := `## Features
+
+- Add workdir cards
+
+## Fixes
+
+- Keep focused panes visible
+
+## Documentation
+
+- Document release notes
+
+## Maintenance
+
+- Refresh generated formula
+`
+	if notes != want {
+		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
+	}
+}
+
+func TestRenderReleaseNotesUsesExplicitBulletsAndScopes(t *testing.T) {
+	notes := RenderReleaseNotes([]Commit{
+		{
+			Subject: "feat(release): generate human release notes",
+			Body: `Release-Notes:
+- Publish concise GitHub release notes from ship commits.
+- Keep Homebrew formula publishing unchanged.`,
+		},
+	})
+
+	want := `## Features
+
+- Publish concise GitHub release notes from ship commits.
+- Keep Homebrew formula publishing unchanged.
+`
+	if notes != want {
+		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
+	}
+}
+
+func TestRenderReleaseNotesLabelsBreakingChanges(t *testing.T) {
+	notes := RenderReleaseNotes([]Commit{
+		{Subject: "feat(config)!: require WEFT_HOME for supervisor state"},
+		{Subject: "fix: repair stale release notes", Body: "BREAKING CHANGE: release notes are regenerated from commits."},
+	})
+
+	want := `## Breaking Changes
+
+- Require WEFT_HOME for supervisor state
+- Repair stale release notes
+`
+	if notes != want {
+		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
+	}
+}
+
+func TestRenderReleaseNotesSkipsReleaseMetadataAndSkipCICommits(t *testing.T) {
+	notes := RenderReleaseNotes([]Commit{
+		{Subject: "Release v5.3.0 [skip ci]"},
+		{Subject: "chore: update generated version [ci skip]"},
+		{Subject: "fix: publish notes file"},
+	})
+
+	want := `## Fixes
+
+- Publish notes file
+`
+	if notes != want {
+		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
+	}
+}
+
 func TestRenderFormulaBuildsGoBinaryFromSource(t *testing.T) {
 	formula := RenderFormula("weft", "https://example.test/weft.tar.gz", "abc123")
 

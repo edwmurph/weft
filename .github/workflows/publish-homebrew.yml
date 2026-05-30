@@ -62,6 +62,15 @@ jobs:
 
           go run ./cmd/weft-release "${args[@]}"
 
+      - name: Generate release notes
+        env:
+          BASE_SHA: ${{ steps.version.outputs.base }}
+        run: |
+          go run ./cmd/weft-release release-notes \
+            --base "$BASE_SHA" \
+            --head HEAD \
+            --output dist/release-notes.md
+
       - name: Verify release tree
         run: |
           go test ./...
@@ -108,16 +117,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_NOTES: dist/release-notes.md
         run: |
           set -euo pipefail
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --notes "Automated Weft release ${TAG}."
+            gh release edit "$TAG" --notes-file "$RELEASE_NOTES"
           else
             gh release create "$TAG" \
               --verify-tag \
               --title "$TAG" \
-              --notes "Automated Weft release ${TAG}."
+              --notes-file "$RELEASE_NOTES"
           fi
 
       - name: Checkout Homebrew tap

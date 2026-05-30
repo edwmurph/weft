@@ -31,6 +31,12 @@ semantic version bump from the shipped commit, updates `VERSION` and
 `internal/version/version.go`, tags `vX.Y.Z`, creates a GitHub release, and
 writes `Formula/weft.rb` to `edwmurph/homebrew-tap`.
 
+GitHub release notes are generated from the shipped commits in the release
+range. Use concise Conventional Commit-style subjects such as `feat: ...`,
+`fix: ...`, `docs: ...`, `refactor: ...`, or `chore: ...`; add commit-body
+`Release-Notes:` bullets when the release needs clearer user-facing wording
+than the subject alone.
+
 The formula builds the Go binary from source and depends on `go` at build time.
 
 ## Agent Guidance

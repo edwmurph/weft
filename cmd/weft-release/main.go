@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/edwmurph/weft/internal/release"
@@ -11,12 +12,14 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: weft-release <next-version|render-formula>")
+		fatal("usage: weft-release <next-version|release-notes|render-formula>")
 	}
 	var err error
 	switch os.Args[1] {
 	case "next-version":
 		err = nextVersion(os.Args[2:])
+	case "release-notes":
+		err = releaseNotes(os.Args[2:])
 	case "render-formula":
 		err = renderFormula(os.Args[2:])
 	default:
@@ -96,6 +99,31 @@ func nextVersion(args []string) error {
 		fmt.Printf("%s=%s\n", key, values[key])
 	}
 	return nil
+}
+
+func releaseNotes(args []string) error {
+	fs := flag.NewFlagSet("release-notes", flag.ContinueOnError)
+	base := fs.String("base", "", "base commit/ref")
+	head := fs.String("head", "HEAD", "head commit/ref")
+	output := fs.String("output", "", "output path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	resolvedBase := release.UsableBase(*base, *head)
+	notes, err := release.ReleaseNotes(resolvedBase, *head)
+	if err != nil {
+		return err
+	}
+	if *output == "" {
+		fmt.Print(notes)
+		return nil
+	}
+	if dir := filepath.Dir(*output); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(*output, []byte(notes), 0o644)
 }
 
 func renderFormula(args []string) error {
