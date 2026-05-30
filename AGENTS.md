@@ -2,9 +2,12 @@
 
 ## Workflow
 
-- For any requested change: implement it, run the full verification workflow, confirm it passes, then pause for user review.
+- For any requested implementation change: implement it, run the full verification workflow, confirm it passes, then pause for user review.
+- For docs-only or agent-instruction-only changes with no runtime, generated-artifact, packaging, command-output, or user-facing behavior risk, use a streamlined verification path that fits the change, such as `git diff --check`, rendered-doc inspection, or no test run. Run targeted or full verification if the docs derive from code, generated help text, release packaging, or anything risky.
 - After implementing a change and completing verification, re-explain what changed and what changed functionality the user can verify before pausing for review.
 - For implementation plans, explicitly include creating or using a detached worktree under `./.worktrees/<slug>` unless the user says otherwise.
+- If a requested change appears to contradict `spec.md`, pause before implementation. Propose the change, identify the specific spec item it deviates from, and confirm that the user wants both the product behavior to deviate and `spec.md` updated to match.
+- Treat `spec.md` as the living product contract. When accepted product behavior, UX, command semantics, state shape, or workflow expectations evolve, update `spec.md` in the same change.
 - If an implementation change causes drift with docs or agent instructions, update the docs/instructions in the same change to keep them accurate.
 - For broad refactor requests, use the repo-local `$codux-refactor` skill in `skills/codux-refactor/` and update its suggestion log.
 - After verified implementation work, summarize what changed, what verification passed, exactly how the user can test it locally, include the exact command(s) to retest the changed behavior, and offer to ship it. Then stop for review unless the user explicitly says **"ship it"**.
