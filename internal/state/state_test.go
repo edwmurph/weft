@@ -39,7 +39,7 @@ func TestStoreArchivesLegacyTmuxState(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.v1-tmux.json")); err != nil {
 		t.Fatal(err)
 	}
-	if st.Version != Version || len(st.Agents) != 0 || len(st.Workdirs) != 1 || len(st.Folders) != 0 {
+	if st.Version != Version || len(st.Agents) != 0 || len(st.Workdirs) != 0 || len(st.Folders) != 0 {
 		t.Fatalf("state = %#v", st)
 	}
 }
@@ -122,9 +122,9 @@ func TestCloseLastAgentInWorkdirStaysInCurrentWorkdir(t *testing.T) {
 }
 
 func TestWorkdirCanHaveNoGroupsAndUngroupedAgents(t *testing.T) {
-	st := Repair(Empty(), t.TempDir())
+	st := stateWithWorkdir(t)
 	if len(st.Workdirs) != 1 || len(st.Folders) != 0 {
-		t.Fatalf("seeded state = %#v", st)
+		t.Fatalf("workdir state = %#v", st)
 	}
 
 	next, agent, err := AddAgent(st, "a", st.SelectedWorkdirID, "", "Codex", NowISO())
@@ -164,7 +164,7 @@ func TestWorkdirTitleOverrideCanBeSetAndCleared(t *testing.T) {
 }
 
 func TestAddAgentDefaultsTitleToCodexTemplate(t *testing.T) {
-	st := Repair(Empty(), t.TempDir())
+	st := stateWithWorkdir(t)
 
 	_, agent, err := AddAgent(st, "a", st.SelectedWorkdirID, "", "", NowISO())
 	if err != nil {
@@ -172,6 +172,30 @@ func TestAddAgentDefaultsTitleToCodexTemplate(t *testing.T) {
 	}
 	if agent.Title != DefaultAgentTitle {
 		t.Fatalf("agent title = %q", agent.Title)
+	}
+}
+
+func TestRepairAllowsEmptyWorkdirs(t *testing.T) {
+	st := Repair(Empty(), t.TempDir())
+
+	if len(st.Workdirs) != 0 || st.SelectedWorkdirID != "" || st.Focus != FocusWorkdirs || !st.NavOpen {
+		t.Fatalf("empty repaired state = %#v", st)
+	}
+}
+
+func TestRemoveLastWorkdirLeavesEmptyState(t *testing.T) {
+	st := stateWithWorkdir(t)
+
+	next, removed, err := RemoveWorkdir(st, st.SelectedWorkdirID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(removed) != 0 {
+		t.Fatalf("removed agents = %#v", removed)
+	}
+	if len(next.Workdirs) != 0 || next.SelectedWorkdirID != "" || next.Focus != FocusWorkdirs || !next.NavOpen {
+		t.Fatalf("state should allow no workdirs: %#v", next)
 	}
 }
 
@@ -233,4 +257,13 @@ func testState(t *testing.T) State {
 			{ID: "c", WorkdirID: workdirID, FolderID: folderID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
 		},
 	}
+}
+
+func stateWithWorkdir(t *testing.T) State {
+	t.Helper()
+	st, _, err := AddWorkdir(Empty(), "w", t.TempDir(), NowISO())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }

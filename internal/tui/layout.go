@@ -196,7 +196,7 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 	return renderFoldersPane(cfg, st, width, height, folderCursor)
 }
 
-func renderWorkdirsPane(_ config.Config, st state.State, width int, height int) []string {
+func renderWorkdirsPane(cfg config.Config, st state.State, width int, height int) []string {
 	content := []string{}
 	cardWidth := max(2, width-2-(navHorizontalPadding*2))
 	for _, workdir := range st.Workdirs {
@@ -207,7 +207,7 @@ func renderWorkdirsPane(_ config.Config, st state.State, width int, height int) 
 		}
 	}
 	if len(content) == 0 {
-		content = append(content, mutedStyle.Render("No workdirs"))
+		content = renderCenteredPaneHelp(width, height, "No workdirs", "Press "+cfg.KeyBindings.NewWorkdir+" to add one.")
 	}
 	return renderPaneFrame("Workdirs", "", width, height, st.Focus == state.FocusWorkdirs, content)
 }
@@ -396,9 +396,46 @@ func renderFoldersPane(cfg config.Config, st state.State, width int, height int,
 		}
 	}
 	if len(content) == 0 {
-		content = append(content, mutedStyle.Render("No agents"))
+		if state.ActiveWorkdir(st) == nil {
+			content = renderCenteredPaneHelp(width, height, "No workdir selected", "Press "+cfg.KeyBindings.NewWorkdir+" to add one.")
+		} else {
+			content = renderCenteredPaneHelp(width, height, "No agents", "Press "+cfg.KeyBindings.NewAgent+" to create one.")
+		}
 	}
 	return renderPaneFrame("Agents", "", width, height, st.Focus == state.FocusFolders, content)
+}
+
+func renderCenteredPaneHelp(width int, height int, lines ...string) []string {
+	contentHeight := max(0, height-2)
+	innerWidth := max(0, width-2)
+	if contentHeight == 0 {
+		return nil
+	}
+	help := make([]string, 0, len(lines))
+	for index, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		style := mutedStyle
+		if index == 0 {
+			style = modalValueStyle
+		}
+		help = append(help, centerVisual(style.Render(line), innerWidth))
+	}
+	if len(help) == 0 {
+		return make([]string, contentHeight)
+	}
+	topPadding := max(0, (contentHeight-len(help))/2)
+	content := make([]string, 0, contentHeight)
+	for len(content) < topPadding {
+		content = append(content, "")
+	}
+	content = append(content, help...)
+	for len(content) < contentHeight {
+		content = append(content, "")
+	}
+	return content[:contentHeight]
 }
 
 func renderPaneFrame(title string, right string, width int, height int, active bool, content []string) []string {
@@ -449,7 +486,7 @@ func renderCodexFrame(
 	}
 	contentHeight := max(0, height-2)
 	empty := state.ActiveAgent(st) == nil
-	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, empty, loadingText)
+	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, empty, len(st.Workdirs) > 0, loadingText)
 	for len(contentLines) < contentHeight {
 		contentLines = append(contentLines, "")
 	}
@@ -465,7 +502,7 @@ func renderCodexFrame(
 	return lines
 }
 
-func renderCodexContent(content string, width int, height int, empty bool, loadingText string) []string {
+func renderCodexContent(content string, width int, height int, empty bool, canCreateAgent bool, loadingText string) []string {
 	if height <= 0 {
 		return nil
 	}
@@ -473,7 +510,7 @@ func renderCodexContent(content string, width int, height int, empty bool, loadi
 		return renderCenteredCodexContent([]string{loadingText}, width, height)
 	}
 	if empty {
-		return renderEmptyCodexContent(width, height)
+		return renderEmptyCodexContent(width, height, canCreateAgent)
 	}
 	lines := lastLines(content, height)
 	for len(lines) < height {
@@ -485,7 +522,11 @@ func renderCodexContent(content string, width int, height int, empty bool, loadi
 	return lines
 }
 
-func renderEmptyCodexContent(width int, height int) []string {
+func renderEmptyCodexContent(width int, height int, canCreateAgent bool) []string {
+	hint := "Press n to create one."
+	if !canCreateAgent {
+		hint = "Add a workdir first."
+	}
 	content := []string{}
 	if logoFits(emptyWeftLogo, width, height) {
 		logoWidth := maxVisualWidth(emptyWeftLogo)
@@ -493,10 +534,10 @@ func renderEmptyCodexContent(width int, height int) []string {
 			content = append(content, emptyLogoStyle.Render(padVisual(line, logoWidth)))
 		}
 		content = append(content, "")
-		content = append(content, centerVisual("No Codex agent open", logoWidth), centerVisual("Press n to create one.", logoWidth))
+		content = append(content, centerVisual("No Codex agent open", logoWidth), centerVisual(hint, logoWidth))
 		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
 	}
-	content = append(content, "No Codex agent open", "Press n to create one.")
+	content = append(content, "No Codex agent open", hint)
 	return renderCenteredCodexContent(content, width, height)
 }
 

@@ -63,9 +63,10 @@ const (
 type confirmKind string
 
 const (
-	confirmDeleteWorkdir confirmKind = "delete-workdir"
-	confirmDeleteGroup   confirmKind = "delete-group"
-	confirmDeleteAgent   confirmKind = "delete-agent"
+	confirmAddLaunchWorkdir confirmKind = "add-launch-workdir"
+	confirmDeleteWorkdir    confirmKind = "delete-workdir"
+	confirmDeleteGroup      confirmKind = "delete-group"
+	confirmDeleteAgent      confirmKind = "delete-agent"
 )
 
 const (
@@ -157,7 +158,11 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	st = state.Repair(st, rt.Workdir)
 	if state.ActiveAgent(st) == nil {
 		st.ActiveAgentID = ""
-		st.Focus = state.FocusFolders
+		if len(st.Workdirs) == 0 {
+			st.Focus = state.FocusWorkdirs
+		} else {
+			st.Focus = state.FocusFolders
+		}
 		st.NavOpen = true
 	}
 	lastNav := st.Focus
@@ -172,6 +177,9 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		dataCh:            make(chan ptyx.Data, 64),
 		ipcCh:             make(chan ipcEnvelope, 16),
 		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
+	}
+	if next, ok := state.SelectWorkdirByPath(model.state, rt.Workdir); ok {
+		model.state = next
 	}
 	model.syncFolderCursor()
 	model.navWidth = model.targetNavWidth()
@@ -514,6 +522,12 @@ func (m *Model) focusNavPane(focus state.Focus) {
 	m.save()
 }
 
+func (m *Model) rememberCurrentNavFocus() {
+	if m.state.Focus == state.FocusWorkdirs || m.state.Focus == state.FocusFolders {
+		m.lastNavFocus = m.state.Focus
+	}
+}
+
 func (m *Model) moveSelection(delta int) {
 	if m.state.Focus == state.FocusWorkdirs {
 		workdirIDs := make([]string, 0, len(m.state.Workdirs))
@@ -620,6 +634,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 		message := workdirAddMessage(m.state, workdir)
 		m.state = next
 		m.message = message
+		m.rememberCurrentNavFocus()
 		m.syncFolderCursor()
 		m.save()
 	case promptGroup:
@@ -705,6 +720,18 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 
 func (m *Model) applyConfirm() tea.Cmd {
 	switch m.confirm {
+	case confirmAddLaunchWorkdir:
+		next, workdir, err := state.AddWorkdir(m.state, shortID(), m.pendingID, state.NowISO())
+		if err != nil {
+			m.message = err.Error()
+			return nil
+		}
+		message := workdirAddMessage(m.state, workdir)
+		m.state = next
+		m.message = message
+		m.rememberCurrentNavFocus()
+		m.syncFolderCursor()
+		m.save()
 	case confirmDeleteWorkdir:
 		next, agents, err := state.RemoveWorkdir(m.state, m.pendingID)
 		if err != nil {
@@ -738,7 +765,7 @@ func (m *Model) applyConfirm() tea.Cmd {
 func (m *Model) newAgent(title string) tea.Cmd {
 	workdir := state.ActiveWorkdir(m.state)
 	if workdir == nil {
-		m.message = "select a workdir first"
+		m.message = "add a workdir first"
 		return nil
 	}
 	folderID := m.groupIDForNewAgent()
@@ -1318,6 +1345,7 @@ func ipcError(code string, err error) ipc.Response {
 }
 
 func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
+	m.applyLaunchWorkdir(request.Args["launch_workdir"])
 	switch request.Command {
 	case "snapshot":
 		return m.ipcResponse(m.message), nil
@@ -1357,6 +1385,9 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.navWidth = m.targetNavWidth()
 		return m.ipcResponse("selection opened"), cmd
 	case "new":
+		if state.ActiveWorkdir(m.state) == nil {
+			return ipc.ErrorResponse("workdir_required", "add a workdir first"), nil
+		}
 		title := request.Args["title"]
 		if title == "" {
 			title = titles.CodexTemplate
@@ -1470,6 +1501,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		message := workdirAddMessage(m.state, workdir)
 		m.state = next
+		m.rememberCurrentNavFocus()
 		m.syncFolderCursor()
 		m.save()
 		return m.ipcResponse(message), nil
@@ -1513,6 +1545,19 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	default:
 		return ipc.ErrorResponse("unknown_command", "unknown command: "+request.Command), nil
 	}
+}
+
+func (m *Model) applyLaunchWorkdir(path string) {
+	next, ok := state.SelectWorkdirByPath(m.state, path)
+	if !ok {
+		return
+	}
+	if next.SelectedWorkdirID == m.state.SelectedWorkdirID && next.SelectedFolderID == m.state.SelectedFolderID {
+		return
+	}
+	m.state = next
+	m.syncFolderCursor()
+	m.save()
 }
 
 func (m *Model) openSelection() tea.Cmd {

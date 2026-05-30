@@ -83,7 +83,7 @@ func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
 	}
 	workdir := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
 	expectedPath := "~" + strings.TrimPrefix(workdir, home)
-	st := state.Repair(state.Empty(), workdir)
+	st := layoutState(workdir)
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", minThreePaneWidth, 24, "", workdir)
 
@@ -102,7 +102,7 @@ func TestRenderWorkspaceKeepsFixedWorkdirPaneAtMediumWidth(t *testing.T) {
 	}
 	workdir := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
 	expectedPath := "~" + strings.TrimPrefix(workdir, home)
-	st := state.Repair(state.Empty(), workdir)
+	st := layoutState(workdir)
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", workdir)
 
@@ -236,8 +236,30 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	st.Agents = nil
 	st.ActiveAgentID = ""
 	got = renderWorkspaceWithNavWidth(cfg, st, "Codex", "", 100, 18, "", 60, 0)
-	if !strings.Contains(got, "No agents") {
+	if !strings.Contains(got, "No agents") || !strings.Contains(got, "Press n to create one.") {
 		t.Fatalf("empty agents pane missing empty state:\n%s", got)
+	}
+
+	st = state.Repair(state.Empty(), "/tmp/project")
+	got = strings.Join(renderFoldersPane(cfg, st, 40, 12, 0), "\n")
+	if !strings.Contains(got, "No workdir selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create one.") {
+		t.Fatalf("no-workdir agents pane should explain workdir requirement:\n%s", got)
+	}
+}
+
+func TestRenderWorkdirsPaneEmptyStateIsCenteredHelp(t *testing.T) {
+	cfg := config.DefaultConfig("weft-test")
+	st := state.Repair(state.Empty(), "/tmp/project")
+
+	got := strings.Join(renderWorkdirsPane(cfg, st, 64, 12), "\n")
+
+	if !strings.Contains(got, "No workdirs") || !strings.Contains(got, "Press w to add one.") {
+		t.Fatalf("empty workdirs pane missing help:\n%s", got)
+	}
+	for _, line := range strings.Split(ansi.Strip(got), "\n") {
+		if strings.Contains(line, "No workdirs") && !strings.Contains(line, "                         No workdirs") {
+			t.Fatalf("empty workdir help should be centered, got line %q\n%s", line, got)
+		}
 	}
 }
 
@@ -247,8 +269,18 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 
 	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
 
+	if strings.Contains(got, "Press n to create one.") || !strings.Contains(got, "Add a workdir first.") {
+		t.Fatalf("workspace should not advertise agent creation before a workdir exists:\n%s", got)
+	}
+
+	st = layoutState("/tmp/project")
+	st.Agents = nil
+	st.ActiveAgentID = ""
+	st.Focus = state.FocusFolders
+	st.NavOpen = true
+	got = renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
 	if !strings.Contains(got, "Press n to create one.") {
-		t.Fatalf("workspace missing empty hint:\n%s", got)
+		t.Fatalf("workspace missing agent creation hint:\n%s", got)
 	}
 	lines := strings.Split(got, "\n")
 	if strings.Contains(lines[len(lines)-1], "Codex") {
@@ -266,7 +298,7 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 		t.Fatalf("empty command center should render wordmark above existing hint:\n%s", stripped)
 	}
 
-	content := renderEmptyCodexContent(100, 24)
+	content := renderEmptyCodexContent(100, 24, true)
 	logoWidth := maxVisualWidth(emptyWeftLogo)
 	expectedLeft := strings.Repeat(" ", (100-logoWidth)/2)
 	logoStart := -1

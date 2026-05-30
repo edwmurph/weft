@@ -36,7 +36,7 @@ func TestSupervisorServesHandshakeStatusAndStructuredErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.State == nil || len(status.State.Workdirs) != 1 {
+	if status.State == nil || len(status.State.Workdirs) != 0 {
 		t.Fatalf("status state = %#v", status.State)
 	}
 	if status.Message == "" {
@@ -143,6 +143,9 @@ func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	stop := runTestSupervisor(t, rt, cfg, store)
 	defer stop()
 
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "add_workdir", Args: map[string]string{"path": rt.Workdir}}, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "new", Args: map[string]string{"title": "Fake"}}, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}

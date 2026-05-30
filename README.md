@@ -23,8 +23,8 @@ Install Weft with Homebrew:
 brew install edwmurph/tap/weft
 ```
 
-Then run Weft from a project directory. The launch directory is added as the
-initial workdir:
+Then run Weft from a project directory. On first interactive launch, Weft asks
+whether to add that directory as a workdir:
 
 ```sh
 weft doctor
@@ -183,7 +183,8 @@ Weft stores runtime files globally:
 - `~/.weft/weftd.pid`
 - `~/.weft/weftd.log`
 
-`WEFT_WORKDIR` overrides the launch directory that seeds the initial workdir.
+`WEFT_WORKDIR` overrides the launch directory used for attach-time workdir
+selection and the first-run add prompt.
 `WEFT_HOME` overrides the runtime directory directly for development and tests.
 
 The config keys are stable: `codex_command`, `title_template`,

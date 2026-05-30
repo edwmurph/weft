@@ -39,13 +39,14 @@ type ClientModel struct {
 	message  string
 	loading  int
 
-	input                textinput.Model
-	prompt               promptKind
-	confirm              confirmKind
-	pendingID            string
-	promptSuggestionOpen bool
-	codexInputQueue      []map[string]string
-	codexInputInFlight   bool
+	input                 textinput.Model
+	prompt                promptKind
+	confirm               confirmKind
+	pendingID             string
+	promptSuggestionOpen  bool
+	launchWorkdirPrompted bool
+	codexInputQueue       []map[string]string
+	codexInputInFlight    bool
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
@@ -314,6 +315,8 @@ func (m ClientModel) applyPrompt(value string) tea.Cmd {
 
 func (m ClientModel) applyConfirm() tea.Cmd {
 	switch m.confirm {
+	case confirmAddLaunchWorkdir:
+		return m.request("add_workdir", map[string]string{"path": m.pendingID})
 	case confirmDeleteWorkdir:
 		return m.request("remove_workdir", map[string]string{"id": m.pendingID})
 	case confirmDeleteGroup:
@@ -330,6 +333,7 @@ func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 	return func() tea.Msg {
 		args = cloneArgs(args)
 		args["client_id"] = clientID
+		args["launch_workdir"] = rt.Workdir
 		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 		return clientResponseMsg{command: command, response: response, err: err}
 	}
@@ -375,6 +379,22 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	} else if response.SupervisorVersion != "" && response.SupervisorVersion != version.Version {
 		m.message = fmt.Sprintf("Weft client %s found running supervisor %s. Restarting the supervisor can stop live Codex terminals. Saved layout and metadata remain.", version.Version, response.SupervisorVersion)
 	}
+	m.maybePromptForLaunchWorkdir()
+}
+
+func (m *ClientModel) maybePromptForLaunchWorkdir() {
+	if m.launchWorkdirPrompted || m.mode != modeNormal {
+		return
+	}
+	path := strings.TrimSpace(m.runtime.Workdir)
+	if path == "" || !workdirInputIsExistingDirectory(path) || state.WorkdirByPath(m.snapshot.State, path) != nil {
+		m.launchWorkdirPrompted = true
+		return
+	}
+	m.confirm = confirmAddLaunchWorkdir
+	m.pendingID = path
+	m.mode = modeConfirm
+	m.launchWorkdirPrompted = true
 }
 
 func (m ClientModel) modalView(content string) string {

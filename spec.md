@@ -132,7 +132,7 @@ Weft stores runtime files globally under `~/.weft` by default, or under
 - `weftd.lock`
 - `weftd.log`
 
-`WEFT_WORKDIR` overrides the launch directory that seeds the initial workdir.
+`WEFT_WORKDIR` overrides the launch directory used for attach-time workdir context.
 
 ## Primary Layout
 
@@ -141,6 +141,9 @@ The app has three logical panes.
 ## Workdirs Pane
 
 The left pane lists configured workdirs as vertically stacked bordered cards.
+
+When there are no configured workdirs, the pane shows centered help text telling
+the user that there are no workdirs and to press the configured add-workdir key.
 
 Each card renders:
 
@@ -172,6 +175,8 @@ Example:
 ## Agents Pane
 
 The middle pane shows agents for the selected workdir. It is always present so the Workdirs pane can stay purely scoped to workdirs.
+
+When no workdir exists or no workdir is selected, the Agents pane shows centered help text telling the user to add a workdir first. It must not advertise creating an agent until a workdir exists. When a workdir is selected but has no agents or groups, the Agents pane shows centered help text saying there are no agents and to press the configured new-agent key.
 
 Agents without a group render as top-level rows. User-created groups render as collapsible sections inside this pane, with their member agents indented underneath. Creating a group must not force existing top-level agents into a visible `Ungrouped`, `General`, or `Inbox` section.
 
@@ -453,6 +458,9 @@ Rules:
 Add workdir:
 
 - User provides an existing filesystem path.
+- Weft must not auto-add the launch directory during state repair or first supervisor start.
+- When an interactive client opens from a launch directory that is already configured, Weft selects that workdir automatically.
+- When an interactive client opens from a launch directory that is not configured, Weft asks whether to add it before mutating state.
 - Dashboard prompt opens with the selected workdir's parent directory prefilled.
 - Dashboard prompt uses the shared bordered form input.
 - Autocomplete opens directly below the input when the user types or presses `Down`.
@@ -509,6 +517,7 @@ Delete group:
 
 Create agent:
 
+- Requires an existing selected workdir.
 - Creates an agent in the selected workdir.
 - If the cursor is on a group or grouped agent, create the agent in that group.
 - Otherwise create a top-level agent with no group.

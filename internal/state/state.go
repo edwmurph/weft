@@ -255,13 +255,6 @@ func Repair(st State, fallbackWorkdir string) State {
 	if st.CollapsedGroupIDs == nil {
 		st.CollapsedGroupIDs = []string{}
 	}
-	if len(st.Workdirs) == 0 && strings.TrimSpace(fallbackWorkdir) != "" {
-		now := NowISO()
-		workdirPath := absolutePath(fallbackWorkdir)
-		workdirID := StableID("workdir", workdirPath)
-		st.Workdirs = append(st.Workdirs, Workdir{ID: workdirID, Path: workdirPath, CreatedAt: now, UpdatedAt: now})
-	}
-
 	workdirs := map[string]bool{}
 	for index := range st.Workdirs {
 		if strings.TrimSpace(st.Workdirs[index].ID) == "" {
@@ -334,12 +327,6 @@ func Repair(st State, fallbackWorkdir string) State {
 
 	if st.ActiveAgentID != "" && AgentByID(st, st.ActiveAgentID) == nil {
 		st.ActiveAgentID = ""
-	}
-	if st.ActiveAgentID != "" {
-		if active := AgentByID(st, st.ActiveAgentID); active != nil {
-			st.SelectedWorkdirID = active.WorkdirID
-			st.SelectedFolderID = active.FolderID
-		}
 	}
 	if st.SelectedWorkdirID == "" || WorkdirByID(st, st.SelectedWorkdirID) == nil {
 		if len(st.Workdirs) > 0 {
@@ -582,6 +569,16 @@ func WorkdirByID(st State, workdirID string) *Workdir {
 	return nil
 }
 
+func WorkdirByPath(st State, path string) *Workdir {
+	path = NormalizeWorkdirPath(path)
+	for index := range st.Workdirs {
+		if st.Workdirs[index].Path == path {
+			return &st.Workdirs[index]
+		}
+	}
+	return nil
+}
+
 func FolderByID(st State, folderID string) *Folder {
 	if folderID == "" {
 		return nil
@@ -769,12 +766,9 @@ func AddWorkdir(st State, id string, path string, now string) (State, Workdir, e
 	if !info.IsDir() {
 		return st, Workdir{}, fmt.Errorf("workdir path is not a directory: %s", path)
 	}
-	for _, workdir := range st.Workdirs {
-		if workdir.Path == path {
-			st.SelectedWorkdirID = workdir.ID
-			st.SelectedFolderID = ""
-			return st, workdir, nil
-		}
+	if workdir := WorkdirByPath(st, path); workdir != nil {
+		st = SelectWorkdir(st, workdir.ID)
+		return st, *workdir, nil
 	}
 	if id == "" {
 		id = StableID("workdir", path)
@@ -789,6 +783,26 @@ func AddWorkdir(st State, id string, path string, now string) (State, Workdir, e
 	st.NavOpen = true
 	st.Focus = FocusFolders
 	return st, workdir, nil
+}
+
+func SelectWorkdir(st State, workdirID string) State {
+	if WorkdirByID(st, workdirID) == nil {
+		return st
+	}
+	st.SelectedWorkdirID = workdirID
+	st.SelectedFolderID = ""
+	if folders := FoldersForWorkdir(st, workdirID); len(folders) > 0 {
+		st.SelectedFolderID = folders[0].ID
+	}
+	return st
+}
+
+func SelectWorkdirByPath(st State, path string) (State, bool) {
+	workdir := WorkdirByPath(st, path)
+	if workdir == nil {
+		return st, false
+	}
+	return SelectWorkdir(st, workdir.ID), true
 }
 
 func RemoveWorkdir(st State, workdirID string) (State, []Agent, error) {

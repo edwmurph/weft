@@ -413,16 +413,20 @@ func renderConfirmPrompt(confirm confirmKind, target string, width int) string {
 	lines := []string{
 		modalTitleStyle.Render(confirmTitle(confirm)),
 		"",
-		modalLabelStyle.Render("Target"),
+		modalLabelStyle.Render(confirmTargetLabel(confirm)),
 		modalValueStyle.Render(clip(target, width)),
-		"",
-		modalKeyStyle.Render("Y") + " delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel",
 	}
+	if detail := confirmDetail(confirm); detail != "" {
+		lines = append(lines, "", mutedStyle.Render(clip(detail, width)))
+	}
+	lines = append(lines, "", renderConfirmActions(confirm))
 	return strings.Join(lines, "\n")
 }
 
 func confirmTitle(confirm confirmKind) string {
 	switch confirm {
+	case confirmAddLaunchWorkdir:
+		return "Add this workdir to Weft?"
 	case confirmDeleteWorkdir:
 		return "Delete workdir"
 	case confirmDeleteGroup:
@@ -434,8 +438,28 @@ func confirmTitle(confirm confirmKind) string {
 	}
 }
 
+func confirmTargetLabel(confirm confirmKind) string {
+	if confirm == confirmAddLaunchWorkdir {
+		return "Current directory"
+	}
+	return "Target"
+}
+
+func confirmDetail(confirm confirmKind) string {
+	return ""
+}
+
+func renderConfirmActions(confirm confirmKind) string {
+	if confirm == confirmAddLaunchWorkdir {
+		return modalKeyStyle.Render("Y") + " yes  " + modalKeyStyle.Render("N") + " no  " + modalKeyStyle.Render("Esc") + " no"
+	}
+	return modalKeyStyle.Render("Y") + " delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
+}
+
 func confirmTarget(confirm confirmKind, st state.State, pendingID string, renderAgentTitle func(state.Agent) string) string {
 	switch confirm {
+	case confirmAddLaunchWorkdir:
+		return pendingID
 	case confirmDeleteWorkdir:
 		if workdir := state.WorkdirByID(st, pendingID); workdir != nil {
 			return workdir.Path

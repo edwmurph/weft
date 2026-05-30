@@ -106,6 +106,11 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 		return err == nil
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workdir to Weft?") &&
+			strings.Contains(capture, "Y yes")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "y")
+	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workdirs") &&
 			strings.Contains(capture, "Agents")
 	})
@@ -277,6 +282,11 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	}
 
 	timedStep(t, "initial render", func() {
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Add this workdir to Weft?") &&
+				strings.Contains(capture, "Y yes")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, "No Codex agent open")

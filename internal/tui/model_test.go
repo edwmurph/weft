@@ -21,11 +21,11 @@ func TestEmptyCommandCenterStartsInAgentsFocus(t *testing.T) {
 
 	model := NewModel(rt, cfg, state.Empty())
 
-	if model.state.Focus != state.FocusFolders || !model.state.NavOpen {
+	if model.state.Focus != state.FocusWorkdirs || !model.state.NavOpen {
 		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
 	}
-	if len(model.state.Workdirs) != 1 || len(model.state.Folders) != 0 {
-		t.Fatalf("seeded state = %#v", model.state)
+	if len(model.state.Workdirs) != 0 || len(model.state.Folders) != 0 {
+		t.Fatalf("empty state = %#v", model.state)
 	}
 }
 
@@ -33,7 +33,7 @@ func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig("weft-test")
 	cfg.CodexCommand = "cat"
-	model := NewModel(rt, cfg, state.Empty())
+	model := NewModel(rt, cfg, testStateWithWorkdir(t, rt.Workdir))
 	defer killPTYs(model)
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
@@ -54,6 +54,79 @@ func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	}
 	if model.state.Focus != state.FocusCodex || model.state.NavOpen {
 		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
+	}
+}
+
+func TestNewAgentRequiresWorkdir(t *testing.T) {
+	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model = updated.(Model)
+
+	if cmd != nil || len(model.state.Agents) != 0 {
+		t.Fatalf("new agent should be blocked without workdir, cmd=%v agents=%#v", cmd, model.state.Agents)
+	}
+	if model.message != "add a workdir first" {
+		t.Fatalf("message = %q", model.message)
+	}
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{}})
+	if response.OK || response.Message != "add a workdir first" || cmd != nil {
+		t.Fatalf("ipc new should be blocked without workdir, response=%#v cmd=%v", response, cmd)
+	}
+}
+
+func TestIPCLaunchWorkdirSelectsExistingWorkdir(t *testing.T) {
+	rt := testRuntime(t)
+	other := t.TempDir()
+	launch := t.TempDir()
+	st := testStateWithWorkdir(t, other)
+	next, _, err := state.AddWorkdir(st, "launch", launch, state.NowISO())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next.SelectedWorkdirID = "w"
+	model := NewModel(rt, config.DefaultConfig("weft-test"), next)
+
+	response, _ := model.handleIPC(ipc.Request{Command: "snapshot", Args: map[string]string{"launch_workdir": launch}})
+
+	if !response.OK {
+		t.Fatalf("snapshot response = %#v", response)
+	}
+	if model.state.SelectedWorkdirID != "launch" {
+		t.Fatalf("selected workdir = %q, want launch", model.state.SelectedWorkdirID)
+	}
+}
+
+func TestClientPromptsToAddMissingLaunchWorkdir(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig("weft-test"))
+
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{State: state.Empty()}})
+
+	if model.mode != modeConfirm || model.confirm != confirmAddLaunchWorkdir || model.pendingID != rt.Workdir {
+		t.Fatalf("prompt state = mode:%s confirm:%s pending:%q", model.mode, model.confirm, model.pendingID)
+	}
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Add this workdir to Weft?", "Current directory", "Y yes", "N no"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("launch workdir prompt missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "New agents will start from this directory.") {
+		t.Fatalf("launch workdir prompt should not include agent-start explanation:\n%s", got)
+	}
+}
+
+func TestClientDoesNotPromptForExistingLaunchWorkdir(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithWorkdir(t, rt.Workdir)
+	model := NewClientModel(rt, config.DefaultConfig("weft-test"))
+
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{State: st}})
+
+	if model.mode != modeNormal {
+		t.Fatalf("existing launch workdir should not prompt, mode=%s", model.mode)
 	}
 }
 
@@ -466,7 +539,7 @@ func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig("weft-test")
-	model := NewModel(rt, cfg, state.Empty())
+	model := NewModel(rt, cfg, testStateWithWorkdir(t, rt.Workdir))
 	model.state.Focus = state.FocusWorkdirs
 	model.state.NavOpen = true
 	model.lastNavFocus = state.FocusWorkdirs
@@ -556,7 +629,8 @@ func TestNewWorkdirPromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) 
 }
 
 func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
-	model := NewModel(testRuntime(t), config.DefaultConfig("weft-test"), state.Empty())
+	rt := testRuntime(t)
+	model := NewModel(rt, config.DefaultConfig("weft-test"), testStateWithWorkdir(t, rt.Workdir))
 
 	model.startPrompt(promptGroup, "")
 	got := ansi.Strip(model.View())
@@ -1066,6 +1140,15 @@ func testStateWithAgent(workdir string) state.State {
 		Folders:           []state.Folder{{ID: "f", WorkdirID: "w", Path: "inbox", CreatedAt: now, UpdatedAt: now}},
 		Agents:            []state.Agent{{ID: "a", WorkdirID: "w", FolderID: "f", Title: "alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
 	}
+}
+
+func testStateWithWorkdir(t *testing.T, workdir string) state.State {
+	t.Helper()
+	st, _, err := state.AddWorkdir(state.Empty(), "w", workdir, state.NowISO())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 func killPTYs(model Model) {

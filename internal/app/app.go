@@ -547,6 +547,8 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 	if err != nil {
 		return err
 	}
+	args = cloneArgs(args)
+	args["launch_workdir"] = rt.Workdir
 	result, err := supervisor.Ensure(rt)
 	if err != nil {
 		return err
@@ -565,6 +567,14 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 		fmt.Println(response.Message)
 	}
 	return nil
+}
+
+func cloneArgs(args map[string]string) map[string]string {
+	next := make(map[string]string, len(args)+1)
+	for key, value := range args {
+		next[key] = value
+	}
+	return next
 }
 
 func loadRuntime() (config.Runtime, config.Config, *state.Store, error) {

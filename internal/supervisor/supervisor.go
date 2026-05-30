@@ -231,6 +231,9 @@ func handleRequest(engine *tui.Model, clients *clientCoordinator, request ipc.Re
 		if clientID == "" {
 			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required")), nil
 		}
+		if strings.TrimSpace(request.Args["launch_workdir"]) != "" {
+			engine.HandleSupervisorRequest(ipc.Request{Command: "snapshot", Args: request.Args})
+		}
 		if clients.activeID != "" && clients.activeID != clientID {
 			clients.detachID = clients.activeID
 			clients.message = "another Weft client attached"
