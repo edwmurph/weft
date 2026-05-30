@@ -80,5 +80,9 @@ func applyHeadlessMsg(msg tea.Msg, model *Model, mu *sync.Mutex) {
 		mu.Lock()
 		model.applyPTYStarted(typed)
 		mu.Unlock()
+	case titleHookMsg:
+		mu.Lock()
+		model.applyTitleHook(typed)
+		mu.Unlock()
 	}
 }

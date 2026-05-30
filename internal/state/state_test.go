@@ -163,6 +163,18 @@ func TestWorkdirTitleOverrideCanBeSetAndCleared(t *testing.T) {
 	}
 }
 
+func TestAddAgentDefaultsTitleToCodexTemplate(t *testing.T) {
+	st := Repair(Empty(), t.TempDir())
+
+	_, agent, err := AddAgent(st, "a", st.SelectedWorkdirID, "", "", NowISO())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.Title != DefaultAgentTitle {
+		t.Fatalf("agent title = %q", agent.Title)
+	}
+}
+
 func TestFolderValidationAndMoveAgent(t *testing.T) {
 	st := testState(t)
 

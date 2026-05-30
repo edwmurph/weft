@@ -45,7 +45,7 @@ Usage:
 Codux runs one global command center. The launch directory is added as an
 initial workdir, while config.toml, state.json, the IPC socket, and the tmux
 session live in the global Codux runtime. Agent rows use title_template and can
-interpolate {title}, {codex}, {status}, {workdir}, and {group}.
+interpolate {title}, {auto}, {codex}, {status}, {workdir}, and {group}.
 `
 
 func Run(args []string) error {

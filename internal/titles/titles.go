@@ -9,12 +9,15 @@ import (
 
 const (
 	TitleTemplate   = "{title}"
+	AutoTemplate    = "{auto}"
 	CodexTemplate   = "{codex}"
 	StatusTemplate  = "{status}"
 	WorkdirTemplate = "{workdir}"
 	GroupTemplate   = "{group}"
 	FolderTemplate  = "{folder}"
 	PendingTitle    = "..."
+	AutoPending     = "waiting for first message"
+	AutoFailed      = "auto title failed"
 )
 
 type TemplateVariable struct {
@@ -25,6 +28,7 @@ type TemplateVariable struct {
 func TemplateVariables() []TemplateVariable {
 	return []TemplateVariable{
 		{Name: TitleTemplate, Description: "configured agent title"},
+		{Name: AutoTemplate, Description: "generated title from first message"},
 		{Name: CodexTemplate, Description: "live Codex title"},
 		{Name: StatusTemplate, Description: "live Codex status"},
 		{Name: WorkdirTemplate, Description: "workdir path"},
@@ -82,6 +86,7 @@ func RenderAgent(agent state.Agent, workdir state.Workdir, folder state.Folder, 
 	}
 	values := map[string]string{
 		TitleTemplate:   title,
+		AutoTemplate:    renderAutoTitle(agent),
 		CodexTemplate:   codexTitle,
 		StatusTemplate:  RenderStatus(agent),
 		WorkdirTemplate: fallback(workdir.Path, PendingTitle),
@@ -96,6 +101,19 @@ func RenderAgent(agent state.Agent, workdir state.Workdir, folder state.Folder, 
 		return PendingTitle
 	}
 	return rendered
+}
+
+func renderAutoTitle(agent state.Agent) string {
+	if title := strings.TrimSpace(agent.AutoTitle); title != "" {
+		return title
+	}
+	if strings.TrimSpace(agent.AutoTitleError) != "" {
+		return AutoFailed
+	}
+	if agent.AutoTitleAttempted {
+		return "generating auto title"
+	}
+	return AutoPending
 }
 
 func replaceVariables(value string, values map[string]string) string {

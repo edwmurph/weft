@@ -27,8 +27,10 @@
 ## Git / Worktrees
 
 - Default to doing work on a detached worktree under `./.worktrees/<slug>` (create it if needed).
+- After creating or entering a detached worktree, ensure local ignored env access works by symlinking `.env` back to the repo-root ignored file with `ln -sf ../../.env .env` from the worktree root. The repo-root `.env` stays untracked and stores local secrets such as `OPENAI_API_KEY`.
 - Keep all implementation follow-up work in a detached worktree until the user explicitly says `ship it`; do not continue editing `main` after a paused or interrupted ship attempt.
 - After implementing in a worktree, include a copy-paste command with the absolute worktree path for the user to run or inspect the change. For Codux runtime/UI changes, include the direct runnable command first, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux`; then include the specific retest command or sequence for the changed behavior, e.g. `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux rename "Codex {status}"`. A `git diff` command alone is not enough.
+- Before sending a final response for verified implementation work in a worktree, check that the response includes a fenced `sh` block with the direct runnable `go -C /abs/path/to/repo/.worktrees/<slug> run ./cmd/codux` command, followed by concrete behavior-specific retest steps. Do not rely on verification commands alone as the retest instructions.
 - Keep changes focused; avoid drive-by refactors.
 - After tests pass, stop and wait (no commit/push) until the user explicitly says "ship it".
 

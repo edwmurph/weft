@@ -19,6 +19,7 @@ import (
 	"github.com/edwmurph/codux/internal/navigation"
 	"github.com/edwmurph/codux/internal/ptyx"
 	"github.com/edwmurph/codux/internal/state"
+	"github.com/edwmurph/codux/internal/titlehook"
 	"github.com/edwmurph/codux/internal/titles"
 	"github.com/edwmurph/codux/internal/tmuxhost"
 )
@@ -31,6 +32,12 @@ type ipcEnvelope struct {
 type ptyStartedMsg struct {
 	agentID string
 	session *ptyx.Session
+	err     error
+}
+
+type titleHookMsg struct {
+	agentID string
+	title   string
 	err     error
 }
 
@@ -100,14 +107,15 @@ type Model struct {
 	navWidth  int
 	loading   int
 
-	screens map[string]*TerminalScreen
-	ptys    map[string]*ptyx.Session
-	visible map[string]bool
-	dataCh  chan ptyx.Data
-	ipcCh   chan ipcEnvelope
-	stopIPC func() error
-	ctx     context.Context
-	cancel  context.CancelFunc
+	screens           map[string]*TerminalScreen
+	ptys              map[string]*ptyx.Session
+	visible           map[string]bool
+	codexInputBuffers map[string][]rune
+	dataCh            chan ptyx.Data
+	ipcCh             chan ipcEnvelope
+	stopIPC           func() error
+	ctx               context.Context
+	cancel            context.CancelFunc
 
 	input        textinput.Model
 	prompt       promptKind
@@ -157,9 +165,11 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	model := Model{
 		cfg: cfg, runtime: rt, store: state.NewStore(rt.StatePath, rt.Workdir), state: st,
 		width: 100, height: 32, screens: map[string]*TerminalScreen{}, ptys: map[string]*ptyx.Session{},
-		visible: map[string]bool{},
-		dataCh:  make(chan ptyx.Data, 64), ipcCh: make(chan ipcEnvelope, 16),
-		ctx: ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
+		visible:           map[string]bool{},
+		codexInputBuffers: map[string][]rune{},
+		dataCh:            make(chan ptyx.Data, 64),
+		ipcCh:             make(chan ipcEnvelope, 16),
+		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
 	}
 	model.syncFolderCursor()
 	model.navWidth = model.targetNavWidth()
@@ -206,6 +216,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitPTY(m.dataCh)
 	case ptyStartedMsg:
 		m.applyPTYStarted(typed)
+		return m, nil
+	case titleHookMsg:
+		m.applyTitleHook(typed)
 		return m, nil
 	case ipcEnvelope:
 		response, cmd := m.handleIPC(typed.request)
@@ -267,11 +280,24 @@ func (m Model) renderInputModal() string {
 			if value := strings.TrimSpace(input.Value()); value != "" {
 				draft.Title = value
 			}
-			lines = append(lines, modalValueStyle.Render(clip(m.renderAgentTitle(draft), width)))
+			lines = append(lines, modalValueStyle.Render(clip(m.renderAgentBaseTitle(draft), width)))
+			if notice := m.autoTitleNotice(*active, draft.Title); notice != "" {
+				lines = append(lines, mutedStyle.Render(clip(notice, width)))
+			}
 		}
+		lines = append(lines, "", modalLabelStyle.Render("Variables"))
+		lines = append(lines, m.renderTitleVariables(width)...)
 	}
 	lines = append(lines, "", renderModalActions())
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderTitleVariables(width int) []string {
+	var lines []string
+	for _, variable := range titles.TemplateVariables() {
+		lines = append(lines, mutedStyle.Render(clip(fmt.Sprintf("- %s: %s", variable.Name, variable.Description), width)))
+	}
+	return lines
 }
 
 func renderInputModalRow(label string, value string, width int) string {
@@ -374,6 +400,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if pty := m.ptys[active.ID]; pty != nil {
 				_ = pty.Write(encodeKey(msg))
 			}
+			return m, m.captureCodexInput(*active, msg)
 		}
 		return m, nil
 	}
@@ -468,7 +495,7 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusNavPane(state.FocusFolders)
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
-		return m, m.newAgent("Codex")
+		return m, m.newAgent(titles.CodexTemplate)
 	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
@@ -662,6 +689,12 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 		}
 		m.state = next
 		m.message = "renamed agent"
+		if agent := state.AgentByID(m.state, m.pendingID); agent != nil && m.agentUsesAutoTitle(*agent) {
+			m.message = m.autoTitleRenameMessage(*agent)
+			if strings.TrimSpace(m.cfg.TitleHookCommand) == "" && strings.TrimSpace(agent.AutoTitle) == "" {
+				m.recordAutoTitleError(agent.ID, "title_hook_command is not configured", false)
+			}
+		}
 		m.save()
 	case promptMoveAgent:
 		agent := m.selectedAgent()
@@ -897,6 +930,174 @@ func (m *Model) closeCodux() {
 	m.message = "closed Codux clients"
 }
 
+func (m *Model) captureCodexInput(agent state.Agent, msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyRunes:
+		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], msg.Runes...)
+	case tea.KeySpace:
+		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], ' ')
+	case tea.KeyBackspace:
+		m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+	case tea.KeyEnter:
+		firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
+		delete(m.codexInputBuffers, agent.ID)
+		if firstMessage == "" {
+			return nil
+		}
+		if agent.AutoTitleAttempted {
+			return nil
+		}
+		if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
+			if m.agentUsesAutoTitle(agent) {
+				m.recordAutoTitleError(agent.ID, "title_hook_command is not configured", false)
+				m.message = "auto title unavailable: set title_hook_command"
+			}
+			return nil
+		}
+		m.state = state.WithUpdatedAgent(m.state, agent.ID, func(agent state.Agent) state.Agent {
+			agent.AutoTitleAttempted = true
+			agent.AutoTitleError = ""
+			return agent
+		})
+		m.save()
+		if updated := state.AgentByID(m.state, agent.ID); updated != nil {
+			agent = *updated
+		}
+		if m.agentUsesAutoTitle(agent) {
+			m.message = "generating auto title"
+		}
+		return m.titleHookCmd(agent, firstMessage)
+	default:
+		switch strings.ToLower(msg.String()) {
+		case "ctrl+u":
+			delete(m.codexInputBuffers, agent.ID)
+		case "ctrl+w":
+			m.codexInputBuffers[agent.ID] = trimLastWord(m.codexInputBuffers[agent.ID])
+		}
+	}
+	return nil
+}
+
+func (m Model) agentUsesAutoTitle(agent state.Agent) bool {
+	return strings.Contains(m.cfg.TitleTemplate, titles.AutoTemplate) || strings.Contains(agent.Title, titles.AutoTemplate)
+}
+
+func (m Model) titleHookCmd(agent state.Agent, firstMessage string) tea.Cmd {
+	workdir := state.Workdir{}
+	if found := state.WorkdirForAgent(m.state, agent); found != nil {
+		workdir = *found
+	}
+	folder := state.Folder{}
+	if found := state.FolderForAgent(m.state, agent); found != nil {
+		folder = *found
+	}
+	payload := titlehook.BuildPayload(agent, workdir, folder, m.cfg.TitleTemplate, firstMessage)
+	command := m.cfg.TitleHookCommand
+	timeout := time.Duration(m.cfg.TitleHookTimeoutSeconds) * time.Second
+	ctx := m.ctx
+	return func() tea.Msg {
+		title, err := titlehook.Run(ctx, command, workdir.Path, timeout, payload)
+		return titleHookMsg{agentID: agent.ID, title: title, err: err}
+	}
+}
+
+func (m *Model) applyTitleHook(msg titleHookMsg) {
+	agent := state.AgentByID(m.state, msg.agentID)
+	if agent == nil {
+		return
+	}
+	if msg.err != nil {
+		m.recordAutoTitleError(msg.agentID, hookErrorText(msg.err), true)
+		m.message = "auto title hook failed: " + hookErrorText(msg.err)
+		return
+	}
+	if strings.TrimSpace(msg.title) == "" {
+		m.recordAutoTitleError(msg.agentID, "hook produced no title", true)
+		m.message = "auto title hook failed: hook produced no title"
+		return
+	}
+	m.state = state.WithUpdatedAgent(m.state, msg.agentID, func(agent state.Agent) state.Agent {
+		agent.AutoTitle = msg.title
+		agent.AutoTitleAttempted = true
+		agent.AutoTitleError = ""
+		return agent
+	})
+	if m.agentUsesAutoTitle(*agent) {
+		m.message = "auto title generated"
+	}
+	m.save()
+}
+
+func (m *Model) recordAutoTitleError(agentID string, message string, attempted bool) {
+	m.state = state.WithUpdatedAgent(m.state, agentID, func(agent state.Agent) state.Agent {
+		agent.AutoTitle = ""
+		agent.AutoTitleAttempted = attempted
+		agent.AutoTitleError = message
+		return agent
+	})
+	m.save()
+}
+
+func hookErrorText(err error) string {
+	text := strings.Join(strings.Fields(err.Error()), " ")
+	if len(text) > 140 {
+		return text[:137] + "..."
+	}
+	return text
+}
+
+func (m Model) autoTitleNotice(agent state.Agent, draftTitle string) string {
+	if !strings.Contains(m.cfg.TitleTemplate, titles.AutoTemplate) && !strings.Contains(draftTitle, titles.AutoTemplate) {
+		return ""
+	}
+	if strings.TrimSpace(agent.AutoTitle) != "" {
+		return "Auto title is ready."
+	}
+	if strings.TrimSpace(agent.AutoTitleError) != "" {
+		return "Auto title error: " + agent.AutoTitleError
+	}
+	if agent.AutoTitleAttempted {
+		return "Auto title is generating."
+	}
+	if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
+		return "Auto title unavailable: set title_hook_command."
+	}
+	return "Auto title will generate from the first submitted message."
+}
+
+func (m Model) autoTitleRenameMessage(agent state.Agent) string {
+	if strings.TrimSpace(agent.AutoTitle) != "" {
+		return "renamed agent; auto title ready"
+	}
+	if strings.TrimSpace(agent.AutoTitleError) != "" {
+		return "renamed agent; auto title failed"
+	}
+	if agent.AutoTitleAttempted {
+		return "renamed agent; auto title is generating"
+	}
+	if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
+		return "renamed agent; auto title unavailable: set title_hook_command"
+	}
+	return "renamed agent; auto title will generate from the first message"
+}
+
+func trimLastRune(value []rune) []rune {
+	if len(value) == 0 {
+		return value
+	}
+	return value[:len(value)-1]
+}
+
+func trimLastWord(value []rune) []rune {
+	for len(value) > 0 && unicode.IsSpace(value[len(value)-1]) {
+		value = value[:len(value)-1]
+	}
+	for len(value) > 0 && !unicode.IsSpace(value[len(value)-1]) {
+		value = value[:len(value)-1]
+	}
+	return value
+}
+
 func (m *Model) startPTY(agentID string) {
 	if m.ptys[agentID] != nil {
 		return
@@ -1110,7 +1311,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	case "new":
 		title := request.Args["title"]
 		if title == "" {
-			title = "Codex"
+			title = titles.CodexTemplate
 		}
 		cmd := m.newAgent(title)
 		st := m.state
@@ -1312,6 +1513,18 @@ func (m Model) renderAgentTitle(agent state.Agent) string {
 		folder = *f
 	}
 	return titles.RenderAgent(agent, workdir, folder, m.cfg.TitleTemplate)
+}
+
+func (m Model) renderAgentBaseTitle(agent state.Agent) string {
+	workdir := state.Workdir{}
+	folder := state.Folder{}
+	if w := state.WorkdirForAgent(m.state, agent); w != nil {
+		workdir = *w
+	}
+	if f := state.FolderForAgent(m.state, agent); f != nil {
+		folder = *f
+	}
+	return titles.RenderAgent(agent, workdir, folder, titles.TitleTemplate)
 }
 
 func (m Model) statusText() string {

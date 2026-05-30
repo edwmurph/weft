@@ -175,6 +175,9 @@ Agent rows render a configured title string. Title templates are a global defaul
 
 An agent can still have its own base title. The global template controls how that title is rendered.
 
+New agents default their base title to `{codex}` so they inherit the live Codex
+title until renamed.
+
 Default template:
 
 ```text
@@ -185,6 +188,7 @@ Supported variables:
 
 ```text
 {title}    user-configured agent title
+{auto}     generated title from the first submitted message
 {codex}    live Codex title
 {status}   derived/live agent status
 {workdir}  display workdir path
@@ -195,6 +199,7 @@ Example global templates:
 
 ```text
 {title}
+{auto}
 {status} {title}
 {group}: {title}
 {workdir} / {group} / {title}
@@ -204,9 +209,28 @@ If a variable is unavailable, render a stable fallback rather than an empty brok
 
 ```text
 {title}  -> ...
+{auto}   -> waiting for first message
 {codex}  -> ...
 {status} -> unknown
 ```
+
+Generated titles are computed for every agent when `title_hook_command` is
+configured. The first non-empty message submitted to the Codex PTY runs the
+hook from the agent workdir, sends JSON on stdin, and stores the first non-empty
+stdout line as the agent's generated title. The hook payload includes
+`version`, `event`, `agent_id`, `workdir`, `group`, `status`, `title`,
+`title_template`, `codex_title`, and `first_message`.
+
+Codux must not encode provider-specific clients, model names, API keys, or HTTP
+contracts into the runtime. The title hook is just a shell command. If the hook
+times out, exits nonzero, is missing, or writes no title, `{auto}` renders as
+`auto title failed` and Codux does not retry for that agent.
+
+When `{auto}` is added in the rename pane, the UI should make hook readiness
+obvious. If `title_hook_command` is missing, show a configuration error. If the
+title is already generated, explain that it is ready. Otherwise, explain that
+auto title generation will run after the first submitted message. Hook failures
+should be saved on the agent and shown in the footer and rename pane.
 
 ## Data Model
 
@@ -249,6 +273,9 @@ type Agent struct {
     WorkdirID  string      `json:"workdir_id"`
     GroupID    string      `json:"group_id"`
     Title      string      `json:"title"`
+    AutoTitle  string      `json:"auto_title,omitempty"`
+    AutoTitleAttempted bool `json:"auto_title_attempted,omitempty"`
+    AutoTitleError string `json:"auto_title_error,omitempty"`
     CodexTitle string      `json:"codex_title,omitempty"`
     Status     AgentStatus `json:"status"`
     CreatedAt  string      `json:"created_at"`
@@ -262,6 +289,8 @@ The global title template belongs in config, not per agent:
 
 ```toml
 title_template = "{title}"
+title_hook_command = ""
+title_hook_timeout_seconds = 10
 ```
 
 ## Focus Model
@@ -426,6 +455,8 @@ Initial config additions:
 
 ```toml
 title_template = "{title}"
+title_hook_command = ""
+title_hook_timeout_seconds = 10
 
 [key_bindings]
 drawer = "C-b"

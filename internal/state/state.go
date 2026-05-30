@@ -17,6 +17,7 @@ import (
 const Version = 3
 
 const DefaultFolderPath = "inbox"
+const DefaultAgentTitle = "{codex}"
 
 type Focus string
 
@@ -55,14 +56,17 @@ type Folder struct {
 }
 
 type Agent struct {
-	ID         string      `json:"id"`
-	WorkdirID  string      `json:"workdir_id"`
-	FolderID   string      `json:"folder_id"`
-	Title      string      `json:"title"`
-	CodexTitle string      `json:"codex_title,omitempty"`
-	Status     AgentStatus `json:"status"`
-	CreatedAt  string      `json:"created_at"`
-	UpdatedAt  string      `json:"updated_at"`
+	ID                 string      `json:"id"`
+	WorkdirID          string      `json:"workdir_id"`
+	FolderID           string      `json:"folder_id"`
+	Title              string      `json:"title"`
+	AutoTitle          string      `json:"auto_title,omitempty"`
+	AutoTitleAttempted bool        `json:"auto_title_attempted,omitempty"`
+	AutoTitleError     string      `json:"auto_title_error,omitempty"`
+	CodexTitle         string      `json:"codex_title,omitempty"`
+	Status             AgentStatus `json:"status"`
+	CreatedAt          string      `json:"created_at"`
+	UpdatedAt          string      `json:"updated_at"`
 }
 
 type State struct {
@@ -315,7 +319,7 @@ func Repair(st State, fallbackWorkdir string) State {
 			agent.FolderID = ""
 		}
 		if strings.TrimSpace(agent.Title) == "" {
-			agent.Title = "Codex"
+			agent.Title = DefaultAgentTitle
 		}
 		if agent.Status == "" {
 			agent.Status = StatusStopped
@@ -928,7 +932,7 @@ func AddAgent(st State, id string, workdirID string, folderID string, title stri
 		}
 	}
 	if strings.TrimSpace(title) == "" {
-		title = "Codex"
+		title = DefaultAgentTitle
 	}
 	if id == "" {
 		id = StableID("agent", workdirID, folderID, now, title)

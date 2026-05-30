@@ -56,6 +56,15 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	startupMarker := filepath.Join(tmp, "fake-codex-color-only")
+	titleHookPayload := filepath.Join(tmp, "title-hook-payload.json")
+	titleHook := filepath.Join(tmp, "title-hook.sh")
+	if err := os.WriteFile(titleHook, []byte(
+		"#!/bin/sh\n"+
+			"cat > \"$TITLE_HOOK_PAYLOAD\"\n"+
+			"printf 'Auto hook title\\n'\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	fakeCodex := filepath.Join(tmp, "fake-codex.sh")
 	if err := os.WriteFile(fakeCodex, []byte(
 		"#!/bin/sh\n"+
@@ -98,7 +107,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configText := fmt.Sprintf("tmux_session = %q\ncodex_command = %q\n", runID, fakeCodex)
+	titleHookCommand := "TITLE_HOOK_PAYLOAD=" + shellQuote(titleHookPayload) + " " + shellQuote(titleHook)
+	configText := fmt.Sprintf("tmux_session = %q\ncodex_command = %q\ntitle_hook_command = %q\n", runID, fakeCodex, titleHookCommand)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -259,6 +269,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				!strings.Contains(capture, "Codux shortcuts") &&
 				!strings.Contains(capture, "Other Codux sessions")
 		})
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			return agent != nil && agent.AutoTitle == "Auto hook title" && agent.AutoTitleAttempted
+		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
@@ -271,6 +285,29 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, ">_ OpenAI Codex")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
+	})
+
+	timedStep(t, "auto title variable reveals title generated from first message", func() {
+		tmuxRun(t, env, "send-keys", "-t", pane, "r")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Rename agent") &&
+				strings.Contains(capture, "Variables") &&
+				strings.Contains(capture, "{auto}")
+		})
+		tmuxRun(t, env, "send-keys", "-t", pane, "C-u")
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "{auto}")
+		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			return agent != nil && agent.Title == "{auto}" && agent.AutoTitle == "Auto hook title"
+		})
+		payload, err := os.ReadFile(titleHookPayload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(payload), `"first_message":"ljs?n"`) {
+			t.Fatalf("title hook payload missing first message:\n%s", payload)
+		}
 	})
 
 	timedStep(t, "group prompt and move agent update structure", func() {

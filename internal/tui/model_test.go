@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/edwmurph/codux/internal/config"
 	"github.com/edwmurph/codux/internal/ipc"
 	"github.com/edwmurph/codux/internal/state"
+	"github.com/edwmurph/codux/internal/titles"
 )
 
 func TestEmptyCommandCenterStartsInAgentsFocus(t *testing.T) {
@@ -42,6 +44,9 @@ func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	}
 	if len(model.state.Agents) != 1 {
 		t.Fatalf("agents = %#v", model.state.Agents)
+	}
+	if model.state.Agents[0].Title != titles.CodexTemplate {
+		t.Fatalf("new agent title = %q", model.state.Agents[0].Title)
 	}
 	if model.state.Agents[0].FolderID != "" {
 		t.Fatalf("new agent should be top-level: %#v", model.state.Agents[0])
@@ -105,6 +110,165 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	}
 }
 
+func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	payloadPath := filepath.Join(t.TempDir(), "payload.json")
+	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
+
+	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix ")})
+	if cmd != nil {
+		t.Fatal("hook should not run before Enter")
+	}
+	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("loginx")})
+	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyBackspace})
+	cmd = model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected title hook command")
+	}
+	if agent := state.AgentByID(model.state, "a"); agent == nil || !agent.AutoTitleAttempted {
+		t.Fatalf("agent should be marked attempted: %#v", agent)
+	}
+
+	msg := cmd().(titleHookMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	model.applyTitleHook(msg)
+	if got := state.AgentByID(model.state, "a").AutoTitle; got != "Generated title" {
+		t.Fatalf("auto title = %q", got)
+	}
+	raw, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"first_message":"fix login"`) {
+		t.Fatalf("payload missing reconstructed message:\n%s", raw)
+	}
+}
+
+func TestTitleHookDoesNotRetryAfterAttempt(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.cfg.TitleHookCommand = "false"
+
+	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
+	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected first hook attempt")
+	}
+	if msg := cmd().(titleHookMsg); msg.err == nil {
+		t.Fatal("expected hook error")
+	}
+	model.captureCodexInput(*state.AgentByID(model.state, "a"), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("second")})
+	cmd = model.captureCodexInput(*state.AgentByID(model.state, "a"), tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("hook should not retry after first attempt")
+	}
+}
+
+func TestRenameToAutoWithoutHookReportsConfigurationError(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.prompt = promptRenameAgent
+	model.pendingID = "a"
+
+	cmd := model.applyPrompt("{auto}")
+
+	if cmd != nil {
+		t.Fatal("missing hook should not start hook command")
+	}
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.Title != "{auto}" {
+		t.Fatalf("agent not renamed: %#v", agent)
+	}
+	if agent.AutoTitleError != "title_hook_command is not configured" {
+		t.Fatalf("auto title error = %q", agent.AutoTitleError)
+	}
+	if !strings.Contains(model.message, "title_hook_command") {
+		t.Fatalf("message = %q", model.message)
+	}
+}
+
+func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	payloadPath := filepath.Join(t.TempDir(), "payload.json")
+	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated before rename\\n'"
+
+	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("summarize this bug")})
+	if cmd != nil {
+		t.Fatal("plain title should not run hook while capturing input")
+	}
+	cmd = model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("hook should run on first message even before {auto} is used")
+	}
+	msg := cmd().(titleHookMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	model.applyTitleHook(msg)
+
+	model.prompt = promptRenameAgent
+	model.pendingID = "a"
+	cmd = model.applyPrompt("{auto}")
+	if cmd != nil {
+		t.Fatal("rename to auto should only reveal saved auto title")
+	}
+	if got := state.AgentByID(model.state, "a").AutoTitle; got != "Generated before rename" {
+		t.Fatalf("auto title = %q", got)
+	}
+	if got := model.renderAgentTitle(*state.AgentByID(model.state, "a")); got != "Generated before rename" {
+		t.Fatalf("rendered title = %q", got)
+	}
+	raw, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"first_message":"summarize this bug"`) {
+		t.Fatalf("payload missing first submitted message:\n%s", raw)
+	}
+}
+
+func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.cfg.TitleHookCommand = "printf 'bad config' >&2; exit 2"
+
+	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
+	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected title hook command")
+	}
+	msg := cmd().(titleHookMsg)
+	if msg.err == nil {
+		t.Fatal("expected hook error")
+	}
+	model.applyTitleHook(msg)
+
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || !strings.Contains(agent.AutoTitleError, "bad config") {
+		t.Fatalf("agent auto title error = %#v", agent)
+	}
+	if !strings.Contains(model.message, "auto title hook failed") {
+		t.Fatalf("message = %q", model.message)
+	}
+
+	model.state.Focus = state.FocusFolders
+	model.state.NavOpen = true
+	model.folderCursor = 1
+	model.prompt = promptRenameAgent
+	model.mode = modeInput
+	model.pendingID = "a"
+	model.input.SetValue("{auto}")
+
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "Auto title error") || !strings.Contains(got, "bad config") {
+		t.Fatalf("rename pane missing hook error:\n%s", got)
+	}
+}
+
 func TestActiveOutputPreservesTerminalStyles(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
@@ -142,23 +306,27 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 	}
 }
 
-func TestRenameAgentPromptPreviewsGlobalTemplate(t *testing.T) {
+func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
-	model.cfg.TitleTemplate = "{group}: {title} {status}"
+	model.cfg.TitleTemplate = "{auto}"
+	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
 	model.state.Focus = state.FocusFolders
 	model.state.NavOpen = true
 	model.folderCursor = 1
 	model.prompt = promptRenameAgent
 	model.mode = modeInput
 	model.pendingID = "a"
-	model.input.SetValue("Codex")
+	model.input.SetValue("{codex}")
 
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
 		"Rename agent",
 		"Preview",
-		"inbox: Codex running",
+		"Fake Codex Ready",
+		"Auto title unavailable",
+		"Variables",
+		"{auto}: generated title",
 		"Enter save",
 		"Esc cancel",
 	} {
@@ -205,6 +373,23 @@ func TestWorkdirRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	}
 	if model.message != "cleared workdir title" {
 		t.Fatalf("message = %q", model.message)
+	}
+}
+
+func TestIPCNewDefaultsToCodexTemplate(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Agents = nil
+	model.state.ActiveAgentID = ""
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{}})
+	defer killPTYs(model)
+
+	if !response.OK || cmd == nil {
+		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+	}
+	if len(model.state.Agents) != 1 || model.state.Agents[0].Title != titles.CodexTemplate {
+		t.Fatalf("agents = %#v", model.state.Agents)
 	}
 }
 
@@ -355,4 +540,8 @@ func testRuntime(t *testing.T) config.Runtime {
 		StatePath:  filepath.Join(dir, "state.json"),
 		SocketPath: filepath.Join(dir, "codux.sock"),
 	}
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

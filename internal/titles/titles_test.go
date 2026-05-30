@@ -15,11 +15,11 @@ func TestRenderAgentDefaultTemplateUsesConfiguredTitle(t *testing.T) {
 }
 
 func TestRenderAgentSupportsLiveVariables(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
+	agent := state.Agent{ID: "abc", Title: "Codex", AutoTitle: "Fix Login", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
 
-	got := RenderAgent(agent, state.Workdir{Path: "/tmp/project"}, state.Folder{Path: "ship"}, "{group}: {status} {codex}")
+	got := RenderAgent(agent, state.Workdir{Path: "/tmp/project"}, state.Folder{Path: "ship"}, "{group}: {auto} {status} {codex}")
 
-	if got != "ship: working Fake Codex Working" {
+	if got != "ship: Fix Login working Fake Codex Working" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -40,9 +40,25 @@ func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
 	}
 }
 
+func TestRenderAutoTemplateFallsBackToPending(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusRunning}
+
+	if got := RenderAgent(agent, state.Workdir{}, state.Folder{}, AutoTemplate); got != AutoPending {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRenderAutoTemplateShowsFailureState(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex", AutoTitleError: "OPENAI_API_KEY is required", Status: state.StatusRunning}
+
+	if got := RenderAgent(agent, state.Workdir{}, state.Folder{}, AutoTemplate); got != AutoFailed {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestTemplateVariablesListsSupportedPlaceholders(t *testing.T) {
 	got := TemplateVariables()
-	want := []string{TitleTemplate, CodexTemplate, StatusTemplate, WorkdirTemplate, GroupTemplate, FolderTemplate}
+	want := []string{TitleTemplate, AutoTemplate, CodexTemplate, StatusTemplate, WorkdirTemplate, GroupTemplate, FolderTemplate}
 	if len(got) != len(want) {
 		t.Fatalf("got %d variables, want %d: %#v", len(got), len(want), got)
 	}

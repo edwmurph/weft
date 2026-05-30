@@ -70,10 +70,12 @@ Run `codux close` without an id to close Codux clients; pass an id to close a
 Codex agent.
 
 Agent rows render through the global `title_template`, which defaults to
-`{title}`. Titles passed to `codux new` or `codux rename` can still include
-template variables for compatibility:
+`{title}`. New agents default their base title to `{codex}`, so they inherit
+the live Codex title until renamed. Titles passed to `codux new` or
+`codux rename` can still include template variables for compatibility:
 
 - `{title}`: user-configured agent title
+- `{auto}`: generated title from the first submitted message
 - `{codex}`: live Codex terminal title
 - `{status}`: live Codex status, falling back to agent lifecycle status
 - `{workdir}`: agent workdir path
@@ -81,6 +83,36 @@ template variables for compatibility:
 
 For example, `codux rename "Codex {status}"` keeps a fixed title while showing
 the current agent status.
+
+To generate titles, configure a hook command:
+
+```toml
+title_hook_command = "/path/to/codux/hooks/auto-title-openai.sh"
+title_hook_timeout_seconds = 10
+```
+
+When `title_hook_command` is configured, the first non-empty message submitted
+to each new Codex agent runs the hook from that agent's workdir. Codux sends
+JSON on stdin with `event`, `agent_id`, `workdir`, `group`, `status`, `title`,
+`title_template`, `codex_title`, and `first_message`, then saves the first
+non-empty stdout line as the generated title.
+
+Set an agent title to `{auto}` in the rename pane, or run
+`codux rename <id> "{auto}"`, to display that saved generated title. To make
+every row show generated titles, set `title_template = "{auto}"`. Before the
+first message, `{auto}` renders as `waiting for first message`; failed hooks
+render as `auto title failed`, show a footer error, and keep the full error in
+the rename pane.
+
+Codux treats hooks as generic shell commands. The checked-in
+`hooks/auto-title-openai.sh` script is one real hook implementation; it reads
+`OPENAI_API_KEY` from the environment or a local ignored `.env` file and uses
+the OpenAI Responses API with `OPENAI_TITLE_MODEL`, defaulting to
+`gpt-5.4-nano`, to return a short task title. The prompt only uses the first
+message, so simple greetings like `hi` stay simple. You can replace it with any
+command that follows the same stdin/stdout contract. Set
+`CODUX_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
+outside the agent workdir.
 
 The command center has `Workdirs` and `Agents` navigation panes. Agents can sit
 directly in a workdir as top-level rows. Groups are optional collapsible
@@ -92,6 +124,8 @@ When the command center is open, press `?` for shortcuts. Defaults:
 
 ```toml
 title_template = "{title}"
+title_hook_command = ""
+title_hook_timeout_seconds = 10
 
 [key_bindings]
 drawer = "C-b"
@@ -127,10 +161,10 @@ Codux stores runtime files globally:
 `CODUX_HOME` overrides the runtime directory directly for development and tests.
 
 The config keys are stable: `tmux_session`, `codex_command`, `title_template`,
-and `key_bindings`. State is versioned. Old tabs/columns state is migrated into
-workdirs, optional groups, and agents. Old tmux-pane state is archived to
-`state.v1-tmux.json` because native tmux panes cannot be adopted into TUI-owned
-PTYs.
+`title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. State
+is versioned. Old tabs/columns state is migrated into workdirs, optional groups,
+and agents. Old tmux-pane state is archived to `state.v1-tmux.json` because
+native tmux panes cannot be adopted into TUI-owned PTYs.
 
 ## Development
 

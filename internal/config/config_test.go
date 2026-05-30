@@ -29,6 +29,12 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.TitleTemplate != "{title}" {
 		t.Fatalf("TitleTemplate = %q", cfg.TitleTemplate)
 	}
+	if cfg.TitleHookCommand != "" {
+		t.Fatalf("TitleHookCommand = %q", cfg.TitleHookCommand)
+	}
+	if cfg.TitleHookTimeoutSeconds != 10 {
+		t.Fatalf("TitleHookTimeoutSeconds = %d", cfg.TitleHookTimeoutSeconds)
+	}
 	if cfg.KeyBindings.Drawer != "C-b" {
 		t.Fatalf("Drawer = %q", cfg.KeyBindings.Drawer)
 	}
@@ -57,6 +63,8 @@ func TestLoadConfigMapsLegacyBindings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	err := os.WriteFile(path, []byte(`
 columns = ["Backlog", "Active", "Review", "Done"]
+title_hook_command = "hooks/title.sh"
+title_hook_timeout_seconds = 3
 
 [key_bindings]
 previous = "Left"
@@ -97,6 +105,9 @@ quit = "C-q"
 	if cfg.KeyBindings.Quit != "C-c" {
 		t.Fatalf("quit = %q", cfg.KeyBindings.Quit)
 	}
+	if cfg.TitleHookCommand != "hooks/title.sh" || cfg.TitleHookTimeoutSeconds != 3 {
+		t.Fatalf("title hook = %q/%d", cfg.TitleHookCommand, cfg.TitleHookTimeoutSeconds)
+	}
 }
 
 func TestMigrateDefaultConfigAddsGlobalCommandCenterKeys(t *testing.T) {
@@ -126,6 +137,8 @@ quit = "C-q"
 	text := string(data)
 	for _, expected := range []string{
 		`title_template = "{title}"`,
+		`title_hook_command = ""`,
+		`title_hook_timeout_seconds = 10`,
 		`drawer = "C-b"`,
 		`select_prev = "k"`,
 		`new_workdir = "w"`,

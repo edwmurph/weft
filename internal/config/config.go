@@ -41,11 +41,13 @@ type KeyBindings struct {
 }
 
 type Config struct {
-	TmuxSession   string      `toml:"tmux_session"`
-	CodexCommand  string      `toml:"codex_command"`
-	TitleTemplate string      `toml:"title_template"`
-	Columns       []string    `toml:"columns"`
-	KeyBindings   KeyBindings `toml:"key_bindings"`
+	TmuxSession             string      `toml:"tmux_session"`
+	CodexCommand            string      `toml:"codex_command"`
+	TitleTemplate           string      `toml:"title_template"`
+	TitleHookCommand        string      `toml:"title_hook_command"`
+	TitleHookTimeoutSeconds int         `toml:"title_hook_timeout_seconds"`
+	Columns                 []string    `toml:"columns"`
+	KeyBindings             KeyBindings `toml:"key_bindings"`
 }
 
 type Runtime struct {
@@ -85,11 +87,13 @@ func DefaultKeyBindings() KeyBindings {
 
 func DefaultConfig(defaultSession string) Config {
 	return Config{
-		TmuxSession:   defaultSession,
-		CodexCommand:  "codex",
-		TitleTemplate: "{title}",
-		Columns:       append([]string(nil), DefaultColumns...),
-		KeyBindings:   DefaultKeyBindings(),
+		TmuxSession:             defaultSession,
+		CodexCommand:            "codex",
+		TitleTemplate:           "{title}",
+		TitleHookCommand:        "",
+		TitleHookTimeoutSeconds: 10,
+		Columns:                 append([]string(nil), DefaultColumns...),
+		KeyBindings:             DefaultKeyBindings(),
 	}
 }
 
@@ -163,11 +167,13 @@ func EnsureConfig(rt Runtime) (Config, error) {
 func LoadConfig(path string, defaultSession string) (Config, error) {
 	cfg := DefaultConfig(defaultSession)
 	var raw struct {
-		TmuxSession   string   `toml:"tmux_session"`
-		CodexCommand  string   `toml:"codex_command"`
-		TitleTemplate string   `toml:"title_template"`
-		Columns       []string `toml:"columns"`
-		KeyBindings   struct {
+		TmuxSession             string   `toml:"tmux_session"`
+		CodexCommand            string   `toml:"codex_command"`
+		TitleTemplate           string   `toml:"title_template"`
+		TitleHookCommand        string   `toml:"title_hook_command"`
+		TitleHookTimeoutSeconds int      `toml:"title_hook_timeout_seconds"`
+		Columns                 []string `toml:"columns"`
+		KeyBindings             struct {
 			Drawer       string `toml:"drawer"`
 			FocusLeft    string `toml:"focus_left"`
 			FocusRight   string `toml:"focus_right"`
@@ -205,6 +211,12 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 	}
 	if raw.TitleTemplate != "" {
 		cfg.TitleTemplate = raw.TitleTemplate
+	}
+	if raw.TitleHookCommand != "" {
+		cfg.TitleHookCommand = raw.TitleHookCommand
+	}
+	if raw.TitleHookTimeoutSeconds != 0 {
+		cfg.TitleHookTimeoutSeconds = raw.TitleHookTimeoutSeconds
 	}
 	if raw.Columns != nil {
 		cfg.Columns = normalizeColumns(raw.Columns)
@@ -274,6 +286,9 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.TitleTemplate) == "" {
 		return ConfigError{Message: "title_template must be a non-empty string"}
 	}
+	if c.TitleHookTimeoutSeconds <= 0 {
+		return ConfigError{Message: "title_hook_timeout_seconds must be greater than zero"}
+	}
 	seen := map[string]bool{}
 	for _, column := range c.Columns {
 		if strings.TrimSpace(column) == "" {
@@ -328,6 +343,21 @@ func MigrateDefaultConfig(path string) error {
 			updated = `title_template = "{title}"` + "\n" + updated
 		}
 	}
+	if !strings.Contains(updated, "\ntitle_hook_command =") {
+		titleTemplateRE := regexp.MustCompile(`(?m)^title_template\s*=\s*"[^"\n]*"\n`)
+		if titleTemplateRE.MatchString(updated) {
+			updated = titleTemplateRE.ReplaceAllStringFunc(updated, func(match string) string {
+				return match + `title_hook_command = ""` + "\n" + `title_hook_timeout_seconds = 10` + "\n"
+			})
+		} else {
+			updated = `title_hook_command = ""` + "\n" + `title_hook_timeout_seconds = 10` + "\n" + updated
+		}
+	} else if !strings.Contains(updated, "\ntitle_hook_timeout_seconds =") {
+		titleHookRE := regexp.MustCompile(`(?m)^title_hook_command\s*=\s*"[^"\n]*"\n`)
+		updated = titleHookRE.ReplaceAllStringFunc(updated, func(match string) string {
+			return match + `title_hook_timeout_seconds = 10` + "\n"
+		})
+	}
 	quitRE := regexp.MustCompile(`(?m)^quit\s*=\s*"([^"\n]*)"\s*$`)
 	if strings.Contains(updated, "\nclose_codux =") {
 		updated = quitRE.ReplaceAllString(updated, "")
@@ -378,6 +408,12 @@ codex_command = "codex"
 
 # Global title template for agent rows.
 title_template = "{title}"
+
+# Optional command hook for generated titles. Codux sends each agent's first
+# submitted Codex message to this command as JSON on stdin and uses the first
+# non-empty stdout line as the generated title for {auto}.
+title_hook_command = ""
+title_hook_timeout_seconds = 10
 
 [key_bindings]
 drawer = "C-b"
