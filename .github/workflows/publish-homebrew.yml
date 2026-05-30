@@ -64,7 +64,6 @@ jobs:
 
       - name: Verify release tree
         run: |
-          brew install tmux
           go test ./...
           go build -o dist/weft ./cmd/weft
           ./dist/weft --help >/dev/null

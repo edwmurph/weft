@@ -1,7 +1,7 @@
 # Contributing
 
-Weft is a Go project built around `tmux`, Bubble Tea, Lip Gloss, Bubbles, and
-PTY-owned Codex child processes.
+Weft is a Go project built around a local supervisor, Bubble Tea, Lip Gloss,
+Bubbles, and supervisor-owned Codex PTYs.
 
 ## Local Setup
 
@@ -20,9 +20,9 @@ WEFT_RUN_INTEGRATION=1 go test ./...
 go build ./cmd/weft
 ```
 
-Live tmux integration tests are opt-in because they start real tmux servers.
-Each test uses temporary `WEFT_HOME`, temporary `WEFT_WORKDIR`, a unique tmux
-socket, and a fake `codex_command`.
+Live integration tests are opt-in because they start real supervisor and PTY
+processes. Each test uses temporary `WEFT_HOME`, temporary `WEFT_WORKDIR`, and
+a fake `codex_command`.
 
 ## Homebrew Publishing
 
@@ -31,8 +31,7 @@ semantic version bump from the shipped commit, updates `VERSION` and
 `internal/version/version.go`, tags `vX.Y.Z`, creates a GitHub release, and
 writes `Formula/weft.rb` to `edwmurph/homebrew-tap`.
 
-The formula builds the Go binary from source and depends on `tmux` at runtime
-and `go` at build time.
+The formula builds the Go binary from source and depends on `go` at build time.
 
 ## Agent Guidance
 

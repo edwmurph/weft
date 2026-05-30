@@ -51,11 +51,12 @@ type Config struct {
 }
 
 type Runtime struct {
-	Workdir    string
-	Dir        string
-	ConfigPath string
-	StatePath  string
-	SocketPath string
+	Workdir          string
+	Dir              string
+	ConfigPath       string
+	StatePath        string
+	SocketPath       string
+	LegacySocketPath string
 }
 
 type ConfigError struct {
@@ -87,9 +88,8 @@ func DefaultKeyBindings() KeyBindings {
 
 func DefaultConfig(defaultSession string) Config {
 	return Config{
-		TmuxSession:             defaultSession,
 		CodexCommand:            "codex",
-		TitleTemplate:           "{title}",
+		TitleTemplate:           "{status} {auto}",
 		TitleHookCommand:        "",
 		TitleHookTimeoutSeconds: 10,
 		Columns:                 append([]string(nil), DefaultColumns...),
@@ -107,12 +107,20 @@ func ResolveRuntime() (Runtime, error) {
 		return Runtime{}, err
 	}
 	return Runtime{
-		Workdir:    workdir,
-		Dir:        dir,
-		ConfigPath: filepath.Join(dir, "config.toml"),
-		StatePath:  filepath.Join(dir, "state.json"),
-		SocketPath: filepath.Join(dir, "weft.sock"),
+		Workdir:          workdir,
+		Dir:              dir,
+		ConfigPath:       filepath.Join(dir, "config.toml"),
+		StatePath:        filepath.Join(dir, "state.json"),
+		SocketPath:       filepath.Join(dir, "weft.sock"),
+		LegacySocketPath: filepath.Join(dir, "weft-tui.sock"),
 	}, nil
+}
+
+func (r Runtime) TUISocket() string {
+	if r.LegacySocketPath != "" {
+		return r.LegacySocketPath
+	}
+	return r.SocketPath
 }
 
 func CurrentWorkdir() (string, error) {
@@ -277,9 +285,6 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 }
 
 func (c Config) Validate() error {
-	if strings.TrimSpace(c.TmuxSession) == "" {
-		return ConfigError{Message: "tmux_session must be a non-empty string"}
-	}
 	if strings.TrimSpace(c.CodexCommand) == "" {
 		return ConfigError{Message: "codex_command must be a non-empty string"}
 	}
@@ -332,15 +337,14 @@ func MigrateDefaultConfig(path string) error {
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-a"`, `focus_toggle = "C-g"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-d"`, `focus_toggle = "C-g"`)
 	updated = regexp.MustCompile(`(?m)^sessions\s*=\s*"[^"\n]*"\n?`).ReplaceAllString(updated, "")
-	updated = strings.ReplaceAll(updated, `close_weft = "C-q"`, `close_weft = "C-c"`)
 	if !strings.Contains(updated, "\ntitle_template =") {
 		codexCommandRE := regexp.MustCompile(`(?m)^codex_command\s*=\s*"[^"\n]*"\n`)
 		if codexCommandRE.MatchString(updated) {
 			updated = codexCommandRE.ReplaceAllStringFunc(updated, func(match string) string {
-				return match + `title_template = "{title}"` + "\n"
+				return match + `title_template = "{status} {auto}"` + "\n"
 			})
 		} else {
-			updated = `title_template = "{title}"` + "\n" + updated
+			updated = `title_template = "{status} {auto}"` + "\n" + updated
 		}
 	}
 	if !strings.Contains(updated, "\ntitle_hook_command =") {
@@ -359,19 +363,29 @@ func MigrateDefaultConfig(path string) error {
 		})
 	}
 	quitRE := regexp.MustCompile(`(?m)^quit\s*=\s*"([^"\n]*)"\s*$`)
-	if strings.Contains(updated, "\nclose_weft =") {
-		updated = quitRE.ReplaceAllString(updated, "")
-	} else {
-		updated = quitRE.ReplaceAllStringFunc(updated, func(line string) string {
-			matches := quitRE.FindStringSubmatch(line)
-			if len(matches) != 2 {
-				return line
-			}
-			return fmt.Sprintf(`close_weft = "%s"`, legacyCloseWeftBinding(matches[1]))
-		})
-	}
-	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nclose_weft =") {
-		updated = insertKeyBinding(updated, `close_weft = "C-c"`)
+	updated = quitRE.ReplaceAllStringFunc(updated, func(line string) string {
+		matches := quitRE.FindStringSubmatch(line)
+		if len(matches) != 2 {
+			return line
+		}
+		return fmt.Sprintf(`quit = "%s"`, legacyCloseWeftBinding(matches[1]))
+	})
+	closeWeftRE := regexp.MustCompile(`(?m)^close_weft\s*=\s*"([^"\n]*)"\s*$`)
+	closeWeftMatches := closeWeftRE.FindStringSubmatch(updated)
+	hasQuit := quitRE.MatchString(updated)
+	updated = closeWeftRE.ReplaceAllStringFunc(updated, func(line string) string {
+		if hasQuit {
+			return ""
+		}
+		matches := closeWeftRE.FindStringSubmatch(line)
+		if len(matches) != 2 {
+			return ""
+		}
+		hasQuit = true
+		return fmt.Sprintf(`quit = "%s"`, legacyCloseWeftBinding(matches[1]))
+	})
+	if !hasQuit && len(closeWeftMatches) == 2 && strings.Contains(updated, "[key_bindings]") {
+		updated = insertKeyBinding(updated, fmt.Sprintf(`quit = "%s"`, legacyCloseWeftBinding(closeWeftMatches[1])))
 	}
 	for _, line := range []string{
 		`drawer = "C-b"`,
@@ -401,13 +415,13 @@ func MigrateDefaultConfig(path string) error {
 func DefaultConfigText() string {
 	return `# Weft global runtime configuration.
 # Run ` + "`weft config info`" + ` to see the runtime directory, state file, and
-# tmux session. Set tmux_session only when you need to override it.
+# supervisor socket.
 
-# Command launched inside each Codex PTY owned by the dashboard TUI.
+# Command launched inside each Codex PTY owned by the supervisor.
 codex_command = "codex"
 
 # Global title template for agent rows.
-title_template = "{title}"
+title_template = "{status} {auto}"
 
 # Optional command hook for generated titles. Weft sends each agent's first
 # submitted Codex message to this command as JSON on stdin and uses the first

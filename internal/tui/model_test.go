@@ -56,6 +56,26 @@ func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
 	}
 }
 
+func TestSnapshotShowsActiveAgentStartError(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig("weft-test")
+	st := testStateWithAgent(rt.Workdir)
+	st.Agents[0].Status = state.StatusError
+	st.Agents[0].CodexTitle = "fork/exec /missing/zsh: no such file or directory"
+
+	model := NewModel(rt, cfg, state.Empty())
+	model.state = st
+	defer killPTYs(model)
+
+	snapshot := model.Snapshot()
+	if strings.Contains(snapshot.CodexContent, "No Codex agent open") {
+		t.Fatalf("snapshot showed empty state for active error:\n%s", snapshot.CodexContent)
+	}
+	if !strings.Contains(snapshot.CodexContent, "Codex failed to start") || !strings.Contains(snapshot.CodexContent, "/missing/zsh") {
+		t.Fatalf("snapshot missing start error:\n%s", snapshot.CodexContent)
+	}
+}
+
 func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	for _, msg := range []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune("s")},
@@ -147,6 +167,42 @@ func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 	}
 }
 
+func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	payloadPath := filepath.Join(t.TempDir(), "payload.json")
+	model.cfg.TitleTemplate = "{status} {auto}"
+	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
+
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "fix"})
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "space"})
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "login"})
+	cmd := model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "enter"})
+	if cmd == nil {
+		t.Fatal("expected title hook command")
+	}
+	msg := cmd().(titleHookMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	model.applyTitleHook(msg)
+
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.AutoTitle != "Generated title" {
+		t.Fatalf("auto title = %#v", agent)
+	}
+	if got := model.renderAgentTitle(*agent); got != "running Generated title" {
+		t.Fatalf("rendered title = %q", got)
+	}
+	raw, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"first_message":"fix login"`) {
+		t.Fatalf("payload missing forwarded first message:\n%s", raw)
+	}
+}
+
 func TestTitleHookDoesNotRetryAfterAttempt(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
@@ -219,7 +275,7 @@ func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
 	if got := state.AgentByID(model.state, "a").AutoTitle; got != "Generated before rename" {
 		t.Fatalf("auto title = %q", got)
 	}
-	if got := model.renderAgentTitle(*state.AgentByID(model.state, "a")); got != "Generated before rename" {
+	if got := model.renderAgentTitle(*state.AgentByID(model.state, "a")); got != "running Generated before rename" {
 		t.Fatalf("rendered title = %q", got)
 	}
 	raw, err := os.ReadFile(payloadPath)

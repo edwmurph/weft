@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/creack/pty"
+	"github.com/edwmurph/weft/internal/shellx"
 )
 
 type Data struct {
@@ -27,13 +28,10 @@ type Session struct {
 }
 
 func Start(ctx context.Context, tabID string, command string, workdir string, cols int, rows int, output func(Data)) (*Session, error) {
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
+	shell := shellx.Resolve()
 	cmd := exec.CommandContext(ctx, shell, "-lc", command)
 	cmd.Dir = workdir
-	cmd.Env = childEnv(os.Environ())
+	cmd.Env = childEnv(os.Environ(), shell)
 	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(max(cols, 20)), Rows: uint16(max(rows, 5))})
 	if err != nil {
 		return nil, err
@@ -112,7 +110,7 @@ func (s *Session) readLoop(output func(Data)) {
 	}
 }
 
-func childEnv(env []string) []string {
+func childEnv(env []string, shell string) []string {
 	remove := map[string]bool{
 		"WEFT_HOME": true, "WEFT_WORKDIR": true, "NO_COLOR": true,
 	}
@@ -126,11 +124,15 @@ func childEnv(env []string) []string {
 		if remove[key] {
 			continue
 		}
+		if key == "SHELL" {
+			continue
+		}
 		if key == "TERM" {
 			hasTerm = true
 		}
 		next = append(next, item)
 	}
+	next = shellx.Env(next, shell)
 	if !hasTerm {
 		next = append(next, "TERM=xterm-256color")
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/edwmurph/weft/internal/shellx"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/titles"
 )
@@ -64,12 +65,10 @@ func Run(ctx context.Context, command string, workdir string, timeout time.Durat
 	hookCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
+	shell := shellx.Resolve()
 	cmd := exec.CommandContext(hookCtx, shell, "-c", command)
 	cmd.Dir = workdir
+	cmd.Env = shellx.Env(os.Environ(), shell)
 	cmd.Stdin = bytes.NewReader(payloadBytes)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

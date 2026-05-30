@@ -139,7 +139,7 @@ func (s *Store) Ensure() (State, *Migration, error) {
 			}
 			migration = &Migration{
 				ArchivedPath: archived,
-				Message:      fmt.Sprintf("archived old tmux-pane state to %s; starting with clean TUI-owned PTYs", archived),
+				Message:      fmt.Sprintf("archived old tmux-pane state to %s; starting with clean supervisor-owned PTYs", archived),
 			}
 			return nil
 		case isTabState(raw):

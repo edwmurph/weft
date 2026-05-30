@@ -1,7 +1,7 @@
 <h1 align="center"><img src="assets/weft-logo.svg" alt="Weft" width="360"></h1>
 
 <p align="center">
-  <strong>Coordinate multiple Codex sessions from a single tmux-hosted TUI.</strong>
+  <strong>Coordinate multiple Codex sessions from one supervisor-backed TUI.</strong>
 </p>
 
 <p align="center">
@@ -10,11 +10,10 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-Weft runs one global tmux session with one full-screen pane. That pane hosts a
-Go Bubble Tea command center, and the command center owns embedded Codex PTYs
-directly. Workdirs, optional flat groups, and agents are managed inside that
-one global state file. Detaching tmux leaves the command center and Codex
-processes alive.
+Weft runs one local supervisor that owns embedded Codex PTYs, state, and title
+hooks. Terminal UI clients attach to that supervisor to render the command
+center, then detach without stopping running Codex processes. Workdirs,
+optional flat groups, and agents are managed inside one global state file.
 
 ## Getting Started
 
@@ -47,12 +46,13 @@ go -C /path/to/weft-or-worktree run ./cmd/weft
 
 ## Usage
 
-`weft` and `weft start` create or reattach the global tmux session.
-`--no-attach` prepares the runtime without attaching.
+`weft` ensures the local supervisor is running and attaches a terminal UI
+client. `--no-attach` starts or reuses the supervisor without attaching.
+`--clear` deletes runtime state before starting, which is useful for fresh
+dashboard testing.
 
 ```text
-weft [--attach|--no-attach]
-weft start [--attach|--no-attach]
+weft [--attach|--no-attach] [--clear]
 weft refresh
 weft status [--json]
 weft new [title]
@@ -66,12 +66,14 @@ weft clear
 weft config info
 ```
 
-Run `weft close` without an id to close Weft clients; pass an id to close a
-Codex agent.
+Run `weft close` without an id to detach the active Weft client while the
+supervisor and Codex PTYs keep running. Pass an id to close a Codex agent. Use
+`weft close --kill` to stop the supervisor and all Codex PTYs after
+confirmation.
 
 Agent rows render through the global `title_template`, which defaults to
-`{title}`. New agents default their base title to `{codex}`, so they inherit
-the live Codex title until renamed. Titles passed to `weft new` or
+`{status} {auto}`. New agents default their base title to `{codex}`, so they
+inherit the live Codex title until renamed. Titles passed to `weft new` or
 `weft rename` can still include template variables for compatibility:
 
 - `{title}`: user-configured agent title
@@ -123,7 +125,7 @@ it back to the display path.
 When the command center is open, press `?` for shortcuts. Defaults:
 
 ```toml
-title_template = "{title}"
+title_template = "{status} {auto}"
 title_hook_command = ""
 title_hook_timeout_seconds = 10
 
@@ -156,15 +158,19 @@ Weft stores runtime files globally:
 - `~/.weft/config.toml`
 - `~/.weft/state.json`
 - `~/.weft/weft.sock`
+- `~/.weft/weftd.pid`
+- `~/.weft/weftd.log`
 
 `WEFT_WORKDIR` overrides the launch directory that seeds the initial workdir.
 `WEFT_HOME` overrides the runtime directory directly for development and tests.
 
-The config keys are stable: `tmux_session`, `codex_command`, `title_template`,
-`title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. State
-is versioned. Old tabs/columns state is migrated into workdirs, optional groups,
+The config keys are stable: `codex_command`, `title_template`,
+`title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. Legacy
+configs with `tmux_session` still load, but the setting is ignored by the
+supervisor architecture and is not generated for new installs. State is
+versioned. Old tabs/columns state is migrated into workdirs, optional groups,
 and agents. Old tmux-pane state is archived to `state.v1-tmux.json` because
-native tmux panes cannot be adopted into TUI-owned PTYs.
+native tmux panes cannot be adopted into supervisor-owned PTYs.
 
 ## Development
 
@@ -174,7 +180,7 @@ WEFT_RUN_INTEGRATION=1 go test ./...
 go build ./cmd/weft
 ```
 
-Live integration tests use temporary `WEFT_HOME`, `WEFT_WORKDIR`, a unique
-tmux socket, and a fake `codex_command`. Use
+Live integration tests use temporary `WEFT_HOME`, `WEFT_WORKDIR`, and a fake
+`codex_command`. Use
 `WEFT_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
 to see per-step dashboard timing logs.

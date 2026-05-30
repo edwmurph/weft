@@ -11,17 +11,21 @@ import (
 )
 
 const (
-	appTitle             = "WEFT"
-	codexLeftPadding     = 1
-	navHorizontalPadding = 1
-	maxWorkdirPaneWidth  = 78
-	minAgentsPaneWidth   = 28
-	borderHorizontal     = "─"
-	borderVertical       = "│"
-	borderTopLeft        = "╭"
-	borderTopRight       = "╮"
-	borderBottomLeft     = "╰"
-	borderBottomRight    = "╯"
+	appTitle               = "WEFT"
+	codexLeftPadding       = 1
+	navHorizontalPadding   = 1
+	fixedWorkdirPaneWidth  = 64
+	minAgentsPaneWidth     = 28
+	defaultAgentsPaneWidth = 48
+	minCodexPaneWidth      = 28
+	minTwoPaneNavWidth     = fixedWorkdirPaneWidth + minAgentsPaneWidth
+	minThreePaneWidth      = minTwoPaneNavWidth + minCodexPaneWidth
+	borderHorizontal       = "─"
+	borderVertical         = "│"
+	borderTopLeft          = "╭"
+	borderTopRight         = "╮"
+	borderBottomLeft       = "╰"
+	borderBottomRight      = "╯"
 )
 
 var (
@@ -65,6 +69,10 @@ var (
 	}
 )
 
+func WeftLogoLines() []string {
+	return append([]string(nil), emptyWeftLogo...)
+}
+
 func workspaceNavFrameWidth(st state.State, width int) int {
 	if !st.NavOpen {
 		return 0
@@ -72,14 +80,14 @@ func workspaceNavFrameWidth(st state.State, width int) int {
 	if width < 42 {
 		return width
 	}
-	if width < 76 {
-		return min(width-20, 32)
+	if width < minTwoPaneNavWidth {
+		return min(width-minCodexPaneWidth, 44)
 	}
-	if width < 110 {
-		return min(width-24, 44)
+	if width < minThreePaneWidth {
+		return width
 	}
-	desired := desiredWorkdirPaneWidth(st) + 48
-	return min(width-28, min(desired, 112))
+	agentsWidth := min(defaultAgentsPaneWidth, width-fixedWorkdirPaneWidth-minCodexPaneWidth)
+	return fixedWorkdirPaneWidth + max(minAgentsPaneWidth, agentsWidth)
 }
 
 func renderWorkspace(
@@ -140,8 +148,9 @@ func renderWorkspaceView(
 	}
 	navWidth = min(max(0, navWidth), width)
 	codexWidth := width - navWidth
-	if codexWidth < 20 && navWidth > 0 {
-		codexWidth = min(width, 20)
+	navOnly := navWidth >= width
+	if !navOnly && codexWidth < minCodexPaneWidth && navWidth > 0 {
+		codexWidth = min(width, minCodexPaneWidth)
 		navWidth = width - codexWidth
 	}
 	if navWidth <= 0 {
@@ -165,8 +174,8 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 	if width <= 0 || height <= 0 {
 		return nil
 	}
-	if width >= 62 {
-		workdirWidth := min(desiredWorkdirPaneWidth(st), max(22, width-minAgentsPaneWidth))
+	if width >= minTwoPaneNavWidth {
+		workdirWidth := min(fixedWorkdirPaneWidth, max(0, width-minAgentsPaneWidth))
 		folderWidth := width - workdirWidth
 		workdirs := renderWorkdirsPane(cfg, st, workdirWidth, height)
 		folders := renderFoldersPane(cfg, st, folderWidth, height, folderCursor)
@@ -690,14 +699,7 @@ func fmtInt(value int) string {
 }
 
 func desiredWorkdirPaneWidth(st state.State) int {
-	width := 48
-	for _, workdir := range st.Workdirs {
-		counts := workdirCardCountsForWorkdir(st, workdir.ID)
-		titleWidth := lipgloss.Width(workdirCardTitle(workdir)) + 5
-		countWidth := workdirCardCountPreferredWidth(counts)
-		width = max(width, max(titleWidth, countWidth)+2+(navHorizontalPadding*2))
-	}
-	return min(width, maxWorkdirPaneWidth)
+	return fixedWorkdirPaneWidth
 }
 
 func workdirCardCountPreferredWidth(counts workdirCardCounts) int {

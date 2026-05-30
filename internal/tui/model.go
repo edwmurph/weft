@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -21,7 +21,6 @@ import (
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/titlehook"
 	"github.com/edwmurph/weft/internal/titles"
-	"github.com/edwmurph/weft/internal/tmuxhost"
 )
 
 type ipcEnvelope struct {
@@ -180,8 +179,65 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	return model
 }
 
+func (m *Model) HandleSupervisorRequest(request ipc.Request) (ipc.Response, tea.Cmd) {
+	return m.handleIPC(request)
+}
+
+func (m *Model) Data() <-chan ptyx.Data {
+	return m.dataCh
+}
+
+func (m *Model) ApplyPTYData(data ptyx.Data) {
+	m.applyPTYData(data)
+}
+
+func (m *Model) Stop() {
+	m.cancel()
+	for id, pty := range m.ptys {
+		pty.Kill()
+		delete(m.ptys, id)
+	}
+}
+
+func (m *Model) Snapshot() ipc.Snapshot {
+	content := m.activeOutput()
+	loadingText := ""
+	if content == "" && m.codexLoading() {
+		loadingText = m.loadingLabel()
+	} else if content == "" && m.activeErrorText() != "" {
+		content = m.activeErrorText()
+	} else if content == "" {
+		content = "No Codex agent open."
+	}
+	title := "Codex"
+	if active := state.ActiveAgent(m.state); active != nil {
+		title = m.renderAgentTitle(*active)
+	}
+	return ipc.Snapshot{
+		State:        m.state,
+		CodexTitle:   title,
+		CodexContent: content,
+		LoadingText:  loadingText,
+		Message:      m.message,
+		NavWidth:     m.targetNavWidth(),
+		FolderCursor: m.folderCursor,
+	}
+}
+
+func (m Model) activeErrorText() string {
+	active := state.ActiveAgent(m.state)
+	if active == nil || active.Status != state.StatusError {
+		return ""
+	}
+	detail := strings.TrimSpace(active.CodexTitle)
+	if detail == "" {
+		detail = "unknown error"
+	}
+	return "Codex failed to start:\n" + detail
+}
+
 func (m Model) Init() tea.Cmd {
-	stop, err := ipc.Serve(m.runtime.SocketPath, func(request ipc.Request) ipc.Response {
+	stop, err := ipc.Serve(m.runtime.TUISocket(), func(request ipc.Request) ipc.Response {
 		reply := make(chan ipc.Response, 1)
 		m.ipcCh <- ipcEnvelope{request: request, reply: reply}
 		return <-reply
@@ -926,7 +982,6 @@ func (m *Model) setCodexFocus() tea.Cmd {
 }
 
 func (m *Model) closeWeft() {
-	_ = exec.Command("tmux", "detach-client", "-s", m.cfg.TmuxSession).Run()
 	m.message = "closed Weft clients"
 }
 
@@ -1299,23 +1354,66 @@ func (m *Model) stepNavAnimation() tea.Cmd {
 	return nil
 }
 
+func (m Model) ipcResponse(message string) ipc.Response {
+	st := m.state
+	snapshot := m.Snapshot()
+	if message != "" {
+		snapshot.Message = message
+	}
+	return ipc.Response{OK: true, State: &st, Snapshot: &snapshot, Message: message}
+}
+
+func ipcError(code string, err error) ipc.Response {
+	return ipc.ErrorResponse(code, err.Error())
+}
+
 func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	switch request.Command {
+	case "snapshot":
+		return m.ipcResponse(m.message), nil
 	case "status":
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: m.statusText()}, nil
+		response := m.ipcResponse(m.statusText())
+		response.Message = m.statusText()
+		return response, nil
 	case "refresh":
 		m.message = "refreshed"
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "refreshed Weft command center"}, nil
+		return m.ipcResponse("refreshed Weft command center"), nil
+	case "resize":
+		width, _ := strconv.Atoi(request.Args["width"])
+		height, _ := strconv.Atoi(request.Args["height"])
+		if width > 0 {
+			m.width = width
+		}
+		if height > 0 {
+			m.height = height
+		}
+		m.navWidth = m.targetNavWidth()
+		m.resizePTYs()
+		m.resizeScreens()
+		return m.ipcResponse(m.message), nil
+	case "toggle_drawer":
+		cmd := m.toggleDrawer()
+		m.navWidth = m.targetNavWidth()
+		return m.ipcResponse("focus updated"), cmd
+	case "nav_move":
+		delta, err := strconv.Atoi(request.Args["delta"])
+		if err != nil || delta == 0 {
+			return ipc.ErrorResponse("invalid_delta", "delta must be a non-zero integer"), nil
+		}
+		m.moveSelection(delta)
+		return m.ipcResponse("selection updated"), nil
+	case "open":
+		cmd := m.openSelection()
+		m.navWidth = m.targetNavWidth()
+		return m.ipcResponse("selection opened"), cmd
 	case "new":
 		title := request.Args["title"]
 		if title == "" {
 			title = titles.CodexTemplate
 		}
 		cmd := m.newAgent(title)
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "created Codex agent"}, cmd
+		m.navWidth = m.targetNavWidth()
+		return m.ipcResponse("created Codex agent"), cmd
 	case "rename":
 		id := request.Args["id"]
 		if id == "" {
@@ -1327,20 +1425,61 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		next, err := state.RenameAgent(m.state, id, title)
 		if err != nil {
-			return ipc.Response{OK: false, Message: err.Error()}, nil
+			return ipcError("rename_agent_failed", err), nil
 		}
 		m.state = next
 		m.save()
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "renamed Codex agent"}, nil
+		return m.ipcResponse("renamed Codex agent"), nil
+	case "rename_group":
+		next, err := state.RenameFolder(m.state, request.Args["id"], request.Args["path"])
+		if err != nil {
+			return ipcError("rename_group_failed", err), nil
+		}
+		m.state = next
+		m.syncFolderCursor()
+		m.save()
+		return m.ipcResponse("renamed group"), nil
+	case "rename_workdir":
+		next, err := state.SetWorkdirTitle(m.state, request.Args["id"], request.Args["title"])
+		if err != nil {
+			return ipcError("rename_workdir_failed", err), nil
+		}
+		m.state = next
+		m.save()
+		if strings.TrimSpace(request.Args["title"]) == "" {
+			return m.ipcResponse("cleared workdir title"), nil
+		}
+		return m.ipcResponse("renamed workdir"), nil
 	case "close":
 		id := request.Args["id"]
 		if id == "" {
 			id = m.state.ActiveAgentID
 		}
 		cmd := m.closeAgent(id)
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "closed Codex agent"}, cmd
+		m.navWidth = m.targetNavWidth()
+		return m.ipcResponse("closed Codex agent"), cmd
+	case "remove_workdir":
+		next, agents, err := state.RemoveWorkdir(m.state, request.Args["id"])
+		if err != nil {
+			return ipcError("remove_workdir_failed", err), nil
+		}
+		for _, agent := range agents {
+			m.killAgentPTY(agent.ID)
+		}
+		m.state = state.Repair(next, m.runtime.Workdir)
+		m.syncFolderCursor()
+		m.save()
+		m.navWidth = m.targetNavWidth()
+		return m.ipcResponse("removed workdir"), m.startNavAnimation()
+	case "remove_group":
+		next, err := state.DeleteFolder(m.state, request.Args["id"])
+		if err != nil {
+			return ipcError("remove_group_failed", err), nil
+		}
+		m.state = next
+		m.syncFolderCursor()
+		m.save()
+		return m.ipcResponse("deleted group"), nil
 	case "select":
 		id := request.Args["id"]
 		if agent := state.AgentByID(m.state, id); agent != nil {
@@ -1349,8 +1488,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			m.state.SelectedFolderID = agent.FolderID
 			m.syncFolderCursor()
 			m.save()
-			st := m.state
-			return ipc.Response{OK: true, State: &st, Message: "selected Codex agent"}, nil
+			return m.ipcResponse("selected Codex agent"), nil
 		}
 		return ipc.Response{OK: false, Message: "agent not found"}, nil
 	case "move":
@@ -1360,32 +1498,30 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		agent := state.AgentByID(m.state, id)
 		if agent == nil {
-			return ipc.Response{OK: false, Message: "agent not found"}, nil
+			return ipc.ErrorResponse("agent_not_found", "agent not found"), nil
 		}
 		folderID, ok := m.destinationGroupIDForMove(*agent, request.Args)
 		if !ok {
-			return ipc.Response{OK: false, Message: "group not found"}, nil
+			return ipc.ErrorResponse("group_not_found", "group not found"), nil
 		}
 		next, err := state.MoveAgent(m.state, agent.ID, folderID)
 		if err != nil {
-			return ipc.Response{OK: false, Message: err.Error()}, nil
+			return ipcError("move_agent_failed", err), nil
 		}
 		m.state = next
 		m.syncFolderCursor()
 		m.save()
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "moved Codex agent"}, nil
+		return m.ipcResponse("moved Codex agent"), nil
 	case "add_workdir":
 		path := request.Args["path"]
 		next, _, err := state.AddWorkdir(m.state, shortID(), path, state.NowISO())
 		if err != nil {
-			return ipc.Response{OK: false, Message: err.Error()}, nil
+			return ipcError("add_workdir_failed", err), nil
 		}
 		m.state = next
 		m.syncFolderCursor()
 		m.save()
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "added workdir"}, nil
+		return m.ipcResponse("added workdir"), nil
 	case "add_group", "add_folder":
 		path := request.Args["path"]
 		workdirID := request.Args["workdir_id"]
@@ -1394,13 +1530,12 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		next, _, err := state.AddFolder(m.state, shortID(), workdirID, path, state.NowISO())
 		if err != nil {
-			return ipc.Response{OK: false, Message: err.Error()}, nil
+			return ipcError("add_group_failed", err), nil
 		}
 		m.state = next
 		m.syncFolderCursor()
 		m.save()
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "created group"}, nil
+		return m.ipcResponse("created group"), nil
 	case "focus":
 		target := state.Focus(request.Args["target"])
 		if target == "agents" || target == "groups" || target == "folders" {
@@ -1409,22 +1544,100 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		switch target {
 		case state.FocusWorkdirs, state.FocusFolders:
 			m.focusNavPane(target)
-			st := m.state
-			return ipc.Response{OK: true, State: &st, Message: "focus updated"}, m.startNavAnimation()
+			m.navWidth = m.targetNavWidth()
+			return m.ipcResponse("focus updated"), m.startNavAnimation()
 		case state.FocusCodex:
 			cmd := m.setCodexFocus()
-			st := m.state
-			return ipc.Response{OK: true, State: &st, Message: "focus updated"}, cmd
+			m.navWidth = m.targetNavWidth()
+			return m.ipcResponse("focus updated"), cmd
 		default:
 			return ipc.Response{OK: false, Message: "focus target must be workdirs, agents, or codex"}, nil
 		}
+	case "codex_input":
+		cmd := m.applyCodexInput(request.Args)
+		return m.ipcResponse(m.message), cmd
 	case "close_weft", "quit":
 		m.closeWeft()
-		st := m.state
-		return ipc.Response{OK: true, State: &st, Message: "closed Weft clients"}, nil
+		return m.ipcResponse("closed Weft clients"), nil
 	default:
-		return ipc.Response{OK: false, Message: "unknown command: " + request.Command}, nil
+		return ipc.ErrorResponse("unknown_command", "unknown command: "+request.Command), nil
 	}
+}
+
+func (m *Model) openSelection() tea.Cmd {
+	if m.state.Focus == state.FocusWorkdirs {
+		m.focusNavPane(state.FocusFolders)
+		return nil
+	}
+	row := m.currentFolderRow()
+	if row.kind == folderRowFolder {
+		m.toggleSelectedGroup(row.folderID)
+		return nil
+	}
+	if agent := m.selectedAgent(); agent != nil {
+		m.state.ActiveAgentID = agent.ID
+		m.state.SelectedWorkdirID = agent.WorkdirID
+		m.state.SelectedFolderID = agent.FolderID
+		m.save()
+		return m.setCodexFocus()
+	}
+	return nil
+}
+
+func (m *Model) applyCodexInput(args map[string]string) tea.Cmd {
+	if m.state.Focus != state.FocusCodex {
+		return nil
+	}
+	active := state.ActiveAgent(m.state)
+	if active == nil {
+		return nil
+	}
+	if pty := m.ptys[active.ID]; pty != nil {
+		_ = pty.Write([]byte(args["encoded"]))
+	}
+	return m.captureCodexInputArgs(*active, args)
+}
+
+func (m *Model) captureCodexInputArgs(agent state.Agent, args map[string]string) tea.Cmd {
+	switch args["input"] {
+	case "text":
+		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], []rune(args["text"])...)
+	case "space":
+		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], ' ')
+	case "backspace":
+		m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+	case "enter":
+		firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
+		delete(m.codexInputBuffers, agent.ID)
+		if firstMessage == "" || agent.AutoTitleAttempted {
+			return nil
+		}
+		if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
+			if m.agentUsesAutoTitle(agent) {
+				m.recordAutoTitleError(agent.ID, "title_hook_command is not configured", false)
+				m.message = "auto title unavailable: set title_hook_command"
+			}
+			return nil
+		}
+		m.state = state.WithUpdatedAgent(m.state, agent.ID, func(agent state.Agent) state.Agent {
+			agent.AutoTitleAttempted = true
+			agent.AutoTitleError = ""
+			return agent
+		})
+		m.save()
+		if updated := state.AgentByID(m.state, agent.ID); updated != nil {
+			agent = *updated
+		}
+		if m.agentUsesAutoTitle(agent) {
+			m.message = "generating auto title"
+		}
+		return m.titleHookCmd(agent, firstMessage)
+	case "ctrl+u":
+		delete(m.codexInputBuffers, agent.ID)
+	case "ctrl+w":
+		m.codexInputBuffers[agent.ID] = trimLastWord(m.codexInputBuffers[agent.ID])
+	}
+	return nil
 }
 
 func (m Model) destinationGroupIDForMove(agent state.Agent, args map[string]string) (string, bool) {
@@ -1529,8 +1742,10 @@ func (m Model) renderAgentBaseTitle(agent state.Agent) string {
 
 func (m Model) statusText() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "tmux session: %s\n", m.cfg.TmuxSession)
+	fmt.Fprintf(&builder, "supervisor: running\n")
 	fmt.Fprintf(&builder, "runtime dir: %s\n", m.runtime.Dir)
+	fmt.Fprintf(&builder, "socket: %s\n", m.runtime.SocketPath)
+	fmt.Fprintf(&builder, "launch workdir: %s\n", m.runtime.Workdir)
 	fmt.Fprintf(&builder, "focus: %s\n", displayFocus(m.state.Focus))
 	fmt.Fprintf(&builder, "nav open: %t\n", m.state.NavOpen)
 	fmt.Fprintf(&builder, "workdirs: %d\n", len(m.state.Workdirs))
@@ -1626,8 +1841,4 @@ func abs(value int) int {
 		return -value
 	}
 	return value
-}
-
-func _hostVersionReference() string {
-	return tmuxhost.HostVersion
 }

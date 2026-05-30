@@ -11,17 +11,65 @@ import (
 	"time"
 
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/version"
 )
 
+const ProtocolVersion = 1
+
 type Request struct {
-	Command string            `json:"command"`
-	Args    map[string]string `json:"args,omitempty"`
+	ProtocolVersion int               `json:"protocol_version,omitempty"`
+	ClientVersion   string            `json:"client_version,omitempty"`
+	Command         string            `json:"command"`
+	Args            map[string]string `json:"args,omitempty"`
 }
 
 type Response struct {
-	OK      bool         `json:"ok"`
-	Message string       `json:"message,omitempty"`
-	State   *state.State `json:"state,omitempty"`
+	OK                bool         `json:"ok"`
+	Message           string       `json:"message,omitempty"`
+	Error             *Error       `json:"error,omitempty"`
+	State             *state.State `json:"state,omitempty"`
+	Snapshot          *Snapshot    `json:"snapshot,omitempty"`
+	Upgrade           *Upgrade     `json:"upgrade,omitempty"`
+	ProtocolVersion   int          `json:"protocol_version,omitempty"`
+	SupervisorVersion string       `json:"supervisor_version,omitempty"`
+}
+
+type Upgrade struct {
+	ClientVersion     string `json:"client_version"`
+	SupervisorVersion string `json:"supervisor_version"`
+	Compatible        bool   `json:"compatible"`
+	RestartRequired   bool   `json:"restart_required"`
+	AutoRestarted     bool   `json:"auto_restarted,omitempty"`
+	RunningAgents     int    `json:"running_agents"`
+	Message           string `json:"message,omitempty"`
+}
+
+type Snapshot struct {
+	State          state.State `json:"state"`
+	CodexTitle     string      `json:"codex_title,omitempty"`
+	CodexContent   string      `json:"codex_content,omitempty"`
+	LoadingText    string      `json:"loading_text,omitempty"`
+	Message        string      `json:"message,omitempty"`
+	NavWidth       int         `json:"nav_width"`
+	FolderCursor   int         `json:"folder_cursor"`
+	ActiveClientID string      `json:"active_client_id,omitempty"`
+	DetachClient   bool        `json:"detach_client,omitempty"`
+}
+
+type Error struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e Error) Error() string {
+	if e.Message == "" {
+		return e.Code
+	}
+	return e.Message
+}
+
+func ErrorResponse(code string, message string) Response {
+	return Response{OK: false, Message: message, Error: &Error{Code: code, Message: message}}
 }
 
 func Serve(path string, handler func(Request) Response) (func() error, error) {
@@ -60,6 +108,12 @@ func Call(path string, request Request, timeout time.Duration) (Response, error)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
+	if request.ProtocolVersion == 0 {
+		request.ProtocolVersion = ProtocolVersion
+	}
+	if request.ClientVersion == "" {
+		request.ClientVersion = version.Version
+	}
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return Response{}, err
 	}
@@ -68,6 +122,12 @@ func Call(path string, request Request, timeout time.Duration) (Response, error)
 		return Response{}, err
 	}
 	if !response.OK {
+		if response.Error != nil {
+			if response.Message == "" {
+				response.Message = response.Error.Message
+			}
+			return response, *response.Error
+		}
 		if response.Message == "" {
 			response.Message = "request failed"
 		}

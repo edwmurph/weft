@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,33 +20,117 @@ const (
 	collapsedCodexToolbar = "WEFT  C-b command center  C-c interrupt/close"
 )
 
+func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	workdir := filepath.Join(tmp, "workspace")
+	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(workdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env := append(os.Environ(),
+		"WEFT_HOME="+runtimeDir,
+		"WEFT_WORKDIR="+workdir,
+		"WEFT_EXECUTABLE="+bin,
+		"SHELL=/missing/zsh",
+		"PATH=/usr/bin:/bin",
+		"TERM=xterm-256color",
+	)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	clientCmd := exec.Command(bin)
+	clientCmd.Env = env
+	clientCmd.Dir = workdir
+	clientPTY, err := pty.StartWithSize(clientCmd, &pty.Winsize{Cols: 100, Rows: 32})
+	if err != nil {
+		t.Fatalf("start Weft client: %v", err)
+	}
+	clientDone := make(chan struct{})
+	go func() {
+		_ = clientCmd.Wait()
+		close(clientDone)
+	}()
+	t.Cleanup(func() {
+		_ = clientPTY.Close()
+		if !clientExited(clientDone) && clientCmd.Process != nil {
+			_ = clientCmd.Process.Kill()
+		}
+		<-clientDone
+	})
+
+	clientScreen := tui.NewTerminalScreen(100, 32)
+	var clientMu sync.Mutex
+	var clientRaw bytes.Buffer
+	go func() {
+		buf := make([]byte, 8192)
+		for {
+			n, err := clientPTY.Read(buf)
+			if n > 0 {
+				clientMu.Lock()
+				clientScreen.Write(string(buf[:n]))
+				clientRaw.Write(buf[:n])
+				clientMu.Unlock()
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	clientOutput := func() string {
+		clientMu.Lock()
+		defer clientMu.Unlock()
+		return clientScreen.String()
+	}
+	pane := "direct-client-missing-shell"
+	registerDirectClient(clientCmd, clientPTY, clientScreen, &clientRaw, &clientMu, clientDone)
+	waitFor(t, "supervisor socket", 8*time.Second, func() bool {
+		_, err := os.Stat(filepath.Join(runtimeDir, "weft.sock"))
+		return err == nil
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workdirs") &&
+			strings.Contains(capture, "Agents")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 && st.Agents[0].Status != state.StatusStarting
+	})
+	if st.Agents[0].Status != state.StatusRunning {
+		t.Fatalf("agent should start even when SHELL is invalid, status=%s title=%q\nscreen:\n%s", st.Agents[0].Status, st.Agents[0].CodexTitle, clientOutput())
+	}
+	capture := waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Fake Codex Ready") || strings.Contains(capture, "Starting Codex")
+	})
+	if strings.Contains(capture, "No Codex agent open") || strings.Contains(capture, "fork/exec") {
+		t.Fatalf("new agent rendered stale empty/error state:\n%s", capture)
+	}
+}
+
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
-		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live tmux integration tests")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux is required")
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
 
-	root := repoRoot(t)
+	bin := buildWeft(t)
 	tmp := t.TempDir()
-	runID := "weft-e2e-" + fmt.Sprintf("%d", time.Now().UnixNano())
-	bin := filepath.Join(tmp, "weft")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/weft")
-	build.Dir = root
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
-	}
-
-	realTmux, _ := exec.LookPath("tmux")
-	wrapperDir := filepath.Join(tmp, "bin")
-	if err := os.Mkdir(wrapperDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	tmuxWrapper := filepath.Join(wrapperDir, "tmux")
-	if err := os.WriteFile(tmuxWrapper, []byte("#!/bin/sh\nexec "+shellQuote(realTmux)+" -f /dev/null -L "+shellQuote(runID)+" \"$@\"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 
 	runtimeDir := filepath.Join(tmp, "weft-home")
 	workdir := filepath.Join(tmp, "workspace")
@@ -108,7 +193,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	titleHookCommand := "TITLE_HOOK_PAYLOAD=" + shellQuote(titleHookPayload) + " " + shellQuote(titleHook)
-	configText := fmt.Sprintf("tmux_session = %q\ncodex_command = %q\ntitle_hook_command = %q\n", runID, fakeCodex, titleHookCommand)
+	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\ntitle_hook_command = %q\n", fakeCodex, "{title}", titleHookCommand)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -119,47 +204,44 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		"WEFT_EXECUTABLE="+bin,
 		"STARTUP_DELAY=1.2",
 		"STARTUP_MARKER="+startupMarker,
-		"PATH="+wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"PATH="+os.Getenv("PATH"),
 		"TERM=xterm-256color",
 	)
 	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill")
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
 		cmd.Env = env
 		_ = cmd.Run()
-		_ = exec.Command("tmux", "-L", runID, "kill-server").Run()
 	})
 
-	tuiCommand := strings.Join([]string{
-		"env",
-		"WEFT_HOME=" + shellQuote(runtimeDir),
-		"WEFT_WORKDIR=" + shellQuote(workdir),
-		"WEFT_EXECUTABLE=" + shellQuote(bin),
-		"PATH=" + shellQuote(wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH")),
-		"TERM=xterm-256color",
-		shellQuote(bin),
-		"tui",
-	}, " ")
-	tmuxRun(t, env, "new-session", "-d", "-x", "160", "-y", "38", "-s", runID, "-c", workdir, tuiCommand)
-	pane := runID + ":0.0"
+	clientCmd := exec.Command(bin)
+	clientCmd.Env = env
+	clientCmd.Dir = workdir
+	clientPTY, err := pty.StartWithSize(clientCmd, &pty.Winsize{Cols: 160, Rows: 38})
+	if err != nil {
+		t.Fatalf("start Weft client: %v", err)
+	}
+	clientDone := make(chan struct{})
+	go func() {
+		_ = clientCmd.Wait()
+		close(clientDone)
+	}()
+	pane := "direct-client"
 	if !waitForBool(8*time.Second, func() bool {
 		_, err := os.Stat(filepath.Join(runtimeDir, "weft.sock"))
 		return err == nil
 	}) {
-		t.Fatalf("timed out waiting for TUI socket; pane:\n%s\nlog:\n%s", paneInfo(t, env, pane), readLog(runtimeDir))
-	}
-	clientCmd := exec.Command(tmuxFromEnv(env), "attach-session", "-t", runID)
-	clientCmd.Env = env
-	clientPTY, err := pty.StartWithSize(clientCmd, &pty.Winsize{Cols: 160, Rows: 38})
-	if err != nil {
-		t.Fatalf("attach tmux client: %v", err)
+		t.Fatalf("timed out waiting for supervisor socket; client:\n%s\nlog:\n%s", paneInfo(t, env, pane), readLog(runtimeDir))
 	}
 	t.Cleanup(func() {
 		_ = clientPTY.Close()
-		_ = clientCmd.Process.Kill()
-		_ = clientCmd.Wait()
+		if !clientExited(clientDone) && clientCmd.Process != nil {
+			_ = clientCmd.Process.Kill()
+		}
+		<-clientDone
 	})
 	clientScreen := tui.NewTerminalScreen(160, 38)
 	var clientMu sync.Mutex
+	var clientRaw bytes.Buffer
 	go func() {
 		buf := make([]byte, 8192)
 		for {
@@ -167,6 +249,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			if n > 0 {
 				clientMu.Lock()
 				clientScreen.Write(string(buf[:n]))
+				clientRaw.Write(buf[:n])
 				clientMu.Unlock()
 			}
 			if err != nil {
@@ -179,14 +262,14 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		defer clientMu.Unlock()
 		return clientScreen.String()
 	}
-	if panes := tmuxLines(t, env, "list-panes", "-t", runID+":", "-F", "#{pane_id}"); len(panes) != 1 {
+	registerDirectClient(clientCmd, clientPTY, clientScreen, &clientRaw, &clientMu, clientDone)
+	if panes := directLines(t, env, "list-panes", "-t", pane, "-F", "#{pane_id}"); len(panes) != 1 {
 		t.Fatalf("pane count = %d (%v), want 1", len(panes), panes)
 	}
 
 	timedStep(t, "initial render", func() {
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Workdirs") &&
-				strings.Contains(capture, "Agents") &&
+			return strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, "No Codex agent open")
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), true)
@@ -195,7 +278,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	var firstID string
 	timedStep(t, "keyboard n creates agent", func() {
 		started := time.Now()
-		tmuxRun(t, env, "send-keys", "-t", pane, "n")
+		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Starting Codex") &&
 				strings.Contains(capture, collapsedCodexToolbar) &&
@@ -252,7 +335,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "nav shortcut keys stay inside codex focus", func() {
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "lj")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "lj")
 		time.Sleep(250 * time.Millisecond)
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
@@ -262,8 +345,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "codex focus forwards dashboard shortcut keys", func() {
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "s?n")
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "s?n")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:ljs?n") &&
 				!strings.Contains(capture, "Weft shortcuts") &&
@@ -277,26 +360,25 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "C-b opens command center", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-b")
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Workdirs") &&
-				strings.Contains(capture, "Agents") &&
+			return strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, ">_ OpenAI Codex")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 	})
 
 	timedStep(t, "auto title variable reveals title generated from first message", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "r")
+		directRun(t, env, "send-keys", "-t", pane, "r")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Rename agent") &&
 				strings.Contains(capture, "Variables") &&
 				strings.Contains(capture, "{auto}")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-u")
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "{auto}")
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-t", pane, "C-u")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "{auto}")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
 			return agent != nil && agent.Title == "{auto}" && agent.AutoTitle == "Auto hook title"
@@ -311,21 +393,21 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "group prompt and move agent update structure", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "g")
+		directRun(t, env, "send-keys", "-t", pane, "g")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Create group")
 		})
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "release")
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "release")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			return folderByPath(st, "release") != nil
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "m")
+		directRun(t, env, "send-keys", "-t", pane, "m")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Move agent")
 		})
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "release")
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "release")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
 			folder := folderForAgent(st, agent)
@@ -339,14 +421,14 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			agent := findAgent(st, firstID)
 			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "r")
+		directRun(t, env, "send-keys", "-t", pane, "r")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Rename agent") &&
 				strings.Contains(capture, "Preview")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-u")
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "Codex {status}")
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-t", pane, "C-u")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "Codex {status}")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
 			return agent != nil && agent.Title == "Codex {status}"
@@ -358,10 +440,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "status template follows Codex activity", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "status check")
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "status check")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
 			return agent != nil && strings.Contains(agent.CodexTitle, "Working")
@@ -377,40 +459,43 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex ready")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-b")
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusFolders && st.NavOpen })
 	})
 
 	timedStep(t, "help modal closes", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "?")
+		directRun(t, env, "send-keys", "-t", pane, "?")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Weft shortcuts")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "Escape")
+		directRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return !strings.Contains(capture, "Weft shortcuts")
 		})
 	})
 
 	timedStep(t, "close confirmation cancels then closes", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete agent Codex ready?")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "n")
+		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 1 })
-		tmuxRun(t, env, "send-keys", "-t", pane, "d")
-		tmuxRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "d")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Delete agent Codex ready?")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 0 })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No Codex agent open")
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), true)
-		tmuxRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete group release?")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "y")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 0 && len(st.Folders) == 0 && st.SelectedWorkdirID != ""
 		})
@@ -420,23 +505,26 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "C-c interrupts working codex before ready codex closes weft", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "n")
+		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
 				st.Focus == state.FocusCodex &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
-		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "interrupt me")
-		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "interrupt me")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
 				st.Focus == state.FocusCodex &&
 				st.Agents[0].Status == state.StatusRunning &&
 				strings.Contains(st.Agents[0].CodexTitle, "Working")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Fake Codex Working") || strings.Contains(capture, "Codex working")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		time.Sleep(250 * time.Millisecond)
-		attached := tmuxLines(t, env, "display-message", "-p", "-t", runID+":", "#{session_attached}")
+		attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
 		if len(attached) != 1 || attached[0] != "1" {
 			t.Fatalf("C-c should stay with Codex while CODEX is running: %v", attached)
 		}
@@ -446,14 +534,14 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				st.Agents[0].Status == state.StatusRunning &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
+		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		if !waitForBool(2*time.Second, func() bool {
-			attached := tmuxLines(t, env, "display-message", "-p", "-t", runID+":", "#{session_attached}")
+			attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
 			return len(attached) == 1 && attached[0] == "0"
 		}) {
 			t.Fatalf("C-c did not detach Weft clients")
 		}
-		if panes := tmuxLines(t, env, "list-panes", "-t", runID+":", "-F", "#{pane_id}"); len(panes) != 1 {
+		if panes := directLines(t, env, "list-panes", "-t", pane, "-F", "#{pane_id}"); len(panes) != 1 {
 			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
 		}
 		waitState(t, env, bin, func(st state.State) bool {
@@ -511,55 +599,52 @@ func waitForOutput(t *testing.T, output func() string, accept func(string) bool)
 	return capture
 }
 
+type directClientHarness struct {
+	cmd    *exec.Cmd
+	pty    *os.File
+	screen *tui.TerminalScreen
+	raw    *bytes.Buffer
+	mu     *sync.Mutex
+	done   <-chan struct{}
+}
+
+var directClient directClientHarness
+
+func registerDirectClient(cmd *exec.Cmd, ptyFile *os.File, screen *tui.TerminalScreen, raw *bytes.Buffer, mu *sync.Mutex, done <-chan struct{}) {
+	directClient = directClientHarness{
+		cmd:    cmd,
+		pty:    ptyFile,
+		screen: screen,
+		raw:    raw,
+		mu:     mu,
+		done:   done,
+	}
+}
+
 func capturePane(t *testing.T, env []string, pane string) string {
 	t.Helper()
-	cmd := exec.Command(tmuxFromEnv(env), "capture-pane", "-p", "-a", "-t", pane)
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return string(out)
-	}
-	if !strings.Contains(string(out), "no alternate screen") {
-		t.Fatalf("tmux capture-pane: %v\n%s", err, out)
-	}
-	cmd = exec.Command(tmuxFromEnv(env), "capture-pane", "-p", "-t", pane)
-	cmd.Env = env
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("tmux capture-pane: %v\n%s", err, out)
-	}
-	return string(out)
+	directClient.mu.Lock()
+	defer directClient.mu.Unlock()
+	return directClient.screen.String()
 }
 
 func capturePaneEscaped(t *testing.T, env []string, pane string) string {
 	t.Helper()
-	cmd := exec.Command(tmuxFromEnv(env), "capture-pane", "-p", "-e", "-t", pane)
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return string(out)
-	}
-	if !strings.Contains(string(out), "no alternate screen") {
-		t.Fatalf("tmux capture-pane -e: %v\n%s", err, out)
-	}
-	cmd = exec.Command(tmuxFromEnv(env), "capture-pane", "-p", "-e", "-a", "-t", pane)
-	cmd.Env = env
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("tmux capture-pane -e: %v\n%s", err, out)
-	}
-	return string(out)
+	directClient.mu.Lock()
+	defer directClient.mu.Unlock()
+	return directClient.raw.String()
 }
 
 func paneInfo(t *testing.T, env []string, pane string) string {
 	t.Helper()
-	cmd := exec.Command(tmuxFromEnv(env), "display-message", "-p", "-t", pane, "#{pane_current_command}\t#{pane_dead}\t#{pane_start_command}")
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("tmux display-message: %v\n%s", err, out)
+	if directClient.cmd == nil {
+		return "direct client not registered"
 	}
-	return string(out)
+	status := "running"
+	if clientExited(directClient.done) {
+		status = "exited"
+	}
+	return fmt.Sprintf("pid=%d status=%s args=%v", directClient.cmd.Process.Pid, status, directClient.cmd.Args)
 }
 
 func readLog(runtimeDir string) string {
@@ -567,13 +652,74 @@ func readLog(runtimeDir string) string {
 	return string(data)
 }
 
-func tmuxRun(t *testing.T, env []string, args ...string) {
+func directRun(t *testing.T, env []string, args ...string) {
 	t.Helper()
-	cmd := exec.Command(tmuxFromEnv(env), args...)
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("tmux %v: %v\n%s", args, err, out)
+	if len(args) == 0 || args[0] != "send-keys" {
+		t.Fatalf("unsupported direct client command: %v", args)
+	}
+	literal := false
+	keys := args[1:]
+	if len(keys) > 0 && keys[0] == "-l" {
+		literal = true
+		keys = keys[1:]
+	}
+	if len(keys) >= 2 && keys[0] == "-t" {
+		keys = keys[2:]
+	}
+	if len(keys) != 1 {
+		t.Fatalf("unsupported send-keys args: %v", args)
+	}
+	if literal {
+		writeClientInput(t, keys[0])
+		return
+	}
+	switch keys[0] {
+	case "Enter":
+		writeClientInput(t, "\r")
+	case "C-b":
+		writeClientInput(t, "\x02")
+	case "C-c":
+		writeClientInput(t, "\x03")
+	case "C-u":
+		writeClientInput(t, "\x15")
+	case "Escape":
+		writeClientInput(t, "\x1b")
+	default:
+		writeClientInput(t, keys[0])
+	}
+}
+
+func directLines(t *testing.T, env []string, args ...string) []string {
+	t.Helper()
+	if len(args) > 0 && args[0] == "list-panes" {
+		return []string{"direct-client"}
+	}
+	if len(args) > 0 && args[0] == "display-message" {
+		if clientExited(directClient.done) {
+			return []string{"0"}
+		}
+		return []string{"1"}
+	}
+	t.Fatalf("unsupported direct client query: %v", args)
+	return nil
+}
+
+func writeClientInput(t *testing.T, value string) {
+	t.Helper()
+	if directClient.pty == nil {
+		t.Fatal("direct client PTY is not registered")
+	}
+	if _, err := directClient.pty.Write([]byte(value)); err != nil {
+		t.Fatalf("write client input %q: %v", value, err)
+	}
+}
+
+func clientExited(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
 	}
 }
 

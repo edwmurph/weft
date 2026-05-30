@@ -26,7 +26,10 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.CodexCommand != "codex" {
 		t.Fatalf("CodexCommand = %q", cfg.CodexCommand)
 	}
-	if cfg.TitleTemplate != "{title}" {
+	if cfg.TmuxSession != "" {
+		t.Fatalf("TmuxSession should be ignored by default, got %q", cfg.TmuxSession)
+	}
+	if cfg.TitleTemplate != "{status} {auto}" {
 		t.Fatalf("TitleTemplate = %q", cfg.TitleTemplate)
 	}
 	if cfg.TitleHookCommand != "" {
@@ -54,8 +57,49 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "quit = \"C-q\"") || strings.Contains(string(data), "focus_toggle =") {
-		t.Fatalf("default config should not include legacy exit bindings:\n%s", data)
+	for _, forbidden := range []string{`quit = "C-q"`, "focus_toggle =", "tmux_session"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("default config should not include %q:\n%s", forbidden, data)
+		}
+	}
+}
+
+func TestLoadConfigIgnoresMissingTmuxSession(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+codex_command = "codex"
+title_template = "{title}"
+title_hook_timeout_seconds = 10
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path, "weft-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TmuxSession != "" {
+		t.Fatalf("TmuxSession = %q", cfg.TmuxSession)
+	}
+}
+
+func TestLoadConfigPreservesLegacyTmuxSessionWithoutRequiringIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+tmux_session = "custom"
+codex_command = "codex"
+title_template = "{title}"
+title_hook_timeout_seconds = 10
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path, "weft-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TmuxSession != "custom" {
+		t.Fatalf("legacy TmuxSession = %q", cfg.TmuxSession)
 	}
 }
 
@@ -136,7 +180,7 @@ quit = "C-q"
 	}
 	text := string(data)
 	for _, expected := range []string{
-		`title_template = "{title}"`,
+		`title_template = "{status} {auto}"`,
 		`title_hook_command = ""`,
 		`title_hook_timeout_seconds = 10`,
 		`drawer = "C-b"`,
@@ -155,6 +199,38 @@ quit = "C-q"
 	}
 	if strings.Contains(text, "new_folder =") {
 		t.Fatalf("migrated config should rename new_folder:\n%s", data)
+	}
+	if strings.Contains(text, "close_weft =") {
+		t.Fatalf("migrated config should not keep close_weft:\n%s", data)
+	}
+}
+
+func TestMigrateDefaultConfigRenamesLegacyCloseWeftToQuit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	err := os.WriteFile(path, []byte(`
+codex_command = "codex"
+
+[key_bindings]
+close_weft = "C-q"
+`), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateDefaultConfig(path); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `quit = "C-c"`) {
+		t.Fatalf("migrated config should add quit from close_weft:\n%s", data)
+	}
+	if strings.Contains(text, "close_weft =") {
+		t.Fatalf("migrated config should remove close_weft:\n%s", data)
 	}
 }
 
@@ -176,8 +252,5 @@ func TestDefaultRuntimeIsGlobal(t *testing.T) {
 	}
 	if strings.HasSuffix(dir, "workdirs") || strings.Contains(dir, "project-") {
 		t.Fatalf("AppDir should be global, got %q", dir)
-	}
-	if got := DefaultTmuxSession("/tmp/project"); got != "weft" {
-		t.Fatalf("DefaultTmuxSession = %q", got)
 	}
 }

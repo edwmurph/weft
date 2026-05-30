@@ -32,14 +32,17 @@ func TestRenderFormulaBuildsGoBinaryFromSource(t *testing.T) {
 	for _, expected := range []string{
 		"class Weft < Formula",
 		`depends_on "go" => :build`,
-		`depends_on "tmux"`,
 		`system "go", "build"`,
 		`./cmd/weft`,
+		`WEFT_HOME`,
 		`weft doctor`,
 	} {
 		if !strings.Contains(formula, expected) {
 			t.Fatalf("formula missing %q:\n%s", expected, formula)
 		}
+	}
+	if strings.Contains(formula, `depends_on "tmux"`) {
+		t.Fatalf("formula should not depend on tmux:\n%s", formula)
 	}
 }
 

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -15,38 +16,10 @@ import (
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/sessions"
 	"github.com/edwmurph/weft/internal/state"
-	"github.com/edwmurph/weft/internal/tmuxhost"
+	"github.com/edwmurph/weft/internal/supervisor"
 	"github.com/edwmurph/weft/internal/tui"
 	"github.com/edwmurph/weft/internal/version"
 )
-
-const helpText = `Start, inspect, or close Weft tmux workspaces for Codex.
-
-Usage:
-  weft [--attach|--no-attach]
-  weft start [--attach|--no-attach]
-  weft refresh
-  weft status [--json]
-  weft new [title]
-  weft group add <name>
-  weft workdir add <path>
-  weft rename [id] <title>
-  weft close [id]
-  weft close --kill
-  weft select <id>
-  weft move-left
-  weft move-right
-  weft sessions
-  weft delete-session <session>
-  weft clear
-  weft doctor
-  weft config <info|path|show|init>
-
-Weft runs one global command center. The launch directory is added as an
-initial workdir, while config.toml, state.json, the IPC socket, and the tmux
-session live in the global Weft runtime. Agent rows use title_template and can
-interpolate {title}, {auto}, {codex}, {status}, {workdir}, and {group}.
-`
 
 func Run(args []string) error {
 	if len(args) == 0 {
@@ -54,7 +27,7 @@ func Run(args []string) error {
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Print(helpText)
+		fmt.Print(cliHelpText())
 		return nil
 	case "--version", "version":
 		fmt.Println(version.Version)
@@ -63,6 +36,8 @@ func Run(args []string) error {
 		return start(args[1:])
 	case "tui":
 		return runTUI()
+	case supervisor.CommandName:
+		return runSupervisor()
 	case "quit":
 		return closeWeft("quit", args[1:])
 	case "refresh":
@@ -97,10 +72,7 @@ func Run(args []string) error {
 	case "sessions":
 		return listSessions()
 	case "delete-session":
-		if len(args) < 2 {
-			return errors.New("delete-session requires a session name")
-		}
-		return tmuxhost.New(args[1]).KillSession()
+		return deleteSession(args[1:])
 	case "clear":
 		return clear()
 	case "doctor":
@@ -111,15 +83,58 @@ func Run(args []string) error {
 		if strings.HasPrefix(args[0], "--") {
 			return start(args)
 		}
-		return fmt.Errorf("unknown command %q\n\n%s", args[0], helpText)
+		return fmt.Errorf("unknown command %q\n\n%s", args[0], cliHelpText())
 	}
+}
+
+func cliHelpText() string {
+	lines := []string{""}
+	for _, line := range tui.WeftLogoLines() {
+		lines = append(lines, "  "+line)
+	}
+	lines = append(lines,
+		"",
+		"Supervisor-backed Codex command center.",
+		"",
+		"Usage:",
+		"  weft [--attach|--no-attach] [--clear]",
+		"",
+		"Common commands:",
+		"  weft                         Open the dashboard and attach to the supervisor.",
+		"  weft --clear                 Clear runtime state, then open a fresh dashboard.",
+		"  weft --no-attach             Start or reuse the supervisor without opening the dashboard.",
+		"  weft refresh                 Request a fresh dashboard snapshot.",
+		"  weft status [--json]         Show supervisor, workdir, group, and agent state.",
+		"  weft doctor                  Check local runtime and Codex command health.",
+		"",
+		"Agents and organization:",
+		"  weft new [title]             Create a Codex agent.",
+		"  weft select <id>             Make an agent active.",
+		"  weft rename [id] <title>     Rename the selected agent or the given agent.",
+		"  weft close [id]              Close the active client or a Codex agent.",
+		"  weft group add <name>        Add a group in the current workdir.",
+		"  weft workdir add <path>      Add a workdir to the dashboard.",
+		"  weft move-left               Move the selected agent out of its group.",
+		"  weft move-right              Move the selected agent into the selected group.",
+		"",
+		"Runtime and configuration:",
+		"  weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
+		"  weft clear                   Prompt, then delete Weft runtime state.",
+		"  weft sessions                Show the current supervisor session.",
+		"  weft config info             Show runtime paths and active config.",
+		"  weft config show             Print config.toml.",
+		"  weft config init [--force]   Write the default config.",
+		"",
+	)
+	return strings.Join(lines, "\n")
 }
 
 func start(args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	attach := fs.Bool("attach", true, "attach to the tmux session")
-	noAttach := fs.Bool("no-attach", false, "prepare the tmux session without attaching")
+	attach := fs.Bool("attach", true, "attach to the Weft command center")
+	noAttach := fs.Bool("no-attach", false, "start the Weft supervisor without attaching")
+	clearBeforeStart := fs.Bool("clear", false, "delete runtime state before starting")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -130,49 +145,53 @@ func start(args []string) error {
 	if err != nil {
 		return err
 	}
-	controller := tmuxhost.New(cfg.TmuxSession)
-	if !*attach && !controller.HasSession() {
-		if err := startHeadlessDaemon(rt); err != nil {
+	if *clearBeforeStart {
+		if err := clearRuntime(rt, false); err != nil {
 			return err
 		}
 	}
-	if err := controller.EnsureSession(cfg, rt, !*attach); err != nil {
+	result, err := supervisor.Ensure(rt)
+	if err != nil {
 		return err
 	}
-	if *attach {
-		return controller.Attach()
+	if !*attach {
+		action := "Using existing"
+		if result.Started {
+			action = "Started"
+		}
+		fmt.Printf("%s Weft supervisor.\n", action)
+		fmt.Printf("Runtime: %s\n", rt.Dir)
+		fmt.Printf("Socket: %s\n", rt.SocketPath)
+		printUpgrade(result.Status.Upgrade)
+		return nil
 	}
-	fmt.Printf("Prepared tmux session %s for global Weft.\n", cfg.TmuxSession)
-	fmt.Printf("Config: %s\n", rt.ConfigPath)
-	fmt.Printf("State: %s\n", rt.StatePath)
-	return nil
+	return tui.RunClient(rt, cfg)
 }
 
 func runTUI() error {
+	rt, cfg, _, err := resolveRuntime()
+	if err != nil {
+		return err
+	}
+	if _, err := supervisor.Ensure(rt); err != nil {
+		return err
+	}
+	logPath := filepath.Join(rt.Dir, "weft-client.log")
+	_ = os.WriteFile(logPath, []byte("starting TUI client\n"), 0o600)
+	if err := tui.RunClient(rt, cfg); err != nil {
+		_ = os.WriteFile(logPath, []byte("TUI error: "+err.Error()+"\n"), 0o600)
+		return err
+	}
+	_ = os.WriteFile(logPath, []byte("TUI client exited cleanly\n"), 0o600)
+	return nil
+}
+
+func runSupervisor() error {
 	rt, cfg, store, err := resolveRuntime()
 	if err != nil {
 		return err
 	}
-	logPath := filepath.Join(rt.Dir, "weft.log")
-	_ = os.WriteFile(logPath, []byte("starting TUI\n"), 0o600)
-	st, migration, err := store.Ensure()
-	if err != nil {
-		return err
-	}
-	if os.Getenv("WEFT_HEADLESS") == "1" {
-		if err := tui.RunHeadless(rt, cfg, st, migration); err != nil {
-			_ = os.WriteFile(logPath, []byte("headless error: "+err.Error()+"\n"), 0o600)
-			return err
-		}
-		_ = os.WriteFile(logPath, []byte("headless exited cleanly\n"), 0o600)
-		return nil
-	}
-	if err := tui.Run(rt, cfg, st, migration); err != nil {
-		_ = os.WriteFile(logPath, []byte("TUI error: "+err.Error()+"\n"), 0o600)
-		return err
-	}
-	_ = os.WriteFile(logPath, []byte("TUI exited cleanly\n"), 0o600)
-	return nil
+	return supervisor.Run(context.Background(), rt, cfg, store)
 }
 
 func closeCommand(args []string) error {
@@ -188,58 +207,35 @@ func closeCommand(args []string) error {
 func closeWeft(command string, args []string) error {
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	kill := fs.Bool("kill", false, "kill the Weft tmux session")
+	kill := fs.Bool("kill", false, "stop the Weft supervisor and all agent PTYs")
+	yes := fs.Bool("yes", false, "confirm supervisor shutdown without prompting")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("%s accepts only --kill without an agent id", command)
 	}
-	_, cfg, _, err := resolveRuntime()
+	rt, _, _, err := resolveRuntime()
 	if err != nil {
 		return err
-	}
-	controller := tmuxhost.New(cfg.TmuxSession)
-	if !controller.HasSession() {
-		fmt.Printf("tmux session is not running: %s\n", cfg.TmuxSession)
-		return nil
 	}
 	if *kill {
-		_ = callIPC("shutdown", nil, true)
-		return controller.KillSession()
-	}
-	if err := callIPC("close_weft", nil, true); err == nil {
+		response, err := supervisor.Status(rt)
+		if err == nil && runningAgentCount(response.State) > 0 && !*yes {
+			fmt.Printf("Stopping the Weft supervisor will stop %d running Codex terminal(s). Saved layout and metadata remain.\n", runningAgentCount(response.State))
+			if !confirm("Stop supervisor and running Codex terminals? [y/N] ") {
+				fmt.Println("Close canceled.")
+				return nil
+			}
+		}
+		if err := supervisor.Shutdown(rt); err != nil {
+			fmt.Printf("Weft supervisor is not running: %v\n", err)
+			return nil
+		}
+		fmt.Println("Weft supervisor stopped.")
 		return nil
 	}
-	return controller.DetachClients()
-}
-
-func startHeadlessDaemon(rt config.Runtime) error {
-	exe := os.Getenv("WEFT_EXECUTABLE")
-	if exe == "" {
-		var err error
-		exe, err = os.Executable()
-		if err != nil {
-			return err
-		}
-	}
-	logFile, err := os.OpenFile(filepath.Join(rt.Dir, "weft.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(exe, "tui")
-	cmd.Env = append(os.Environ(),
-		config.AppDirEnv+"="+rt.Dir,
-		config.WorkdirEnv+"="+rt.Workdir,
-		"WEFT_HEADLESS=1",
-	)
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
-		return err
-	}
-	return nil
+	return callIPC("close_weft", nil, false)
 }
 
 func status(args []string) error {
@@ -247,24 +243,36 @@ func status(args []string) error {
 	if len(args) > 0 && args[0] == "--json" {
 		jsonOutput = true
 	}
-	rt, cfg, store, err := loadRuntime()
+	rt, _, store, err := resolveRuntime()
 	if err != nil {
 		return err
 	}
-	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "status"}, 500*time.Millisecond)
+	response, err := supervisor.Status(rt)
 	if err == nil {
 		if jsonOutput {
 			return json.NewEncoder(os.Stdout).Encode(response.State)
 		}
 		fmt.Println(response.Message)
+		printSupervisorStatus(response)
+		printUpgrade(response.Upgrade)
+		return nil
+	}
+	if supervisorResponded(response) {
+		if jsonOutput {
+			return json.NewEncoder(os.Stdout).Encode(response)
+		}
+		if response.Message != "" {
+			fmt.Println(response.Message)
+		}
+		printSupervisorStatus(response)
+		printUpgrade(response.Upgrade)
 		return nil
 	}
 	st, _ := store.Read()
 	if jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(st)
 	}
-	controller := tmuxhost.New(cfg.TmuxSession)
-	fmt.Printf("tmux session: %s (%s)\n", cfg.TmuxSession, upDown(controller.HasSession()))
+	fmt.Printf("supervisor: down (%v)\n", err)
 	fmt.Printf("launch workdir: %s\nruntime dir: %s\nfocus: %s\nworkdirs: %d\ngroups: %d\nagents: %d\n", rt.Workdir, rt.Dir, displayFocus(st.Focus), len(st.Workdirs), len(st.Folders), len(st.Agents))
 	return nil
 }
@@ -297,78 +305,98 @@ func workdirCommand(args []string) error {
 }
 
 func listSessions() error {
-	current := sessions.CurrentSessionFromRuntime()
-	items := sessions.List(current)
-	if len(items) == 0 {
-		fmt.Println("No Weft sessions are running.")
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		return err
+	}
+	response, err := supervisor.Status(rt)
+	if err != nil {
+		fmt.Println("No Weft supervisor is running.")
 		return nil
 	}
-	fmt.Printf("%-2s %-32s %7s %7s %s\n", "", "Session", "Clients", "Windows", "Workdir")
-	for _, item := range items {
-		marker := ""
-		if item.Current {
-			marker = "*"
-		}
-		fmt.Printf("%-2s %-32s %7d %7d %s\n", marker, item.Name, item.Clients, item.Windows, sessions.DisplayPath(item.Workdir))
+	clients := 0
+	if response.Snapshot != nil && response.Snapshot.ActiveClientID != "" {
+		clients = 1
 	}
+	agents := 0
+	if response.State != nil {
+		agents = len(response.State.Agents)
+	}
+	fmt.Printf("%-12s %-7s %-7s %-7s %s\n", "Supervisor", "Status", "Clients", "Agents", "Workdir")
+	fmt.Printf("%-12s %-7s %-7d %-7d %s\n", "weftd", "running", clients, agents, sessions.DisplayPath(rt.Workdir))
+	return nil
+}
+
+func deleteSession(args []string) error {
+	if len(args) > 0 {
+		return errors.New("delete-session no longer accepts a tmux session name; use `weft close --kill` to stop the current supervisor")
+	}
+	fmt.Println("delete-session is legacy compatibility only. Use `weft close --kill` to stop the current supervisor.")
 	return nil
 }
 
 func clear() error {
-	current := sessions.CurrentSessionFromRuntime()
-	items := sessions.List(current)
-	workspaces := sessions.Workspaces()
-	if len(items) == 0 && len(workspaces) == 0 {
-		fmt.Println("No Weft workspaces or sessions found.")
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		return err
+	}
+	return clearRuntime(rt, true)
+}
+
+func clearRuntime(rt config.Runtime, confirmDestructive bool) error {
+	workspaces := existingWorkspaces(rt)
+	runtimeFiles := existingRuntimeFiles(rt)
+	if len(runtimeFiles) == 0 && len(workspaces) == 0 {
+		fmt.Println("No Weft runtime state or workspaces found.")
 		return nil
 	}
-	fmt.Println("This will delete all Weft tmux sessions and workspace runtimes:")
-	for _, item := range items {
-		suffix := ""
-		if item.Current {
-			suffix = " (current)"
+	if confirmDestructive {
+		fmt.Println("This will stop the Weft supervisor and delete Weft runtime state:")
+		for _, path := range runtimeFiles {
+			fmt.Printf("- runtime file: %s\n", sessions.DisplayPath(path))
 		}
-		fmt.Printf("- tmux session: %s%s %s\n", item.Name, suffix, sessions.DisplayPath(item.Workdir))
-	}
-	for _, workspace := range workspaces {
-		fmt.Printf("- workspace: %s\n", sessions.DisplayPath(workspace))
-	}
-	fmt.Print("Delete all Weft workspaces and sessions? [y/N] ")
-	var answer string
-	_, _ = fmt.Scanln(&answer)
-	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
-		fmt.Println("Delete canceled.")
-		return nil
-	}
-	deletedSessions := 0
-	for _, item := range items {
-		if tmuxhost.New(item.Name).KillSession() == nil {
-			deletedSessions++
+		for _, workspace := range workspaces {
+			fmt.Printf("- workspace: %s\n", sessions.DisplayPath(workspace))
+		}
+		if !confirm("Delete Weft runtime state? [y/N] ") {
+			fmt.Println("Delete canceled.")
+			return nil
 		}
 	}
+	_ = supervisor.Shutdown(rt)
+	waitForSupervisorStop(rt, 2*time.Second)
 	deletedWorkspaces := 0
 	for _, workspace := range workspaces {
-		if sessions.DeleteWorkspace(workspace) {
+		if deleteWorkspace(rt, workspace) {
 			deletedWorkspaces++
 		}
 	}
-	fmt.Printf("Deleted %d tmux session(s) and %d workspace(s).\n", deletedSessions, deletedWorkspaces)
+	deletedFiles := 0
+	for _, path := range runtimeFiles {
+		if os.Remove(path) == nil {
+			deletedFiles++
+		}
+	}
+	fmt.Printf("Deleted %d runtime file(s) and %d workspace(s).\n", deletedFiles, deletedWorkspaces)
 	return nil
 }
 
+func waitForSupervisorStop(rt config.Runtime, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := supervisor.Status(rt); err != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func doctor() error {
-	rt, cfg, store, err := loadRuntime()
+	rt, cfg, store, err := resolveRuntime()
 	if err != nil {
 		return err
 	}
 	st, _ := store.Read()
-	problems := 0
-	if tmuxhost.Available() {
-		fmt.Printf("ok tmux: %s\n", tmuxhost.VersionText())
-	} else {
-		fmt.Println("error tmux is not installed or not on PATH")
-		problems++
-	}
 	binary := strings.Fields(cfg.CodexCommand)
 	if len(binary) > 0 {
 		if _, err := exec.LookPath(binary[0]); err == nil || strings.Contains(binary[0], "/") {
@@ -381,10 +409,12 @@ func doctor() error {
 	fmt.Printf("info runtime dir: %s\n", rt.Dir)
 	fmt.Printf("ok config: %s\n", rt.ConfigPath)
 	fmt.Printf("ok state: %s (%d workdirs, %d groups, %d agents)\n", rt.StatePath, len(st.Workdirs), len(st.Folders), len(st.Agents))
-	fmt.Println("info tmux hosts one full-screen Weft TUI pane; Codex agents run as TUI-owned PTYs.")
-	if problems > 0 {
-		return errors.New("doctor found problems")
+	if _, err := supervisor.Status(rt); err == nil {
+		fmt.Println("ok supervisor: running")
+	} else {
+		fmt.Println("info supervisor: not running")
 	}
+	fmt.Println("info supervisor owns Codex PTYs; terminal clients attach and detach without stopping agents.")
 	return nil
 }
 
@@ -421,8 +451,7 @@ func configCommand(args []string) error {
 		fmt.Printf("Runtime dir: %s\n", rt.Dir)
 		fmt.Printf("Config: %s\n", rt.ConfigPath)
 		fmt.Printf("State: %s\n", rt.StatePath)
-		fmt.Printf("IPC socket: %s\n", rt.SocketPath)
-		fmt.Printf("tmux session: %s\n", cfg.TmuxSession)
+		fmt.Printf("Supervisor socket: %s\n", rt.SocketPath)
 		fmt.Printf("Codex command: %s\n", cfg.CodexCommand)
 		fmt.Printf("Title template: %s\n", cfg.TitleTemplate)
 	case "path":
@@ -444,9 +473,16 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 	if err != nil {
 		return err
 	}
+	result, err := supervisor.Ensure(rt)
+	if err != nil {
+		return err
+	}
+	if !quiet {
+		printUpgrade(result.Status.Upgrade)
+	}
 	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 	if err != nil {
-		return fmt.Errorf("Weft TUI is not accepting IPC requests; start it with `weft`: %w", err)
+		return fmt.Errorf("Weft supervisor is not accepting IPC requests; start it with `weft --no-attach`: %w", err)
 	}
 	if !quiet && response.Message != "" {
 		fmt.Println(response.Message)
@@ -478,11 +514,80 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	return rt, cfg, store, nil
 }
 
-func upDown(up bool) string {
-	if up {
-		return "up"
+func runningAgentCount(st *state.State) int {
+	if st == nil {
+		return 0
 	}
-	return "down"
+	count := 0
+	for _, agent := range st.Agents {
+		switch agent.Status {
+		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
+			count++
+		}
+	}
+	return count
+}
+
+func confirm(prompt string) bool {
+	fmt.Print(prompt)
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	return strings.ToLower(strings.TrimSpace(answer)) == "y"
+}
+
+func existingRuntimeFiles(rt config.Runtime) []string {
+	candidates := []string{
+		rt.StatePath,
+		rt.StatePath + ".lock",
+		rt.SocketPath,
+		rt.TUISocket(),
+		supervisor.PIDPath(rt),
+		supervisor.LockPath(rt),
+		supervisor.LogPath(rt),
+		filepath.Join(rt.Dir, "weft-client.log"),
+		filepath.Join(rt.Dir, "weft.log"),
+	}
+	var paths []string
+	for _, path := range candidates {
+		if _, err := os.Lstat(path); err == nil {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func existingWorkspaces(rt config.Runtime) []string {
+	root := filepath.Join(rt.Dir, "workdirs")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			paths = append(paths, filepath.Join(root, entry.Name()))
+		}
+	}
+	return paths
+}
+
+func deleteWorkspace(rt config.Runtime, path string) bool {
+	root, err := filepath.Abs(filepath.Join(rt.Dir, "workdirs"))
+	if err != nil {
+		return false
+	}
+	target, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	if target == root || !strings.HasPrefix(target, root+string(os.PathSeparator)) {
+		return false
+	}
+	info, err := os.Lstat(target)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
+	return os.RemoveAll(target) == nil
 }
 
 func looksLikeID(value string) bool {
@@ -502,4 +607,42 @@ func displayFocus(focus state.Focus) string {
 		return "agents"
 	}
 	return string(focus)
+}
+
+func printUpgrade(upgrade *ipc.Upgrade) {
+	if upgrade == nil || strings.TrimSpace(upgrade.Message) == "" {
+		return
+	}
+	fmt.Println(upgrade.Message)
+}
+
+func printSupervisorStatus(response ipc.Response) {
+	fmt.Printf("client version: %s\n", supervisor.ReportedClientVersion())
+	if response.SupervisorVersion != "" {
+		fmt.Printf("supervisor version: %s\n", response.SupervisorVersion)
+	}
+	if response.ProtocolVersion != 0 {
+		fmt.Printf("protocol: client %d, supervisor %d\n", ipc.ProtocolVersion, response.ProtocolVersion)
+	}
+	if response.Upgrade == nil {
+		fmt.Println("upgrade: current")
+		return
+	}
+	if response.Upgrade.AutoRestarted {
+		fmt.Println("upgrade: supervisor restarted")
+		return
+	}
+	if !response.Upgrade.Compatible {
+		fmt.Println("upgrade: incompatible supervisor restart required")
+		return
+	}
+	if response.Upgrade.RunningAgents > 0 {
+		fmt.Printf("upgrade: restart pending, %d live Codex terminal(s)\n", response.Upgrade.RunningAgents)
+		return
+	}
+	fmt.Println("upgrade: restart pending")
+}
+
+func supervisorResponded(response ipc.Response) bool {
+	return response.SupervisorVersion != "" || response.ProtocolVersion != 0 || response.Error != nil || response.Upgrade != nil
 }

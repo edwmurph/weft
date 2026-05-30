@@ -6,7 +6,7 @@ This is the living product and technical specification for Weft. Keep this file 
 
 Weft is one global terminal command center for managing Codex agents across multiple workdirs.
 
-Weft is no longer one instance per workdir. A single Weft process owns the global navigation state, the agent registry, and Codex PTYs. Users can organize agents by workdir, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
+Weft is no longer one instance per workdir. One local Weft supervisor owns the global navigation state, the agent registry, and Codex PTYs. Terminal UI clients attach to that supervisor, render the command center, and can detach without stopping agents. Users can organize agents by workdir, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
 
 The core workflow is:
 
@@ -26,6 +26,113 @@ The core workflow is:
 - Groups are optional; agents can live directly in a workdir without a group.
 - Agent rows render configured text only; no fixed status pills beside each row.
 - The terminal UI should stay dense, minimal, and close to the current iTerm-style Weft look.
+- Supervisor-owned sessions: agent PTYs must outlive any single TUI client.
+- Disposable clients: closing, upgrading, or restarting a TUI client must not clear state or stop agents.
+- No tmux runtime dependency: tmux must not be required for normal launch, attach, detach, rendering, upgrades, or tests.
+- Event-driven speed: avoid polling loops and shelling out for routine runtime state.
+- Minimal dependencies: prefer the Go standard library and existing terminal/PTY dependencies before adding new packages.
+
+## Runtime Architecture
+
+Weft has two runtime roles in one shipped binary.
+
+## Supervisor
+
+The supervisor is a local background process, referred to internally as `weftd`.
+It is started automatically by `weft` when needed and is scoped by
+`WEFT_HOME`. There is at most one active supervisor per runtime directory.
+
+The supervisor owns:
+
+- config loading and migration
+- state loading, repair, mutation, and persistence
+- the agent registry
+- Codex PTY processes
+- terminal screen state for each agent
+- title hook execution
+- local IPC over a Unix domain socket
+- attached client coordination
+- version and protocol negotiation
+
+The supervisor must not listen on a network interface. Its socket lives inside
+the Weft runtime directory with user-only permissions.
+
+## Clients
+
+The `weft` command is a CLI and TUI client. By default it ensures the
+supervisor is running, attaches an interactive terminal UI, and exits only the
+client when the user closes Weft. `weft --no-attach` and `weft start
+--no-attach` ensure the supervisor is running and then return. `--clear` may
+be combined with either start form to force a fresh runtime before launch.
+
+The interactive client owns only terminal rendering, local input collection,
+and transient modal editing state. Product state changes are sent to the
+supervisor as commands. The supervisor responds with snapshots and event
+updates that the client renders.
+
+Only one interactive TUI client owns foreground rendering and input at a time in
+the first implementation. A second `weft` attach should take over cleanly and
+cause the previous client to exit with a short message that another client
+attached. Non-interactive CLI commands such as `weft status` can run
+concurrently.
+
+## IPC
+
+Client and supervisor communication should use a small versioned protocol over
+the local Unix socket. The protocol should support:
+
+- handshake with binary version and protocol version
+- command request and response
+- state snapshot response
+- event subscription for state, PTY screen, status, and shutdown events
+- raw key/input delivery to the active Codex PTY
+- terminal size updates from the active TUI client
+- structured errors suitable for CLI output and TUI footer messages
+
+The protocol does not need an external RPC framework. New dependencies should
+be added only if the standard library becomes clearly insufficient.
+
+## Process And Upgrade UX
+
+Users should not need `weft clear` after upgrades.
+
+When a newly installed `weft` client finds an older compatible supervisor:
+
+- attach to it successfully
+- show a concise upgrade banner in the TUI and `weft status`
+- keep existing agents and PTYs running
+- offer a restart action for the supervisor
+
+When no agents are running, Weft may restart the supervisor automatically to
+finish the upgrade. When any agent PTY is running, Weft must not restart the
+supervisor without explicit confirmation because that can stop live Codex
+terminals.
+
+If the supervisor protocol is incompatible with the client, the client should
+explain the situation and offer the least destructive recovery path:
+
+```text
+Weft was upgraded, but the running supervisor is too old for this client.
+Restarting the supervisor will stop running Codex terminals. Saved layout and
+metadata will remain.
+```
+
+`weft clear` remains a destructive last-resort reset. It must not be presented
+as the normal upgrade path.
+
+## Runtime Files
+
+Weft stores runtime files globally under `~/.weft` by default, or under
+`WEFT_HOME` when set:
+
+- `config.toml`
+- `state.json`
+- `weft.sock`
+- `weftd.pid`
+- `weftd.lock`
+- `weftd.log`
+
+`WEFT_WORKDIR` overrides the launch directory that seeds the initial workdir.
 
 ## Primary Layout
 
@@ -200,6 +307,7 @@ Example global templates:
 ```text
 {title}
 {auto}
+{status} {auto}
 {status} {title}
 {group}: {title}
 {workdir} / {group} / {title}
@@ -285,10 +393,14 @@ type Agent struct {
 
 The implementation may keep legacy `folder` JSON field names while migrating existing users, but product UI, docs, commands, and prompts should call these objects groups.
 
+Runtime-only details such as PID, PTY handles, socket clients, terminal size,
+and screen cache must not be persisted in `state.json`. They belong to the
+supervisor process and can be reconstructed from state and live PTYs.
+
 The global title template belongs in config, not per agent:
 
 ```toml
-title_template = "{title}"
+title_template = "{status} {auto}"
 title_hook_command = ""
 title_hook_timeout_seconds = 10
 ```
@@ -391,7 +503,8 @@ Close/delete agent:
 
 ## PTY Lifecycle
 
-Each agent owns one Codex PTY session.
+Each agent owns one Codex PTY session, and that PTY is owned by the supervisor,
+not by an attached TUI client.
 
 PTY key:
 
@@ -413,6 +526,65 @@ Rules:
 - Top-level agents have no group.
 - Removing a workdir stops every PTY for agents in that workdir.
 - Codex receives input only in Codex Focus State.
+- Closing the TUI client does not stop PTYs.
+- Restarting the supervisor stops PTYs unless a future implementation supports explicit PTY handoff.
+- The active TUI client sends terminal size changes to the supervisor, and the supervisor resizes the active Codex PTY.
+- When no client is attached, PTYs keep running at their most recent size.
+
+## Command Semantics
+
+`weft` and `weft start`:
+
+- start the supervisor when it is not running
+- attach an interactive TUI unless `--no-attach` is provided
+- when `--clear` is provided, stop the supervisor, delete runtime state without
+  a separate confirmation prompt, then start fresh
+- do not require tmux
+
+`weft close`:
+
+- closes the current interactive client when run inside a client
+- asks the supervisor to detach the active client when run from another shell
+- does not stop the supervisor or agent PTYs
+
+`weft close --kill`:
+
+- asks for confirmation when any agent PTY is running
+- stops all agent PTYs
+- stops the supervisor
+- preserves config and state
+
+`weft refresh`:
+
+- requests a fresh snapshot and repaint for the active client
+- does not restart the supervisor
+- does not clear state
+
+`weft clear`:
+
+- remains destructive
+- stops the supervisor and all agent PTYs
+- deletes Weft runtime state after explicit confirmation
+
+`weft sessions`:
+
+- lists the current supervisor and attached client state
+- must not shell out to tmux
+
+`weft --help`, `weft help`, and `weft -h`:
+
+- show the same Weft ASCII mark used by the empty Codex pane
+- leave blank space above the mark and a small left inset before the mark
+- advertise `weft` as the dashboard entry point rather than `weft start`
+- group commands by common dashboard use, agent organization, runtime, and
+  configuration
+- describe destructive commands explicitly
+- do not include the title-template reference section
+
+`weft delete-session`:
+
+- is legacy compatibility only after the supervisor architecture lands
+- should be removed or replaced with a supervisor-scoped command before the next major CLI cleanup
 
 ## Rendering Requirements
 
@@ -420,8 +592,11 @@ The UI should remain usable in small terminals.
 
 Minimum behavior:
 
-- If width is constrained, shrink or hide the workdirs pane first.
-- Preserve the agents pane enough to select an agent.
+- The Workdirs pane has a fixed 64-column width when it is rendered beside the
+  Agents pane.
+- At 120 columns and wider, show Workdirs, Agents, and Codex panes together.
+- At medium widths where a fixed Workdirs pane and useful Codex preview cannot
+  both fit, keep Workdirs and Agents visible and hide the Codex preview.
 - If navigation cannot fit, fall back to a single navigation pane that switches between workdirs and agents.
 - Codex Focus State must always give Codex the full available terminal.
 
@@ -449,12 +624,19 @@ Existing state with flat tabs and columns should migrate as follows:
 
 Unsupported or legacy state should be archived before writing migrated state.
 
+The supervisor architecture migration should preserve `config.toml`,
+`state.json`, workdirs, groups, agents, titles, generated titles, selected
+objects, and focus state. It cannot adopt live Codex PTYs from the old
+legacy tmux-pane runtime. If an old runtime is running during upgrade, Weft
+should explain that saved metadata will migrate but live terminals must be
+restarted.
+
 ## Configuration
 
 Initial config additions:
 
 ```toml
-title_template = "{title}"
+title_template = "{status} {auto}"
 title_hook_command = ""
 title_hook_timeout_seconds = 10
 
@@ -477,11 +659,19 @@ quit = "C-c"
 
 Existing keybindings can be migrated where names overlap.
 
+`tmux_session` is legacy configuration. The supervisor architecture must ignore
+or migrate it out of generated config. New generated config should not include a
+tmux setting.
+
 ## Testing Requirements
 
 Unit tests:
 
 - state migration from old tabs/columns
+- supervisor startup, singleton locking, and shutdown
+- client/supervisor protocol handshake
+- version mismatch and upgrade restart decisions
+- command routing from CLI/TUI client to supervisor
 - workdir creation/removal
 - workdir title override set/clear behavior
 - group create/rename/delete validation
@@ -490,10 +680,14 @@ Unit tests:
 - focus transitions
 - layout width calculations
 - Codex input blocked unless maximized and focused
+- TUI client detach does not kill agent PTYs
 
 Integration tests:
 
 - launch with empty state
+- launch without tmux installed or on `PATH`
+- start supervisor with `weft --no-attach`
+- attach, detach, and reattach while an agent keeps running
 - add workdir, group, agent
 - open agent with `Enter`
 - collapse or open a group with `Enter`
@@ -502,6 +696,11 @@ Integration tests:
 - remove workdir and verify agents/PTYs close
 - delete every group and agent from a workdir and keep an empty Agents pane
 - persist and reload selected workdir/group/agent state
+- upgrade with no running agents restarts the supervisor automatically
+- upgrade with running agents preserves the old supervisor and prompts before restart
+
+Integration tests should use temporary `WEFT_HOME`, temporary `WEFT_WORKDIR`,
+and a fake `codex_command`. They should not require tmux.
 
 Verification workflow:
 
@@ -523,3 +722,6 @@ go build ./cmd/weft
 - Emoji picker
 - Automatic group classification
 - Multi-select batch operations
+- PTY handoff across supervisor binary exec
+- Multiple simultaneous interactive TUI clients
+- Remote network access to a Weft supervisor

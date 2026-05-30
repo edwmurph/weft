@@ -22,7 +22,7 @@ func RunHeadless(rt config.Runtime, cfg config.Config, st state.State, migration
 	defer cancel()
 
 	var mu sync.Mutex
-	stopIPC, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
+	stopIPC, err := ipc.Serve(rt.TUISocket(), func(request ipc.Request) ipc.Response {
 		if request.Command == "shutdown" {
 			cancel()
 			return ipc.Response{OK: true, Message: "Weft TUI stopped"}
@@ -60,21 +60,29 @@ func RunHeadless(rt config.Runtime, cfg config.Config, st state.State, migration
 }
 
 func runHeadlessCmd(cmd tea.Cmd, model *Model, mu *sync.Mutex) {
+	RunEngineCmd(cmd, model, mu)
+}
+
+func RunEngineCmd(cmd tea.Cmd, model *Model, mu *sync.Mutex) {
 	if cmd == nil {
 		return
 	}
 	go func() {
-		applyHeadlessMsg(cmd(), model, mu)
+		ApplyEngineMsg(cmd(), model, mu)
 	}()
 }
 
 func applyHeadlessMsg(msg tea.Msg, model *Model, mu *sync.Mutex) {
+	ApplyEngineMsg(msg, model, mu)
+}
+
+func ApplyEngineMsg(msg tea.Msg, model *Model, mu *sync.Mutex) {
 	switch typed := msg.(type) {
 	case nil:
 		return
 	case tea.BatchMsg:
 		for _, cmd := range typed {
-			runHeadlessCmd(cmd, model, mu)
+			RunEngineCmd(cmd, model, mu)
 		}
 	case ptyStartedMsg:
 		mu.Lock()

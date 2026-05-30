@@ -1,15 +1,9 @@
 package sessions
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-
-	"github.com/edwmurph/weft/internal/config"
-	"github.com/edwmurph/weft/internal/tmuxhost"
 )
 
 type WeftSession struct {
@@ -22,39 +16,7 @@ type WeftSession struct {
 }
 
 func List(current string) []WeftSession {
-	out, err := exec.Command(
-		"tmux",
-		"list-sessions",
-		"-F",
-		fmt.Sprintf(
-			"#{session_name}\t#{session_windows}\t#{session_attached}\t#{%s}\t#{%s}",
-			tmuxhost.WorkdirOption,
-			tmuxhost.RuntimeOption,
-		),
-	).Output()
-	if err != nil {
-		return nil
-	}
-	var sessions []WeftSession
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 5)
-		for len(parts) < 5 {
-			parts = append(parts, "")
-		}
-		if parts[3] == "" && !strings.HasPrefix(parts[0], "weft") {
-			continue
-		}
-		windows, _ := strconv.Atoi(parts[1])
-		clients, _ := strconv.Atoi(parts[2])
-		sessions = append(sessions, WeftSession{
-			Name: parts[0], Windows: windows, Clients: clients,
-			Workdir: parts[3], RuntimeDir: parts[4], Current: parts[0] == current,
-		})
-	}
-	return sessions
+	return nil
 }
 
 func Workspaces() []string {
@@ -109,13 +71,5 @@ func DisplayPath(path string) string {
 }
 
 func CurrentSessionFromRuntime() string {
-	rt, err := config.ResolveRuntime()
-	if err != nil {
-		return ""
-	}
-	cfg, err := config.EnsureConfig(rt)
-	if err != nil {
-		return ""
-	}
-	return cfg.TmuxSession
+	return ""
 }

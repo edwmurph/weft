@@ -15,11 +15,17 @@ import (
 
 func TestWorkspaceNavWidthShrinksWorkdirsFirst(t *testing.T) {
 	st := layoutState("/tmp/project")
-	if got := workspaceNavFrameWidth(st, 140); got < 60 {
+	if got := workspaceNavFrameWidth(st, 140); got != fixedWorkdirPaneWidth+defaultAgentsPaneWidth {
 		t.Fatalf("wide nav width = %d", got)
 	}
-	if got := workspaceNavFrameWidth(st, 80); got > 44 {
-		t.Fatalf("medium nav width = %d", got)
+	if got := workspaceNavFrameWidth(st, minThreePaneWidth); got != minTwoPaneNavWidth {
+		t.Fatalf("minimum three-pane nav width = %d", got)
+	}
+	if got := workspaceNavFrameWidth(st, 100); got != 100 {
+		t.Fatalf("medium nav width = %d, want nav-only command center", got)
+	}
+	if got := workspaceNavFrameWidth(st, 70); got != 42 {
+		t.Fatalf("narrow nav width = %d", got)
 	}
 	st.NavOpen = false
 	if got := workspaceNavFrameWidth(st, 140); got != 0 {
@@ -27,23 +33,21 @@ func TestWorkspaceNavWidthShrinksWorkdirsFirst(t *testing.T) {
 	}
 }
 
-func TestDesiredWorkdirPaneWidthExpandsForLongPaths(t *testing.T) {
+func TestDesiredWorkdirPaneWidthIsFixed(t *testing.T) {
 	st := layoutState("/tmp/a-very-long-project-name-that-should-fit-in-the-workdirs-pane")
 
 	got := desiredWorkdirPaneWidth(st)
-	if got <= 44 {
-		t.Fatalf("workdir pane did not expand for long path: %d", got)
-	}
-	if got > maxWorkdirPaneWidth {
-		t.Fatalf("workdir pane exceeded max width: %d", got)
+	if got != fixedWorkdirPaneWidth {
+		t.Fatalf("workdir pane width = %d, want fixed %d", got, fixedWorkdirPaneWidth)
 	}
 }
 
 func TestRenderWorkspaceShowsWorkdirsAgentsAndAgent(t *testing.T) {
 	cfg := config.DefaultConfig("weft-test")
+	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 120, 24, "", 72, 1)
+	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 140, 24, "", minTwoPaneNavWidth, 1)
 
 	for _, expected := range []string{
 		"Workdirs",
@@ -68,6 +72,47 @@ func TestRenderWorkspaceShowsWorkdirsAgentsAndAgent(t *testing.T) {
 	}
 	if strings.Contains(got, "ready") {
 		t.Fatalf("agent rows should not render fixed status tags unless template asks for them:\n%s", got)
+	}
+}
+
+func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
+	cfg := config.DefaultConfig("weft-test")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workdir := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
+	expectedPath := "~" + strings.TrimPrefix(workdir, home)
+	st := state.Repair(state.Empty(), workdir)
+
+	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", minThreePaneWidth, 24, "", workdir)
+
+	for _, expected := range []string{"Workdirs", "Agents", "No Codex agent open", expectedPath} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("wide dashboard missing %q:\n%s", expected, got)
+		}
+	}
+}
+
+func TestRenderWorkspaceKeepsFixedWorkdirPaneAtMediumWidth(t *testing.T) {
+	cfg := config.DefaultConfig("weft-test")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workdir := filepath.Join(home, "code", "personal", "weft", ".worktrees", "ideal-architecture")
+	expectedPath := "~" + strings.TrimPrefix(workdir, home)
+	st := state.Repair(state.Empty(), workdir)
+
+	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", workdir)
+
+	for _, expected := range []string{"Workdirs", "Agents", expectedPath} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("medium dashboard missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "No Codex agent open") {
+		t.Fatalf("medium dashboard should hide Codex preview before clipping fixed Workdirs:\n%s", got)
 	}
 }
 
@@ -177,6 +222,7 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 
 func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	cfg := config.DefaultConfig("weft-test")
+	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.SelectedFolderID = ""
 	st.Folders = nil
