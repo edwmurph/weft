@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-29 - Codex-focus shortcut simplification
+
+- Request: Stop dashboard `s` from overriding Codex input, keep only `C-g` and `C-q` active in CODEX focus, and remove the dashboard sessions pane.
+- Suggestions: Treat `C-g` and `C-q` as the only global CODEX-focus shortcuts, forward all other active-tab input to the Codex PTY, remove the dashboard sessions modal/ticker/config key, and keep session management in the CLI.
+- Outcome: Implemented in `.worktrees/codex-focus-shortcuts`; awaiting review.
+- Evidence: `internal/tui/model.go`, `internal/config/config.go`, `tests/integration/dashboard_e2e_test.go`, `README.md`.
+
 ## 2026-05-28 - Refactor skill Go workflow alignment
 
 - Request: Update the repo-local refactor skill after the single-pane Go rewrite made the old Python workflow stale.

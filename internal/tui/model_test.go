@@ -46,7 +46,46 @@ func TestNavKeyWorksWhenPersistedEmptyStateHadCodexFocus(t *testing.T) {
 	}
 }
 
-func TestMoveKeyWorksInCodexFocus(t *testing.T) {
+func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("s")},
+		{Type: tea.KeyRunes, Runes: []rune("?")},
+		{Type: tea.KeyRunes, Runes: []rune("n")},
+		{Type: tea.KeyShiftRight},
+		{Type: tea.KeyCtrlD},
+	} {
+		rt := testRuntime(t)
+		cfg := config.DefaultConfig("codux-test")
+		model := NewModel(rt, cfg, state.State{
+			Version: state.Version,
+			Focus:   state.FocusCodex,
+			Tabs: []state.Tab{
+				{ID: "a", Title: "alpha", Column: "inbox", Status: state.StatusRunning},
+			},
+			ActiveTabID: "a",
+		})
+
+		updated, cmd := model.handleKey(msg)
+		model = updated.(Model)
+
+		if cmd != nil {
+			t.Fatalf("%s should not start dashboard command in codex focus", msg.String())
+		}
+		if model.mode != modeNormal {
+			t.Fatalf("%s changed mode to %s", msg.String(), model.mode)
+		}
+		if model.state.Focus != state.FocusCodex {
+			t.Fatalf("%s changed focus to %s", msg.String(), model.state.Focus)
+		}
+		if len(model.state.Tabs) != 1 {
+			t.Fatalf("%s changed tabs: %#v", msg.String(), model.state.Tabs)
+		}
+		active := state.ActiveTab(model.state)
+		if active == nil || active.Column != "inbox" {
+			t.Fatalf("%s changed active tab: %#v", msg.String(), active)
+		}
+	}
+
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig("codux-test")
 	model := NewModel(rt, cfg, state.State{
@@ -58,32 +97,10 @@ func TestMoveKeyWorksInCodexFocus(t *testing.T) {
 		ActiveTabID: "a",
 	})
 
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftRight})
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlG})
 	model = updated.(Model)
-
-	active := state.ActiveTab(model.state)
-	if active == nil || active.Column != "implement" {
-		t.Fatalf("active tab = %#v", active)
-	}
-	if model.state.Focus != state.FocusCodex {
-		t.Fatalf("focus = %s", model.state.Focus)
-	}
-}
-
-func TestBlockedCodexControlKeys(t *testing.T) {
-	for _, msg := range []tea.KeyMsg{
-		{Type: tea.KeyCtrlC},
-		{Type: tea.KeyCtrlD},
-	} {
-		if !isBlockedCodexControlKey(msg) {
-			t.Fatalf("%s should be blocked in codex focus", msg.String())
-		}
-	}
-	if isBlockedCodexControlKey(tea.KeyMsg{Type: tea.KeyCtrlG}) {
-		t.Fatal("C-g should remain available for focus toggle")
-	}
-	if isBlockedCodexControlKey(tea.KeyMsg{Type: tea.KeyCtrlQ}) {
-		t.Fatal("C-q should remain available for quit")
+	if model.state.Focus != state.FocusNav {
+		t.Fatalf("C-g should focus nav, got %s", model.state.Focus)
 	}
 }
 

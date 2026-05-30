@@ -31,7 +31,6 @@ type KeyBindings struct {
 	MoveRight   string `toml:"move_right"`
 	Rename      string `toml:"rename"`
 	Close       string `toml:"close"`
-	Sessions    string `toml:"sessions"`
 	Help        string `toml:"help"`
 	FocusToggle string `toml:"focus_toggle"`
 	Quit        string `toml:"quit"`
@@ -69,7 +68,6 @@ func DefaultKeyBindings() KeyBindings {
 		MoveRight:   "S-Right",
 		Rename:      "r",
 		Close:       "c",
-		Sessions:    "s",
 		Help:        "?",
 		FocusToggle: "C-g",
 		Quit:        "C-q",
@@ -170,7 +168,6 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 			MoveRight   string `toml:"move_right"`
 			Rename      string `toml:"rename"`
 			Close       string `toml:"close"`
-			Sessions    string `toml:"sessions"`
 			Help        string `toml:"help"`
 			FocusToggle string `toml:"focus_toggle"`
 			Quit        string `toml:"quit"`
@@ -204,7 +201,6 @@ func LoadConfig(path string, defaultSession string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.MoveRight, raw.KeyBindings.MoveRight)
 	applyBinding(&cfg.KeyBindings.Rename, raw.KeyBindings.Rename)
 	applyBinding(&cfg.KeyBindings.Close, raw.KeyBindings.Close)
-	applyBinding(&cfg.KeyBindings.Sessions, raw.KeyBindings.Sessions)
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.FocusToggle, raw.KeyBindings.FocusToggle)
 	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
@@ -237,8 +233,7 @@ func (c Config) Validate() error {
 	for name, value := range map[string]string{
 		"new": c.KeyBindings.New, "prev": c.KeyBindings.Prev, "next": c.KeyBindings.Next,
 		"move_left": c.KeyBindings.MoveLeft, "move_right": c.KeyBindings.MoveRight,
-		"rename": c.KeyBindings.Rename, "close": c.KeyBindings.Close,
-		"sessions": c.KeyBindings.Sessions, "help": c.KeyBindings.Help,
+		"rename": c.KeyBindings.Rename, "close": c.KeyBindings.Close, "help": c.KeyBindings.Help,
 		"focus_toggle": c.KeyBindings.FocusToggle, "quit": c.KeyBindings.Quit,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -262,11 +257,9 @@ func MigrateDefaultConfig(path string) error {
 	updated = strings.ReplaceAll(updated, `close = "x"`, `close = "c"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-a"`, `focus_toggle = "C-g"`)
 	updated = strings.ReplaceAll(updated, `focus_toggle = "C-d"`, `focus_toggle = "C-g"`)
+	updated = regexp.MustCompile(`(?m)^sessions\s*=\s*"[^"\n]*"\n?`).ReplaceAllString(updated, "")
 	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nquit =") {
 		updated = strings.Replace(updated, `focus_toggle = "C-g"`+"\n", `focus_toggle = "C-g"`+"\n"+`quit = "C-q"`+"\n", 1)
-	}
-	if strings.Contains(updated, "[key_bindings]") && !strings.Contains(updated, "\nsessions =") {
-		updated = strings.Replace(updated, `close = "c"`+"\n", `close = "c"`+"\n"+`sessions = "s"`+"\n", 1)
 	}
 	if updated == text {
 		return nil
@@ -293,7 +286,6 @@ move_left = "S-Left"
 move_right = "S-Right"
 rename = "r"
 close = "c"
-sessions = "s"
 help = "?"
 focus_toggle = "C-g"
 quit = "C-q"

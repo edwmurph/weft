@@ -16,7 +16,6 @@ import (
 	"github.com/edwmurph/codux/internal/ipc"
 	"github.com/edwmurph/codux/internal/navigation"
 	"github.com/edwmurph/codux/internal/ptyx"
-	"github.com/edwmurph/codux/internal/sessions"
 	"github.com/edwmurph/codux/internal/state"
 	"github.com/edwmurph/codux/internal/titles"
 	"github.com/edwmurph/codux/internal/tmuxhost"
@@ -36,11 +35,10 @@ type ptyStartedMsg struct {
 type mode string
 
 const (
-	modeNormal   mode = ""
-	modeHelp     mode = "help"
-	modeRename   mode = "rename"
-	modeClose    mode = "close"
-	modeSessions mode = "sessions"
+	modeNormal mode = ""
+	modeHelp   mode = "help"
+	modeRename mode = "rename"
+	modeClose  mode = "close"
 )
 
 const (
@@ -78,8 +76,6 @@ type Model struct {
 
 	renameInput  textinput.Model
 	viewport     viewport.Model
-	other        []sessions.CoduxSession
-	sessionIdx   int
 	pendingClose string
 }
 
@@ -122,7 +118,6 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		visible: map[string]bool{},
 		dataCh:  make(chan ptyx.Data, 64), ipcCh: make(chan ipcEnvelope, 16),
 		ctx: ctx, cancel: cancel, renameInput: input, viewport: vp,
-		other: sessions.List(cfg.TmuxSession),
 	}
 	model.navHeight = model.targetNavHeight()
 	for _, tab := range model.state.Tabs {
@@ -143,7 +138,7 @@ func (m Model) Init() tea.Cmd {
 	} else {
 		m.message = fmt.Sprintf("IPC unavailable: %v", err)
 	}
-	return tea.Batch(waitPTY(m.dataCh), waitIPC(m.ipcCh), tickSessions(), tickLoading())
+	return tea.Batch(waitPTY(m.dataCh), waitIPC(m.ipcCh), tickLoading())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -173,9 +168,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		response, cmd := m.handleIPC(typed.request)
 		typed.reply <- response
 		return m, tea.Batch(waitIPC(m.ipcCh), cmd)
-	case sessionsTick:
-		m.other = sessions.List(m.cfg.TmuxSession)
-		return m, tickSessions()
 	case tea.KeyMsg:
 		return m.handleKey(typed)
 	}
@@ -196,10 +188,6 @@ func (m Model) View() string {
 		}
 		return m.modalView(fmt.Sprintf("Close %s?\n\nY close  N cancel", title))
 	}
-	if m.mode == modeSessions {
-		return m.modalView(renderSessionsModal(m.other, m.sessionIdx))
-	}
-
 	content := m.activeOutput()
 	loadingText := ""
 	if content == "" && m.codexLoading() {
@@ -227,7 +215,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeRename {
 		return m.handleRenameKey(msg)
 	}
-	if m.mode == modeHelp || m.mode == modeSessions {
+	if m.mode == modeHelp {
 		if msg.Type == tea.KeyEsc || msg.String() == "q" || msg.String() == "?" {
 			m.mode = modeNormal
 		}
@@ -252,20 +240,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if bindingMatches(m.cfg.KeyBindings.FocusToggle, msg) {
 		return m, m.toggleFocus()
 	}
-	if bindingMatches(m.cfg.KeyBindings.Help, msg) {
-		m.mode = modeHelp
-		return m, nil
-	}
-	if bindingMatches(m.cfg.KeyBindings.Sessions, msg) {
-		m.mode = modeSessions
-		return m, nil
-	}
-	if m.state.Focus == state.FocusCodex && isCodexReservedNavKey(m.cfg, msg) {
-		return m.handleNavKey(msg)
-	}
-	if m.state.Focus == state.FocusCodex && isBlockedCodexControlKey(msg) {
-		return m, nil
-	}
 	if m.state.Focus == state.FocusCodex && state.ActiveTab(m.state) != nil {
 		if active := state.ActiveTab(m.state); active != nil {
 			if pty := m.ptys[active.ID]; pty != nil {
@@ -279,20 +253,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		updated, nextCmd := m.handleNavKey(msg)
 		return updated, tea.Batch(cmd, nextCmd)
 	}
-	return m.handleNavKey(msg)
-}
-
-func isCodexReservedNavKey(cfg config.Config, msg tea.KeyMsg) bool {
-	return bindingMatches(cfg.KeyBindings.MoveLeft, msg) || bindingMatches(cfg.KeyBindings.MoveRight, msg)
-}
-
-func isBlockedCodexControlKey(msg tea.KeyMsg) bool {
-	switch strings.ToLower(msg.String()) {
-	case "ctrl+c", "ctrl+d":
-		return true
-	default:
-		return false
+	if bindingMatches(m.cfg.KeyBindings.Help, msg) {
+		m.mode = modeHelp
+		return m, nil
 	}
+	return m.handleNavKey(msg)
 }
 
 func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -638,7 +603,6 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		st := m.state
 		return ipc.Response{OK: true, State: &st, Message: m.statusText()}, nil
 	case "refresh":
-		m.other = sessions.List(m.cfg.TmuxSession)
 		m.message = "refreshed"
 		st := m.state
 		return ipc.Response{OK: true, State: &st, Message: "refreshed Codux dashboard"}, nil
@@ -732,12 +696,6 @@ func waitIPC(ch <-chan ipcEnvelope) tea.Cmd {
 	}
 }
 
-type sessionsTick struct{}
-
-func tickSessions() tea.Cmd {
-	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return sessionsTick{} })
-}
-
 func tickNavAnimation() tea.Cmd {
 	return tea.Tick(navAnimationInterval, func(time.Time) tea.Msg { return navAnimationTick{} })
 }
@@ -755,7 +713,6 @@ func renderHelp(cfg config.Config, migration string) string {
 		fmt.Sprintf("%s/%s move", cfg.KeyBindings.MoveLeft, cfg.KeyBindings.MoveRight),
 		fmt.Sprintf("%s rename", cfg.KeyBindings.Rename),
 		fmt.Sprintf("%s close", cfg.KeyBindings.Close),
-		fmt.Sprintf("%s sessions", cfg.KeyBindings.Sessions),
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s focus", cfg.KeyBindings.FocusToggle),
 		fmt.Sprintf("%s detach tmux", cfg.KeyBindings.Quit),
@@ -765,23 +722,6 @@ func renderHelp(cfg config.Config, migration string) string {
 	if migration != "" {
 		lines = append(lines, "", migration)
 	}
-	return strings.Join(lines, "\n")
-}
-
-func renderSessionsModal(items []sessions.CoduxSession, selected int) string {
-	lines := []string{"Other Codux sessions", ""}
-	if len(items) == 0 {
-		lines = append(lines, "No Codux sessions are running.")
-	} else {
-		for index, item := range items {
-			marker := " "
-			if index == selected {
-				marker = ">"
-			}
-			lines = append(lines, fmt.Sprintf("%s %-28s %2d clients  %s", marker, item.Name, item.Clients, sessions.DisplayPath(item.Workdir)))
-		}
-	}
-	lines = append(lines, "", "Esc close")
 	return strings.Join(lines, "\n")
 }
 

@@ -58,7 +58,7 @@ codux clear
 codux config info
 ```
 
-Inside the dashboard, press `?` for shortcuts. Defaults:
+When NAV is focused, press `?` for dashboard shortcuts. Defaults:
 
 ```toml
 [key_bindings]
@@ -69,14 +69,14 @@ move_left = "S-Left"
 move_right = "S-Right"
 rename = "r"
 close = "c"
-sessions = "s"
 help = "?"
 focus_toggle = "C-g"
 quit = "C-q"
 ```
 
-In CODEX focus, normal input is forwarded to the active Codex PTY except
-Codux-reserved keys.
+In CODEX focus, Codux handles only `C-g` and `C-q`. All other input is
+forwarded to the active Codex PTY. Use `codux sessions` from the CLI to inspect
+other running Codux sessions.
 
 ## Config And State
 

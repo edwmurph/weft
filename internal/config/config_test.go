@@ -29,8 +29,12 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.KeyBindings.FocusToggle != "C-g" {
 		t.Fatalf("FocusToggle = %q", cfg.KeyBindings.FocusToggle)
 	}
-	if _, err := os.Stat(rt.ConfigPath); err != nil {
+	data, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "sessions =") {
+		t.Fatalf("default config should not include dashboard sessions binding:\n%s", data)
 	}
 }
 
@@ -61,6 +65,31 @@ close = "x"
 	}
 	if cfg.KeyBindings.Close != "x" {
 		t.Fatalf("close = %q", cfg.KeyBindings.Close)
+	}
+}
+
+func TestMigrateDefaultConfigRemovesDashboardSessionsBinding(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	err := os.WriteFile(path, []byte(`
+[key_bindings]
+close = "c"
+sessions = "s"
+focus_toggle = "C-g"
+`), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateDefaultConfig(path); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "sessions =") {
+		t.Fatalf("migrated config should remove dashboard sessions binding:\n%s", data)
 	}
 }
 

@@ -234,33 +234,23 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertCodexBoxNotDrifted(t, clientOutput())
 	})
 
-	timedStep(t, "shift-right moves fresh tab from codex focus", func() {
+	timedStep(t, "shift-right stays inside codex focus", func() {
 		tmuxRun(t, env, "send-keys", "-t", pane, "S-Right")
+		time.Sleep(250 * time.Millisecond)
 		waitState(t, env, bin, func(st state.State) bool {
 			tab := findTab(st, firstID)
-			return tab != nil && tab.Column == "implement"
+			return tab != nil && tab.Column == "inbox" && st.Focus == state.FocusCodex
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
-	timedStep(t, "codex focus blocks C-c and C-d", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-c")
-		tmuxRun(t, env, "send-keys", "-t", pane, "C-d")
-		time.Sleep(250 * time.Millisecond)
-		st := waitState(t, env, bin, func(st state.State) bool {
-			tab := findTab(st, firstID)
-			return tab != nil && tab.Status == state.StatusRunning && st.Focus == state.FocusCodex
-		})
-		if tab := findTab(st, firstID); tab == nil || tab.Status != state.StatusRunning {
-			t.Fatalf("tab should still be running after blocked controls: %#v", st)
-		}
-		assertDashboardNotCorrupt(t, clientOutput(), false)
-	})
-
-	timedStep(t, "codex focus forwards input", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "hello", "Enter")
+	timedStep(t, "codex focus forwards dashboard shortcut keys", func() {
+		tmuxRun(t, env, "send-keys", "-l", "-t", pane, "s?n")
+		tmuxRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "received:hello")
+			return strings.Contains(capture, "received:s?n") &&
+				!strings.Contains(capture, "Codux shortcuts") &&
+				!strings.Contains(capture, "Other Codux sessions")
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
@@ -275,11 +265,11 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, capture, false)
 	})
 
-	timedStep(t, "shift-left moves active tab in nav focus", func() {
-		tmuxRun(t, env, "send-keys", "-t", pane, "S-Left")
+	timedStep(t, "shift-right moves active tab in nav focus", func() {
+		tmuxRun(t, env, "send-keys", "-t", pane, "S-Right")
 		waitState(t, env, bin, func(st state.State) bool {
 			tab := findTab(st, firstID)
-			return tab != nil && tab.Column == "inbox"
+			return tab != nil && tab.Column == "implement"
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
@@ -302,7 +292,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, capture, false)
 	})
 
-	timedStep(t, "help and sessions modals close", func() {
+	timedStep(t, "help modal closes", func() {
 		tmuxRun(t, env, "send-keys", "-t", pane, "?")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codux shortcuts")
@@ -310,14 +300,6 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		tmuxRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return !strings.Contains(capture, "Codux shortcuts")
-		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "s")
-		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Other Codux sessions")
-		})
-		tmuxRun(t, env, "send-keys", "-t", pane, "Escape")
-		waitForOutput(t, clientOutput, func(capture string) bool {
-			return !strings.Contains(capture, "Other Codux sessions")
 		})
 	})
 
