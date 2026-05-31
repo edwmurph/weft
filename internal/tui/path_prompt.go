@@ -385,7 +385,7 @@ func promptMatchedSuggestions(ctx promptContext, value string) []string {
 func filterPromptSuggestions(suggestions []string, value string) []string {
 	query := strings.ToLower(strings.TrimSpace(value))
 	if query == "" {
-		return nil
+		return suggestions
 	}
 	matched := make([]string, 0, len(suggestions))
 	for _, suggestion := range suggestions {
@@ -394,6 +394,10 @@ func filterPromptSuggestions(suggestions []string, value string) []string {
 		}
 	}
 	return matched
+}
+
+func promptShouldOpenSuggestions(ctx promptContext, value string) bool {
+	return promptHasAutocomplete(ctx.prompt) && len(promptMatchedSuggestions(ctx, value)) > 0
 }
 
 func promptSuggestionIndex(index int, suggestions []string) int {

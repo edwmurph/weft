@@ -1645,7 +1645,13 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "m")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Move agent") &&
-				strings.Contains(capture, "Top-level agent")
+				strings.Contains(capture, "Top-level agent") &&
+				strings.Contains(capture, "Esc close suggestions")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Escape")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Move agent") &&
+				strings.Contains(capture, "Enter top-level")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {

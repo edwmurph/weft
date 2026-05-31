@@ -329,7 +329,7 @@ func (m ClientModel) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 	m.prompt = prompt
 	configurePromptInput(&m.input, m.promptContext(), value)
-	m.promptSuggestionOpen = false
+	m.promptSuggestionOpen = promptShouldOpenSuggestions(m.promptContext(), m.input.Value())
 	m.promptSuggestionIndex = 0
 	m.editGroupField = 0
 	if prompt != promptGroup && prompt != promptEditGroup {

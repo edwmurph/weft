@@ -1248,16 +1248,14 @@ func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T
 		"Add workspace",
 		"Path",
 		"✓ ",
-		"Enter add",
-		"Down suggestions",
-		"Esc cancel",
+		"> current",
+		"Enter choose",
+		"Up/Down move",
+		"Esc close suggestions",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("workspace modal missing %q:\n%s", expected, got)
 		}
-	}
-	if strings.Contains(got, "> current") {
-		t.Fatalf("workspace menu should start closed:\n%s", got)
 	}
 	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "✓ "+parent {
 		t.Fatalf("path status = %q", status)
@@ -1338,31 +1336,19 @@ func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	model.startPrompt(promptWorkspace, withTrailingSeparator(parent))
 
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Down suggestions", "Enter add", "Esc cancel"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("closed suggestion state missing %q:\n%s", expected, got)
-		}
-	}
-	if strings.Contains(got, "> alpha-project") || strings.Contains(got, "beta-project") {
-		t.Fatalf("suggestion menu should start closed:\n%s", got)
-	}
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
 	if got, want := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex), withTrailingSeparator(alpha); got != want {
-		t.Fatalf("opened suggestion = %q, want %q", got, want)
+		t.Fatalf("initial suggestion = %q, want %q", got, want)
 	}
-	got = ansi.Strip(model.View())
 	for _, expected := range []string{"> alpha-project", "beta-project", "Enter choose", "Up/Down move", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("open suggestion state missing %q:\n%s", expected, got)
+			t.Fatalf("initial suggestion state missing %q:\n%s", expected, got)
 		}
 	}
 	if strings.Contains(got, "alpha-project/") || strings.Contains(got, "beta-project/") {
 		t.Fatalf("suggestion labels should not render trailing slashes:\n%s", got)
 	}
 
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
 	if got, want := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex), withTrailingSeparator(beta); got != want {
 		t.Fatalf("down arrow suggestion = %q, want %q", got, want)
@@ -1405,7 +1391,7 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 
 	model.startPrompt(promptMoveAgent, "")
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Move agent", "Top-level agent", "Enter top-level", "Esc cancel"} {
+	for _, expected := range []string{"Move agent", "Top-level agent", "> release", "Enter choose", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("blank move prompt missing %q:\n%s", expected, got)
 		}
@@ -1415,8 +1401,6 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	if got, want := model.input.MatchedSuggestions(), []string{"release"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("matched groups = %#v, want %#v", got, want)
 	}
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
 	got = ansi.Strip(model.View())
 	for _, expected := range []string{"> release", "Enter choose", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
@@ -1424,7 +1408,7 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 		}
 	}
 
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeInput || model.promptSuggestionOpen {
 		t.Fatalf("choosing a group should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
@@ -1471,14 +1455,12 @@ func TestMoveAgentPromptAutocompletesGroupSubstring(t *testing.T) {
 	if got, want := promptMatchedSuggestions(model.promptContext(), model.input.Value()), []string{"release-rollout"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("substring matched groups = %#v, want %#v", got, want)
 	}
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
 	got := ansi.Strip(model.View())
 	if !strings.Contains(got, "> release-rollout") || !strings.Contains(got, "Enter choose") {
 		t.Fatalf("substring group suggestion menu missing match:\n%s", got)
 	}
 
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeInput || model.promptSuggestionOpen {
 		t.Fatalf("choosing substring group should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
@@ -1615,8 +1597,7 @@ func TestWorkspacePromptSuggestionMenuScrollsWithSelection(t *testing.T) {
 	model.height = 32
 	model.startPrompt(promptWorkspace, withTrailingSeparator(parent))
 
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
+	var updated tea.Model
 	for index := 0; index < 9; index++ {
 		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(Model)
@@ -1634,7 +1615,7 @@ func TestWorkspacePromptSuggestionMenuScrollsWithSelection(t *testing.T) {
 	}
 }
 
-func TestWorkspacePromptTabOpensAndChoosesDirectory(t *testing.T) {
+func TestWorkspacePromptTabChoosesVisibleDirectory(t *testing.T) {
 	parent := t.TempDir()
 	alpha := filepath.Join(parent, "alpha-project")
 	if err := os.Mkdir(alpha, 0o700); err != nil {
@@ -1651,20 +1632,11 @@ func TestWorkspacePromptTabOpensAndChoosesDirectory(t *testing.T) {
 	}
 	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
-	if !model.promptSuggestionOpen {
-		t.Fatal("first tab should open suggestions")
-	}
-	if model.input.Value() != filepath.Join(parent, "alp") {
-		t.Fatalf("first tab should not change input, got %q", model.input.Value())
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
 	if want := alpha; model.input.Value() != want {
 		t.Fatalf("completed path = %q, want %q", model.input.Value(), want)
 	}
 	if model.promptSuggestionOpen {
-		t.Fatal("second tab should close suggestions after choosing")
+		t.Fatal("tab should close suggestions after choosing")
 	}
 	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "✓ "+alpha {
 		t.Fatalf("completed path status = %q", status)
@@ -1686,22 +1658,20 @@ func TestWorkspacePromptAutocompletesDirectorySubstring(t *testing.T) {
 	if got, want := promptMatchedSuggestions(model.promptContext(), model.input.Value()), []string{withTrailingSeparator(target)}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("substring matched directories = %#v, want %#v", got, want)
 	}
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
 	if !model.promptSuggestionOpen {
-		t.Fatal("first tab should open substring suggestions")
+		t.Fatal("substring suggestions should open on prompt init")
 	}
 	if got := ansi.Strip(model.View()); !strings.Contains(got, "> client-suffix") {
 		t.Fatalf("substring suggestion should render target directory:\n%s", got)
 	}
 
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
 	if model.input.Value() != target {
 		t.Fatalf("completed substring path = %q, want %q", model.input.Value(), target)
 	}
 	if model.promptSuggestionOpen {
-		t.Fatal("second tab should close substring suggestions after choosing")
+		t.Fatal("tab should close substring suggestions after choosing")
 	}
 }
 

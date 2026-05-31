@@ -374,7 +374,7 @@ Autocomplete appears only when it has a useful known set:
 
 Autocomplete matches case-insensitive substrings in the relevant path segment or group name, not only prefixes from the beginning of the value.
 
-Autocomplete menus open directly under the input, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option closes the menu and leaves the form in a normal submit state.
+Autocomplete menus open directly under the input whenever the current value has suggestions, including on prompt initialization. The visible options update as the user types, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option closes the menu and leaves the form in a normal submit state.
 
 ## Codex Focus State
 
@@ -616,7 +616,7 @@ Add workspace:
 - When an interactive client opens from a launch directory that is not configured, Weft asks whether to add it before mutating state. `Enter` confirms; `Esc` declines.
 - Dashboard prompt opens with the selected workspace's parent directory prefilled.
 - Dashboard prompt uses the shared bordered form input.
-- Autocomplete opens directly below the input when the user types or presses `Down`.
+- Autocomplete opens directly below the prefilled input on prompt initialization when matching directories exist, then updates as the user types or presses `Down`.
 - While autocomplete is open, `Up` and `Down` move the highlighted option, `Enter` chooses it, and `Esc` closes the menu.
 - Autocomplete uses a bounded visible menu; moving past the visible rows scrolls the menu to keep the highlighted option visible.
 - When autocomplete is closed and the path is an existing directory, `Enter` adds the workspace.
@@ -686,7 +686,7 @@ Move agent:
 
 - Moves the agent to another group in the same workspace.
 - Can also clear the group, moving the agent back to a top-level row.
-- Dashboard prompt autocompletes existing group names in that workspace after the user types any matching substring.
+- Dashboard prompt opens with all existing group names in that workspace, then filters by any matching substring as the user types.
 - Does not restart the PTY.
 - Cross-workspace moves are out of scope for the first implementation.
 
