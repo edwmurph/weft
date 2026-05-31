@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/tui"
@@ -35,6 +36,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		"weft <command> [--clear]",
 		"weft --clear                 Clear runtime state, then open a fresh dashboard.",
 		"weft <command> --clear       Clear runtime state, then run the command.",
+		"weft version                 Show CLI, supervisor, and dashboard versions.",
 		"weft workspace add <path>    Add a workspace to the dashboard.",
 		"weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
 		"weft backup create           Back up config, state, and logs.",
@@ -58,6 +60,47 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		if strings.Contains(help, forbidden) {
 			t.Fatalf("help should not contain %q:\n%s", forbidden, help)
 		}
+	}
+}
+
+func TestVersionReportIncludesCliSupervisorAndDashboardVersions(t *testing.T) {
+	response := ipc.Response{
+		OK:                true,
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "7.8.1",
+		Snapshot:          &ipc.Snapshot{ActiveClientID: "client-1", ActiveClientVersion: "7.8.0"},
+	}
+
+	report := versionReport(response, nil, nil)
+
+	for _, expected := range []string{
+		"cli version: " + weftversion.Version,
+		"supervisor version: 7.8.1",
+		"main dashboard version: 7.8.0",
+		"protocol: cli 1, supervisor 1",
+		"upgrade: current",
+	} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("version report missing %q:\n%s", expected, report)
+		}
+	}
+}
+
+func TestVersionReportHandlesMissingSupervisor(t *testing.T) {
+	report := versionReport(ipc.Response{}, errors.New("dial unix weft.sock: connect: no such file or directory"), nil)
+
+	for _, expected := range []string{
+		"cli version: " + weftversion.Version,
+		"supervisor version: not running",
+		"main dashboard version: not attached",
+		"protocol: cli 1",
+	} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("version report missing %q:\n%s", expected, report)
+		}
+	}
+	if strings.Contains(report, "upgrade:") {
+		t.Fatalf("offline version report should not include upgrade status:\n%s", report)
 	}
 }
 

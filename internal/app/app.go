@@ -37,12 +37,15 @@ func Run(args []string) error {
 				fmt.Print(cliHelpText())
 				return nil
 			}
-		case "--version", "version":
+		case "--version":
 			clearApplies = false
 			action = func() error {
 				fmt.Println(version.Version)
 				return nil
 			}
+		case "version":
+			clearApplies = false
+			action = versionCommand
 		case supervisor.CommandName:
 			clearApplies = false
 			action = runSupervisor
@@ -149,6 +152,7 @@ func cliHelpText() string {
 		"  weft --no-attach             Start or reuse the supervisor without opening the dashboard.",
 		"  weft refresh                 Request a fresh dashboard snapshot.",
 		"  weft status [--json]         Show supervisor, workspace, group, and agent state.",
+		"  weft version                 Show CLI, supervisor, and dashboard versions.",
 		"  weft doctor                  Check local runtime and Codex command health.",
 		"  weft doctor keys             Diagnose terminal key encoding.",
 		"",
@@ -315,6 +319,76 @@ func status(args []string) error {
 	fmt.Printf("supervisor: down (%v)\n", err)
 	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\nagents: %d\n", rt.Workspace, rt.Dir, displayFocus(st.Focus), len(st.Workspaces), len(st.Groups), len(st.Agents))
 	return nil
+}
+
+func versionCommand() error {
+	var response ipc.Response
+	var statusErr error
+	rt, runtimeErr := config.ResolveRuntime()
+	if runtimeErr == nil {
+		response, statusErr = supervisor.Status(rt)
+	}
+	fmt.Print(versionReport(response, statusErr, runtimeErr))
+	return nil
+}
+
+func versionReport(response ipc.Response, statusErr error, runtimeErr error) string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "cli version: %s\n", supervisor.ReportedClientVersion())
+	if runtimeErr != nil {
+		fmt.Fprintf(&builder, "supervisor version: unavailable (%v)\n", runtimeErr)
+		fmt.Fprintf(&builder, "main dashboard version: unavailable\n")
+		fmt.Fprintf(&builder, "protocol: cli %d\n", ipc.ProtocolVersion)
+		return builder.String()
+	}
+	if statusErr != nil && !supervisorResponded(response) {
+		fmt.Fprintf(&builder, "supervisor version: not running\n")
+		fmt.Fprintf(&builder, "main dashboard version: not attached\n")
+		fmt.Fprintf(&builder, "protocol: cli %d\n", ipc.ProtocolVersion)
+		return builder.String()
+	}
+	supervisorVersion := strings.TrimSpace(response.SupervisorVersion)
+	if supervisorVersion == "" {
+		supervisorVersion = "unknown"
+	}
+	fmt.Fprintf(&builder, "supervisor version: %s\n", supervisorVersion)
+	fmt.Fprintf(&builder, "main dashboard version: %s\n", mainDashboardVersion(response))
+	if response.ProtocolVersion != 0 {
+		fmt.Fprintf(&builder, "protocol: cli %d, supervisor %d\n", ipc.ProtocolVersion, response.ProtocolVersion)
+	} else {
+		fmt.Fprintf(&builder, "protocol: cli %d\n", ipc.ProtocolVersion)
+	}
+	fmt.Fprintf(&builder, "upgrade: %s\n", upgradeSummary(response.Upgrade))
+	return builder.String()
+}
+
+func mainDashboardVersion(response ipc.Response) string {
+	if response.Snapshot == nil || strings.TrimSpace(response.Snapshot.ActiveClientID) == "" {
+		return "not attached"
+	}
+	if version := strings.TrimSpace(response.Snapshot.ActiveClientVersion); version != "" {
+		return version
+	}
+	return "unknown"
+}
+
+func upgradeSummary(upgrade *ipc.Upgrade) string {
+	if upgrade == nil {
+		return "current"
+	}
+	if upgrade.AutoRestarted {
+		return "supervisor restarted"
+	}
+	if !upgrade.Compatible {
+		return "incompatible supervisor restart required"
+	}
+	if upgrade.RestartWhenIdleQueued {
+		return fmt.Sprintf("restart when idle queued, %d live Codex terminal(s)", upgrade.RunningAgents)
+	}
+	if upgrade.RunningAgents > 0 {
+		return fmt.Sprintf("restart pending, %d live Codex terminal(s)", upgrade.RunningAgents)
+	}
+	return "restart pending"
 }
 
 func rename(args []string) error {
@@ -799,27 +873,7 @@ func printSupervisorStatus(response ipc.Response) {
 	if response.ProtocolVersion != 0 {
 		fmt.Printf("protocol: client %d, supervisor %d\n", ipc.ProtocolVersion, response.ProtocolVersion)
 	}
-	if response.Upgrade == nil {
-		fmt.Println("upgrade: current")
-		return
-	}
-	if response.Upgrade.AutoRestarted {
-		fmt.Println("upgrade: supervisor restarted")
-		return
-	}
-	if !response.Upgrade.Compatible {
-		fmt.Println("upgrade: incompatible supervisor restart required")
-		return
-	}
-	if response.Upgrade.RestartWhenIdleQueued {
-		fmt.Printf("upgrade: restart when idle queued, %d live Codex terminal(s)\n", response.Upgrade.RunningAgents)
-		return
-	}
-	if response.Upgrade.RunningAgents > 0 {
-		fmt.Printf("upgrade: restart pending, %d live Codex terminal(s)\n", response.Upgrade.RunningAgents)
-		return
-	}
-	fmt.Println("upgrade: restart pending")
+	fmt.Printf("upgrade: %s\n", upgradeSummary(response.Upgrade))
 }
 
 func supervisorResponded(response ipc.Response) bool {

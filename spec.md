@@ -706,6 +706,16 @@ Global `--clear`:
 - does not restart the supervisor
 - does not clear state
 
+`weft version`:
+
+- prints the local CLI version
+- checks the current runtime socket without starting the supervisor or creating
+  runtime config/state
+- when a supervisor is running, prints the supervisor version, supervisor
+  protocol version, upgrade status, and the active main dashboard client version
+- reports the supervisor as not running and the main dashboard as not attached
+  when no supervisor responds
+
 `weft clear`:
 
 - remains destructive

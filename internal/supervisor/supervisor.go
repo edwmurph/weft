@@ -191,9 +191,10 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 }
 
 type clientCoordinator struct {
-	activeID string
-	detachID string
-	message  string
+	activeID      string
+	activeVersion string
+	detachID      string
+	message       string
 }
 
 func notifySignals(ctx context.Context, cancel context.CancelFunc) func() {
@@ -278,6 +279,7 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 			clients.message = "another Weft client attached"
 		}
 		clients.activeID = clientID
+		clients.activeVersion = strings.TrimSpace(request.ClientVersion)
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "attached Weft client"}
 		applyClientState(&response, clients, clientID)
 		return withSupervisorFields(response, request, control), nil
@@ -285,6 +287,7 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		clientID := request.Args["client_id"]
 		if clients.activeID == clientID {
 			clients.activeID = ""
+			clients.activeVersion = ""
 		}
 		if clients.detachID == clientID {
 			clients.detachID = ""
@@ -345,6 +348,7 @@ func applyClientState(response *ipc.Response, clients *clientCoordinator, client
 		return
 	}
 	response.Snapshot.ActiveClientID = clients.activeID
+	response.Snapshot.ActiveClientVersion = clients.activeVersion
 	if clientID != "" && clients.detachID == clientID {
 		response.Snapshot.DetachClient = true
 		if clients.message != "" {

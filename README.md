@@ -84,6 +84,7 @@ weft <command> --clear       Clear runtime state, then run the command.
 weft --no-attach             Start or reuse the supervisor without opening the dashboard.
 weft refresh                 Request a fresh dashboard snapshot.
 weft status [--json]         Show supervisor, workspace, group, and agent state.
+weft version                 Show CLI, supervisor, and dashboard versions.
 weft doctor                  Check local runtime and Codex command health.
 weft doctor keys             Diagnose terminal key encoding.
 

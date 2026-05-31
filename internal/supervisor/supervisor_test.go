@@ -43,6 +43,22 @@ func TestSupervisorServesHandshakeStatusAndStructuredErrors(t *testing.T) {
 		t.Fatal("status message is empty")
 	}
 
+	_, err = ipc.Call(rt.SocketPath, ipc.Request{
+		Command:       "attach_client",
+		ClientVersion: "7.8.0",
+		Args:          map[string]string{"client_id": "dashboard-1"},
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = Status(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Snapshot == nil || status.Snapshot.ActiveClientVersion != "7.8.0" {
+		t.Fatalf("active dashboard version = %#v", status.Snapshot)
+	}
+
 	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "bogus"}, time.Second)
 	if err == nil {
 		t.Fatal("bogus command succeeded")

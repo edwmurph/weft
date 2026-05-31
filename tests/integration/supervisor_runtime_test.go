@@ -62,6 +62,23 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 			t.Fatalf("status missing %q:\n%s", expected, status)
 		}
 	}
+	versionOut := runWeft(t, env, bin, "version")
+	for _, expected := range []string{"cli version: " + weftversion.Version, "supervisor version: " + weftversion.Version, "main dashboard version: not attached", "protocol: cli 1, supervisor 1", "upgrade: current"} {
+		if !strings.Contains(versionOut, expected) {
+			t.Fatalf("version missing %q:\n%s", expected, versionOut)
+		}
+	}
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, "version-dashboard", 120, 30)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?") ||
+			strings.Contains(capture, "Workspaces")
+	})
+	if !waitForBool(8*time.Second, func() bool {
+		versionOut = runWeft(t, env, bin, "version")
+		return strings.Contains(versionOut, "main dashboard version: "+weftversion.Version)
+	}) {
+		t.Fatalf("version missing attached dashboard version:\n%s", versionOut)
+	}
 	if out := runWeft(t, env, bin, "doctor"); !strings.Contains(out, "supervisor owns Codex PTYs") {
 		t.Fatalf("doctor output missing supervisor ownership:\n%s", out)
 	}
