@@ -1,13 +1,10 @@
 package config
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -134,17 +131,6 @@ func AppDirInfo(workspace string) (string, bool, error) {
 	return filepath.Join(home, defaultRuntimeDirectory), false, nil
 }
 
-func RuntimeID(workspace string) string {
-	name := strings.ToLower(filepath.Base(workspace))
-	name = regexp.MustCompile(`[^A-Za-z0-9_-]+`).ReplaceAllString(name, "-")
-	name = strings.Trim(name, "-")
-	if name == "" {
-		name = "workspace"
-	}
-	sum := sha1.Sum([]byte(workspace))
-	return fmt.Sprintf("%s-%s", name, hex.EncodeToString(sum[:])[:8])
-}
-
 func EnsureConfig(rt Runtime) (Config, error) {
 	if err := os.MkdirAll(rt.Dir, 0o700); err != nil {
 		return Config{}, err
@@ -183,8 +169,16 @@ func LoadConfig(path string) (Config, error) {
 			Quit         string `toml:"quit"`
 		} `toml:"key_bindings"`
 	}
-	if _, err := toml.DecodeFile(path, &raw); err != nil {
+	md, err := toml.DecodeFile(path, &raw)
+	if err != nil {
 		return Config{}, ConfigError{Message: fmt.Sprintf("could not parse %s: %v", path, err)}
+	}
+	if undecoded := md.Undecoded(); len(undecoded) > 0 {
+		keys := make([]string, 0, len(undecoded))
+		for _, key := range undecoded {
+			keys = append(keys, key.String())
+		}
+		return Config{}, ConfigError{Message: fmt.Sprintf("unknown config key(s) in %s: %s", path, strings.Join(keys, ", "))}
 	}
 	if raw.CodexCommand != "" {
 		cfg.CodexCommand = raw.CodexCommand

@@ -13,21 +13,21 @@ import (
 )
 
 type Data struct {
-	TabID string
-	Text  string
-	Title string
-	Err   error
+	AgentID string
+	Text    string
+	Title   string
+	Err     error
 }
 
 type Session struct {
-	TabID string
-	cmd   *exec.Cmd
-	file  *os.File
-	mu    sync.Mutex
-	text  string
+	AgentID string
+	cmd     *exec.Cmd
+	file    *os.File
+	mu      sync.Mutex
+	text    string
 }
 
-func Start(ctx context.Context, tabID string, command string, workspace string, cols int, rows int, output func(Data)) (*Session, error) {
+func Start(ctx context.Context, agentID string, command string, workspace string, cols int, rows int, output func(Data)) (*Session, error) {
 	shell := shellx.Resolve()
 	cmd := exec.CommandContext(ctx, shell, "-lc", command)
 	cmd.Dir = workspace
@@ -36,7 +36,7 @@ func Start(ctx context.Context, tabID string, command string, workspace string, 
 	if err != nil {
 		return nil, err
 	}
-	session := &Session{TabID: tabID, cmd: cmd, file: file}
+	session := &Session{AgentID: agentID, cmd: cmd, file: file}
 	go session.readLoop(output)
 	return session, nil
 }
@@ -77,7 +77,7 @@ func (s *Session) readLoop(output func(Data)) {
 		if s.cmd != nil {
 			_ = s.cmd.Wait()
 		}
-		output(Data{TabID: s.TabID, Err: os.ErrClosed})
+		output(Data{AgentID: s.AgentID, Err: os.ErrClosed})
 	}()
 	buf := make([]byte, 4096)
 	for {
@@ -96,7 +96,7 @@ func (s *Session) readLoop(output func(Data)) {
 				}
 				s.mu.Unlock()
 			}
-			output(Data{TabID: s.TabID, Text: string(clean), Title: title})
+			output(Data{AgentID: s.AgentID, Text: string(clean), Title: title})
 		}
 		if err != nil {
 			return

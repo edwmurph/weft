@@ -120,7 +120,7 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 	}
 	defer lock.Close()
 
-	st, _, err := store.Ensure()
+	st, err := store.Ensure()
 	if err != nil {
 		return err
 	}

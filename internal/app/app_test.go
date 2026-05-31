@@ -45,6 +45,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"weft start",
+		"weft sessions",
 		"weft workdir",
 		"weft folder",
 		"weft quit",
@@ -205,7 +206,7 @@ func TestBackupRestoreCreatesPreRestoreBackup(t *testing.T) {
 }
 
 func TestLegacyCLICommandsAreUnknown(t *testing.T) {
-	for _, command := range []string{"workdir", "folder", "quit", "delete-session"} {
+	for _, command := range []string{"start", "tui", "sessions", "workdir", "folder", "quit", "delete-session"} {
 		t.Run(command, func(t *testing.T) {
 			err := Run([]string{command})
 			if err == nil || !strings.Contains(err.Error(), `unknown command "`+command+`"`) {

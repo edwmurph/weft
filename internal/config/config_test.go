@@ -52,8 +52,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"tmux_session", "columns", "new_workdir", "new_folder", "focus_toggle", "close_weft"} {
-		if strings.Contains(string(data), forbidden) {
+	defaultText := "\n" + string(data)
+	for _, forbidden := range []string{"tmux_session", "columns", "new_workdir", "new_folder", "focus_toggle", "close_weft", "prev", "previous", "new", "close"} {
+		if strings.Contains(defaultText, "\n"+forbidden+" ") {
 			t.Fatalf("default config should not include %q:\n%s", forbidden, data)
 		}
 	}
@@ -116,11 +117,14 @@ quit = "Q"
 	}
 }
 
-func TestLoadConfigIgnoresLegacyKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	err := os.WriteFile(path, []byte(`
+func TestLoadConfigRejectsUnknownKeys(t *testing.T) {
+	for name, body := range map[string]string{
+		"top level": `
 tmux_session = "custom"
 columns = ["Backlog", "Active"]
+title_hook_timeout_seconds = 3
+`,
+		"key bindings": `
 title_hook_timeout_seconds = 3
 
 [key_bindings]
@@ -133,39 +137,22 @@ new_workdir = "z"
 new_folder = "x"
 close = "x"
 close_weft = "C-q"
-`), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
 
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defaults := DefaultKeyBindings()
-	if cfg.KeyBindings.Drawer != defaults.Drawer ||
-		cfg.KeyBindings.SelectPrev != defaults.SelectPrev ||
-		cfg.KeyBindings.SelectNext != defaults.SelectNext ||
-		cfg.KeyBindings.NewWorkspace != defaults.NewWorkspace ||
-		cfg.KeyBindings.NewGroup != defaults.NewGroup ||
-		cfg.KeyBindings.NewAgent != defaults.NewAgent ||
-		cfg.KeyBindings.Delete != defaults.Delete ||
-		cfg.KeyBindings.Quit != defaults.Quit {
-		t.Fatalf("legacy keys should be ignored, got %#v", cfg.KeyBindings)
-	}
-	if cfg.TitleHookTimeoutSeconds != 3 {
-		t.Fatalf("current title timeout should still load, got %d", cfg.TitleHookTimeoutSeconds)
-	}
-}
-
-func TestRuntimeIDIncludesSanitizedNameAndDigest(t *testing.T) {
-	id := RuntimeID("/tmp/My Repo!")
-	if !strings.HasPrefix(id, "my-repo-") {
-		t.Fatalf("RuntimeID = %q", id)
-	}
-	if len(id) <= len("my-repo-") {
-		t.Fatalf("RuntimeID missing digest: %q", id)
+			_, err := LoadConfig(path)
+			if err == nil {
+				t.Fatal("expected unknown key error")
+			}
+			if !strings.Contains(err.Error(), "unknown config key") {
+				t.Fatalf("error = %v", err)
+			}
+		})
 	}
 }
 

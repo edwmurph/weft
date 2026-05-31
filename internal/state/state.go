@@ -1,11 +1,13 @@
 package state
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -88,11 +90,6 @@ type Store struct {
 	Workspace string
 }
 
-type Migration struct {
-	ArchivedPath string
-	Message      string
-}
-
 func NewStore(path string, workspace ...string) *Store {
 	current := ""
 	if len(workspace) > 0 {
@@ -109,15 +106,14 @@ func NowISO() string {
 	return time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
 }
 
-func (s *Store) Ensure() (State, *Migration, error) {
+func (s *Store) Ensure() (State, error) {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
-		return State{}, nil, err
+		return State{}, err
 	}
 	if err := ensureLockFile(s.LockPath); err != nil {
-		return State{}, nil, err
+		return State{}, err
 	}
 	var loaded State
-	var migration *Migration
 	err := withFileLock(s.LockPath, func() error {
 		if _, err := os.Stat(s.Path); errors.Is(err, os.ErrNotExist) {
 			loaded = Repair(Empty(), s.Workspace)
@@ -127,21 +123,6 @@ func (s *Store) Ensure() (State, *Migration, error) {
 		if err != nil {
 			return err
 		}
-		if legacyState(raw) {
-			archived, err := archiveState(s.Path, "legacy")
-			if err != nil {
-				return err
-			}
-			loaded = Repair(Empty(), s.Workspace)
-			if err := writeJSONAtomic(s.Path, loaded); err != nil {
-				return err
-			}
-			migration = &Migration{
-				ArchivedPath: archived,
-				Message:      fmt.Sprintf("archived legacy state to %s; starting with clean v4 supervisor state", archived),
-			}
-			return nil
-		}
 		loaded, err = parseState(raw, s.Workspace)
 		if err != nil {
 			return err
@@ -150,7 +131,7 @@ func (s *Store) Ensure() (State, *Migration, error) {
 		loaded = repaired
 		return writeJSONAtomic(s.Path, repaired)
 	})
-	return loaded, migration, err
+	return loaded, err
 }
 
 func (s *Store) Read() (State, error) {
@@ -207,13 +188,25 @@ func (s *Store) Update(mutator func(State) State) (State, error) {
 
 func parseState(raw []byte, fallbackWorkspace string) (State, error) {
 	var st State
-	if err := json.Unmarshal(raw, &st); err != nil {
-		return State{}, fmt.Errorf("could not parse state: %w", err)
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&st); err != nil {
+		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v4 state: %v", err))
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		return State{}, unsupportedStateError("could not parse strict v4 state: multiple JSON values")
+	} else if !errors.Is(err, io.EOF) {
+		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v4 state: %v", err))
 	}
 	if st.Version != Version {
-		return State{}, fmt.Errorf("unsupported state version %d", st.Version)
+		return State{}, unsupportedStateError(fmt.Sprintf("unsupported state version %d", st.Version))
 	}
 	return Repair(st, fallbackWorkspace), nil
+}
+
+func unsupportedStateError(reason string) error {
+	return fmt.Errorf("%s; run `weft clear` to reset", reason)
 }
 
 func Repair(st State, fallbackWorkspace string) State {
@@ -335,34 +328,6 @@ func Repair(st State, fallbackWorkspace string) State {
 		}
 	}
 	return st
-}
-
-func legacyState(raw []byte) bool {
-	var probe map[string]any
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return false
-	}
-	version, _ := probe["version"].(float64)
-	if int(version) != Version {
-		return true
-	}
-	for _, key := range []string{"tabs", "workdirs", "folders", "selected_workdir_id", "selected_folder_id"} {
-		if _, ok := probe[key]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-func archiveState(path string, suffix string) (string, error) {
-	target := filepath.Join(filepath.Dir(path), fmt.Sprintf("state.%s.json", suffix))
-	if _, err := os.Stat(target); err == nil {
-		target = filepath.Join(
-			filepath.Dir(path),
-			fmt.Sprintf("state.%s.%s.json", suffix, time.Now().UTC().Format("20060102T150405")),
-		)
-	}
-	return target, os.Rename(path, target)
 }
 
 func ensureLockFile(path string) error {

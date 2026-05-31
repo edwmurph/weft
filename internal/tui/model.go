@@ -1035,11 +1035,11 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 }
 
 func (m *Model) applyPTYData(data ptyx.Data) {
-	if state.AgentByID(m.state, data.TabID) == nil {
+	if state.AgentByID(m.state, data.AgentID) == nil {
 		return
 	}
 	if data.Err != nil {
-		m.state = state.WithUpdatedAgent(m.state, data.TabID, func(agent state.Agent) state.Agent {
+		m.state = state.WithUpdatedAgent(m.state, data.AgentID, func(agent state.Agent) state.Agent {
 			if agent.Status != state.StatusError {
 				agent.Status = state.StatusStopped
 			}
@@ -1049,18 +1049,18 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		return
 	}
 	if data.Text != "" {
-		screen := m.screens[data.TabID]
+		screen := m.screens[data.AgentID]
 		if screen == nil {
 			screen = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
-			m.screens[data.TabID] = screen
+			m.screens[data.AgentID] = screen
 		}
 		screen.Write(data.Text)
 		if screen.HasVisibleContent() {
-			m.visible[data.TabID] = true
+			m.visible[data.AgentID] = true
 		}
 	}
 	if data.Title != "" {
-		m.state = state.WithUpdatedAgent(m.state, data.TabID, func(agent state.Agent) state.Agent {
+		m.state = state.WithUpdatedAgent(m.state, data.AgentID, func(agent state.Agent) state.Agent {
 			agent.CodexTitle = titles.NormalizeCodexTitle(data.Title)
 			agent.Status = state.StatusRunning
 			return agent

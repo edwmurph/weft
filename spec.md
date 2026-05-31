@@ -51,7 +51,7 @@ It is started automatically by `weft` when needed and is scoped by
 
 The supervisor owns:
 
-- config loading and migration
+- config loading
 - state loading, repair, mutation, and persistence
 - the agent registry
 - Codex PTY processes
@@ -68,9 +68,9 @@ the Weft runtime directory with user-only permissions.
 
 The `weft` command is a CLI and TUI client. By default it ensures the
 supervisor is running, attaches an interactive terminal UI, and exits only the
-client when the user closes Weft. `weft --no-attach` and `weft start
---no-attach` ensure the supervisor is running and then return. `--clear` may
-be combined with either start form to force a fresh runtime before launch.
+client when the user closes Weft. `weft --no-attach` ensures the supervisor is
+running and then returns. `--clear` may be combined with launch to force a fresh
+runtime before launch.
 
 The interactive client owns only terminal rendering, local input collection,
 and transient modal editing state. Product state changes are sent to the
@@ -601,7 +601,7 @@ Rules:
 
 ## Command Semantics
 
-`weft` and `weft start`:
+`weft`:
 
 - start the supervisor when it is not running
 - attach an interactive TUI unless `--no-attach` is provided
@@ -676,16 +676,11 @@ Global `--clear`:
 - if automatic terminal configuration fails, reports the failed step, preferences path, profile, wrapped command/output when available, and the manual fallback
 - does not mutate terminal profiles or Weft configuration without explicit confirmation
 
-`weft sessions`:
-
-- lists the current supervisor and attached client state
-- must not shell out to tmux
-
 `weft --help`, `weft help`, and `weft -h`:
 
 - show the same Weft ASCII mark used by the empty agent pane
 - leave blank space above the mark and a small left inset before the mark
-- advertise `weft` as the dashboard entry point rather than `weft start`
+- advertise `weft` as the dashboard entry point
 - group commands by common dashboard use, agent organization, runtime, and
   configuration
 - describe destructive commands explicitly
@@ -716,10 +711,11 @@ Visual style:
 
 ## Migration
 
-Legacy state shapes are not migrated. If `state.json` is not v4 or still uses
-old tab, column, workdir, folder, or tmux-pane fields, Weft archives it to
-`state.legacy.json` and writes a clean v4 state file. Live Codex PTYs from old
-runtime architectures are not adopted.
+Legacy state shapes are not migrated or archived. If `state.json` is not strict
+v4, or if it still uses old tab, column, workdir, folder, or tmux-pane fields,
+Weft returns a clear error that tells the user to run `weft clear` to reset.
+Valid v4 state is still repaired for missing IDs, selections, timestamps, and
+defaults inside the current schema.
 
 ## Configuration
 
@@ -747,16 +743,17 @@ help = "?"
 quit = "C-c"
 ```
 
-Only the current config keys are loaded. Legacy keys such as `tmux_session`,
+Only the current config keys are loaded. Unknown keys, including legacy keys
+such as `tmux_session`,
 `columns`, `new_workdir`, `new_folder`, `focus_toggle`, `close_weft`, `prev`,
-`previous`, `new`, and `close` are ignored.
+`previous`, `new`, and `close`, are rejected.
 
 ## Testing Requirements
 
 Unit tests:
 
 - minute variations and pure logic details that do not require a live dashboard
-- state archive/reset behavior for old tabs/columns, workdir/folder, and tmux-pane shapes
+- state reset guidance for old tabs/columns, workdir/folder, tmux-pane, and unknown v4 shapes
 - supervisor startup, singleton locking, and shutdown decisions
 - protocol field parsing and structured error formatting
 - validation branches for workspace, group, agent, and config inputs

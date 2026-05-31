@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/edwmurph/weft/internal/config"
-	"github.com/edwmurph/weft/internal/sessions"
+	"github.com/edwmurph/weft/internal/pathx"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/titles"
 )
@@ -31,7 +31,7 @@ const (
 var (
 	mutedStyle                        = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	headerStyle                       = lipgloss.NewStyle().Underline(true)
-	activeTabStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
+	activeAgentStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
 	activePaneStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	groupHeaderStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	modalStyle                        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
@@ -260,7 +260,7 @@ func workspaceCardTitle(workspace state.Workspace) string {
 	if title := strings.TrimSpace(workspace.Title); title != "" {
 		return title
 	}
-	return sessions.DisplayPath(workspace.Path)
+	return pathx.Display(workspace.Path)
 }
 
 func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspaceCardCounts {
@@ -357,7 +357,7 @@ func renderGroupsPane(cfg config.Config, st state.State, width int, height int, 
 		agentRow := "• " + title
 		agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
 		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
-			agentRow = activeTabStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
+			agentRow = activeAgentStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
 		} else if agent.ID == st.ActiveAgentID {
 			agentRow = activePaneStyle.Render(agentRow)
 		}
@@ -374,7 +374,7 @@ func renderGroupsPane(cfg config.Config, st state.State, width int, height int, 
 		}
 		groupRow := rowLine(indicator+group.Path, fmtInt(state.AgentCountForGroup(st, group.ID)), max(0, width-2-(navHorizontalPadding*2)))
 		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
-			groupRow = activeTabStyle.Render(padVisual(groupRow, max(0, width-2-(navHorizontalPadding*2))))
+			groupRow = activeAgentStyle.Render(padVisual(groupRow, max(0, width-2-(navHorizontalPadding*2))))
 		} else {
 			groupRow = groupHeaderStyle.Render(groupRow)
 		}
@@ -388,7 +388,7 @@ func renderGroupsPane(cfg config.Config, st state.State, width int, height int, 
 			agentRow := "  • " + title
 			agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
 			if rowIndex == groupCursor && st.Focus == state.FocusAgents {
-				agentRow = activeTabStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
+				agentRow = activeAgentStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
 			} else if agent.ID == st.ActiveAgentID {
 				agentRow = activePaneStyle.Render(agentRow)
 			}

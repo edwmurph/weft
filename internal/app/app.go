@@ -14,8 +14,8 @@ import (
 
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/pathx"
 	"github.com/edwmurph/weft/internal/runtimebackup"
-	"github.com/edwmurph/weft/internal/sessions"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/supervisor"
 	"github.com/edwmurph/weft/internal/tui"
@@ -43,10 +43,6 @@ func Run(args []string) error {
 				fmt.Println(version.Version)
 				return nil
 			}
-		case "start":
-			action = func() error { return start(args[1:]) }
-		case "tui":
-			action = runTUI
 		case supervisor.CommandName:
 			clearApplies = false
 			action = runSupervisor
@@ -81,8 +77,6 @@ func Run(args []string) error {
 			action = func() error { return callIPC("move", map[string]string{"direction": "left"}, false) }
 		case "move-right":
 			action = func() error { return callIPC("move", map[string]string{"direction": "right"}, false) }
-		case "sessions":
-			action = listSessions
 		case "clear":
 			clearApplies = false
 			action = clear
@@ -170,7 +164,6 @@ func cliHelpText() string {
 		"  weft backup create           Back up config, state, and logs.",
 		"  weft backup list             List saved runtime backups.",
 		"  weft backup restore <id>     Restore config and state from a backup.",
-		"  weft sessions                Show the current supervisor session.",
 		"  weft config info             Show runtime paths and active config.",
 		"  weft config show             Print config.toml.",
 		"  weft config init [--force]   Write the default config.",
@@ -180,7 +173,7 @@ func cliHelpText() string {
 }
 
 func start(args []string) error {
-	fs := flag.NewFlagSet("start", flag.ContinueOnError)
+	fs := flag.NewFlagSet("weft", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	attach := fs.Bool("attach", true, "attach to the Weft dashboard")
 	noAttach := fs.Bool("no-attach", false, "start the Weft supervisor without attaching")
@@ -191,7 +184,7 @@ func start(args []string) error {
 	if *noAttach {
 		*attach = false
 	}
-	rt, cfg, _, err := resolveRuntime()
+	rt, cfg, store, err := resolveRuntime()
 	if err != nil {
 		return err
 	}
@@ -199,6 +192,9 @@ func start(args []string) error {
 		if err := clearRuntime(rt, false); err != nil {
 			return err
 		}
+	}
+	if _, err := store.Ensure(); err != nil {
+		return err
 	}
 	result, err := supervisor.Ensure(rt)
 	if err != nil {
@@ -216,24 +212,6 @@ func start(args []string) error {
 		return nil
 	}
 	return tui.RunClient(rt, cfg)
-}
-
-func runTUI() error {
-	rt, cfg, _, err := resolveRuntime()
-	if err != nil {
-		return err
-	}
-	if _, err := supervisor.Ensure(rt); err != nil {
-		return err
-	}
-	logPath := filepath.Join(rt.Dir, "weft-client.log")
-	_ = os.WriteFile(logPath, []byte("starting TUI client\n"), 0o600)
-	if err := tui.RunClient(rt, cfg); err != nil {
-		_ = os.WriteFile(logPath, []byte("TUI error: "+err.Error()+"\n"), 0o600)
-		return err
-	}
-	_ = os.WriteFile(logPath, []byte("TUI client exited cleanly\n"), 0o600)
-	return nil
 }
 
 func runSupervisor() error {
@@ -323,7 +301,10 @@ func status(args []string) error {
 		printUpgrade(response.Upgrade)
 		return nil
 	}
-	st, _ := store.Read()
+	st, err := store.Read()
+	if err != nil {
+		return err
+	}
 	if jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(st)
 	}
@@ -378,29 +359,6 @@ func validateWorkspaceAddPath(path string) (string, error) {
 	return path, nil
 }
 
-func listSessions() error {
-	rt, _, _, err := resolveRuntime()
-	if err != nil {
-		return err
-	}
-	response, err := supervisor.Status(rt)
-	if err != nil {
-		fmt.Println("No Weft supervisor is running.")
-		return nil
-	}
-	clients := 0
-	if response.Snapshot != nil && response.Snapshot.ActiveClientID != "" {
-		clients = 1
-	}
-	agents := 0
-	if response.State != nil {
-		agents = len(response.State.Agents)
-	}
-	fmt.Printf("%-12s %-7s %-7s %-7s %s\n", "Supervisor", "Status", "Clients", "Agents", "Workspace")
-	fmt.Printf("%-12s %-7s %-7d %-7d %s\n", "weftd", "running", clients, agents, sessions.DisplayPath(rt.Workspace))
-	return nil
-}
-
 func clear() error {
 	rt, _, _, err := resolveRuntime()
 	if err != nil {
@@ -418,7 +376,7 @@ func clearRuntime(rt config.Runtime, confirmDestructive bool) error {
 	if confirmDestructive {
 		fmt.Println("This will stop the Weft supervisor and delete Weft runtime state:")
 		for _, path := range runtimeFiles {
-			fmt.Printf("- runtime file: %s\n", sessions.DisplayPath(path))
+			fmt.Printf("- runtime file: %s\n", pathx.Display(path))
 		}
 		if !confirm("Delete Weft runtime state? [y/N] ") {
 			fmt.Println("Delete canceled.")
@@ -598,7 +556,10 @@ func doctor(args []string) error {
 	if err != nil {
 		return err
 	}
-	st, _ := store.Read()
+	st, err := store.Read()
+	if err != nil {
+		return err
+	}
 	binary := strings.Fields(cfg.CodexCommand)
 	if len(binary) > 0 {
 		if _, err := exec.LookPath(binary[0]); err == nil || strings.Contains(binary[0], "/") {
@@ -674,8 +635,11 @@ func configCommand(args []string) error {
 }
 
 func callIPC(command string, args map[string]string, quiet bool) error {
-	rt, _, _, err := resolveRuntime()
+	rt, _, store, err := resolveRuntime()
 	if err != nil {
+		return err
+	}
+	if _, err := store.Ensure(); err != nil {
 		return err
 	}
 	args = cloneArgs(args)
@@ -713,7 +677,7 @@ func loadRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
-	if _, _, err := store.Ensure(); err != nil {
+	if _, err := store.Ensure(); err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
 	return rt, cfg, store, nil
@@ -739,7 +703,7 @@ func guardRuntimeAccess(rt config.Runtime) error {
 	if rt.HomeExplicit || strings.TrimSpace(version.BuildChannel) == "release" || os.Getenv(config.AllowMainRuntimeEnv) == "1" {
 		return nil
 	}
-	return fmt.Errorf("source builds refuse to use the default Weft runtime at %s.\nUse an isolated dev runtime, for example:\n  %s\nTo intentionally use %s from source, set %s=1.", sessions.DisplayPath(rt.Dir), safeDevRuntimeCommand(rt), sessions.DisplayPath(rt.Dir), config.AllowMainRuntimeEnv)
+	return fmt.Errorf("source builds refuse to use the default Weft runtime at %s.\nUse an isolated dev runtime, for example:\n  %s\nTo intentionally use %s from source, set %s=1.", pathx.Display(rt.Dir), safeDevRuntimeCommand(rt), pathx.Display(rt.Dir), config.AllowMainRuntimeEnv)
 }
 
 func safeDevRuntimeCommand(rt config.Runtime) string {

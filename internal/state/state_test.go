@@ -1,86 +1,87 @@
 package state
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestStoreArchivesLegacyState(t *testing.T) {
+func TestStoreRejectsLegacyStateWithoutArchiving(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	workspace := filepath.Join(dir, "workspace")
 	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	legacy := map[string]any{
-		"active_tab_id": "abc",
-		"focus":         "codex",
-		"tabs": []map[string]any{{
-			"id": "abc", "title": "{codex}", "column": "inbox",
-			"tmux_window_id": "@1", "tmux_pane_id": "%1",
-			"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
-		}},
-	}
-	raw, _ := json.Marshal(legacy)
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{
+  "version": 2,
+  "active_tab_id": "abc",
+  "focus": "codex",
+  "tabs": [{
+    "id": "abc",
+    "title": "{codex}",
+    "column": "inbox",
+    "tmux_window_id": "@1",
+    "tmux_pane_id": "%1",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  }]
+}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	st, migration, err := NewStore(path, workspace).Ensure()
+	_, err := NewStore(path, workspace).Ensure()
+	if err == nil {
+		t.Fatal("expected legacy state error")
+	}
+	for _, expected := range []string{"strict v4 state", "run `weft clear` to reset"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error missing %q: %v", expected, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); !os.IsNotExist(err) {
+		t.Fatalf("state.legacy.json should not be written, err=%v", err)
+	}
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if migration == nil {
-		t.Fatal("expected migration")
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); err != nil {
-		t.Fatal(err)
-	}
-	if st.Version != Version || len(st.Agents) != 0 || len(st.Workspaces) != 0 || len(st.Groups) != 0 {
-		t.Fatalf("state = %#v", st)
+	if !strings.Contains(string(raw), `"active_tab_id"`) {
+		t.Fatalf("legacy state file should be left intact:\n%s", raw)
 	}
 }
 
-func TestStoreArchivesTabsAndColumnsStateWithoutMigrating(t *testing.T) {
+func TestStoreRejectsUnknownV4StateWithoutArchiving(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	workspace := filepath.Join(dir, "workspace")
 	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	old := map[string]any{
-		"version":       2,
-		"active_tab_id": "b",
-		"focus":         "codex",
-		"tabs": []map[string]any{
-			{"id": "a", "title": "Alpha", "column": "inbox", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"},
-			{"id": "b", "title": "Beta", "column": "ship", "status": "ready", "created_at": "2026-01-01T00:01:00Z", "updated_at": "2026-01-01T00:01:00Z"},
-		},
-	}
-	raw, _ := json.Marshal(old)
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{
+  "version": 4,
+  "focus": "agents",
+  "nav_open": true,
+  "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "groups": [],
+  "agents": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "tmux_pane_id": "%1", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "tabs": []
+}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	st, migration, err := NewStore(path, workspace).Ensure()
-	if err != nil {
-		t.Fatal(err)
+	_, err := NewStore(path, workspace).Ensure()
+	if err == nil {
+		t.Fatal("expected unknown field error")
 	}
-
-	if migration == nil {
-		t.Fatal("expected migration")
+	for _, expected := range []string{`unknown field`, "run `weft clear` to reset"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error missing %q: %v", expected, err)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); err != nil {
-		t.Fatal(err)
-	}
-	if st.ActiveAgentID != "" || st.Focus != FocusWorkspaces || !st.NavOpen {
-		t.Fatalf("legacy selection should not be preserved: %#v", st)
-	}
-	if len(st.Workspaces) != 0 || len(st.Groups) != 0 || len(st.Agents) != 0 {
-		t.Fatalf("legacy state should start clean, got %#v", st)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); !os.IsNotExist(err) {
+		t.Fatalf("state.legacy.json should not be written, err=%v", err)
 	}
 }
 

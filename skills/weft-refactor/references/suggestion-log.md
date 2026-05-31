@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-30 - Aggressive legacy prune
+
+- Request: Reapply the breaking legacy cleanup in a fresh `.worktrees/aggressive-legacy-prune` worktree without reusing the dirty cleanup worktree.
+- Suggestions: Remove redundant `start`, hidden `tui`, and `sessions` commands; make state/config parsing strict instead of migrating or ignoring stale shapes; rename PTY internals from tab to agent; replace `internal/sessions` with `internal/pathx`.
+- Outcome: Implemented in `.worktrees/aggressive-legacy-prune`; awaiting review.
+- Evidence: `internal/app`, `internal/state`, `internal/config`, `internal/ptyx`, `internal/tui`, `internal/pathx`, `README.md`, `spec.md`, `tests`.
+
 ## 2026-05-30 - Aggressive legacy cleanup
 
 - Request: Remove old tmux/workdir/folder compatibility and normalize Weft around workspaces, groups, agents, and the supervisor.

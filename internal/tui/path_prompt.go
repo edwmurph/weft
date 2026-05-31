@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/edwmurph/weft/internal/sessions"
+	"github.com/edwmurph/weft/internal/pathx"
 	"github.com/edwmurph/weft/internal/state"
 )
 
@@ -315,9 +315,9 @@ func defaultWorkspacePromptValue(st state.State, fallback string) string {
 
 func workspaceAddMessage(previous state.State, workspace state.Workspace) string {
 	if workspaceByPath(previous, workspace.Path) != nil {
-		return "selected existing workspace " + sessions.DisplayPath(workspace.Path)
+		return "selected existing workspace " + pathx.Display(workspace.Path)
 	}
-	return "added workspace " + sessions.DisplayPath(workspace.Path)
+	return "added workspace " + pathx.Display(workspace.Path)
 }
 
 func renderPromptInput(label string, input textinput.Model, width int) []string {
@@ -693,19 +693,19 @@ func inspectWorkspacePromptPath(st state.State, raw string) promptStatus {
 	if err != nil {
 		if os.IsNotExist(err) {
 			if parent := nearestExistingParent(path); parent != "" && parent != path {
-				return promptStatus{message: "! Parent exists: " + sessions.DisplayPath(parent), style: modalWarningStyle}
+				return promptStatus{message: "! Parent exists: " + pathx.Display(parent), style: modalWarningStyle}
 			}
-			return promptStatus{message: "! Not found: " + sessions.DisplayPath(path), style: modalWarningStyle}
+			return promptStatus{message: "! Not found: " + pathx.Display(path), style: modalWarningStyle}
 		}
 		return promptStatus{message: "! Cannot read path: " + err.Error(), style: modalErrorStyle}
 	}
 	if !info.IsDir() {
-		return promptStatus{message: "! Not a directory: " + sessions.DisplayPath(path), style: modalErrorStyle}
+		return promptStatus{message: "! Not a directory: " + pathx.Display(path), style: modalErrorStyle}
 	}
 	if workspaceByPath(st, path) != nil {
-		return promptStatus{message: "Already added: " + sessions.DisplayPath(path), style: mutedStyle}
+		return promptStatus{message: "Already added: " + pathx.Display(path), style: mutedStyle}
 	}
-	return promptStatus{message: "✓ " + sessions.DisplayPath(path), style: modalSuccessStyle}
+	return promptStatus{message: "✓ " + pathx.Display(path), style: modalSuccessStyle}
 }
 
 func workspaceByPath(st state.State, path string) *state.Workspace {

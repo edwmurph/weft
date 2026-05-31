@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/ptyx"
 	"github.com/edwmurph/weft/internal/state"
 )
 
@@ -72,6 +73,22 @@ func TestNewAgentRequiresWorkspace(t *testing.T) {
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{}})
 	if response.OK || response.Message != "add a workspace first" || cmd != nil {
 		t.Fatalf("ipc new should be blocked without workspace, response=%#v cmd=%v", response, cmd)
+	}
+}
+
+func TestApplyPTYDataUsesAgentID(t *testing.T) {
+	model := testModelWithAgent(t)
+
+	model.applyPTYData(ptyx.Data{AgentID: "a", Text: "hello\n", Title: "Fake Codex Ready"})
+
+	if screen := model.screens["a"]; screen == nil || !screen.HasVisibleContent() {
+		t.Fatalf("agent screen was not updated: %#v", model.screens)
+	}
+	if !model.visible["a"] {
+		t.Fatalf("agent should be marked visible: %#v", model.visible)
+	}
+	if got := model.state.Agents[0].CodexTitle; got != "Fake Codex Ready" {
+		t.Fatalf("CodexTitle = %q", got)
 	}
 }
 

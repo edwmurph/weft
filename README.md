@@ -95,7 +95,6 @@ weft clear                   Prompt, then delete Weft runtime state.
 weft backup create           Back up config, state, and logs.
 weft backup list             List saved runtime backups.
 weft backup restore <id>     Restore config and state from a backup.
-weft sessions                Show the current supervisor session.
 weft config info             Show runtime paths and active config.
 weft config show             Print config.toml.
 weft config init [--force]   Write the default config.
@@ -238,11 +237,12 @@ backup restore <id-or-path> [--yes]` creates a pre-restore backup before
 replacing config and state, and stops the supervisor first when it is running.
 
 The config keys are stable: `codex_command`, `title_template`,
-`title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. State is
-versioned with v4 workspace/group names: `workspaces`, `groups`,
+`title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`.
+Unknown config keys are rejected so stale local settings are visible. State is
+strict v4 with workspace/group names: `workspaces`, `groups`,
 `selected_workspace_id`, `selected_group_id`, `workspace_id`, and `group_id`.
-Older state shapes are archived to `state.legacy.json` and Weft starts with
-clean v4 state.
+Older or unknown state shapes fail with guidance to run `weft clear` when a
+reset is acceptable.
 
 ## Development
 
