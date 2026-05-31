@@ -617,7 +617,7 @@ func renderCodexFrame(
 	width int,
 	height int,
 	active bool,
-	_ string,
+	message string,
 	navCollapsed bool,
 	loadingText string,
 ) []string {
@@ -642,7 +642,12 @@ func renderCodexFrame(
 	}
 	contentHeight := max(0, height-2)
 	empty := !agentActive
-	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, empty, len(st.Workspaces) > 0, loadingText)
+	contentWidth := max(0, innerWidth-codexLeftPadding)
+	messageLines := renderStatusBanner(message, contentWidth, min(3, contentHeight))
+	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText)
+	if len(messageLines) > 0 {
+		contentLines = append(messageLines, contentLines...)
+	}
 	for len(contentLines) < contentHeight {
 		contentLines = append(contentLines, "")
 	}
@@ -659,6 +664,62 @@ func renderCodexFrame(
 		rightLabel = title
 	}
 	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))
+	return lines
+}
+
+func renderStatusBanner(message string, width int, maxLines int) []string {
+	message = strings.Join(strings.Fields(message), " ")
+	if message == "" || width <= 0 || maxLines <= 0 {
+		return nil
+	}
+	if !strings.HasPrefix(message, "Upgrade") && !strings.HasPrefix(message, "Restart") {
+		return nil
+	}
+	prefix := "Upgrade: "
+	message = strings.TrimPrefix(message, "Upgrade ")
+	wrapped := wrapPlain(prefix+message, width, maxLines)
+	for index := range wrapped {
+		wrapped[index] = padVisual(clip(wrapped[index], width), width)
+	}
+	return wrapped
+}
+
+func wrapPlain(value string, width int, maxLines int) []string {
+	if width <= 0 || maxLines <= 0 {
+		return nil
+	}
+	words := strings.Fields(value)
+	if len(words) == 0 {
+		return nil
+	}
+	lines := []string{}
+	current := ""
+	for _, word := range words {
+		next := word
+		if current != "" {
+			next = current + " " + word
+		}
+		if lipgloss.Width(next) <= width {
+			current = next
+			continue
+		}
+		if current != "" {
+			lines = append(lines, current)
+			current = word
+		} else {
+			lines = append(lines, clipPlain(word, width))
+			current = ""
+		}
+		if len(lines) == maxLines {
+			return lines
+		}
+	}
+	if current != "" && len(lines) < maxLines {
+		lines = append(lines, current)
+	}
+	if len(lines) > maxLines {
+		return lines[:maxLines]
+	}
 	return lines
 }
 

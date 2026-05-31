@@ -433,6 +433,8 @@ func confirmTitle(confirm confirmKind) string {
 		return "Delete group"
 	case confirmDeleteAgent:
 		return "Delete agent"
+	case confirmRestartWhenIdle:
+		return "Restart supervisor when idle?"
 	default:
 		return "Delete item"
 	}
@@ -442,16 +444,25 @@ func confirmTargetLabel(confirm confirmKind) string {
 	if confirm == confirmAddLaunchWorkspace {
 		return "Current directory"
 	}
+	if confirm == confirmRestartWhenIdle {
+		return "Upgrade"
+	}
 	return "Target"
 }
 
 func confirmDetail(confirm confirmKind) string {
+	if confirm == confirmRestartWhenIdle {
+		return "Weft waits until no live Codex terminals are running, then restarts the supervisor."
+	}
 	return ""
 }
 
 func renderConfirmActions(confirm confirmKind) string {
 	if confirm == confirmAddLaunchWorkspace {
 		return modalKeyStyle.Render("Y") + " yes  " + modalKeyStyle.Render("N") + " no  " + modalKeyStyle.Render("Esc") + " no"
+	}
+	if confirm == confirmRestartWhenIdle {
+		return modalKeyStyle.Render("Y") + " restart when idle  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
 	}
 	return modalKeyStyle.Render("Y") + " delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
 }
@@ -472,6 +483,8 @@ func confirmTarget(confirm confirmKind, st state.State, pendingID string, render
 		if agent := state.AgentByID(st, pendingID); agent != nil {
 			return renderAgentTitle(*agent)
 		}
+	case confirmRestartWhenIdle:
+		return pendingID
 	}
 	return "item"
 }

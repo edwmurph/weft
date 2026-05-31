@@ -38,6 +38,18 @@ type EnsureResult struct {
 	Status  ipc.Response
 }
 
+type restartRequest struct {
+	executable    string
+	clientVersion string
+	backupID      string
+	runningAgents int
+}
+
+type supervisorControl struct {
+	restartWhenIdle *restartRequest
+	restartNow      *restartRequest
+}
+
 func Ensure(rt config.Runtime) (EnsureResult, error) {
 	if response, err := Status(rt); err == nil {
 		response = AnnotateUpgrade(response, false)
@@ -78,21 +90,9 @@ func start(rt config.Runtime) (EnsureResult, error) {
 			return EnsureResult{}, err
 		}
 	}
-	log, err := os.OpenFile(LogPath(rt), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
+	if err := startSupervisorProcess(rt, exe, supervisorEnv(rt, exe)); err != nil {
 		return EnsureResult{}, err
 	}
-	cmd := exec.Command(exe, CommandName)
-	cmd.Env = supervisorEnv(rt, exe)
-	cmd.Stdout = log
-	cmd.Stderr = log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		_ = log.Close()
-		return EnsureResult{}, err
-	}
-	_ = cmd.Process.Release()
-	_ = log.Close()
 
 	deadline := time.Now().Add(4 * time.Second)
 	var lastErr error
@@ -107,6 +107,25 @@ func start(rt config.Runtime) (EnsureResult, error) {
 	return EnsureResult{}, fmt.Errorf("started Weft supervisor but it did not become ready: %w", lastErr)
 }
 
+func startSupervisorProcess(rt config.Runtime, exe string, env []string) error {
+	log, err := os.OpenFile(LogPath(rt), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe, CommandName)
+	cmd.Env = env
+	cmd.Stdout = log
+	cmd.Stderr = log
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		_ = log.Close()
+		return err
+	}
+	_ = cmd.Process.Release()
+	_ = log.Close()
+	return nil
+}
+
 func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state.Store) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -118,36 +137,38 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
 
 	st, err := store.Ensure()
 	if err != nil {
+		_ = lock.Close()
 		return err
 	}
 	engine := tui.NewModel(rt, cfg, st)
-	defer engine.Stop()
 	if err := os.WriteFile(PIDPath(rt), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600); err != nil {
+		engine.Stop()
+		_ = lock.Close()
 		return err
 	}
-	defer os.Remove(PIDPath(rt))
 
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	stopSignals := notifySignals(ctx, cancel)
-	defer stopSignals()
 	var mu sync.Mutex
 	clients := clientCoordinator{}
+	control := supervisorControl{}
 	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
 		mu.Lock()
-		response, cmd := handleRequest(&engine, &clients, request, cancel)
+		response, cmd := handleRequest(rt, &engine, &clients, &control, request, cancel)
 		mu.Unlock()
 		tui.RunEngineCmd(cmd, &engine, &mu)
 		return response
 	})
 	if err != nil {
+		stopSignals()
+		engine.Stop()
+		_ = os.Remove(PIDPath(rt))
+		_ = lock.Close()
 		return err
 	}
-	defer stop()
 
 	for {
 		select {
@@ -156,6 +177,14 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 			engine.ApplyPTYData(data)
 			mu.Unlock()
 		case <-ctx.Done():
+			_ = stop()
+			stopSignals()
+			engine.Stop()
+			_ = os.Remove(PIDPath(rt))
+			_ = lock.Close()
+			if control.restartNow != nil {
+				return startReplacementSupervisor(rt, *control.restartNow)
+			}
 			return nil
 		}
 	}
@@ -230,15 +259,16 @@ func acquireLock(path string) (*os.File, error) {
 	return file, nil
 }
 
-func handleRequest(engine *tui.Model, clients *clientCoordinator, request ipc.Request, cancel context.CancelFunc) (ipc.Response, tea.Cmd) {
+func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordinator, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) (ipc.Response, tea.Cmd) {
 	if request.ProtocolVersion != 0 && request.ProtocolVersion != ipc.ProtocolVersion {
-		return withSupervisorFields(ipc.ErrorResponse("protocol_mismatch", fmt.Sprintf("unsupported protocol version %d", request.ProtocolVersion))), nil
+		return withSupervisorFields(ipc.ErrorResponse("protocol_mismatch", fmt.Sprintf("unsupported protocol version %d", request.ProtocolVersion)), request, control), nil
 	}
+	applyRequestSize(engine, request)
 	switch request.Command {
 	case "attach_client":
 		clientID := request.Args["client_id"]
 		if clientID == "" {
-			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required")), nil
+			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required"), request, control), nil
 		}
 		if strings.TrimSpace(request.Args["launch_workspace"]) != "" {
 			engine.HandleSupervisorRequest(ipc.Request{Command: "snapshot", Args: request.Args})
@@ -250,7 +280,7 @@ func handleRequest(engine *tui.Model, clients *clientCoordinator, request ipc.Re
 		clients.activeID = clientID
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "attached Weft client"}
 		applyClientState(&response, clients, clientID)
-		return withSupervisorFields(response), nil
+		return withSupervisorFields(response, request, control), nil
 	case "client_detached":
 		clientID := request.Args["client_id"]
 		if clients.activeID == clientID {
@@ -260,29 +290,46 @@ func handleRequest(engine *tui.Model, clients *clientCoordinator, request ipc.Re
 			clients.detachID = ""
 			clients.message = ""
 		}
-		return withSupervisorFields(ipc.Response{OK: true, Message: "detached Weft client"}), nil
+		return withSupervisorFields(ipc.Response{OK: true, Message: "detached Weft client"}, request, control), nil
 	case "close_client":
 		clientID := clients.activeID
 		if clientID == "" {
-			return withSupervisorFields(ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "No Weft client is attached."}), nil
+			return withSupervisorFields(ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "No Weft client is attached."}, request, control), nil
 		}
 		clients.detachID = clientID
 		clients.message = "closed Weft client"
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "closed Weft client"}
 		applyClientState(&response, clients, clientID)
-		return withSupervisorFields(response), nil
+		return withSupervisorFields(response, request, control), nil
 	case "handshake":
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "Weft supervisor is running"}
 		applyClientState(&response, clients, request.Args["client_id"])
-		return withSupervisorFields(response), nil
+		return withSupervisorFields(response, request, control), nil
+	case "restart_when_idle":
+		response := restartWhenIdle(rt, engine, control, request, cancel)
+		applyClientState(&response, clients, request.Args["client_id"])
+		return withSupervisorFields(response, request, control), nil
 	case "shutdown":
 		go cancel()
-		return withSupervisorFields(ipc.Response{OK: true, Message: "Weft supervisor stopped"}), nil
+		return withSupervisorFields(ipc.Response{OK: true, Message: "Weft supervisor stopped"}, request, control), nil
 	default:
 		response, cmd := engine.HandleSupervisorRequest(request)
 		applyClientState(&response, clients, request.Args["client_id"])
-		return withSupervisorFields(response), cmd
+		if commandCanMakeSupervisorIdle(request.Command) {
+			response = maybeRestartWhenIdle(rt, engine, control, response, cancel)
+		}
+		return withSupervisorFields(response, request, control), cmd
 	}
+}
+
+func applyRequestSize(engine *tui.Model, request ipc.Request) {
+	if request.Command == "resize" {
+		return
+	}
+	if request.Args["width"] == "" && request.Args["height"] == "" {
+		return
+	}
+	engine.HandleSupervisorRequest(ipc.Request{Command: "resize", Args: request.Args})
 }
 
 func snapshotPtr(snapshot ipc.Snapshot) *ipc.Snapshot {
@@ -302,10 +349,118 @@ func applyClientState(response *ipc.Response, clients *clientCoordinator, client
 	}
 }
 
-func withSupervisorFields(response ipc.Response) ipc.Response {
+func withSupervisorFields(response ipc.Response, request ipc.Request, control *supervisorControl) ipc.Response {
 	response.ProtocolVersion = ipc.ProtocolVersion
 	response.SupervisorVersion = ReportedVersion()
+	response = ipc.AnnotateUpgrade(response, request.ClientVersion, false)
+	if response.Upgrade != nil && control != nil {
+		if control.restartNow != nil {
+			response.Upgrade.Message = restartNowMessage(control.restartNow.backupID)
+			response.Upgrade.BackupID = control.restartNow.backupID
+		} else if control.restartWhenIdle != nil {
+			response.Upgrade.RestartWhenIdleQueued = true
+			response.Upgrade.Message = restartWhenIdleQueuedMessage(control.restartWhenIdle.runningAgents)
+		}
+	}
 	return response
+}
+
+func restartWhenIdle(rt config.Runtime, engine *tui.Model, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) ipc.Response {
+	response := supervisorSnapshotResponse(engine, "")
+	response.ProtocolVersion = ipc.ProtocolVersion
+	response.SupervisorVersion = ReportedVersion()
+	upgrade := ipc.UpgradeStatus(response, request.ClientVersion)
+	if upgrade == nil {
+		return supervisorSnapshotResponse(engine, "No supervisor restart needed; client and supervisor are current.")
+	}
+	if !upgrade.Compatible {
+		return ipc.ErrorResponse("upgrade_incompatible", "Cannot restart from the dashboard because the supervisor protocol is incompatible. Use `weft close --kill` when ready.")
+	}
+	restart := restartRequestFromRequest(request)
+	blocked := restartWhenIdleBlockerCount(engine)
+	if blocked > 0 {
+		restart.runningAgents = blocked
+		control.restartWhenIdle = &restart
+		return supervisorSnapshotResponse(engine, restartWhenIdleQueuedMessage(blocked))
+	}
+	return triggerIdleRestart(rt, engine, control, restart, cancel)
+}
+
+func maybeRestartWhenIdle(rt config.Runtime, engine *tui.Model, control *supervisorControl, response ipc.Response, cancel context.CancelFunc) ipc.Response {
+	if control == nil || control.restartWhenIdle == nil || control.restartNow != nil {
+		return response
+	}
+	if blocked := restartWhenIdleBlockerCount(engine); blocked > 0 {
+		control.restartWhenIdle.runningAgents = blocked
+		return response
+	}
+	return triggerIdleRestart(rt, engine, control, *control.restartWhenIdle, cancel)
+}
+
+func commandCanMakeSupervisorIdle(command string) bool {
+	switch command {
+	case "close", "remove_workspace":
+		return true
+	default:
+		return false
+	}
+}
+
+func restartWhenIdleBlockerCount(engine *tui.Model) int {
+	snapshot := engine.Snapshot()
+	if live := engine.LiveAgentCount(); live > 0 {
+		return live
+	}
+	return len(snapshot.State.Agents)
+}
+
+func triggerIdleRestart(rt config.Runtime, engine *tui.Model, control *supervisorControl, restart restartRequest, cancel context.CancelFunc) ipc.Response {
+	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade restart when idle", IncludeLogs: true})
+	if err != nil {
+		control.restartWhenIdle = nil
+		return supervisorSnapshotResponse(engine, fmt.Sprintf("Restart when idle canceled: could not create pre-upgrade backup: %v", err))
+	}
+	restart.backupID = backup.ID
+	control.restartNow = &restart
+	control.restartWhenIdle = nil
+	go cancel()
+	return supervisorSnapshotResponse(engine, restartNowMessage(backup.ID))
+}
+
+func supervisorSnapshotResponse(engine *tui.Model, message string) ipc.Response {
+	snapshot := engine.Snapshot()
+	if message != "" {
+		snapshot.Message = message
+	}
+	st := snapshot.State
+	return ipc.Response{OK: true, State: &st, Snapshot: &snapshot, Message: message}
+}
+
+func restartRequestFromRequest(request ipc.Request) restartRequest {
+	exe := strings.TrimSpace(request.Args["client_executable"])
+	if exe == "" {
+		exe = strings.TrimSpace(os.Getenv("WEFT_EXECUTABLE"))
+	}
+	if exe == "" {
+		if current, err := os.Executable(); err == nil {
+			exe = current
+		}
+	}
+	return restartRequest{executable: exe, clientVersion: request.ClientVersion}
+}
+
+func restartWhenIdleQueuedMessage(runningAgents int) string {
+	if runningAgents <= 0 {
+		return "Restart when idle queued: Weft will restart the supervisor as soon as it is idle."
+	}
+	return fmt.Sprintf("Restart when idle queued: Weft will not stop %d Codex terminal(s); the supervisor restarts after they close.", runningAgents)
+}
+
+func restartNowMessage(backupID string) string {
+	if backupID == "" {
+		return "Restarting idle supervisor to finish the upgrade."
+	}
+	return "Restarting idle supervisor to finish the upgrade. Backup: " + backupID + "."
 }
 
 func ReportedVersion() string {
@@ -323,63 +478,15 @@ func ReportedClientVersion() string {
 }
 
 func AnnotateUpgrade(response ipc.Response, autoRestarted bool) ipc.Response {
-	if response.SupervisorVersion == "" {
-		return response
-	}
-	upgrade := UpgradeStatus(response, ReportedClientVersion())
-	if upgrade == nil {
-		return response
-	}
-	upgrade.AutoRestarted = autoRestarted
-	if autoRestarted {
-		upgrade.RestartRequired = false
-		upgrade.Message = "Supervisor restarted on the new Weft version."
-	}
-	response.Upgrade = upgrade
-	return response
+	return ipc.AnnotateUpgrade(response, ReportedClientVersion(), autoRestarted)
 }
 
 func UpgradeStatus(response ipc.Response, clientVersion string) *ipc.Upgrade {
-	supervisorVersion := response.SupervisorVersion
-	if supervisorVersion == "" || supervisorVersion == clientVersion {
-		return nil
-	}
-	running := runningAgentCount(response.State)
-	compatible := response.ProtocolVersion == ipc.ProtocolVersion
-	message := upgradeMessage(supervisorVersion, clientVersion, running)
-	if !compatible {
-		message = incompatibleUpgradeMessage(supervisorVersion, clientVersion, running)
-	}
-	return &ipc.Upgrade{
-		ClientVersion:     clientVersion,
-		SupervisorVersion: supervisorVersion,
-		Compatible:        compatible,
-		RestartRequired:   true,
-		RunningAgents:     running,
-		Message:           message,
-	}
+	return ipc.UpgradeStatus(response, clientVersion)
 }
 
 func ShouldAutoRestart(response ipc.Response) bool {
-	return response.Upgrade != nil &&
-		response.State != nil &&
-		response.Upgrade.Compatible &&
-		response.Upgrade.RestartRequired &&
-		response.Upgrade.RunningAgents == 0
-}
-
-func upgradeMessage(supervisorVersion string, clientVersion string, runningAgents int) string {
-	if runningAgents == 0 {
-		return fmt.Sprintf("Weft client %s found idle supervisor %s; restarting the supervisor is safe.", clientVersion, supervisorVersion)
-	}
-	return fmt.Sprintf("Weft client %s found running supervisor %s. Restarting the supervisor will stop %d live Codex terminal(s). Saved layout and metadata remain. Run `weft close --kill` when ready; it will ask before stopping them.", clientVersion, supervisorVersion, runningAgents)
-}
-
-func incompatibleUpgradeMessage(supervisorVersion string, clientVersion string, runningAgents int) string {
-	if runningAgents == 0 {
-		return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Saved layout and metadata remain.", clientVersion, supervisorVersion)
-	}
-	return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Restarting the supervisor will stop %d live Codex terminal(s). Saved layout and metadata remain.", clientVersion, supervisorVersion, runningAgents)
+	return ipc.ShouldAutoRestart(response)
 }
 
 func restartedUpgrade(previous ipc.Response, current ipc.Response) *ipc.Upgrade {
@@ -397,20 +504,6 @@ func restartedUpgrade(previous ipc.Response, current ipc.Response) *ipc.Upgrade 
 		RunningAgents:     0,
 		Message:           message,
 	}
-}
-
-func runningAgentCount(st *state.State) int {
-	if st == nil {
-		return 0
-	}
-	count := 0
-	for _, agent := range st.Agents {
-		switch agent.Status {
-		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
-			count++
-		}
-	}
-	return count
 }
 
 func hasSupervisorResponse(response ipc.Response) bool {
@@ -437,12 +530,66 @@ func waitForStop(rt config.Runtime, timeout time.Duration) {
 	}
 }
 
+func startReplacementSupervisor(rt config.Runtime, restart restartRequest) error {
+	exe := strings.TrimSpace(restart.executable)
+	if exe == "" {
+		return errors.New("cannot restart supervisor: client executable path is unknown")
+	}
+	if err := startSupervisorProcess(rt, exe, replacementSupervisorEnv(rt, exe)); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(4 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "status", ClientVersion: restart.clientVersion}, time.Second)
+		if err == nil {
+			if restart.clientVersion == "" || response.SupervisorVersion == "" || response.SupervisorVersion == restart.clientVersion {
+				return nil
+			}
+			lastErr = fmt.Errorf("replacement supervisor reported version %s, want %s", response.SupervisorVersion, restart.clientVersion)
+		} else {
+			lastErr = err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("started replacement Weft supervisor but it did not become ready: %w", lastErr)
+}
+
 func supervisorEnv(rt config.Runtime, exe string) []string {
 	env := append([]string{}, os.Environ()...)
 	env = upsertEnv(env, config.AppDirEnv, rt.Dir)
 	env = upsertEnv(env, config.WorkspaceEnv, rt.Workspace)
 	env = upsertEnv(env, "WEFT_EXECUTABLE", exe)
 	return env
+}
+
+func replacementSupervisorEnv(rt config.Runtime, exe string) []string {
+	env := withoutEnv(os.Environ(), ClientVersionEnv, VersionOverrideEnv)
+	env = upsertEnv(env, config.AppDirEnv, rt.Dir)
+	env = upsertEnv(env, config.WorkspaceEnv, rt.Workspace)
+	env = upsertEnv(env, "WEFT_EXECUTABLE", exe)
+	return env
+}
+
+func withoutEnv(env []string, keys ...string) []string {
+	drop := map[string]bool{}
+	for _, key := range keys {
+		drop[key+"="] = true
+	}
+	next := make([]string, 0, len(env))
+	for _, item := range env {
+		skip := false
+		for prefix := range drop {
+			if strings.HasPrefix(item, prefix) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			next = append(next, item)
+		}
+	}
+	return next
 }
 
 func upsertEnv(env []string, key string, value string) []string {

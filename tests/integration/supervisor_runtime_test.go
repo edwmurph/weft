@@ -257,6 +257,72 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 	}
 }
 
+func TestDashboardUpgradeRestartWhenIdlePreservesLiveAgent(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
+	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = newEnv
+		_ = cmd.Run()
+	})
+
+	runWeft(t, oldEnv, bin, "--no-attach")
+	oldPID := readPID(t, runtimeDir)
+	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
+	runWeft(t, oldEnv, bin, "new", "Alpha")
+	st := waitState(t, oldEnv, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
+	})
+	agentID := st.Agents[0].ID
+
+	pane := "upgrade-restart-when-idle"
+	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Upgrade: pending") &&
+			strings.Contains(capture, "Press U")
+	})
+	if pid := readPID(t, runtimeDir); pid != oldPID {
+		t.Fatalf("dashboard attach should preserve old supervisor, pid %q -> %q", oldPID, pid)
+	}
+	directRun(t, newEnv, "send-keys", "-t", pane, "C-b")
+	waitState(t, newEnv, bin, func(st state.State) bool {
+		return st.Focus == state.FocusAgents && st.NavOpen
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "u")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Restart supervisor when idle?") &&
+			strings.Contains(capture, "Y restart when idle")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "y")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Upgrade: queued") &&
+			strings.Contains(capture, "stay running")
+	})
+	if pid := readPID(t, runtimeDir); pid != oldPID {
+		t.Fatalf("restart when idle killed live agent, pid %q -> %q", oldPID, pid)
+	}
+
+	runWeft(t, newEnv, bin, "close", agentID)
+	if !waitForBool(8*time.Second, func() bool {
+		data, err := os.ReadFile(filepath.Join(runtimeDir, "weftd.pid"))
+		return err == nil && strings.TrimSpace(string(data)) != oldPID
+	}) {
+		t.Fatalf("supervisor did not restart after agent became idle; pid still %q\nscreen:\n%s", oldPID, clientOutput())
+	}
+	status := runWeft(t, newEnv, bin, "status")
+	if !strings.Contains(status, "upgrade: current") {
+		t.Fatalf("status should be current after restart when idle:\n%s", status)
+	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade restart when idle")
+}
+
 func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")

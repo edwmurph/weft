@@ -811,6 +811,10 @@ func printSupervisorStatus(response ipc.Response) {
 		fmt.Println("upgrade: incompatible supervisor restart required")
 		return
 	}
+	if response.Upgrade.RestartWhenIdleQueued {
+		fmt.Printf("upgrade: restart when idle queued, %d live Codex terminal(s)\n", response.Upgrade.RunningAgents)
+		return
+	}
 	if response.Upgrade.RunningAgents > 0 {
 		fmt.Printf("upgrade: restart pending, %d live Codex terminal(s)\n", response.Upgrade.RunningAgents)
 		return

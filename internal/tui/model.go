@@ -61,6 +61,7 @@ const (
 	confirmDeleteWorkspace    confirmKind = "delete-workspace"
 	confirmDeleteGroup        confirmKind = "delete-group"
 	confirmDeleteAgent        confirmKind = "delete-agent"
+	confirmRestartWhenIdle    confirmKind = "restart-when-idle"
 )
 
 const (
@@ -200,6 +201,24 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		NavWidth:        m.targetNavWidth(),
 		GroupCursor:     m.groupCursor,
 	}
+}
+
+func (m *Model) LiveAgentCount() int {
+	count := ipc.RunningAgentCount(&m.state)
+	counted := map[string]bool{}
+	for _, agent := range m.state.Agents {
+		switch agent.Status {
+		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
+			counted[agent.ID] = true
+		}
+	}
+	for id, pty := range m.ptys {
+		if pty == nil || counted[id] || state.AgentByID(m.state, id) == nil {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 func (m Model) activeErrorText() string {
@@ -1687,6 +1706,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s move agent", cfg.KeyBindings.MoveAgent),
 		fmt.Sprintf("%s rename", cfg.KeyBindings.Rename),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
+		"U restart supervisor when idle during upgrade",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),
 		"",

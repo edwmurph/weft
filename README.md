@@ -37,6 +37,12 @@ Install Weft with Homebrew:
 brew install edwmurph/tap/weft
 ```
 
+After `brew upgrade weft`, reopen the dashboard with `weft`. If only the client
+needed to reopen, Weft will be current. If the older supervisor is still
+running, the dashboard shows an upgrade banner; press `U` to queue a safe
+restart when idle. Weft will not stop live Codex terminals for that queued
+restart.
+
 Then run Weft from a project directory. On first interactive launch, Weft asks
 whether to add that directory as a workspace:
 

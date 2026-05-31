@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/edwmurph/weft/internal/state"
@@ -35,14 +36,15 @@ type Response struct {
 }
 
 type Upgrade struct {
-	ClientVersion     string `json:"client_version"`
-	SupervisorVersion string `json:"supervisor_version"`
-	Compatible        bool   `json:"compatible"`
-	RestartRequired   bool   `json:"restart_required"`
-	AutoRestarted     bool   `json:"auto_restarted,omitempty"`
-	RunningAgents     int    `json:"running_agents"`
-	Message           string `json:"message,omitempty"`
-	BackupID          string `json:"backup_id,omitempty"`
+	ClientVersion         string `json:"client_version"`
+	SupervisorVersion     string `json:"supervisor_version"`
+	Compatible            bool   `json:"compatible"`
+	RestartRequired       bool   `json:"restart_required"`
+	RestartWhenIdleQueued bool   `json:"restart_when_idle_queued,omitempty"`
+	AutoRestarted         bool   `json:"auto_restarted,omitempty"`
+	RunningAgents         int    `json:"running_agents"`
+	Message               string `json:"message,omitempty"`
+	BackupID              string `json:"backup_id,omitempty"`
 }
 
 type Snapshot struct {
@@ -68,6 +70,94 @@ func (e Error) Error() string {
 		return e.Code
 	}
 	return e.Message
+}
+
+func AnnotateUpgrade(response Response, clientVersion string, autoRestarted bool) Response {
+	if response.SupervisorVersion == "" {
+		return response
+	}
+	upgrade := UpgradeStatus(response, clientVersion)
+	if upgrade == nil {
+		return response
+	}
+	upgrade.AutoRestarted = autoRestarted
+	if autoRestarted {
+		upgrade.RestartRequired = false
+		upgrade.Message = "Supervisor restarted on the new Weft version."
+	}
+	response.Upgrade = upgrade
+	return response
+}
+
+func UpgradeStatus(response Response, clientVersion string) *Upgrade {
+	supervisorVersion := response.SupervisorVersion
+	clientVersion = strings.TrimSpace(clientVersion)
+	if clientVersion == "" {
+		clientVersion = version.Version
+	}
+	if supervisorVersion == "" || supervisorVersion == clientVersion {
+		return nil
+	}
+	running := RunningAgentCount(responseState(response))
+	compatible := response.ProtocolVersion == ProtocolVersion
+	message := upgradeMessage(supervisorVersion, clientVersion, running)
+	if !compatible {
+		message = incompatibleUpgradeMessage(supervisorVersion, clientVersion, running)
+	}
+	return &Upgrade{
+		ClientVersion:     clientVersion,
+		SupervisorVersion: supervisorVersion,
+		Compatible:        compatible,
+		RestartRequired:   true,
+		RunningAgents:     running,
+		Message:           message,
+	}
+}
+
+func ShouldAutoRestart(response Response) bool {
+	return response.Upgrade != nil &&
+		responseState(response) != nil &&
+		response.Upgrade.Compatible &&
+		response.Upgrade.RestartRequired &&
+		response.Upgrade.RunningAgents == 0
+}
+
+func RunningAgentCount(st *state.State) int {
+	if st == nil {
+		return 0
+	}
+	count := 0
+	for _, agent := range st.Agents {
+		switch agent.Status {
+		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
+			count++
+		}
+	}
+	return count
+}
+
+func responseState(response Response) *state.State {
+	if response.State != nil {
+		return response.State
+	}
+	if response.Snapshot != nil {
+		return &response.Snapshot.State
+	}
+	return nil
+}
+
+func upgradeMessage(supervisorVersion string, clientVersion string, runningAgents int) string {
+	if runningAgents == 0 {
+		return fmt.Sprintf("Upgrade ready: client %s is newer than idle supervisor %s; the supervisor can restart safely.", clientVersion, supervisorVersion)
+	}
+	return fmt.Sprintf("Upgrade pending: client %s is newer than supervisor %s. Reopening the dashboard is not enough; restart the supervisor when idle. %d live Codex terminal(s) will keep running.", clientVersion, supervisorVersion, runningAgents)
+}
+
+func incompatibleUpgradeMessage(supervisorVersion string, clientVersion string, runningAgents int) string {
+	if runningAgents == 0 {
+		return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Saved layout and metadata remain.", clientVersion, supervisorVersion)
+	}
+	return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Restarting the supervisor will stop %d live Codex terminal(s). Saved layout and metadata remain.", clientVersion, supervisorVersion, runningAgents)
 }
 
 func ErrorResponse(code string, message string) Response {
@@ -114,7 +204,7 @@ func Call(path string, request Request, timeout time.Duration) (Response, error)
 		request.ProtocolVersion = ProtocolVersion
 	}
 	if request.ClientVersion == "" {
-		request.ClientVersion = version.Version
+		request.ClientVersion = reportedClientVersion()
 	}
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return Response{}, err
@@ -136,6 +226,13 @@ func Call(path string, request Request, timeout time.Duration) (Response, error)
 		return response, errors.New(response.Message)
 	}
 	return response, nil
+}
+
+func reportedClientVersion() string {
+	if override := strings.TrimSpace(os.Getenv("WEFT_CLIENT_VERSION_OVERRIDE")); override != "" {
+		return override
+	}
+	return version.Version
 }
 
 func listenUnix(path string) (net.Listener, error) {

@@ -3,8 +3,11 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -13,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/version"
 )
@@ -27,6 +31,11 @@ type clientResponseMsg struct {
 
 type clientSnapshotTick struct{}
 
+type localRestartMsg struct {
+	backupID string
+	err      error
+}
+
 type ClientModel struct {
 	cfg      config.Config
 	runtime  config.Runtime
@@ -36,6 +45,7 @@ type ClientModel struct {
 	height   int
 	mode     mode
 	message  string
+	upgrade  *ipc.Upgrade
 	loading  int
 
 	input                   textinput.Model
@@ -45,6 +55,8 @@ type ClientModel struct {
 	promptSuggestionOpen    bool
 	loadingTickerActive     bool
 	launchWorkspacePrompted bool
+	localRestartWhenIdle    bool
+	localRestartInFlight    bool
 	codexInputQueue         []map[string]string
 	codexInputInFlight      bool
 }
@@ -94,18 +106,32 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.codexInputInFlight = false
 		}
 		if typed.err != nil {
+			if typed.command == "restart_when_idle" && restartWhenIdleUnsupported(typed.response) {
+				m.message = "Restart when idle queued locally; Weft will wait for Codex agents to close."
+				return m, tea.Batch(m.localRestartWhenIdleCmd(), m.nextCodexInputRequest())
+			}
 			m.message = typed.err.Error()
 			return m, m.nextCodexInputRequest()
 		}
 		m.applyResponse(typed.response)
+		restartCmd := m.localRestartWhenIdleCmd()
 		nextCodexInput := m.nextCodexInputRequest()
 		nextLoadingTick := m.ensureLoadingTick()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
 			return m, tea.Batch(nextCodexInput, nextLoadingTick, m.request("client_detached", nil), tea.Quit)
 		}
-		return m, tea.Batch(nextCodexInput, nextLoadingTick)
+		return m, tea.Batch(nextCodexInput, nextLoadingTick, restartCmd)
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
+	case localRestartMsg:
+		m.localRestartInFlight = false
+		if typed.err != nil {
+			m.message = "Restart when idle failed: " + typed.err.Error()
+			return m, nil
+		}
+		m.localRestartWhenIdle = false
+		m.message = "Restarted idle supervisor to finish the upgrade. Backup: " + typed.backupID + "."
+		return m, m.request("attach_client", nil)
 	case loadingTick:
 		if !m.hasLoadingAnimation() {
 			m.loadingTickerActive = false
@@ -191,6 +217,8 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
 		return m, m.request("new", nil)
+	case m.canRestartWhenIdle() && strings.EqualFold(msg.String(), "u"):
+		m.startRestartWhenIdleConfirm()
 	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
@@ -261,6 +289,15 @@ func (m *ClientModel) startDeleteConfirm() {
 	}
 }
 
+func (m *ClientModel) startRestartWhenIdleConfirm() {
+	if !m.canRestartWhenIdle() {
+		return
+	}
+	m.confirm = confirmRestartWhenIdle
+	m.pendingID = upgradeTarget(*m.upgrade)
+	m.mode = modeConfirm
+}
+
 func (m ClientModel) applyPrompt(value string) tea.Cmd {
 	switch m.prompt {
 	case promptWorkspace:
@@ -281,7 +318,7 @@ func (m ClientModel) applyPrompt(value string) tea.Cmd {
 	return nil
 }
 
-func (m ClientModel) applyConfirm() tea.Cmd {
+func (m *ClientModel) applyConfirm() tea.Cmd {
 	switch m.confirm {
 	case confirmAddLaunchWorkspace:
 		return m.request("add_workspace", map[string]string{"path": m.pendingID})
@@ -291,6 +328,9 @@ func (m ClientModel) applyConfirm() tea.Cmd {
 		return m.request("remove_group", map[string]string{"id": m.pendingID})
 	case confirmDeleteAgent:
 		return m.request("close", map[string]string{"id": m.pendingID})
+	case confirmRestartWhenIdle:
+		m.localRestartWhenIdle = true
+		return m.request("restart_when_idle", nil)
 	}
 	return nil
 }
@@ -298,8 +338,16 @@ func (m ClientModel) applyConfirm() tea.Cmd {
 func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 	rt := m.runtime
 	clientID := m.clientID
+	width := m.width
+	height := m.height
 	return func() tea.Msg {
 		args = clientRequestArgs(rt, clientID, command, args)
+		if width > 0 {
+			args["width"] = strconv.Itoa(width)
+		}
+		if height > 0 {
+			args["height"] = strconv.Itoa(height)
+		}
 		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 		return clientResponseMsg{command: command, response: response, err: err}
 	}
@@ -311,7 +359,20 @@ func clientRequestArgs(rt config.Runtime, clientID string, command string, args 
 	if command == "attach_client" {
 		next["launch_workspace"] = rt.Workspace
 	}
+	if command == "restart_when_idle" {
+		if exe := clientExecutablePath(); exe != "" {
+			next["client_executable"] = exe
+		}
+	}
 	return next
+}
+
+func clientExecutablePath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return exe
 }
 
 func (m ClientModel) enqueueCodexInput(args map[string]string) (ClientModel, tea.Cmd) {
@@ -349,10 +410,15 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	if response.Snapshot != nil && strings.TrimSpace(response.Snapshot.Message) != "" {
 		m.message = response.Snapshot.Message
 	}
-	if response.Upgrade != nil && strings.TrimSpace(response.Upgrade.Message) != "" {
-		m.message = response.Upgrade.Message
-	} else if response.SupervisorVersion != "" && response.SupervisorVersion != version.Version {
-		m.message = fmt.Sprintf("Weft client %s found running supervisor %s. Restarting the supervisor can stop live Codex terminals. Saved layout and metadata remain.", version.Version, response.SupervisorVersion)
+	upgrade := clientUpgradeFromResponse(response)
+	if upgrade != nil {
+		m.upgrade = upgrade
+		if upgrade.RestartWhenIdleQueued {
+			m.localRestartWhenIdle = false
+		}
+		m.message = dashboardUpgradeMessage(*upgrade)
+	} else {
+		m.upgrade = nil
 	}
 	m.maybePromptForLaunchWorkspace()
 }
@@ -367,6 +433,138 @@ func (m *ClientModel) ensureLoadingTick() tea.Cmd {
 
 func (m ClientModel) hasLoadingAnimation() bool {
 	return strings.TrimSpace(m.snapshot.LoadingText) != "" || len(m.snapshot.LoadingAgentIDs) > 0
+}
+
+func clientUpgradeFromResponse(response ipc.Response) *ipc.Upgrade {
+	if response.Upgrade != nil {
+		upgrade := *response.Upgrade
+		return &upgrade
+	}
+	return ipc.UpgradeStatus(response, version.Version)
+}
+
+func dashboardUpgradeMessage(upgrade ipc.Upgrade) string {
+	if upgrade.AutoRestarted {
+		return upgrade.Message
+	}
+	if upgrade.RestartWhenIdleQueued {
+		return fmt.Sprintf("Upgrade queued: supervisor %s will restart when idle; live Codex terminals stay running.", upgrade.SupervisorVersion)
+	}
+	if !upgrade.Compatible {
+		return upgrade.Message
+	}
+	if !upgrade.RestartRequired {
+		return upgrade.Message
+	}
+	if upgrade.RunningAgents > 0 {
+		return fmt.Sprintf("Upgrade pending: supervisor %s must restart. Press U to restart when idle; reopening alone is not enough (%d live).", upgrade.SupervisorVersion, upgrade.RunningAgents)
+	}
+	return fmt.Sprintf("Upgrade ready: supervisor %s is idle. Press U to restart it now.", upgrade.SupervisorVersion)
+}
+
+func upgradeTarget(upgrade ipc.Upgrade) string {
+	return fmt.Sprintf("client %s, supervisor %s", upgrade.ClientVersion, upgrade.SupervisorVersion)
+}
+
+func (m ClientModel) canRestartWhenIdle() bool {
+	return m.upgrade != nil && m.upgrade.Compatible && m.upgrade.RestartRequired
+}
+
+func restartWhenIdleUnsupported(response ipc.Response) bool {
+	return response.Error != nil && response.Error.Code == "unknown_command"
+}
+
+func (m *ClientModel) localRestartWhenIdleCmd() tea.Cmd {
+	if !m.localRestartWhenIdle || m.localRestartInFlight || !m.canRestartWhenIdle() || len(m.snapshot.State.Agents) > 0 {
+		return nil
+	}
+	m.localRestartInFlight = true
+	rt := m.runtime
+	exe := clientExecutablePath()
+	return func() tea.Msg {
+		backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade restart when idle", IncludeLogs: true})
+		if err != nil {
+			return localRestartMsg{err: fmt.Errorf("could not create pre-upgrade backup: %w", err)}
+		}
+		_, _ = ipc.Call(rt.SocketPath, ipc.Request{Command: "shutdown"}, time.Second)
+		waitForClientSupervisorStop(rt, 2*time.Second)
+		if err := startClientSupervisor(rt, exe); err != nil {
+			return localRestartMsg{err: err}
+		}
+		return localRestartMsg{backupID: backup.ID}
+	}
+}
+
+func waitForClientSupervisorStop(rt config.Runtime, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "handshake"}, 100*time.Millisecond); err != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func startClientSupervisor(rt config.Runtime, exe string) error {
+	if strings.TrimSpace(exe) == "" {
+		return fmt.Errorf("client executable path is unknown")
+	}
+	log, err := os.OpenFile(filepath.Join(rt.Dir, "weftd.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe, "_supervisor")
+	cmd.Env = clientSupervisorEnv(rt, exe)
+	cmd.Stdout = log
+	cmd.Stderr = log
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		_ = log.Close()
+		return err
+	}
+	_ = cmd.Process.Release()
+	_ = log.Close()
+	deadline := time.Now().Add(4 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "status"}, time.Second); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("started replacement Weft supervisor but it did not become ready: %w", lastErr)
+}
+
+func clientSupervisorEnv(rt config.Runtime, exe string) []string {
+	env := withoutClientVersionOverrides(os.Environ())
+	env = upsertClientEnv(env, config.AppDirEnv, rt.Dir)
+	env = upsertClientEnv(env, config.WorkspaceEnv, rt.Workspace)
+	env = upsertClientEnv(env, "WEFT_EXECUTABLE", exe)
+	return env
+}
+
+func withoutClientVersionOverrides(env []string) []string {
+	next := make([]string, 0, len(env))
+	for _, item := range env {
+		if strings.HasPrefix(item, "WEFT_CLIENT_VERSION_OVERRIDE=") || strings.HasPrefix(item, "WEFT_SUPERVISOR_VERSION_OVERRIDE=") {
+			continue
+		}
+		next = append(next, item)
+	}
+	return next
+}
+
+func upsertClientEnv(env []string, key string, value string) []string {
+	prefix := key + "="
+	for i, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 func (m *ClientModel) maybePromptForLaunchWorkspace() {

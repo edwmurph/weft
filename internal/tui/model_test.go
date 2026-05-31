@@ -185,6 +185,52 @@ func TestClientRequestArgsOnlySelectLaunchWorkspaceOnAttach(t *testing.T) {
 	if _, ok := nav["launch_workspace"]; ok {
 		t.Fatalf("nav request should not reselect launch workspace: %#v", nav)
 	}
+
+	restart := clientRequestArgs(rt, "client-1", "restart_when_idle", nil)
+	if restart["client_id"] != "client-1" || restart["client_executable"] == "" {
+		t.Fatalf("restart args = %#v", restart)
+	}
+	if _, ok := restart["launch_workspace"]; ok {
+		t.Fatalf("restart request should not reselect launch workspace: %#v", restart)
+	}
+}
+
+func TestClientUpgradeBannerOpensRestartWhenIdleConfirm(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithAgent(rt.Workspace)
+	st.Focus = state.FocusAgents
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	if model.upgrade == nil || model.upgrade.RunningAgents != 1 {
+		t.Fatalf("upgrade = %#v", model.upgrade)
+	}
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Upgrade: pending", "reopening alone is not enough", "Press U"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("upgrade banner missing %q:\n%s", expected, got)
+		}
+	}
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmRestartWhenIdle {
+		t.Fatalf("restart confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	}
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{"Restart supervisor when idle?", "client ", "supervisor 3.9.0", "Y restart when idle"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("restart confirm missing %q:\n%s", expected, got)
+		}
+	}
 }
 
 func TestSnapshotShowsActiveAgentStartError(t *testing.T) {
