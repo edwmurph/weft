@@ -506,8 +506,14 @@ func renderConfirmPrompt(confirm confirmKind, target string, width int) string {
 	}
 	if detail := confirmDetail(confirm); detail != "" {
 		lines = append(lines, "")
-		for _, line := range strings.Split(detail, "\n") {
-			lines = append(lines, mutedStyle.Render(clip(line, width)))
+		for _, paragraph := range strings.Split(detail, "\n") {
+			if strings.TrimSpace(paragraph) == "" {
+				lines = append(lines, "")
+				continue
+			}
+			for _, wrapped := range wrapPlain(paragraph, width, 50) {
+				lines = append(lines, mutedStyle.Render(clip(wrapped, width)))
+			}
 		}
 	}
 	lines = append(lines, "", renderConfirmActions(confirm))
@@ -538,7 +544,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 		return "Current directory"
 	}
 	if confirm == confirmRestartWhenIdle || confirm == confirmCancelRestartIdle {
-		return "Upgrade"
+		return "Supervisor"
 	}
 	if confirm == confirmDeleteAgent {
 		return "Agent"
@@ -548,7 +554,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmRestartWhenIdle {
-		return "Closes idle Codex terminals, restarts the supervisor, then runs codex resume.\nRunning commands and unsubmitted text are not preserved; finish important work first."
+		return "Closes idle Codex terminals, restarts the supervisor, then resumes those agents.\nRunning commands and unsubmitted text are not preserved; finish important work first."
 	}
 	if confirm == confirmCancelRestartIdle {
 		return "Keeps the current supervisor running and removes the queued restart."

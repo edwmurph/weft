@@ -569,44 +569,46 @@ func dashboardUpgradeMessage(upgrade ipc.Upgrade, st state.State) string {
 	if !upgrade.RestartRequired {
 		return upgrade.Message
 	}
+	delta := fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 	report := codexsession.BuildReport(st)
 	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade pending: supervisor %s must restart. Wait for %d Codex agent(s) to become idle; reopening alone is not enough.", upgrade.SupervisorVersion, len(report.Busy))
+		return fmt.Sprintf("Upgrade pending: %s must restart. Wait for %d Codex agent(s) to become idle; reopening alone is not enough.", delta, len(report.Busy))
 	}
 	if len(report.Missing) > 0 {
-		return fmt.Sprintf("Upgrade pending: supervisor %s must restart. Waiting for %d Codex session id(s); reopening alone is not enough.", upgrade.SupervisorVersion, len(report.Missing))
+		return fmt.Sprintf("Upgrade pending: %s must restart. Waiting for %d Codex session id(s); reopening alone is not enough.", delta, len(report.Missing))
 	}
 	if report.Total > 0 {
-		return fmt.Sprintf("Upgrade ready: supervisor %s can restart and resume %d idle Codex agent(s). Press U to continue.", upgrade.SupervisorVersion, report.Total)
+		return fmt.Sprintf("Upgrade ready: %s can restart and resume %d idle Codex agent(s). Press U to continue.", delta, report.Total)
 	}
-	return fmt.Sprintf("Upgrade ready: supervisor %s is idle. Press U to restart it now.", upgrade.SupervisorVersion)
+	return fmt.Sprintf("Upgrade ready: %s is idle. Press U to restart it now.", delta)
 }
 
 func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
 	}
+	delta := fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 	if !upgrade.Compatible {
 		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop agents before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
 	}
 	if upgrade.RestartWhenIdleQueued {
-		return fmt.Sprintf("Upgrade queued: client %s, supervisor %s.\nClose agents to finish, or press U to cancel.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+		return fmt.Sprintf("Upgrade queued: %s.\nClose agents to finish, or press U to cancel.", delta)
 	}
 	report := codexsession.BuildReport(st)
 	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade pending: client %s, supervisor %s.\nWait for %d agent(s) to become idle.", upgrade.ClientVersion, upgrade.SupervisorVersion, len(report.Busy))
+		return fmt.Sprintf("Upgrade pending: %s.\nWait for %d agent(s) to become idle.", delta, len(report.Busy))
 	}
 	if len(report.Missing) > 0 {
-		return fmt.Sprintf("Upgrade pending: client %s, supervisor %s.\nWaiting for %d Codex session id(s).", upgrade.ClientVersion, upgrade.SupervisorVersion, len(report.Missing))
+		return fmt.Sprintf("Upgrade pending: %s.\nWaiting for %d Codex session id(s).", delta, len(report.Missing))
 	}
 	if report.Total > 0 {
-		return fmt.Sprintf("Upgrade ready: client %s, supervisor %s.\nPress U to upgrade and resume %d idle agent(s).", upgrade.ClientVersion, upgrade.SupervisorVersion, report.Total)
+		return fmt.Sprintf("Upgrade ready: %s.\nPress U to upgrade and resume %d idle agent(s).", delta, report.Total)
 	}
-	return fmt.Sprintf("Upgrade ready: client %s, supervisor %s.\nPress U to restart now.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+	return fmt.Sprintf("Upgrade ready: %s.\nPress U to restart now.", delta)
 }
 
 func upgradeTarget(upgrade ipc.Upgrade) string {
-	return fmt.Sprintf("client %s, supervisor %s", upgrade.ClientVersion, upgrade.SupervisorVersion)
+	return fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 }
 
 func (m ClientModel) canUpgradePending() bool {

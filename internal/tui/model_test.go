@@ -332,8 +332,7 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 		"Upgrade: ready",
 		"can restart and resume",
 		"Press U",
-		"client " + weftversion.Version,
-		"supervisor 3.9.0",
+		"supervisor 3.9.0 → " + weftversion.Version,
 		"Press U to upgrade and resume 1 idle agent",
 	} {
 		if !strings.Contains(got, expected) {
@@ -347,7 +346,12 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 		t.Fatalf("upgrade confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
 	}
 	got = ansi.Strip(model.View())
-	for _, expected := range []string{"Upgrade supervisor and resume agents?", "client ", "supervisor 3.9.0", "Y upgrade and resume", "unsubmitted text are not preserved"} {
+	for _, expected := range []string{
+		"Upgrade supervisor and resume agents?",
+		"supervisor 3.9.0 → " + weftversion.Version,
+		"Y upgrade and resume",
+		"unsubmitted text are not preserved",
+	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
 		}
@@ -408,7 +412,12 @@ func TestClientQueuedUpgradeFooterOpensCancelConfirm(t *testing.T) {
 	})
 
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Upgrade queued", "client " + weftversion.Version, "supervisor 3.9.0", "Close agents to finish", "press U to cancel"} {
+	for _, expected := range []string{
+		"Upgrade queued",
+		"supervisor 3.9.0 → " + weftversion.Version,
+		"Close agents to finish",
+		"press U to cancel",
+	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("queued upgrade footer missing %q:\n%s", expected, got)
 		}
