@@ -712,7 +712,7 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 	}
 }
 
-func TestTitleHookCapturesEnhancedKeyboardProtocolInput(t *testing.T) {
+func TestTitleHookCapturesRawKeyboardProtocolInput(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
@@ -720,25 +720,22 @@ func TestTitleHookCapturesEnhancedKeyboardProtocolInput(t *testing.T) {
 	model.state.Agents[0].Title = model.cfg.TitleTemplate
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
-	sendEnhanced := func(raw string) tea.Cmd {
+	sendRaw := func(raw string) tea.Cmd {
 		t.Helper()
-		input, ok := enhancedKeyboardInputFromMsg(testCSIMessage(unknownCSIString(raw)))
-		if !ok {
-			t.Fatalf("expected enhanced input for %q", raw)
-		}
-		updated, cmd := model.handleEnhancedKeyboardInput(input)
-		model = updated.(Model)
-		return cmd
+		return model.captureCodexInputArgs(model.state.Agents[0], map[string]string{
+			"encoded": raw,
+			"input":   codexInputRaw,
+		})
 	}
 	for _, raw := range []string{
 		"\x1b[102u", "\x1b[105u", "\x1b[120u", "\x1b[32u", "\x1b[108u",
 		"\x1b[111u", "\x1b[103u", "\x1b[105u", "\x1b[110u",
 	} {
-		if cmd := sendEnhanced(raw); cmd != nil {
+		if cmd := sendRaw(raw); cmd != nil {
 			t.Fatalf("hook should not run before Enter for %q", raw)
 		}
 	}
-	cmd := sendEnhanced("\x1b[13u")
+	cmd := sendRaw("\x1b[13u")
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
@@ -763,7 +760,21 @@ func TestTitleHookCapturesEnhancedKeyboardProtocolInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(raw), `"first_message":"fix login"`) {
-		t.Fatalf("payload missing enhanced keyboard first message:\n%s", raw)
+		t.Fatalf("payload missing raw keyboard first message:\n%s", raw)
+	}
+}
+
+func TestTitleHookRawCaptureIgnoresVimEscapeAndMetaCommands(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": "fix login"})
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": "\x1b"})
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": "\x1bb"})
+	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": " now"})
+
+	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix login now"; got != want {
+		t.Fatalf("raw capture buffer = %q, want %q", got, want)
 	}
 }
 

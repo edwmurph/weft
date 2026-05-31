@@ -347,11 +347,20 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
 - Workspaces and Agents panes are hidden offscreen to the left.
 - `Agent Console` fills the terminal.
 - Weft keeps the framed `Agent Console` pane visible while Codex is focused.
-- The attached client enables enhanced terminal keyboard reporting and forwards
-  supported keyboard escape sequences into the active Codex PTY.
-- Codex-owned terminal behavior, including modified-key shortcuts such as
-  Shift+Enter and Shift+Tab in supporting terminals, is preserved inside the
-  framed pane.
+- The attached client forwards raw terminal input bytes into the active Codex
+  PTY without key-name reconstruction. The configured drawer key, `C-b` by
+  default, is the only dashboard key sequence owned by Weft.
+- Terminal-generated C-c belongs to Codex whenever `Agent Console` is focused
+  and an active agent exists. While Codex reports active work, Weft delivers C-c
+  through Codex's interrupt path so running side-thread work is interrupted
+  without returning from or closing the side thread. Weft does not use C-c to
+  quit from `Agent Console`, and the toolbar must not advertise C-c.
+- Codex-owned terminal behavior, including Vim mode, Esc timing, bracketed
+  paste, Alt/Meta prefixes, and modified-key shortcuts such as Shift+Enter and
+  Shift+Tab in supporting terminals, is preserved inside the framed pane.
+- The framed terminal renderer preserves Codex cursor visibility and cursor
+  shape requests, including block, underline, and bar cursor modes used by Vim
+  insert/normal state.
 - Weft enables cell-level mouse tracking in the attached client. In focused
   `Agent Console`, wheel events inside the console content are forwarded into
   the active Codex PTY so Codex can scroll its chat history. Left-button drag
@@ -360,10 +369,6 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
   The console border shows a short copy-confirmation toast.
   Mouse input outside the focused console remains a Weft dashboard concern and
   is not forwarded to Codex.
-- C-c belongs to Codex whenever `Agent Console` is focused and an active agent
-  exists. Weft does not use C-c to quit from `Agent Console`, and the toolbar
-  must not advertise C-c. While Codex reports active work, C-c must reach
-  Codex's interrupt path and must not return from or close a side conversation.
 - If the active Codex PTY exits while `Agent Console` is focused, Weft returns
   to the dashboard `Agents` pane, keeps the agent selected, marks it killed,
   and makes the exited state visible in agent metadata.
@@ -681,8 +686,12 @@ Rules:
 
 - Starting an agent launches Codex in its workspace.
 - Switching agents changes which PTY is rendered in `Agent Live Preview` or `Agent Console`.
-- Alt-modified keys are forwarded to Codex agent PTYs with an ESC prefix so terminal Meta key bindings keep working in the embedded Codex instance.
-- Forwarded Codex input preserves key order, including rapid typed or pasted text.
+- Codex-focus input is forwarded to Codex agent PTYs as raw bytes, except for
+  the configured drawer key that returns to the dashboard and terminal-generated
+  C-c while Codex reports active work, which is routed through Codex's interrupt
+  path.
+- Forwarded Codex input preserves key order, including Esc, Alt/Meta prefixes,
+  rapid typed text, and bracketed paste.
 - Moving an agent between groups does not affect its PTY.
 - Top-level agents have no group.
 - Removing a workspace stops every PTY for agents in that workspace.
@@ -694,6 +703,8 @@ Rules:
 - Cached PTY screen resizes preserve bottom rows first, and terminal
   top/bottom scrolling regions are honored so Codex chat footers and composers
   do not disappear behind the frame.
+- Cached PTY screens preserve cursor visibility and DECSCUSR cursor shape
+  requests so Vim-style block/bar/underline cursor changes render in the frame.
 - Closing the TUI client does not stop PTYs.
 - Restarting the supervisor stops PTYs unless a future implementation supports explicit PTY handoff.
 - The active TUI client sends terminal size changes to the supervisor, and the supervisor resizes the active Codex PTY.

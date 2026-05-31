@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,6 +22,73 @@ func normalizeBinding(binding string) string {
 	value = strings.ReplaceAll(value, "S-", "shift+")
 	value = strings.ReplaceAll(value, "s-", "shift+")
 	return strings.ToLower(value)
+}
+
+func bindingRawSequence(binding string) []byte {
+	switch value := normalizeBinding(binding); value {
+	case "enter":
+		return []byte("\r")
+	case "tab":
+		return []byte("\t")
+	case "esc", "escape":
+		return []byte{0x1b}
+	case "space", " ":
+		return []byte(" ")
+	case "backspace":
+		return []byte{0x7f}
+	case "ctrl+@", "ctrl+`":
+		return []byte{0}
+	case "ctrl+[":
+		return []byte{0x1b}
+	case "ctrl+\\":
+		return []byte{0x1c}
+	case "ctrl+]":
+		return []byte{0x1d}
+	case "ctrl+^":
+		return []byte{0x1e}
+	case "ctrl+_":
+		return []byte{0x1f}
+	case "ctrl+?":
+		return []byte{0x7f}
+	default:
+		if strings.HasPrefix(value, "ctrl+") && len(value) == len("ctrl+x") {
+			ch := value[len(value)-1]
+			if ch >= 'a' && ch <= 'z' {
+				return []byte{ch - 'a' + 1}
+			}
+		}
+	}
+	return nil
+}
+
+func bindingTerminalSequences(binding string) [][]byte {
+	raw := bindingRawSequence(binding)
+	var sequences [][]byte
+	if len(raw) > 0 {
+		sequences = append(sequences, raw)
+	}
+	value := normalizeBinding(binding)
+	if strings.HasPrefix(value, "ctrl+") && len(value) == len("ctrl+x") {
+		ch := value[len(value)-1]
+		if ch >= 'a' && ch <= 'z' {
+			code := int(ch)
+			sequences = append(sequences,
+				[]byte("\x1b["+strconv.Itoa(code)+";5u"),
+				[]byte("\x1b["+strconv.Itoa(code)+";5:1u"),
+				[]byte("\x1b[27;5;"+strconv.Itoa(code)+"~"),
+			)
+		}
+	}
+	return sequences
+}
+
+func terminalInterruptSequences() [][]byte {
+	return [][]byte{
+		[]byte("\x03"),
+		[]byte(terminalKeyboardCtrlC),
+		[]byte("\x1b[99;5:1u"),
+		[]byte("\x1b[27;5;99~"),
+	}
 }
 
 func encodeKey(msg tea.KeyMsg) []byte {

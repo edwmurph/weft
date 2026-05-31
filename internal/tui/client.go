@@ -70,14 +70,17 @@ type ClientModel struct {
 	toastText               string
 	toastID                 int
 	mouseSelection          consoleSelection
+	inputRouter             *clientInputRouter
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
 	model := NewClientModel(rt, cfg)
+	inputRouter := newClientInputRouter(os.Stdin, rt, model.clientID, cfg.KeyBindings.Drawer)
+	model.inputRouter = inputRouter
 	enableTerminalKeyboardReporting()
 	defer disableTerminalKeyboardReporting()
 	options := []tea.ProgramOption{
-		tea.WithInput(os.Stdin),
+		tea.WithInput(inputRouter),
 		tea.WithOutput(os.Stdout),
 	}
 	if os.Getenv("WEFT_HEADLESS") == "1" {
@@ -223,11 +226,18 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	}
 
+	if m.snapshot.State.Focus == state.FocusCodex &&
+		state.ActiveAgent(m.snapshot.State) != nil &&
+		m.inputRouter != nil &&
+		!m.inputRouter.CodexActive() {
+		m.snapshot.State.Focus = state.FocusAgents
+		m.snapshot.State.NavOpen = true
+	}
 	if bindingMatches(m.cfg.KeyBindings.Drawer, msg) {
 		return m, m.request("toggle_drawer", nil)
 	}
 	if m.snapshot.State.Focus == state.FocusCodex && state.ActiveAgent(m.snapshot.State) != nil {
-		return m.enqueueCodexInput(codexInputArgs(msg))
+		return m, nil
 	}
 	if m.snapshot.State.Focus == state.FocusCodex {
 		return m, m.request("toggle_drawer", nil)
@@ -494,6 +504,17 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 		m.upgrade = nil
 	}
 	m.maybePromptForLaunchWorkspace()
+	m.syncInputRouter()
+}
+
+func (m *ClientModel) syncInputRouter() {
+	if m.inputRouter == nil {
+		return
+	}
+	active := m.mode == modeNormal &&
+		m.snapshot.State.Focus == state.FocusCodex &&
+		state.ActiveAgent(m.snapshot.State) != nil
+	m.inputRouter.SetCodexActive(active)
 }
 
 func (m *ClientModel) ensureLoadingTick() tea.Cmd {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -1681,37 +1682,119 @@ func (m *Model) captureCodexInputArgs(agent state.Agent, args map[string]string)
 	case "alt+backspace":
 		m.codexInputBuffers[agent.ID] = trimPreviousInputToken(m.codexInputBuffers[agent.ID])
 	case "enter":
-		firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
-		delete(m.codexInputBuffers, agent.ID)
-		if firstMessage == "" || agent.AutoTitleAttempted {
-			return nil
-		}
-		if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
-			if m.agentUsesAutoTitle(agent) {
-				m.recordAutoTitleError(agent.ID, "title_hook_command is not configured", false)
-				m.message = "auto title unavailable: set title_hook_command"
-			}
-			return nil
-		}
-		m.state = state.WithUpdatedAgent(m.state, agent.ID, func(agent state.Agent) state.Agent {
-			agent.AutoTitleAttempted = true
-			agent.AutoTitleError = ""
-			return agent
-		})
-		m.save()
-		if updated := state.AgentByID(m.state, agent.ID); updated != nil {
-			agent = *updated
-		}
-		if m.agentUsesAutoTitle(agent) {
-			m.message = "generating auto title"
-		}
-		return m.titleHookCmd(agent, firstMessage)
+		return m.submitCodexInputBuffer(agent)
 	case "ctrl+u":
 		delete(m.codexInputBuffers, agent.ID)
 	case "ctrl+w":
 		m.codexInputBuffers[agent.ID] = trimLastWord(m.codexInputBuffers[agent.ID])
+	case codexInputRaw:
+		return m.captureRawCodexInput(agent, []byte(args["encoded"]))
 	}
 	return nil
+}
+
+func (m *Model) submitCodexInputBuffer(agent state.Agent) tea.Cmd {
+	firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
+	delete(m.codexInputBuffers, agent.ID)
+	if firstMessage == "" || agent.AutoTitleAttempted {
+		return nil
+	}
+	if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
+		if m.agentUsesAutoTitle(agent) {
+			m.recordAutoTitleError(agent.ID, "title_hook_command is not configured", false)
+			m.message = "auto title unavailable: set title_hook_command"
+		}
+		return nil
+	}
+	m.state = state.WithUpdatedAgent(m.state, agent.ID, func(agent state.Agent) state.Agent {
+		agent.AutoTitleAttempted = true
+		agent.AutoTitleError = ""
+		return agent
+	})
+	m.save()
+	if updated := state.AgentByID(m.state, agent.ID); updated != nil {
+		agent = *updated
+	}
+	if m.agentUsesAutoTitle(agent) {
+		m.message = "generating auto title"
+	}
+	return m.titleHookCmd(agent, firstMessage)
+}
+
+func (m *Model) captureRawCodexInput(agent state.Agent, data []byte) tea.Cmd {
+	var cmd tea.Cmd
+	for index := 0; index < len(data); {
+		switch data[index] {
+		case '\r', '\n':
+			if cmd == nil {
+				cmd = m.submitCodexInputBuffer(agent)
+				if cmd != nil {
+					agent.AutoTitleAttempted = true
+				}
+			} else {
+				delete(m.codexInputBuffers, agent.ID)
+			}
+			index++
+		case 0x7f, '\b':
+			m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+			index++
+		case 0x15:
+			delete(m.codexInputBuffers, agent.ID)
+			index++
+		case 0x17:
+			m.codexInputBuffers[agent.ID] = trimLastWord(m.codexInputBuffers[agent.ID])
+			index++
+		case 0x1b:
+			if sequence, width, ok := consumeCSISequence(data[index:]); ok {
+				if event, ok := parseCSIKeyboardEvent(sequence); ok {
+					if event.isShiftEnter() {
+						m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], '\n')
+					} else if key, ok := event.keyMsg(); ok {
+						next := m.captureCodexInput(agent, key)
+						if cmd == nil && next != nil {
+							cmd = next
+							agent.AutoTitleAttempted = true
+						}
+					}
+				}
+				index += width
+				continue
+			}
+			if index+1 < len(data) && (data[index+1] == 0x7f || data[index+1] == '\b') {
+				m.codexInputBuffers[agent.ID] = trimPreviousInputToken(m.codexInputBuffers[agent.ID])
+				index += 2
+				continue
+			}
+			if index+1 < len(data) && data[index+1] >= 0x20 && data[index+1] != 0x7f {
+				index += 2
+				continue
+			}
+			index++
+		default:
+			r, width := utf8.DecodeRune(data[index:])
+			if r == utf8.RuneError && width == 1 {
+				index++
+				continue
+			}
+			if !unicode.IsControl(r) {
+				m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], r)
+			}
+			index += width
+		}
+	}
+	return cmd
+}
+
+func consumeCSISequence(data []byte) ([]byte, int, bool) {
+	if len(data) < 3 || data[0] != 0x1b || data[1] != '[' {
+		return nil, 0, false
+	}
+	for index := 2; index < len(data); index++ {
+		if data[index] >= 0x40 && data[index] <= 0x7e {
+			return data[:index+1], index + 1, true
+		}
+	}
+	return nil, 0, false
 }
 
 func trimPreviousInputToken(value []rune) []rune {

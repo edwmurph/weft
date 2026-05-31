@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-31 - Codex console parity
+
+- Request: Assess and fix why Codex Vim mode behaves differently inside Weft, while keeping `C-b` as the dashboard escape.
+- Suggestions: Replace Codex-focus key reconstruction with raw byte forwarding except the configured drawer sequence, preserve terminal-generated C-c as Codex interrupt input while Codex reports active work, keep title-hook capture as best-effort metadata, and extend the framed terminal renderer to preserve DECSCUSR cursor shape modes.
+- Outcome: Implemented in `.worktrees/codex-parity-console`; awaiting review.
+- Evidence: `internal/tui/client_input.go`, `internal/tui/client.go`, `internal/tui/model.go`, `internal/tui/terminal_screen.go`, `tests/integration/dashboard_e2e_test.go`, `README.md`, `spec.md`.
+
 ## 2026-05-30 - Aggressive legacy prune
 
 - Request: Reapply the breaking legacy cleanup in a fresh `.worktrees/aggressive-legacy-prune` worktree without reusing the dirty cleanup worktree.

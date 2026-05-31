@@ -140,22 +140,13 @@ func (m Model) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Mod
 	if input.shouldHandleAsKey(m.cfg, m.state.Focus, active) {
 		return m.handleKey(input.key)
 	}
-	if m.state.Focus != state.FocusCodex {
-		return m, nil
-	}
-	if active == nil {
-		return m, nil
-	}
-	return m, m.applyCodexInput(input.codexInputArgs())
+	return m, nil
 }
 
 func (m ClientModel) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {
 	active := state.ActiveAgent(m.snapshot.State)
 	if input.shouldHandleAsKey(m.cfg, m.snapshot.State.Focus, active) {
 		return m.handleKey(input.key)
-	}
-	if m.snapshot.State.Focus == state.FocusCodex && active != nil {
-		return m, m.request("codex_input", input.codexInputArgs())
 	}
 	return m, nil
 }

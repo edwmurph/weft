@@ -15,6 +15,19 @@ type terminalCell struct {
 	style cellbuf.Style
 }
 
+type terminalCursorShape int
+
+const (
+	terminalCursorBlock terminalCursorShape = iota
+	terminalCursorUnderline
+	terminalCursorBar
+)
+
+type terminalCursorOverlay struct {
+	col   int
+	shape terminalCursorShape
+}
+
 type TerminalScreen struct {
 	cols          int
 	rows          int
@@ -22,6 +35,7 @@ type TerminalScreen struct {
 	row           int
 	col           int
 	cursorVisible bool
+	cursorShape   terminalCursorShape
 	savedRow      int
 	savedCol      int
 	scrollTop     int
@@ -115,11 +129,11 @@ func (s *TerminalScreen) ANSIStringWithCursor(showCursor bool) string {
 func (s *TerminalScreen) ansiString(showCursor bool) string {
 	lines := make([]string, len(s.cells))
 	for row, cells := range s.cells {
-		cursorCol := -1
+		cursor := terminalCursorOverlay{col: -1}
 		if showCursor && row == s.row {
-			cursorCol = s.col
+			cursor = terminalCursorOverlay{col: s.col, shape: s.cursorShape}
 		}
-		lines[row] = styledCells(cells, s.defaults, cursorCol)
+		lines[row] = styledCells(cells, s.defaults, cursor)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -237,6 +251,10 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 		if prefix == 0 {
 			s.setScrollRegion(param(0, 1), param(1, s.rows))
 		}
+	case 'q':
+		if prefix == 0 && cmd.Intermediate() == ' ' {
+			s.cursorShape = cursorShapeFromMode(param(0, 0))
+		}
 	case 's':
 		if prefix == 0 {
 			s.savedRow, s.savedCol = s.row, s.col
@@ -273,6 +291,7 @@ func (s *TerminalScreen) handleESC(cmd ansi.Cmd) {
 		s.resetScrollRegion()
 		s.originMode = false
 		s.cursorVisible = true
+		s.cursorShape = terminalCursorBlock
 		s.clearAll()
 	case '7':
 		s.savedRow, s.savedCol = s.row, s.col
@@ -542,11 +561,11 @@ func plainCells(cells []terminalCell) string {
 	return string(runes)
 }
 
-func styledCells(cells []terminalCell, defaults cellbuf.Style, cursorCol int) string {
+func styledCells(cells []terminalCell, defaults cellbuf.Style, cursor terminalCursorOverlay) string {
 	last := -1
 	for index, cell := range cells {
 		style := styleWithDefaults(cell.style, defaults)
-		if index == cursorCol || cell.r != ' ' || !style.Clear() {
+		if index == cursor.col || cell.r != ' ' || !style.Clear() {
 			last = index
 		}
 	}
@@ -558,8 +577,9 @@ func styledCells(cells []terminalCell, defaults cellbuf.Style, cursorCol int) st
 	var active cellbuf.Style
 	for index, cell := range cells[:last+1] {
 		style := styleWithDefaults(cell.style, defaults)
-		if index == cursorCol {
-			style = cursorCellStyle(style)
+		r := cell.r
+		if index == cursor.col {
+			style, r = cursorCell(style, cursor.shape, r)
 		}
 		if !style.Equal(&active) {
 			if !active.Empty() {
@@ -570,10 +590,10 @@ func styledCells(cells []terminalCell, defaults cellbuf.Style, cursorCol int) st
 			}
 			active = style
 		}
-		if cell.r == 0 {
+		if r == 0 {
 			builder.WriteRune(' ')
 		} else {
-			builder.WriteRune(cell.r)
+			builder.WriteRune(r)
 		}
 	}
 	if !active.Empty() {
@@ -582,10 +602,29 @@ func styledCells(cells []terminalCell, defaults cellbuf.Style, cursorCol int) st
 	return builder.String()
 }
 
-func cursorCellStyle(style cellbuf.Style) cellbuf.Style {
-	style.Fg = color.Black
-	style.Bg = color.White
-	return style
+func cursorCell(style cellbuf.Style, shape terminalCursorShape, r rune) (cellbuf.Style, rune) {
+	switch shape {
+	case terminalCursorUnderline:
+		style.Underline(true)
+	case terminalCursorBar:
+		style.Fg = color.White
+		r = '▏'
+	default:
+		style.Fg = color.Black
+		style.Bg = color.White
+	}
+	return style, r
+}
+
+func cursorShapeFromMode(mode int) terminalCursorShape {
+	switch mode {
+	case 3, 4:
+		return terminalCursorUnderline
+	case 5, 6:
+		return terminalCursorBar
+	default:
+		return terminalCursorBlock
+	}
 }
 
 func styleWithDefaults(style cellbuf.Style, defaults cellbuf.Style) cellbuf.Style {

@@ -230,18 +230,22 @@ help = "?"
 quit = "C-c"
 ```
 
-In CODEX focus, Weft keeps the `Agent Console` framed while forwarding Codex
-input through the active PTY. The attached client enables enhanced terminal
-keyboard reporting so modified Codex shortcuts such as `Shift+Enter` and
-`Shift+Tab` are forwarded to Codex. The client also captures mouse input inside
-`Agent Console`: wheel events are forwarded to Codex for chat-history scrolling,
-and drag selection starts after Codex's shared visual margin so the highlighted
-cells match the clipboard text. A short toast in the console border confirms the
-copy. Press the drawer key, `C-b` by default, to return to the dashboard.
-While `Agent Console` is focused, `C-c` belongs to Codex and is not a Weft quit
-shortcut: active work is sent through Codex's interrupt path, and an idle Codex
-may still exit naturally. If Codex does exit after receiving `C-c`, Weft returns
-to the dashboard `Agents` pane and marks the agent as killed.
+In CODEX focus, Weft keeps the `Agent Console` framed while forwarding raw
+terminal input bytes through the active PTY. The configured drawer key, `C-b` by
+default, is the only dashboard key sequence Weft owns while Codex is focused.
+Terminal-generated `C-c` is still delivered through Codex's interrupt path while
+Codex reports active work, matching side-thread interruption behavior instead of
+returning or closing the side thread. Other Codex-owned terminal behavior,
+including Vim mode, Esc timing, bracketed paste, Alt/Meta prefixes,
+`Shift+Enter`, and `Shift+Tab`, reaches Codex unchanged. The framed renderer
+also preserves Codex cursor visibility and block/bar/underline cursor shape
+requests. The client also captures mouse input inside `Agent Console`: wheel
+events are forwarded to Codex for chat-history scrolling, and drag selection
+starts after Codex's shared visual margin so the highlighted cells match the
+clipboard text. A short toast in the console border confirms the copy. Press the
+drawer key to return to the dashboard. If Codex exits after receiving its own
+input, Weft returns to the dashboard `Agents` pane and marks the agent as
+killed.
 
 ## Config And State
 

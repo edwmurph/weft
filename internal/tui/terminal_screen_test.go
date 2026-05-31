@@ -245,3 +245,25 @@ func TestTerminalScreenANSIStringWithCursorRespectsVisibilityMode(t *testing.T) 
 		t.Fatalf("shown terminal cursor should be painted:\n%q", shown)
 	}
 }
+
+func TestTerminalScreenANSIStringWithCursorPreservesCursorShape(t *testing.T) {
+	screen := NewTerminalScreen(8, 1)
+
+	screen.Write("abc\x1b[4 q")
+	underline := screen.ANSIStringWithCursor(true)
+	if !strings.Contains(underline, "\x1b[4") || strings.Contains(underline, "48;2;255;255;255") {
+		t.Fatalf("underline cursor should render as an underlined cell, got %q", underline)
+	}
+
+	screen.Write("\x1b[6 q")
+	bar := screen.ANSIStringWithCursor(true)
+	if !strings.Contains(ansi.Strip(bar), "abc▏") || strings.Contains(bar, "48;2;255;255;255") {
+		t.Fatalf("bar cursor should render as a vertical bar glyph, got %q", bar)
+	}
+
+	screen.Write("\x1b[2 q")
+	block := screen.ANSIStringWithCursor(true)
+	if !strings.Contains(block, "48;2;255;255;255") {
+		t.Fatalf("block cursor should render as an inverted cell, got %q", block)
+	}
+}

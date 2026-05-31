@@ -734,6 +734,23 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 	})
 
+	timedStep(t, "codex focus forwards vim and paste bytes unchanged", func() {
+		before, _ := os.ReadFile(inputLog)
+		raw := "\x1bihello\x1b[200~paste\x1b[201~\x1b[A"
+		writeClientInput(t, raw)
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		if !waitForBool(2*time.Second, func() bool {
+			data, _ := os.ReadFile(inputLog)
+			if len(data) < len(before) {
+				return false
+			}
+			return bytes.Contains(data[len(before):], []byte(raw+"\n"))
+		}) {
+			data, _ := os.ReadFile(inputLog)
+			t.Fatalf("raw Codex bytes were not forwarded unchanged:\nbefore=%q\nafter=%q", before, data)
+		}
+	})
+
 	timedStep(t, "codex focus sends enhanced ctrl-c as Codex interrupt", func() {
 		before, _ := os.ReadFile(inputLog)
 		beforeInterrupt, _ := os.ReadFile(interruptLog)
