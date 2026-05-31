@@ -416,7 +416,7 @@ func (m ClientModel) activeCodexReceivesQuitBinding() bool {
 	if active == nil {
 		return false
 	}
-	return true
+	return activeAgentReceivesQuitBinding(*active, strings.TrimSpace(m.snapshot.LoadingText) != "")
 }
 
 func (m ClientModel) selectedAgent() *state.Agent {

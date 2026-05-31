@@ -387,7 +387,7 @@ func (m Model) activeCodexReceivesQuitBinding() bool {
 	if active == nil || m.ptys[active.ID] == nil {
 		return false
 	}
-	return true
+	return activeAgentReceivesQuitBinding(*active, m.codexLoading())
 }
 
 func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

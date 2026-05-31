@@ -431,7 +431,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
 	}
-	if !strings.Contains(got, "WEFT  C-b dashboard  C-c to Codex") {
+	if !strings.Contains(got, "WEFT  C-b dashboard  C-c quit") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
 	if !strings.Contains(got, "Agent Console") {
@@ -440,8 +440,15 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "live · cropped") {
 		t.Fatalf("focused codex pane should not render preview crop label:\n%s", got)
 	}
-	if count := strings.Count(got, "C-c to Codex"); count != 1 {
+	if count := strings.Count(got, "C-c quit"); count != 1 {
 		t.Fatalf("collapsed codex should render shortcuts only once, got %d:\n%s", count, got)
+	}
+
+	st.Agents[0].Status = state.StatusRunning
+	st.Agents[0].CodexTitle = "Fake Codex Working"
+	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 80, 24, "", 0, 0)
+	if !strings.Contains(got, "WEFT  C-b dashboard  C-c interrupt") {
+		t.Fatalf("working codex toolbar should advertise interrupt:\n%s", got)
 	}
 }
 

@@ -254,10 +254,12 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	}
 
 	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
+	model.screens[model.state.Agents[0].ID] = NewTerminalScreen(model.ptyWidth(), model.ptyHeight())
+	model.screens[model.state.Agents[0].ID].Write("ready\n")
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
-	if model.message != "" {
-		t.Fatalf("C-c should still forward after Codex is ready, message=%q", model.message)
+	if model.message != "closed Weft clients" {
+		t.Fatalf("C-c should close Weft after Codex is ready, message=%q", model.message)
 	}
 }
 
@@ -1230,7 +1232,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b dashboard  C-c to Codex") {
+	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b dashboard  C-c interrupt") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 

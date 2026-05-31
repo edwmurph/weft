@@ -631,7 +631,7 @@ func renderCodexFrame(
 	topLabel := "Agent Preview"
 	topRightLabel := ""
 	if navCollapsed && active {
-		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg)
+		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg, st, loadingText)
 	} else if navCollapsed {
 		topLabel = "Agent Console"
 	} else if agentActive {
@@ -751,8 +751,8 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 	return lines[:height]
 }
 
-func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return appTitle + "  " + cfg.KeyBindings.Drawer + " dashboard  " + cfg.KeyBindings.Quit + " to Codex"
+func codexCollapsedTopShortcuts(cfg config.Config, st state.State, loadingText string) string {
+	return appTitle + "  " + cfg.KeyBindings.Drawer + " dashboard  " + codexQuitBindingLabel(cfg, st, loadingText)
 }
 
 func paletteFor(active bool) framePalette {

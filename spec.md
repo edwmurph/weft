@@ -296,7 +296,11 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
   Shift+Enter in supporting terminals, is preserved inside the framed pane.
 - Weft does not enable terminal mouse tracking, so native terminal drag
   selection remains available over `Agent Console` and `Agent Preview` output.
-- C-c is not intercepted by Weft while Codex has focus.
+- C-c is forwarded to Codex while the active agent is starting or working, so it
+  interrupts Codex like a normal Codex terminal. Once the active agent is ready
+  or stopped, C-c quits Weft.
+- The `Agent Console` toolbar shows the current C-c action as `C-c interrupt`
+  or `C-c quit`.
 - User exits back to dashboard with the configured drawer/navigation key.
 
 ## Initial Keybindings

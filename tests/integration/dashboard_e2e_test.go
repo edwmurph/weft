@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	collapsedCodexToolbar = "WEFT  C-b dashboard  C-c to Codex"
-	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
+	collapsedCodexToolbarPrefix    = "WEFT  C-b dashboard  C-c "
+	collapsedCodexInterruptToolbar = "WEFT  C-b dashboard  C-c interrupt"
+	collapsedCodexQuitToolbar      = "WEFT  C-b dashboard  C-c quit"
+	keyboardProtocolSetup          = "\x1b[>4;2m\x1b[>29u"
 )
 
 func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
@@ -375,7 +377,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Starting Codex") &&
-				strings.Contains(capture, collapsedCodexToolbar) &&
+				strings.Contains(capture, collapsedCodexInterruptToolbar) &&
 				!strings.Contains(capture, "No Codex agent open")
 		})
 		placeholderDuration := time.Since(started)
@@ -418,7 +420,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, collapsedCodexToolbar) && !strings.Contains(capture, "Agents")
+			return strings.Contains(capture, collapsedCodexInterruptToolbar) && !strings.Contains(capture, "Agents")
 		})
 		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent color-only startup covered", time.Since(started).Round(time.Millisecond))
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
@@ -426,7 +428,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				!strings.Contains(capture, "No Codex agent open") &&
 				!strings.Contains(capture, "Workspaces") &&
 				!strings.Contains(capture, "Agents") &&
-				strings.Contains(capture, collapsedCodexToolbar)
+				strings.Contains(capture, collapsedCodexQuitToolbar)
 		})
 		if !waitForBool(2*time.Second, func() bool {
 			data, _ := os.ReadFile(ptySizeLog)
@@ -650,7 +652,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 	})
 
-	timedStep(t, "C-c stays with Codex focus and dashboard C-c closes weft", func() {
+	timedStep(t, "C-c interrupts active Codex and quits Weft when ready", func() {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
@@ -666,7 +668,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(st.Agents[0].CodexTitle, "Working")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "received:interrupt")
+			return strings.Contains(capture, "received:interrupt") &&
+				strings.Contains(capture, collapsedCodexInterruptToolbar)
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		time.Sleep(250 * time.Millisecond)
@@ -680,19 +683,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				st.Agents[0].Status == state.StatusRunning &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "C-c")
-		time.Sleep(250 * time.Millisecond)
-		attached = directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
-		if len(attached) != 1 || attached[0] != "1" {
-			t.Fatalf("C-c should stay with Codex after CODEX is ready: %v", attached)
-		}
-		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusCodex &&
-				st.Agents[0].Status == state.StatusRunning
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, collapsedCodexQuitToolbar)
 		})
-		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		if !waitForBool(2*time.Second, func() bool {
 			attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
@@ -705,7 +698,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusAgents &&
+				st.Focus == state.FocusCodex &&
 				st.Agents[0].Status == state.StatusRunning &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
@@ -984,7 +977,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		}
 		clientOutput, _ = startDirectDashboardClient(t, env, bin, alpha, pane+"-reattach", 150, 36)
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, collapsedCodexToolbar) ||
+			return strings.Contains(capture, collapsedCodexToolbarPrefix) ||
 				(strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Agents"))
 		})
 		if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
@@ -1100,14 +1093,14 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Starting Codex") &&
-			strings.Contains(capture, collapsedCodexToolbar)
+			strings.Contains(capture, collapsedCodexInterruptToolbar)
 	})
 	assertPerformanceBudget(t, "agent startup placeholder visible", time.Since(started), time.Second)
 
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return (strings.Contains(capture, "Fake Codex dashboard ready") ||
 			strings.Contains(capture, "ready waiting for first message")) &&
-			strings.Contains(capture, collapsedCodexToolbar)
+			strings.Contains(capture, collapsedCodexQuitToolbar)
 	})
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 &&
@@ -1126,7 +1119,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 	started = time.Now()
 	clientOutput, _ = startDirectDashboardClient(t, env, bin, workspace, pane+"-reattach", 150, 36)
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, collapsedCodexToolbar) ||
+		return strings.Contains(capture, collapsedCodexToolbarPrefix) ||
 			strings.Contains(capture, "Fake Codex dashboard ready")
 	})
 	assertPerformanceBudget(t, "reattach renders running agent", time.Since(started), 8*time.Second)
@@ -1344,7 +1337,7 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	if count := strings.Count(capture, "WEFT"); count > 1 {
 		t.Fatalf("dashboard should render at most one WEFT frame label, got %d:\n%s", count, capture)
 	}
-	if count := strings.Count(capture, "C-c to Codex"); count > 1 {
+	if count := strings.Count(capture, "C-c interrupt") + strings.Count(capture, "C-c quit"); count > 1 {
 		t.Fatalf("dashboard rendered duplicate footer/header labels, got %d:\n%s", count, capture)
 	}
 	if !empty && strings.Contains(capture, "No Codex agent open") {
