@@ -972,7 +972,7 @@ func TestRenameAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
 	if got, want := model.input.Value(), "{status} {auto}"; got != want {
 		t.Fatalf("rename prompt value = %q, want stored title template %q", got, want)
 	}
-	if got := model.renderAgentTitle(model.state.Agents[0]); got != "ready Fix login" {
+	if got := model.renderAgentTitle(model.state.Agents[0]); got != "Ready Fix login" {
 		t.Fatalf("agent row title = %q", got)
 	}
 }

@@ -161,7 +161,7 @@ func renderAgentWithTemplate(st state.State, agent state.Agent, template string)
 }
 
 func agentStatusIndicatesActivity(agent state.Agent) bool {
-	switch titles.RenderStatus(agent) {
+	switch titles.CanonicalStatus(agent) {
 	case string(state.StatusStarting), string(state.StatusRunning), "working", string(state.StatusShipping):
 		return true
 	default:

@@ -19,7 +19,7 @@ func TestRenderAgentSupportsLiveVariables(t *testing.T) {
 
 	got := RenderAgent(agent, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workspace} {group}: {auto} {status} {codex}")
 
-	if got != "/tmp/project ship: Fix Login working Fake Codex Working" {
+	if got != "/tmp/project ship: Fix Login Working Fake Codex Working" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -47,8 +47,19 @@ func TestRenderAgentDoesNotSupportLegacyWorkspaceVariable(t *testing.T) {
 func TestRenderAgentRendersVariablesInsideBaseTitle(t *testing.T) {
 	agent := state.Agent{ID: "abc", Title: "Codex {status}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, "{title}"); got != "Codex ready" {
+	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, "{title}"); got != "Codex Ready" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
+
+	if got := RenderStatus(agent); got != "Working" {
+		t.Fatalf("got %q", got)
+	}
+	if got := CanonicalStatus(agent); got != "working" {
+		t.Fatalf("canonical status = %q", got)
 	}
 }
 
@@ -61,6 +72,11 @@ func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
 
 	agent.Status = state.StatusKilled
 	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusKilled) {
+		t.Fatalf("got %q", got)
+	}
+
+	agent.Status = state.StatusReady
+	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusReady) {
 		t.Fatalf("got %q", got)
 	}
 }

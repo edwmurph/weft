@@ -1170,7 +1170,7 @@ func (m Model) agentLoading(agentID string) bool {
 	if agent == nil {
 		return false
 	}
-	switch titles.RenderStatus(*agent) {
+	switch titles.CanonicalStatus(*agent) {
 	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
 		return false
 	}

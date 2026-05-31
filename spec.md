@@ -383,7 +383,7 @@ killed
 error
 ```
 
-The exact derivation of `ready`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout.
+The exact derivation of `ready`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex terminal title, it preserves the exact casing of the matched Codex status token, such as `Ready` or `Working`; fallback lifecycle statuses remain the lowercase model values above.
 
 ## Title Templates
 
@@ -405,7 +405,7 @@ Supported variables:
 {title}    user-configured agent title
 {auto}     generated title from the first submitted message
 {codex}    live Codex title
-{status}   derived/live agent status
+{status}   derived/live agent status, preserving Codex casing when live
 {workspace}  display workspace path
 {group}   flat group name
 ```

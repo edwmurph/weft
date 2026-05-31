@@ -23,7 +23,7 @@ func TestBuildPayloadUsesAgentContext(t *testing.T) {
 	if payload.AgentID != "a" || payload.Workspace != "/tmp/project" || payload.Group != "ship" {
 		t.Fatalf("payload context = %#v", payload)
 	}
-	if payload.Status != "ready" || payload.FirstMessage != "fix login" {
+	if payload.Status != "Ready" || payload.FirstMessage != "fix login" {
 		t.Fatalf("payload values = %#v", payload)
 	}
 	raw, err := json.Marshal(payload)

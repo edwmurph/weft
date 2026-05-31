@@ -45,7 +45,7 @@ func NormalizeCodexTitle(title string) string {
 
 func RenderStatus(agent state.Agent) string {
 	switch agent.Status {
-	case state.StatusStarting, state.StatusStopped, state.StatusKilled, state.StatusError, state.StatusReady, state.StatusSitting, state.StatusShipping:
+	case state.StatusStarting, state.StatusStopped, state.StatusKilled, state.StatusError, state.StatusSitting, state.StatusShipping:
 		return string(agent.Status)
 	}
 	if status := codexActivityStatus(agent.CodexTitle); status != "" {
@@ -57,12 +57,16 @@ func RenderStatus(agent state.Agent) string {
 	return "unknown"
 }
 
+func CanonicalStatus(agent state.Agent) string {
+	return strings.ToLower(RenderStatus(agent))
+}
+
 func codexActivityStatus(title string) string {
-	title = strings.ToLower(NormalizeCodexTitle(title))
+	title = NormalizeCodexTitle(title)
 	for _, token := range strings.FieldsFunc(title, func(r rune) bool {
 		return !unicode.IsLetter(r)
 	}) {
-		switch token {
+		switch strings.ToLower(token) {
 		case "ready", "working":
 			return token
 		}

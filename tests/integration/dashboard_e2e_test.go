@@ -796,7 +796,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return agent != nil && agent.Title == "Codex {status}"
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codex ready") && !strings.Contains(capture, "Rename agent")
+			return strings.Contains(capture, "Codex Ready") && !strings.Contains(capture, "Rename agent")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 	})
@@ -821,7 +821,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codex ready")
+			return strings.Contains(capture, "Codex Ready")
 		})
 	})
 
@@ -840,7 +840,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete agent") &&
-				strings.Contains(capture, "Codex ready") &&
+				strings.Contains(capture, "Codex Ready") &&
 				strings.Contains(capture, "Stops the Codex terminal, then removes this agent from Weft.") &&
 				strings.Contains(capture, "Y stop and delete")
 		})
@@ -849,7 +849,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete agent") &&
-				strings.Contains(capture, "Codex ready") &&
+				strings.Contains(capture, "Codex Ready") &&
 				strings.Contains(capture, "N cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "y")
@@ -1528,7 +1528,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return (strings.Contains(capture, "Fake Codex dashboard ready") ||
-			strings.Contains(capture, "ready waiting for first message")) &&
+			strings.Contains(capture, "Ready waiting for first message")) &&
 			strings.Contains(capture, collapsedCodexToolbar) &&
 			!strings.Contains(capture, "C-c")
 	})

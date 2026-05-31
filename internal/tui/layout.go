@@ -584,10 +584,11 @@ func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width 
 }
 
 func agentRowStyle(agent state.Agent, loadingAgents map[string]bool) lipgloss.Style {
+	status := titles.CanonicalStatus(agent)
 	if agentIsLoadingForRender(agent, loadingAgents) {
-		return agentLoadingStyleForStatus(titles.RenderStatus(agent))
+		return agentLoadingStyleForStatus(status)
 	}
-	switch titles.RenderStatus(agent) {
+	switch status {
 	case string(state.StatusReady):
 		return agentReadyStyle
 	case string(state.StatusRunning):
@@ -622,7 +623,7 @@ func agentMarkerForRender(agent state.Agent, loadingFrame string, loadingAgents 
 	if agentIsLoadingForRender(agent, loadingAgents) {
 		return loadingFrameForRender(loadingFrame)
 	}
-	switch titles.RenderStatus(agent) {
+	switch titles.CanonicalStatus(agent) {
 	case string(state.StatusError):
 		return "!"
 	case string(state.StatusKilled):
