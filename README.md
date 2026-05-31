@@ -24,6 +24,8 @@ right console without losing running PTYs.
   `release`, `review`, `bugs`, or `experiments`.
 - Track workspace totals for `active` and `needs attention` agents so finished
   or waiting work does not sit idle.
+- Auto-name dashboard agents from their first chat message with a configurable
+  title hook.
 - Detach, upgrade, or reopen the UI while the local supervisor keeps Codex PTYs
   alive.
 - Keep Codex framed in the terminal: focus one agent for direct input, then
@@ -123,10 +125,18 @@ that the running iTerm2 session has not picked up the preference yet. For
 custom iTerm2 settings folders, it tells the user to quit and reopen iTerm2
 because new tabs may keep using the in-memory profile.
 
-Agent rows render from each agent's title template. New agents copy the global
-`title_template`, which defaults to `{status} {auto}`, into their own title so
-the rename pane opens with that editable template. Titles passed to `weft new`
-or `weft rename` can still include template variables:
+## Agent Titles
+
+Agent rows in the dashboard are customizable. Each agent renders from a title
+template, and Weft can call a hook after the first non-empty chat message to
+generate an `{auto}` title for that agent. The hook is a plain shell command, so
+you can plug in your own naming logic while keeping the dashboard focused on the
+saved title.
+
+New agents copy the global `title_template`, which defaults to
+`{status} {auto}`, into their own title so the rename pane opens with that
+editable template. Titles passed to `weft new` or `weft rename` can still
+include template variables:
 
 - `{title}`: user-configured agent title
 - `{auto}`: generated title from the first submitted message
@@ -138,7 +148,8 @@ or `weft rename` can still include template variables:
 For example, `weft rename "Codex {status}"` keeps a fixed title while showing
 the current agent status.
 
-To generate titles, configure a hook command:
+To generate `{auto}` titles from the first chat message, configure a hook
+command:
 
 ```toml
 title_hook_command = "/path/to/weft/hooks/auto-title-openai.sh"
