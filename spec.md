@@ -801,7 +801,7 @@ Global `--clear`:
 
 `weft --help`, `weft help`, and `weft -h`:
 
-- show the same Weft ASCII mark used by the empty agent pane
+- show the same Weft ASCII mark used by the empty agent pane, with the woven mark scaled, rendered with normal-width line strokes, and mirrored around the block wordmark's center line
 - show the active Weft version below the mark
 - leave blank space above the mark and a small left inset before the mark
 - advertise `weft` as the dashboard entry point

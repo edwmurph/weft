@@ -457,7 +457,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 
 	got = renderWorkspaceWithNavWidth(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", 0, 0)
 	stripped := ansi.Strip(got)
-	logoIndex := strings.Index(stripped, `●──┼──▶      ██║ █╗ ██║ █████╗   █████╗      ██║`)
+	logoIndex := strings.Index(stripped, `●─────┼────▶  ██║ █╗ ██║ █████╗   █████╗      ██║`)
 	hintIndex := strings.Index(stripped, "No Codex agent open")
 	if logoIndex < 0 {
 		t.Fatalf("empty dashboard missing Weft wordmark:\n%s", stripped)
