@@ -51,6 +51,7 @@ type Snapshot struct {
 	State               state.State `json:"state"`
 	CodexTitle          string      `json:"codex_title,omitempty"`
 	CodexContent        string      `json:"codex_content,omitempty"`
+	CodexPlainLines     []string    `json:"codex_plain_lines,omitempty"`
 	LoadingText         string      `json:"loading_text,omitempty"`
 	LoadingAgentIDs     []string    `json:"loading_agent_ids,omitempty"`
 	Message             string      `json:"message,omitempty"`

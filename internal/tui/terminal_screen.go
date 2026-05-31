@@ -96,6 +96,14 @@ func (s *TerminalScreen) String() string {
 	return strings.Join(lines, "\n")
 }
 
+func (s *TerminalScreen) PlainLines() []string {
+	lines := make([]string, len(s.cells))
+	for row, cells := range s.cells {
+		lines[row] = plainCells(cells)
+	}
+	return lines
+}
+
 func (s *TerminalScreen) ANSIString() string {
 	return s.ansiString(false)
 }

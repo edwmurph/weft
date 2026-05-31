@@ -186,6 +186,7 @@ func (m *Model) Stop() {
 
 func (m *Model) Snapshot() ipc.Snapshot {
 	content := m.activeOutput()
+	plainLines := m.activePlainLines()
 	loadingText := ""
 	if content == "" && m.codexLoading() {
 		loadingText = m.loadingLabel()
@@ -202,6 +203,7 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		State:           m.state,
 		CodexTitle:      title,
 		CodexContent:    content,
+		CodexPlainLines: plainLines,
 		LoadingText:     loadingText,
 		LoadingAgentIDs: m.loadingAgentIDs(),
 		Message:         m.message,
@@ -1167,6 +1169,20 @@ func (m *Model) activeOutput() string {
 		return screen.ANSIStringWithCursor(m.state.Focus == state.FocusCodex)
 	}
 	return ""
+}
+
+func (m Model) activePlainLines() []string {
+	active := state.ActiveAgent(m.state)
+	if active == nil {
+		return nil
+	}
+	if screen := m.screens[active.ID]; screen != nil {
+		if !screen.HasVisibleContent() && !m.visible[active.ID] {
+			return nil
+		}
+		return screen.PlainLines()
+	}
+	return nil
 }
 
 func (m Model) codexLoading() bool {

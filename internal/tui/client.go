@@ -32,6 +32,10 @@ type clientResponseMsg struct {
 
 type clientSnapshotTick struct{}
 
+type clientToastTick struct {
+	id int
+}
+
 type localUpgradeMsg struct {
 	backupID      string
 	resumedAgents int
@@ -63,6 +67,9 @@ type ClientModel struct {
 	lastResumeScan          time.Time
 	codexInputQueue         []map[string]string
 	codexInputInFlight      bool
+	toastText               string
+	toastID                 int
+	mouseSelection          consoleSelection
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
@@ -76,7 +83,7 @@ func RunClient(rt config.Runtime, cfg config.Config) error {
 	if os.Getenv("WEFT_HEADLESS") == "1" {
 		options = append(options, tea.WithoutRenderer())
 	} else {
-		options = append(options, tea.WithAltScreen())
+		options = append(options, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	}
 	_, err := tea.NewProgram(model, options...).Run()
 	return err
@@ -133,6 +140,11 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(nextCodexInput, nextLoadingTick, restartCmd)
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
+	case clientToastTick:
+		if typed.id == m.toastID {
+			m.toastText = ""
+		}
+		return m, nil
 	case localUpgradeMsg:
 		m.localUpgradeInFlight = false
 		if typed.err != nil {
@@ -154,6 +166,8 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading++
 		return m, tickLoading()
+	case tea.MouseMsg:
+		return m.handleMouse(typed)
 	case tea.KeyMsg:
 		return m.handleKey(typed)
 	}
@@ -179,13 +193,20 @@ func (m ClientModel) View() string {
 		loadingFrame:        loadingFrame,
 		loadingAgents:       loadingAgentSet(m.snapshot.LoadingAgentIDs),
 		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
+		codexToastText:      m.toastText,
 	}
 	if loadingText != "" {
 		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
 		options.loadingText = loadingText
 		return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, "", m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 	}
-	return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, m.snapshot.CodexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
+	codexContent := m.snapshot.CodexContent
+	if m.mouseSelection.active {
+		if area, ok := m.codexSelectionAreaForOffset(m.mouseSelection.colOffset); ok {
+			codexContent = selectedCodexContent(m.codexPlainLines(), m.mouseSelection, area.width)
+		}
+	}
+	return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, codexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 }
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -755,6 +776,15 @@ func (m ClientModel) messageText() string {
 func tickClientSnapshot() tea.Cmd {
 	return tea.Tick(clientSnapshotInterval, func(time.Time) tea.Msg {
 		return clientSnapshotTick{}
+	})
+}
+
+func (m *ClientModel) setToast(text string) tea.Cmd {
+	m.toastID++
+	m.toastText = text
+	id := m.toastID
+	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg {
+		return clientToastTick{id: id}
 	})
 }
 

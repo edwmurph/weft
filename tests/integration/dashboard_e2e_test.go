@@ -126,7 +126,7 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 	waitForEscapedCapture(t, env, pane, func(capture string) bool {
 		return strings.Contains(capture, keyboardProtocolSetup)
 	})
-	assertClientDoesNotEnableMouseTracking(t, capturePaneEscaped(t, env, pane))
+	assertClientEnablesMouseTracking(t, capturePaneEscaped(t, env, pane))
 	directRun(t, env, "send-keys", "-l", "-t", pane, "probe")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	capture := waitForOutput(t, clientOutput, func(capture string) bool {
@@ -244,6 +244,9 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 		waitState(t, env, bin, func(st state.State) bool {
 			return groupByPath(st, name) != nil
 		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return !strings.Contains(capture, "Flat and unique in this workspace.")
+		})
 	}
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	waitState(t, env, bin, func(st state.State) bool {
@@ -292,6 +295,52 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
 		t.Fatalf("bottom shipit client did not exit after dashboard quit")
 	}
+}
+
+func TestAgentConsoleMouseWheelForwardsToCodexE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	mouseLog := filepath.Join(tmp, "fake-codex-mouse.log")
+	runtimeDir, workspace := createRuntime(t, tmp, writeMouseLoggingFakeCodex(t, tmp, "fake-codex-mouse.sh"))
+	env := append(baseIntegrationEnv(runtimeDir, workspace, bin), "MOUSE_LOG="+mouseLog)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+
+	pane := "mouse-wheel-client"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 100, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Agents")
+	})
+	assertClientEnablesMouseTracking(t, capturePaneEscaped(t, env, pane))
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	waitState(t, env, bin, func(st state.State) bool {
+		active := state.ActiveAgent(st)
+		return active != nil && active.Status == state.StatusRunning && st.Focus == state.FocusCodex
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Raw mouse fake ready")
+	})
+
+	writeClientInput(t, "\x1b[<65;7;7M")
+	if !waitForBool(2*time.Second, func() bool {
+		data, _ := os.ReadFile(mouseLog)
+		return bytes.Contains(data, []byte("\x1b[<65;5;6M\n"))
+	}) {
+		data, _ := os.ReadFile(mouseLog)
+		t.Fatalf("mouse wheel event was not forwarded to Codex PTY: %q", data)
+	}
+	assertDashboardNotCorrupt(t, clientOutput(), false)
 }
 
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
@@ -593,9 +642,18 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, "48;2;40;40;49") &&
 				strings.Contains(capture, "Summarize recent commits")
 		})
-		assertClientDoesNotEnableMouseTracking(t, capturePaneEscaped(t, env, pane))
+		assertClientEnablesMouseTracking(t, capturePaneEscaped(t, env, pane))
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 		assertCodexBoxNotDrifted(t, clientOutput())
+	})
+
+	timedStep(t, "codex focus highlights mouse drag selection", func() {
+		writeClientInput(t, "\x1b[<0;9;2M")
+		writeClientInput(t, "\x1b[<32;12;2M")
+		waitForEscapedCapture(t, env, pane, func(capture string) bool {
+			return strings.Contains(capture, "\x1b[7m")
+		})
+		writeClientInput(t, "\x1b[<0;12;2m")
 	})
 
 	timedStep(t, "nav shortcut keys stay inside codex focus", func() {
@@ -1779,11 +1837,11 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	}
 }
 
-func assertClientDoesNotEnableMouseTracking(t *testing.T, capture string) {
+func assertClientEnablesMouseTracking(t *testing.T, capture string) {
 	t.Helper()
-	for _, forbidden := range []string{"\x1b[?1002h", "\x1b[?1003h", "\x1b[?1006h"} {
-		if strings.Contains(capture, forbidden) {
-			t.Fatalf("client should not enable mouse tracking because it blocks terminal drag selection; found %q in raw capture", forbidden)
+	for _, expected := range []string{"\x1b[?1002h", "\x1b[?1006h"} {
+		if !strings.Contains(capture, expected) {
+			t.Fatalf("client should enable mouse tracking for Agent Console wheel and drag-copy support; missing %q in raw capture", expected)
 		}
 	}
 }
@@ -1961,6 +2019,30 @@ func writeVisibleFakeCodex(t *testing.T, dir string, name string) string {
 			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
 			"done\n"+
 			"while :; do sleep 1; done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeCodex
+}
+
+func writeMouseLoggingFakeCodex(t *testing.T, dir string, name string) string {
+	t.Helper()
+	fakeCodex := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeCodex, []byte(
+		"#!/bin/bash\n"+
+			"printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"printf 'Raw mouse fake ready\\n'\n"+
+			"trap 'stty sane 2>/dev/null; exit 0' HUP INT TERM\n"+
+			"stty raw -echo -isig\n"+
+			"while IFS= read -r -s -n 1 ch; do\n"+
+			"  if [ \"$ch\" != $'\\033' ]; then continue; fi\n"+
+			"  seq=$ch\n"+
+			"  while IFS= read -r -s -n 1 -t 1 next; do\n"+
+			"    seq=$seq$next\n"+
+			"    if [ \"$next\" = \"M\" ] || [ \"$next\" = \"m\" ] || [ \"$next\" = \"u\" ] || [ \"$next\" = \"~\" ]; then break; fi\n"+
+			"  done\n"+
+			"  if [[ \"$seq\" == $'\\033[<'* ]] && [ -n \"${MOUSE_LOG:-}\" ]; then printf '%s\\n' \"$seq\" >> \"$MOUSE_LOG\"; fi\n"+
+			"done\n",
 	), 0o700); err != nil {
 		t.Fatal(err)
 	}

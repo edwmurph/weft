@@ -352,8 +352,14 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
 - Codex-owned terminal behavior, including modified-key shortcuts such as
   Shift+Enter and Shift+Tab in supporting terminals, is preserved inside the
   framed pane.
-- Weft does not enable terminal mouse tracking, so native terminal drag
-  selection remains available over `Agent Console` and `Agent Live Preview` output.
+- Weft enables cell-level mouse tracking in the attached client. In focused
+  `Agent Console`, wheel events inside the console content are forwarded into
+  the active Codex PTY so Codex can scroll its chat history. Left-button drag
+  selection starts after Codex's shared visual margin, so the highlighted cells
+  and copied clipboard text match without post-copy text rewriting.
+  The console border shows a short copy-confirmation toast.
+  Mouse input outside the focused console remains a Weft dashboard concern and
+  is not forwarded to Codex.
 - C-c belongs to Codex whenever `Agent Console` is focused and an active agent
   exists. Weft does not use C-c to quit from `Agent Console`, and the toolbar
   must not advertise C-c. While Codex reports active work, C-c must reach
@@ -883,6 +889,7 @@ Integration tests:
 - open agent with `Enter`
 - collapse or open a group with `Enter`
 - verify nav panes collapse and Codex receives input
+- verify focused Agent Console mouse wheel forwarding and drag-copy selection
 - reopen navigation and switch agents
 - remove workspace and verify agents/PTYs close
 - delete every group and agent from a workspace and keep an empty Agents pane

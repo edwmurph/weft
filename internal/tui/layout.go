@@ -73,6 +73,7 @@ type workspaceRenderOptions struct {
 	loadingFrame        string
 	loadingAgents       map[string]bool
 	workspaceFooterText string
+	codexToastText      string
 }
 
 type framePalette struct {
@@ -226,13 +227,13 @@ func renderWorkspaceView(
 		navWidth = width - codexWidth
 	}
 	if navWidth <= 0 {
-		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText), "\n")
+		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText, options.codexToastText), "\n")
 	}
 	if codexWidth <= 0 {
 		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
 	}
 	nav := renderNavSection(cfg, st, navWidth, height, groupCursor, options)
-	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText)
+	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText)
 	lines := make([]string, 0, height)
 	for index := 0; index < height; index++ {
 		left := lineAt(nav, index, navWidth)
@@ -723,6 +724,7 @@ func renderCodexFrame(
 	message string,
 	navCollapsed bool,
 	loadingText string,
+	toastText string,
 ) []string {
 	if width < 2 || height <= 0 {
 		return nil
@@ -735,6 +737,7 @@ func renderCodexFrame(
 	topRightLabel := ""
 	if navCollapsed && active {
 		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg)
+		topRightLabel = toastText
 	} else if navCollapsed {
 		topLabel = "Agent Console"
 	} else if agentActive {
