@@ -330,7 +330,8 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
 		"Upgrade: ready",
-		"can restart and resume",
+		"can restart",
+		"1 idle Codex agent",
 		"Press U",
 		"supervisor 3.9.0 → " + weftversion.Version,
 		"Press U to upgrade and resume 1 idle agent",
