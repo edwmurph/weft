@@ -499,6 +499,36 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 	})
 
+	timedStep(t, "codex focus forwards shift tab plan mode shortcuts", func() {
+		before, _ := os.ReadFile(inputLog)
+		writeClientInput(t, "\x1b[9;2u")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		if !waitForBool(2*time.Second, func() bool {
+			data, _ := os.ReadFile(inputLog)
+			if len(data) < len(before) {
+				return false
+			}
+			return bytes.Contains(data[len(before):], []byte("\x1b[9;2u\n"))
+		}) {
+			data, _ := os.ReadFile(inputLog)
+			t.Fatalf("enhanced shift tab sequence was not forwarded to Codex:\nbefore=%q\nafter=%q", before, data)
+		}
+
+		before, _ = os.ReadFile(inputLog)
+		writeClientInput(t, "\x1b[Z")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		if !waitForBool(2*time.Second, func() bool {
+			data, _ := os.ReadFile(inputLog)
+			if len(data) < len(before) {
+				return false
+			}
+			return bytes.Contains(data[len(before):], []byte("\x1b[Z\n"))
+		}) {
+			data, _ := os.ReadFile(inputLog)
+			t.Fatalf("backtab sequence was not forwarded to Codex:\nbefore=%q\nafter=%q", before, data)
+		}
+	})
+
 	timedStep(t, "C-b opens dashboard", func() {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })

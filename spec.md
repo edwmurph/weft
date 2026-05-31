@@ -301,8 +301,9 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
 - Weft keeps the framed `Agent Console` pane visible while Codex is focused.
 - The attached client enables enhanced terminal keyboard reporting and forwards
   supported keyboard escape sequences into the active Codex PTY.
-- Codex-owned terminal behavior, including multiline shortcuts such as
-  Shift+Enter in supporting terminals, is preserved inside the framed pane.
+- Codex-owned terminal behavior, including modified-key shortcuts such as
+  Shift+Enter and Shift+Tab in supporting terminals, is preserved inside the
+  framed pane.
 - Weft does not enable terminal mouse tracking, so native terminal drag
   selection remains available over `Agent Console` and `Agent Preview` output.
 - C-c is forwarded to Codex while the active agent is starting or working, so it

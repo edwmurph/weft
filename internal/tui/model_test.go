@@ -259,6 +259,7 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 		{Type: tea.KeyRunes, Runes: []rune("?")},
 		{Type: tea.KeyRunes, Runes: []rune("n")},
 		{Type: tea.KeyShiftRight},
+		{Type: tea.KeyShiftTab},
 		{Type: tea.KeyCtrlD},
 		{Type: tea.KeyCtrlQ},
 	} {

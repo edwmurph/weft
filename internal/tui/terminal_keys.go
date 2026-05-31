@@ -16,13 +16,15 @@ const (
 
 	codexInputRaw        = "raw"
 	codexInputShiftEnter = "shift+enter"
+	codexInputShiftTab   = "shift+tab"
 )
 
 type enhancedKeyboardInput struct {
-	encoded []byte
-	input   string
-	key     tea.KeyMsg
-	hasKey  bool
+	encoded          []byte
+	input            string
+	key              tea.KeyMsg
+	hasKey           bool
+	preserveForCodex bool
 }
 
 type csiKeyboardEvent struct {
@@ -70,6 +72,15 @@ func enhancedKeyboardInputFromMsg(msg tea.Msg) (enhancedKeyboardInput, bool) {
 	if event.isShiftEnter() {
 		return enhancedKeyboardInput{encoded: raw, input: codexInputShiftEnter}, true
 	}
+	if event.isShiftTab() {
+		return enhancedKeyboardInput{
+			encoded:          raw,
+			input:            codexInputShiftTab,
+			key:              tea.KeyMsg{Type: tea.KeyShiftTab},
+			hasKey:           true,
+			preserveForCodex: true,
+		}, true
+	}
 	if key, ok := event.keyMsg(); ok {
 		return enhancedKeyboardInput{key: key, hasKey: true}, true
 	}
@@ -84,14 +95,21 @@ func (input enhancedKeyboardInput) codexInputArgs() map[string]string {
 	return map[string]string{"encoded": string(input.encoded), "input": kind}
 }
 
+func (input enhancedKeyboardInput) shouldHandleAsKey(focus state.Focus, active *state.Agent) bool {
+	if !input.hasKey {
+		return false
+	}
+	return !input.preserveForCodex || focus != state.FocusCodex || active == nil
+}
+
 func (m Model) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {
-	if input.hasKey {
+	active := state.ActiveAgent(m.state)
+	if input.shouldHandleAsKey(m.state.Focus, active) {
 		return m.handleKey(input.key)
 	}
 	if m.state.Focus != state.FocusCodex {
 		return m, nil
 	}
-	active := state.ActiveAgent(m.state)
 	if active == nil {
 		return m, nil
 	}
@@ -102,10 +120,11 @@ func (m Model) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Mod
 }
 
 func (m ClientModel) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {
-	if input.hasKey {
+	active := state.ActiveAgent(m.snapshot.State)
+	if input.shouldHandleAsKey(m.snapshot.State.Focus, active) {
 		return m.handleKey(input.key)
 	}
-	if m.snapshot.State.Focus == state.FocusCodex && state.ActiveAgent(m.snapshot.State) != nil {
+	if m.snapshot.State.Focus == state.FocusCodex && active != nil {
 		return m, m.request("codex_input", input.codexInputArgs())
 	}
 	return m, nil
@@ -247,6 +266,10 @@ func parseCSIText(value string) []rune {
 
 func (event csiKeyboardEvent) isShiftEnter() bool {
 	return event.keyCode == 13 && event.modifiers&1 != 0
+}
+
+func (event csiKeyboardEvent) isShiftTab() bool {
+	return event.keyCode == 9 && event.modifiers&1 != 0
 }
 
 func (event csiKeyboardEvent) isRelease() bool {

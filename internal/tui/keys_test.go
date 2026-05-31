@@ -30,6 +30,9 @@ func TestEncodeKeyForwardsPrintableAndArrows(t *testing.T) {
 	if got := string(encodeKey(tea.KeyMsg{Type: tea.KeyUp})); got != "\x1b[A" {
 		t.Fatalf("up = %q", got)
 	}
+	if got := string(encodeKey(tea.KeyMsg{Type: tea.KeyShiftTab})); got != "\x1b[Z" {
+		t.Fatalf("shift tab = %q", got)
+	}
 }
 
 func TestEnhancedKeyboardInputRecognizesShiftEnter(t *testing.T) {
@@ -46,6 +49,28 @@ func TestEnhancedKeyboardInputRecognizesShiftEnter(t *testing.T) {
 		}
 		if string(input.encoded) != raw {
 			t.Fatalf("encoded = %q, want %q", input.encoded, raw)
+		}
+	}
+}
+
+func TestEnhancedKeyboardInputPreservesShiftTabForCodex(t *testing.T) {
+	for _, raw := range []string{"\x1b[9;2u", "\x1b[9;2:1u", "\x1b[27;2;9~"} {
+		input, ok := enhancedKeyboardInputFromMsg(testCSIMessage(unknownCSIString(raw)))
+		if !ok {
+			t.Fatalf("expected enhanced input for %q", raw)
+		}
+		if !input.hasKey || input.key.Type != tea.KeyShiftTab {
+			t.Fatalf("shift tab should still be available as a key outside Codex focus, got %#v", input.key)
+		}
+		if !input.preserveForCodex {
+			t.Fatalf("shift tab should preserve raw bytes in Codex focus")
+		}
+		args := input.codexInputArgs()
+		if got := args["encoded"]; got != raw {
+			t.Fatalf("encoded = %q, want %q", got, raw)
+		}
+		if got := args["input"]; got != codexInputShiftTab {
+			t.Fatalf("input kind = %q", got)
 		}
 	}
 }
@@ -101,6 +126,16 @@ func TestCodexInputArgsPreservesAltBackspace(t *testing.T) {
 	}
 	if got, want := args["input"], "alt+backspace"; got != want {
 		t.Fatalf("alt ctrl-h input = %q, want %q", got, want)
+	}
+}
+
+func TestCodexInputArgsPreservesShiftTab(t *testing.T) {
+	args := codexInputArgs(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if got, want := args["encoded"], "\x1b[Z"; got != want {
+		t.Fatalf("encoded = %q, want %q", got, want)
+	}
+	if got, want := args["input"], codexInputShiftTab; got != want {
+		t.Fatalf("input = %q, want %q", got, want)
 	}
 }
 

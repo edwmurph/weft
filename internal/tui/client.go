@@ -650,6 +650,8 @@ func codexInputArgs(msg tea.KeyMsg) map[string]string {
 		args["text"] = string(msg.Runes)
 	case tea.KeySpace:
 		args["input"] = "space"
+	case tea.KeyShiftTab:
+		args["input"] = codexInputShiftTab
 	case tea.KeyBackspace:
 		if msg.Alt {
 			args["input"] = "alt+backspace"
