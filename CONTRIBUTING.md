@@ -7,8 +7,12 @@ Bubbles, and supervisor-owned Codex PTYs.
 
 ```sh
 go test ./...
-go run ./cmd/weft doctor
+WEFT_HOME=$PWD/.weft WEFT_WORKSPACE=$PWD go run ./cmd/weft doctor
 ```
+
+Source-built Weft refuses to use the default `~/.weft` runtime unless
+`WEFT_HOME` is set or `WEFT_ALLOW_MAIN_RUNTIME=1` is set intentionally. Keep
+manual worktree testing isolated under the ignored `.weft/` directory.
 
 ## Checks
 
@@ -38,6 +42,8 @@ range. Use concise Conventional Commit-style subjects such as `feat: ...`,
 than the subject alone.
 
 The formula builds the Go binary from source and depends on `go` at build time.
+Release/Homebrew builds set Weft's build channel to `release`, which allows the
+installed command to own the default `~/.weft` runtime.
 
 ## Agent Guidance
 

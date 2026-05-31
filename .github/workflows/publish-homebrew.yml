@@ -74,7 +74,7 @@ jobs:
       - name: Verify release tree
         run: |
           go test ./...
-          go build -o dist/weft ./cmd/weft
+          go build -ldflags "-X github.com/edwmurph/weft/internal/version.BuildChannel=release" -o dist/weft ./cmd/weft
           ./dist/weft --help >/dev/null
           ./dist/weft doctor
 

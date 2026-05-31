@@ -42,6 +42,7 @@ type Upgrade struct {
 	AutoRestarted     bool   `json:"auto_restarted,omitempty"`
 	RunningAgents     int    `json:"running_agents"`
 	Message           string `json:"message,omitempty"`
+	BackupID          string `json:"backup_id,omitempty"`
 }
 
 type Snapshot struct {

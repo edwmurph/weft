@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 )
 
@@ -99,6 +101,42 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 	})
 }
 
+func TestSourceBuildDefaultRuntimeGuardFailsBeforeCreatingRuntime(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := append(filteredEnv("WEFT_HOME", "WEFT_ALLOW_MAIN_RUNTIME"),
+		"HOME="+home,
+		"WEFT_WORKSPACE="+workspace,
+		"PATH=/usr/bin:/bin",
+		"TERM=xterm-256color",
+	)
+	cmd := exec.Command(bin, "--no-attach")
+	cmd.Env = env
+	cmd.Dir = workspace
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("source build default runtime should fail:\n%s", out)
+	}
+	if !strings.Contains(string(out), "source builds refuse to use the default Weft runtime") {
+		t.Fatalf("guard output missing refusal:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(err) {
+		t.Fatalf("guard should not create default runtime, stat err = %v", err)
+	}
+}
+
 func TestUpgradeSimulationNoRunningAgentsRestartsSupervisor(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
@@ -125,6 +163,7 @@ func TestUpgradeSimulationNoRunningAgentsRestartsSupervisor(t *testing.T) {
 	if !strings.Contains(out, "Supervisor restarted from Weft 3.9.0") {
 		t.Fatalf("idle upgrade output missing restart notice:\n%s", out)
 	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade auto restart")
 }
 
 func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
@@ -207,9 +246,97 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 			t.Fatalf("--clear --no-attach output missing %q:\n%s", expected, out)
 		}
 	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-clear")
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 0 && len(st.Workspaces) == 0
 	})
+}
+
+func TestCloseKillCreatesBackup(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+	runWeft(t, env, bin, "new", "Alpha")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
+	})
+
+	out := runWeft(t, env, bin, "close", "--kill", "--yes")
+	if !strings.Contains(out, "Created backup:") || !strings.Contains(out, "Weft supervisor stopped.") {
+		t.Fatalf("close --kill output missing backup/stop notice:\n%s", out)
+	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-close kill")
+	status := runWeft(t, env, bin, "status")
+	if !strings.Contains(status, "supervisor: down") {
+		t.Fatalf("status should show stopped supervisor:\n%s", status)
+	}
+}
+
+func TestBackupRestoreRequiresConfirmationWhenSupervisorRunning(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	createOut := runWeft(t, env, bin, "backup", "create", "--reason", "restore point")
+	backupID := parseBackupID(t, createOut)
+	runWeft(t, env, bin, "workspace", "add", workspace)
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Workspaces) == 1
+	})
+
+	cancel := exec.Command(bin, "backup", "restore", backupID)
+	cancel.Env = env
+	cancel.Stdin = strings.NewReader("n\n")
+	cancelOut, err := cancel.CombinedOutput()
+	if err != nil {
+		t.Fatalf("backup restore cancel: %v\n%s", err, cancelOut)
+	}
+	if !strings.Contains(string(cancelOut), "Restore canceled.") {
+		t.Fatalf("restore cancellation output missing:\n%s", cancelOut)
+	}
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Workspaces) == 1
+	})
+
+	restoreOut := runWeft(t, env, bin, "backup", "restore", backupID, "--yes")
+	for _, expected := range []string{"Created pre-restore backup:", "Restored Weft backup: " + backupID} {
+		if !strings.Contains(restoreOut, expected) {
+			t.Fatalf("restore output missing %q:\n%s", expected, restoreOut)
+		}
+	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-restore "+backupID)
+	statusJSON := runWeft(t, env, bin, "status", "--json")
+	var restored state.State
+	if err := json.Unmarshal([]byte(statusJSON), &restored); err != nil {
+		t.Fatalf("status json: %v\n%s", err, statusJSON)
+	}
+	if len(restored.Workspaces) != 0 {
+		t.Fatalf("restore should return to backup state: %#v", restored.Workspaces)
+	}
 }
 
 func buildWeft(t *testing.T) string {
@@ -270,6 +397,27 @@ func baseIntegrationEnv(runtimeDir string, workspace string, bin string) []strin
 	)
 }
 
+func filteredEnv(dropKeys ...string) []string {
+	drop := map[string]bool{}
+	for _, key := range dropKeys {
+		drop[key+"="] = true
+	}
+	var env []string
+	for _, item := range os.Environ() {
+		skip := false
+		for prefix := range drop {
+			if strings.HasPrefix(item, prefix) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			env = append(env, item)
+		}
+	}
+	return env
+}
+
 func upgradeEnv(runtimeDir string, workspace string, bin string, version string) []string {
 	return append(baseIntegrationEnv(runtimeDir, workspace, bin),
 		"WEFT_CLIENT_VERSION_OVERRIDE="+version,
@@ -295,6 +443,40 @@ func runWeft(t *testing.T, env []string, bin string, args ...string) string {
 		t.Fatalf("weft %v: %v\n%s", args, err, out)
 	}
 	return string(out)
+}
+
+func assertBackupWithReason(t *testing.T, runtimeDir string, workspace string, reason string) runtimebackup.Metadata {
+	t.Helper()
+	rt := config.Runtime{
+		Workspace:  workspace,
+		Dir:        runtimeDir,
+		ConfigPath: filepath.Join(runtimeDir, "config.toml"),
+		StatePath:  filepath.Join(runtimeDir, "state.json"),
+		SocketPath: filepath.Join(runtimeDir, "weft.sock"),
+	}
+	backups, err := runtimebackup.List(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, backup := range backups {
+		if backup.Reason == reason {
+			return backup
+		}
+	}
+	t.Fatalf("backup reason %q not found: %#v", reason, backups)
+	return runtimebackup.Metadata{}
+}
+
+func parseBackupID(t *testing.T, output string) string {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Created Weft backup: ") {
+			return strings.TrimPrefix(line, "Created Weft backup: ")
+		}
+	}
+	t.Fatalf("backup id not found in output:\n%s", output)
+	return ""
 }
 
 func waitState(t *testing.T, env []string, bin string, accept func(state.State) bool) state.State {

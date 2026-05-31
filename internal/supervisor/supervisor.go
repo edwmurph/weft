@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/tui"
 	"github.com/edwmurph/weft/internal/version"
@@ -41,6 +42,10 @@ func Ensure(rt config.Runtime) (EnsureResult, error) {
 	if response, err := Status(rt); err == nil {
 		response = AnnotateUpgrade(response, false)
 		if ShouldAutoRestart(response) {
+			backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade auto restart", IncludeLogs: true})
+			if err != nil {
+				return EnsureResult{}, fmt.Errorf("could not create pre-restart backup: %w", err)
+			}
 			_ = Shutdown(rt)
 			waitForStop(rt, 2*time.Second)
 			started, err := start(rt)
@@ -48,6 +53,10 @@ func Ensure(rt config.Runtime) (EnsureResult, error) {
 				return EnsureResult{}, err
 			}
 			started.Status.Upgrade = restartedUpgrade(response, started.Status)
+			started.Status.Upgrade.BackupID = backup.ID
+			if started.Status.Upgrade.Message != "" {
+				started.Status.Upgrade.Message += " Backup: " + backup.ID + "."
+			}
 			return started, nil
 		}
 		return EnsureResult{Status: response}, nil

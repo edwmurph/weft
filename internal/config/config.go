@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	AppDirEnv    = "WEFT_HOME"
-	WorkspaceEnv = "WEFT_WORKSPACE"
+	AppDirEnv               = "WEFT_HOME"
+	WorkspaceEnv            = "WEFT_WORKSPACE"
+	AllowMainRuntimeEnv     = "WEFT_ALLOW_MAIN_RUNTIME"
+	defaultRuntimeDirectory = ".weft"
 )
 
 type KeyBindings struct {
@@ -44,11 +46,12 @@ type Config struct {
 }
 
 type Runtime struct {
-	Workspace  string
-	Dir        string
-	ConfigPath string
-	StatePath  string
-	SocketPath string
+	Workspace    string
+	Dir          string
+	ConfigPath   string
+	StatePath    string
+	SocketPath   string
+	HomeExplicit bool
 }
 
 type ConfigError struct {
@@ -93,16 +96,17 @@ func ResolveRuntime() (Runtime, error) {
 	if err != nil {
 		return Runtime{}, err
 	}
-	dir, err := AppDir(workspace)
+	dir, explicit, err := AppDirInfo(workspace)
 	if err != nil {
 		return Runtime{}, err
 	}
 	return Runtime{
-		Workspace:  workspace,
-		Dir:        dir,
-		ConfigPath: filepath.Join(dir, "config.toml"),
-		StatePath:  filepath.Join(dir, "state.json"),
-		SocketPath: filepath.Join(dir, "weft.sock"),
+		Workspace:    workspace,
+		Dir:          dir,
+		ConfigPath:   filepath.Join(dir, "config.toml"),
+		StatePath:    filepath.Join(dir, "state.json"),
+		SocketPath:   filepath.Join(dir, "weft.sock"),
+		HomeExplicit: explicit,
 	}, nil
 }
 
@@ -114,14 +118,20 @@ func CurrentWorkspace() (string, error) {
 }
 
 func AppDir(workspace string) (string, error) {
+	dir, _, err := AppDirInfo(workspace)
+	return dir, err
+}
+
+func AppDirInfo(workspace string) (string, bool, error) {
 	if configured := os.Getenv(AppDirEnv); configured != "" {
-		return filepath.Abs(expandHome(configured))
+		dir, err := filepath.Abs(expandHome(configured))
+		return dir, true, err
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return filepath.Join(home, ".weft"), nil
+	return filepath.Join(home, defaultRuntimeDirectory), false, nil
 }
 
 func RuntimeID(workspace string) string {

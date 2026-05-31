@@ -10,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/tui"
+	weftversion "github.com/edwmurph/weft/internal/version"
 )
 
 func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
@@ -33,6 +36,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		"weft <command> --clear       Clear runtime state, then run the command.",
 		"weft workspace add <path>    Add a workspace to the dashboard.",
 		"weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
+		"weft backup create           Back up config, state, and logs.",
 		"weft doctor keys             Diagnose terminal key encoding.",
 	} {
 		if !strings.Contains(help, expected) {
@@ -52,6 +56,151 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		if strings.Contains(help, forbidden) {
 			t.Fatalf("help should not contain %q:\n%s", forbidden, help)
 		}
+	}
+}
+
+func TestSourceBuildRefusesDefaultMainRuntime(t *testing.T) {
+	withBuildChannel(t, "source")
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(config.AppDirEnv, "")
+	t.Setenv(config.WorkspaceEnv, workspace)
+	t.Setenv(config.AllowMainRuntimeEnv, "")
+
+	_, _, _, err := resolveRuntime()
+	if err == nil {
+		t.Fatal("source build should refuse default runtime")
+	}
+	if !strings.Contains(err.Error(), "source builds refuse to use the default Weft runtime") ||
+		!strings.Contains(err.Error(), "WEFT_HOME="+workspace) ||
+		!strings.Contains(err.Error(), config.AllowMainRuntimeEnv+"=1") {
+		t.Fatalf("runtime guard error missing guidance:\n%s", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(statErr) {
+		t.Fatalf("guard should not create default runtime, stat err = %v", statErr)
+	}
+}
+
+func TestSourceBuildAllowsExplicitRuntime(t *testing.T) {
+	withBuildChannel(t, "source")
+	workspace := t.TempDir()
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	t.Setenv(config.AppDirEnv, runtimeDir)
+	t.Setenv(config.WorkspaceEnv, workspace)
+	t.Setenv(config.AllowMainRuntimeEnv, "")
+
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rt.HomeExplicit {
+		t.Fatalf("runtime should be explicit: %#v", rt)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "config.toml")); err != nil {
+		t.Fatalf("explicit runtime should create config: %v", err)
+	}
+}
+
+func TestReleaseBuildAllowsDefaultRuntime(t *testing.T) {
+	withBuildChannel(t, "release")
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(config.AppDirEnv, "")
+	t.Setenv(config.WorkspaceEnv, workspace)
+	t.Setenv(config.AllowMainRuntimeEnv, "")
+
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.HomeExplicit {
+		t.Fatalf("default runtime should not be marked explicit: %#v", rt)
+	}
+	if rt.Dir != filepath.Join(home, ".weft") {
+		t.Fatalf("runtime dir = %q, want default under HOME", rt.Dir)
+	}
+}
+
+func TestAllowMainRuntimeOverrideAllowsSourceDefaultRuntime(t *testing.T) {
+	withBuildChannel(t, "source")
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(config.AppDirEnv, "")
+	t.Setenv(config.WorkspaceEnv, workspace)
+	t.Setenv(config.AllowMainRuntimeEnv, "1")
+
+	if _, _, _, err := resolveRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".weft", "config.toml")); err != nil {
+		t.Fatalf("override should create default runtime config: %v", err)
+	}
+}
+
+func TestBackupRestoreCreatesPreRestoreBackup(t *testing.T) {
+	withBuildChannel(t, "source")
+	workspace := t.TempDir()
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	t.Setenv(config.AppDirEnv, runtimeDir)
+	t.Setenv(config.WorkspaceEnv, workspace)
+
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalConfig := []byte("codex_command = \"codex\"\ntitle_template = \"{title}\"\n")
+	originalState := []byte("{\"version\":4,\"focus\":\"workspaces\",\"nav_open\":true,\"workspaces\":[],\"groups\":[],\"agents\":[],\"collapsed_group_ids\":[]}\n")
+	if err := os.WriteFile(rt.ConfigPath, originalConfig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rt.StatePath, originalState, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "known good"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rt.ConfigPath, []byte("codex_command = \"broken\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rt.StatePath, []byte("broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backupRestore([]string{backup.ID, "--yes"}); err != nil {
+		t.Fatal(err)
+	}
+
+	gotConfig, err := os.ReadFile(rt.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotConfig) != string(originalConfig) {
+		t.Fatalf("config not restored:\n%s", gotConfig)
+	}
+	gotState, err := os.ReadFile(rt.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotState) != string(originalState) {
+		t.Fatalf("state not restored:\n%s", gotState)
+	}
+	backups, err := runtimebackup.List(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundPreRestore := false
+	for _, item := range backups {
+		if item.Reason == "pre-restore "+backup.ID {
+			foundPreRestore = true
+			break
+		}
+	}
+	if !foundPreRestore {
+		t.Fatalf("pre-restore backup not found: %#v", backups)
 	}
 }
 
@@ -236,6 +385,15 @@ func TestIterm2FixErrorIncludesDebugContext(t *testing.T) {
 			t.Fatalf("error missing %q:\n%s", expected, message)
 		}
 	}
+}
+
+func withBuildChannel(t *testing.T, channel string) {
+	t.Helper()
+	previous := weftversion.BuildChannel
+	weftversion.BuildChannel = channel
+	t.Cleanup(func() {
+		weftversion.BuildChannel = previous
+	})
 }
 
 func TestIterm2PlutilHelpersAddKeyMapping(t *testing.T) {

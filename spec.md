@@ -36,6 +36,13 @@ The core workflow is:
 
 Weft has two runtime roles in one shipped binary.
 
+Weft also has a build channel. Release/Homebrew builds set
+`version.BuildChannel` to `release`; source builds default to `source`. A
+source build must fail closed before reading or mutating the default
+`~/.weft` runtime unless `WEFT_HOME` is set explicitly or
+`WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional one-off. Help, version,
+and `weft doctor keys` remain available without runtime access.
+
 ## Supervisor
 
 The supervisor is a local background process, referred to internally as `weftd`.
@@ -104,9 +111,9 @@ When a newly installed `weft` client finds an older compatible supervisor:
 - offer a restart action for the supervisor
 
 When no agents are running, Weft may restart the supervisor automatically to
-finish the upgrade. When any agent PTY is running, Weft must not restart the
-supervisor without explicit confirmation because that can stop live Codex
-terminals.
+finish the upgrade after creating a runtime backup. When any agent PTY is
+running, Weft must not restart the supervisor without explicit confirmation
+because that can stop live Codex terminals.
 
 If the supervisor protocol is incompatible with the client, the client should
 explain the situation and offer the least destructive recovery path:
@@ -131,8 +138,17 @@ Weft stores runtime files globally under `~/.weft` by default, or under
 - `weftd.pid`
 - `weftd.lock`
 - `weftd.log`
+- `backups/`
 
 `WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace context.
+Development and worktree runs should set `WEFT_HOME` to the worktree-local
+ignored `.weft/` directory and set `WEFT_WORKSPACE` to the same worktree path.
+The installed release command owns the real default `~/.weft` runtime.
+
+Runtime backups live under `backups/<id>/` by default. A backup includes
+`metadata.json`, `config.toml` when present, `state.json` when present, and log
+files when present. Backups must not include sockets, locks, pid files, or live
+PTY/process state.
 
 ## Primary Layout
 
@@ -599,6 +615,7 @@ Global `--clear`:
   `weft --clear doctor keys` or `weft doctor keys --clear`
 - stops the supervisor and deletes runtime state without a separate confirmation
   prompt before running the requested command
+- creates a runtime backup before stopping or deleting state
 - is ignored for help, version, the internal supervisor command, and
   `weft clear`
 
@@ -611,6 +628,7 @@ Global `--clear`:
 `weft close --kill`:
 
 - asks for confirmation when any agent PTY is running
+- creates a runtime backup before shutdown
 - stops all agent PTYs
 - stops the supervisor
 - preserves config and state
@@ -625,7 +643,26 @@ Global `--clear`:
 
 - remains destructive
 - stops the supervisor and all agent PTYs
+- creates a runtime backup before deletion
 - deletes Weft runtime state after explicit confirmation
+
+`weft backup create [--output <dir>] [--reason <text>]`:
+
+- writes a backup of config, state, metadata, and available logs
+- defaults to the current runtime's `backups/` directory
+- must not copy sockets, locks, pid files, or live PTYs
+
+`weft backup list`:
+
+- lists backups in the current runtime's default backup directory
+
+`weft backup restore <id-or-path> [--yes]`:
+
+- resolves ids from the current runtime backup directory, or accepts a backup path
+- creates a pre-restore backup before replacing current config and state
+- restores config and state only
+- removes current config or state when the selected backup did not contain it
+- requires confirmation before stopping a running supervisor unless `--yes` is provided
 
 `weft doctor keys`:
 
@@ -727,6 +764,10 @@ Unit tests:
 - layout width calculations and rendering breakpoints
 - prompt editing keystroke variants
 - deterministic command construction and state helpers
+- runtime guard decisions for source/release builds, explicit `WEFT_HOME`, and
+  `WEFT_ALLOW_MAIN_RUNTIME=1`
+- backup create/list/restore behavior, including missing state and pre-restore
+  backup creation
 
 Integration tests:
 
@@ -746,6 +787,11 @@ Integration tests:
 - persist and reload selected workspace/group/agent state
 - upgrade with no running agents restarts the supervisor automatically
 - upgrade with running agents preserves the old supervisor and prompts before restart
+- source/dev binary without `WEFT_HOME` fails before creating default runtime files
+- automatic backups are created before `--clear`, `close --kill`, and idle
+  upgrade auto-restart
+- backup restore confirms before stopping a running supervisor unless `--yes`
+  is provided
 
 Integration tests should use temporary `WEFT_HOME`, temporary `WEFT_WORKSPACE`,
 and a fake `codex_command`. They should not require tmux.

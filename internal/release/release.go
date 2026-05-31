@@ -253,7 +253,7 @@ class %s < Formula
   depends_on "go" => :build
 
   def install
-    system "go", "build", "-ldflags", "-X github.com/edwmurph/weft/internal/version.Version=#{version}", "-o", bin/"%s", "./cmd/weft"
+    system "go", "build", "-ldflags", "-X github.com/edwmurph/weft/internal/version.Version=#{version} -X github.com/edwmurph/weft/internal/version.BuildChannel=release", "-o", bin/"%s", "./cmd/weft"
   end
 
   test do

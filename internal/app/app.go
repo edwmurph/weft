@@ -14,6 +14,7 @@ import (
 
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
+	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/sessions"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/supervisor"
@@ -85,6 +86,9 @@ func Run(args []string) error {
 		case "clear":
 			clearApplies = false
 			action = clear
+		case "backup":
+			clearApplies = false
+			action = func() error { return backupCommand(args[1:]) }
 		case "doctor":
 			action = func() error { return doctor(args[1:]) }
 		case "config":
@@ -163,6 +167,9 @@ func cliHelpText() string {
 		"Runtime and configuration:",
 		"  weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
 		"  weft clear                   Prompt, then delete Weft runtime state.",
+		"  weft backup create           Back up config, state, and logs.",
+		"  weft backup list             List saved runtime backups.",
+		"  weft backup restore <id>     Restore config and state from a backup.",
 		"  weft sessions                Show the current supervisor session.",
 		"  weft config info             Show runtime paths and active config.",
 		"  weft config show             Print config.toml.",
@@ -271,6 +278,11 @@ func closeWeft(command string, args []string) error {
 				return nil
 			}
 		}
+		backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-close kill", IncludeLogs: true})
+		if err != nil {
+			return fmt.Errorf("could not create pre-shutdown backup: %w", err)
+		}
+		fmt.Printf("Created backup: %s\n", backup.ID)
 		if err := supervisor.Shutdown(rt); err != nil {
 			fmt.Printf("Weft supervisor is not running: %v\n", err)
 			return nil
@@ -413,6 +425,11 @@ func clearRuntime(rt config.Runtime, confirmDestructive bool) error {
 			return nil
 		}
 	}
+	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-clear", IncludeLogs: true})
+	if err != nil {
+		return fmt.Errorf("could not create pre-clear backup: %w", err)
+	}
+	fmt.Printf("Created backup: %s\n", backup.ID)
 	_ = supervisor.Shutdown(rt)
 	waitForSupervisorStop(rt, 2*time.Second)
 	deletedFiles := 0
@@ -423,6 +440,141 @@ func clearRuntime(rt config.Runtime, confirmDestructive bool) error {
 	}
 	fmt.Printf("Deleted %d runtime file(s).\n", deletedFiles)
 	return nil
+}
+
+func backupCommand(args []string) error {
+	if len(args) == 0 {
+		return errors.New("backup requires one of: create, list, restore")
+	}
+	switch args[0] {
+	case "create":
+		return backupCreate(args[1:])
+	case "list":
+		if len(args) > 1 {
+			return errors.New("backup list accepts no arguments")
+		}
+		return backupList()
+	case "restore":
+		return backupRestore(args[1:])
+	default:
+		return fmt.Errorf("unknown backup command %q", args[0])
+	}
+}
+
+func backupCreate(args []string) error {
+	fs := flag.NewFlagSet("backup create", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	output := fs.String("output", "", "directory for the backup")
+	reason := fs.String("reason", "", "backup reason")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("backup create accepts only --output and --reason")
+	}
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		return err
+	}
+	backup, err := runtimebackup.Create(rt, runtimebackup.Options{OutputDir: *output, Reason: *reason, IncludeLogs: true})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Created Weft backup: %s\n", backup.ID)
+	fmt.Printf("Path: %s\n", backup.Path)
+	return nil
+}
+
+func backupList() error {
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		return err
+	}
+	backups, err := runtimebackup.List(rt)
+	if err != nil {
+		return err
+	}
+	if len(backups) == 0 {
+		fmt.Println("No Weft backups found.")
+		return nil
+	}
+	fmt.Printf("%-28s %-20s %s\n", "ID", "Created", "Reason")
+	for _, backup := range backups {
+		fmt.Printf("%-28s %-20s %s\n", backup.ID, backup.CreatedAt, backup.Reason)
+	}
+	return nil
+}
+
+func backupRestore(args []string) error {
+	idOrPath, yes, err := parseBackupRestoreArgs(args)
+	if err != nil {
+		return err
+	}
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		return err
+	}
+	backup, err := runtimebackup.Resolve(rt, idOrPath)
+	if err != nil {
+		return err
+	}
+	response, statusErr := supervisor.Status(rt)
+	supervisorRunning := statusErr == nil
+	if supervisorRunning && !yes {
+		running := runningAgentCount(response.State)
+		if running > 0 {
+			fmt.Printf("Restoring a backup requires stopping the Weft supervisor and %d running Codex terminal(s).\n", running)
+		} else {
+			fmt.Println("Restoring a backup requires stopping the Weft supervisor.")
+		}
+		if !confirm("Restore backup and stop the supervisor? [y/N] ") {
+			fmt.Println("Restore canceled.")
+			return nil
+		}
+	}
+	pre, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-restore " + backup.ID, IncludeLogs: true})
+	if err != nil {
+		return fmt.Errorf("could not create pre-restore backup: %w", err)
+	}
+	fmt.Printf("Created pre-restore backup: %s\n", pre.ID)
+	if supervisorRunning {
+		if err := supervisor.Shutdown(rt); err != nil {
+			return err
+		}
+		waitForSupervisorStop(rt, 2*time.Second)
+		if _, err := supervisor.Status(rt); err == nil {
+			return errors.New("Weft supervisor did not stop; restore canceled")
+		}
+	}
+	result, err := runtimebackup.RestoreWithPreRestore(rt, backup, &pre)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Restored Weft backup: %s\n", result.Backup.ID)
+	return nil
+}
+
+func parseBackupRestoreArgs(args []string) (string, bool, error) {
+	yes := false
+	idOrPath := ""
+	for _, arg := range args {
+		switch arg {
+		case "--yes", "-y":
+			yes = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", false, fmt.Errorf("unknown backup restore flag %q", arg)
+			}
+			if idOrPath != "" {
+				return "", false, errors.New("backup restore accepts exactly one backup id or path")
+			}
+			idOrPath = arg
+		}
+	}
+	if idOrPath == "" {
+		return "", false, errors.New("backup restore requires a backup id or path")
+	}
+	return idOrPath, yes, nil
 }
 
 func waitForSupervisorStop(rt config.Runtime, timeout time.Duration) {
@@ -475,6 +627,9 @@ func configCommand(args []string) error {
 	if args[0] == "init" {
 		rt, err := config.ResolveRuntime()
 		if err != nil {
+			return err
+		}
+		if err := guardRuntimeAccess(rt); err != nil {
 			return err
 		}
 		force := len(args) > 1 && (args[1] == "--force" || args[1] == "-f")
@@ -569,12 +724,34 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
+	if err := guardRuntimeAccess(rt); err != nil {
+		return config.Runtime{}, config.Config{}, nil, err
+	}
 	cfg, err := config.EnsureConfig(rt)
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
 	store := state.NewStore(rt.StatePath, rt.Workspace)
 	return rt, cfg, store, nil
+}
+
+func guardRuntimeAccess(rt config.Runtime) error {
+	if rt.HomeExplicit || strings.TrimSpace(version.BuildChannel) == "release" || os.Getenv(config.AllowMainRuntimeEnv) == "1" {
+		return nil
+	}
+	return fmt.Errorf("source builds refuse to use the default Weft runtime at %s.\nUse an isolated dev runtime, for example:\n  %s\nTo intentionally use %s from source, set %s=1.", sessions.DisplayPath(rt.Dir), safeDevRuntimeCommand(rt), sessions.DisplayPath(rt.Dir), config.AllowMainRuntimeEnv)
+}
+
+func safeDevRuntimeCommand(rt config.Runtime) string {
+	worktree := strings.TrimSpace(rt.Workspace)
+	if worktree == "" {
+		cwd, err := os.Getwd()
+		if err != nil || strings.TrimSpace(cwd) == "" {
+			cwd = "/abs/path/to/weft/.worktrees/<slug>"
+		}
+		worktree = cwd
+	}
+	return fmt.Sprintf("%s=%s %s=%s go -C %s run ./cmd/weft --clear", config.AppDirEnv, filepath.Join(worktree, ".weft"), config.WorkspaceEnv, worktree, worktree)
 }
 
 func runningAgentCount(st *state.State) int {

@@ -48,14 +48,14 @@ weft
 For local development from this repository:
 
 ```sh
-go run ./cmd/weft doctor
-go run ./cmd/weft
+WEFT_HOME=$PWD/.weft WEFT_WORKSPACE=$PWD go run ./cmd/weft doctor
+WEFT_HOME=$PWD/.weft WEFT_WORKSPACE=$PWD go run ./cmd/weft
 ```
 
 From another current directory, point Go at the worktree module first:
 
 ```sh
-go -C /path/to/weft-or-worktree run ./cmd/weft
+WEFT_HOME=/path/to/weft-or-worktree/.weft WEFT_WORKSPACE=/path/to/weft-or-worktree go -C /path/to/weft-or-worktree run ./cmd/weft
 ```
 
 ## Usage
@@ -92,6 +92,9 @@ weft move-right              Move the selected agent into the selected group.
 Runtime and configuration:
 weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.
 weft clear                   Prompt, then delete Weft runtime state.
+weft backup create           Back up config, state, and logs.
+weft backup list             List saved runtime backups.
+weft backup restore <id>     Restore config and state from a backup.
 weft sessions                Show the current supervisor session.
 weft config info             Show runtime paths and active config.
 weft config show             Print config.toml.
@@ -219,10 +222,20 @@ Weft stores runtime files globally:
 - `~/.weft/weft.sock`
 - `~/.weft/weftd.pid`
 - `~/.weft/weftd.log`
+- `~/.weft/backups/`
 
 `WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace
 selection and the first-run add prompt.
 `WEFT_HOME` overrides the runtime directory directly for development and tests.
+Source-built Weft defaults to a fail-closed mode: it refuses to use the default
+`~/.weft` runtime unless `WEFT_HOME` is set, or unless
+`WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional one-off. Release builds
+from Homebrew use `~/.weft` by default.
+
+`weft backup create [--output <dir>] [--reason <text>]` writes a restorable
+copy of `config.toml`, `state.json`, metadata, and logs when present. `weft
+backup restore <id-or-path> [--yes]` creates a pre-restore backup before
+replacing config and state, and stops the supervisor first when it is running.
 
 The config keys are stable: `codex_command`, `title_template`,
 `title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`. State is
@@ -243,3 +256,6 @@ Live integration tests use temporary `WEFT_HOME`, `WEFT_WORKSPACE`, and a fake
 `codex_command`. Use
 `WEFT_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
 to see per-step dashboard timing logs.
+
+The repository ignores `.weft/` so each worktree can keep an isolated local
+runtime for manual testing.

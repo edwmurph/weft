@@ -114,6 +114,7 @@ func TestRenderFormulaBuildsGoBinaryFromSource(t *testing.T) {
 		"class Weft < Formula",
 		`depends_on "go" => :build`,
 		`system "go", "build"`,
+		`BuildChannel=release`,
 		`./cmd/weft`,
 		`WEFT_HOME`,
 		`weft doctor`,
