@@ -107,9 +107,10 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Add this workspace to Weft?") &&
-			strings.Contains(capture, "Y yes")
+			strings.Contains(capture, "Enter yes") &&
+			strings.Contains(capture, "Esc no")
 	})
-	directRun(t, env, "send-keys", "-t", pane, "y")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workspaces") &&
 			strings.Contains(capture, "Agents")
@@ -502,9 +503,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	timedStep(t, "initial render", func() {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Add this workspace to Weft?") &&
-				strings.Contains(capture, "Y yes")
+				strings.Contains(capture, "Enter yes") &&
+				strings.Contains(capture, "Esc no")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, "No Codex agent open")
@@ -948,9 +950,10 @@ func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Add this workspace to Weft?") &&
-			strings.Contains(capture, "Y yes")
+			strings.Contains(capture, "Enter yes") &&
+			strings.Contains(capture, "Esc no")
 	})
-	directRun(t, env, "send-keys", "-t", pane, "y")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Agents") &&
 			strings.Contains(capture, "No Codex agent open")
@@ -1033,9 +1036,10 @@ func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Add this workspace to Weft?") &&
-			strings.Contains(capture, "Y yes")
+			strings.Contains(capture, "Enter yes") &&
+			strings.Contains(capture, "Esc no")
 	})
-	directRun(t, env, "send-keys", "-t", pane, "y")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Agents") &&
 			strings.Contains(capture, "No Codex agent open")
@@ -1144,9 +1148,10 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 	timedStep(t, "launch prompt can be declined then workspace is added with autocomplete", func() {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Add this workspace to Weft?") &&
-				strings.Contains(capture, "N no")
+				strings.Contains(capture, "Enter yes") &&
+				strings.Contains(capture, "Esc no")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "n")
+		directRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Workspaces) == 0 && len(st.Agents) == 0
 		})
@@ -1486,12 +1491,13 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 	clientOutput, firstClientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 150, 36)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Add this workspace to Weft?") &&
-			strings.Contains(capture, "Y yes")
+			strings.Contains(capture, "Enter yes") &&
+			strings.Contains(capture, "Esc no")
 	})
 	assertPerformanceBudget(t, "fresh dashboard prompt visible", time.Since(started), 8*time.Second)
 
 	started = time.Now()
-	directRun(t, env, "send-keys", "-t", pane, "y")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Agents") &&
 			strings.Contains(capture, "No Codex agent open")

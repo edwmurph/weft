@@ -534,7 +534,7 @@ Add workspace:
 - Weft must not auto-add the launch directory during state repair or first supervisor start.
 - When an interactive client opens from a launch directory that is already configured, Weft selects that workspace automatically.
 - Launch-directory selection happens only when the interactive client attaches. It must not run on every snapshot, navigation, or delete request, because that would keep snapping selection back to the launch workspace and prevent removing stale workspace entries.
-- When an interactive client opens from a launch directory that is not configured, Weft asks whether to add it before mutating state.
+- When an interactive client opens from a launch directory that is not configured, Weft asks whether to add it before mutating state. `Enter` confirms; `Esc` declines.
 - Dashboard prompt opens with the selected workspace's parent directory prefilled.
 - Dashboard prompt uses the shared bordered form input.
 - Autocomplete opens directly below the input when the user types or presses `Down`.

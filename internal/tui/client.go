@@ -279,12 +279,12 @@ func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch strings.ToLower(msg.String()) {
-	case "y":
+	if confirmKeySubmits(m.confirm, msg) {
 		cmd := m.applyConfirm()
 		m.mode = modeNormal
 		return m, cmd
-	case "n", "esc":
+	}
+	if confirmKeyCancels(m.confirm, msg) {
 		m.mode = modeNormal
 	}
 	return m, nil

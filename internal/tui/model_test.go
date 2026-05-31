@@ -158,13 +158,84 @@ func TestClientPromptsToAddMissingLaunchWorkspace(t *testing.T) {
 		t.Fatalf("prompt state = mode:%s confirm:%s pending:%q", model.mode, model.confirm, model.pendingID)
 	}
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Add this workspace to Weft?", "Current directory", "Y yes", "N no"} {
+	for _, expected := range []string{"Add this workspace to Weft?", "Current directory", "Enter yes", "Esc no"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("launch workspace prompt missing %q:\n%s", expected, got)
 		}
 	}
+	for _, unexpected := range []string{"Y yes", "N no", "Y/Enter yes"} {
+		if strings.Contains(got, unexpected) {
+			t.Fatalf("launch workspace prompt should not include %q:\n%s", unexpected, got)
+		}
+	}
 	if strings.Contains(got, "New agents will start from this directory.") {
 		t.Fatalf("launch workspace prompt should not include agent-start explanation:\n%s", got)
+	}
+}
+
+func TestLaunchWorkspaceConfirmationEnterAddsWorkspace(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewModel(rt, config.DefaultConfig(), state.Empty())
+	model.mode = modeConfirm
+	model.confirm = confirmAddLaunchWorkspace
+	model.pendingID = rt.Workspace
+
+	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+
+	if cmd != nil {
+		t.Fatalf("launch workspace confirm should not start command, got %#v", cmd)
+	}
+	if model.mode != modeNormal {
+		t.Fatalf("mode = %s, want normal", model.mode)
+	}
+	if workspace := state.WorkspaceByPath(model.state, rt.Workspace); workspace == nil {
+		t.Fatalf("workspace was not added: %#v", model.state.Workspaces)
+	}
+}
+
+func TestClientLaunchWorkspaceConfirmationEnterSubmits(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{State: state.Empty()}})
+
+	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(ClientModel)
+
+	if cmd == nil {
+		t.Fatal("enter should submit launch workspace confirmation")
+	}
+	if model.mode != modeNormal {
+		t.Fatalf("mode = %s, want normal", model.mode)
+	}
+}
+
+func TestLaunchWorkspaceConfirmationIgnoresYAndN(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewModel(rt, config.DefaultConfig(), state.Empty())
+	model.mode = modeConfirm
+	model.confirm = confirmAddLaunchWorkspace
+	model.pendingID = rt.Workspace
+
+	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeConfirm {
+		t.Fatalf("y should be ignored for launch workspace confirm, mode=%s cmd=%#v", model.mode, cmd)
+	}
+
+	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeConfirm {
+		t.Fatalf("n should be ignored for launch workspace confirm, mode=%s cmd=%#v", model.mode, cmd)
+	}
+
+	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeNormal {
+		t.Fatalf("esc should cancel launch workspace confirm, mode=%s cmd=%#v", model.mode, cmd)
+	}
+	if workspace := state.WorkspaceByPath(model.state, rt.Workspace); workspace != nil {
+		t.Fatalf("workspace should not be added after ignored keys and esc: %#v", model.state.Workspaces)
 	}
 }
 

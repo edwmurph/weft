@@ -558,7 +558,7 @@ func confirmDetail(confirm confirmKind) string {
 
 func renderConfirmActions(confirm confirmKind) string {
 	if confirm == confirmAddLaunchWorkspace {
-		return modalKeyStyle.Render("Y") + " yes  " + modalKeyStyle.Render("N") + " no  " + modalKeyStyle.Render("Esc") + " no"
+		return modalKeyStyle.Render("Enter") + " yes  " + modalKeyStyle.Render("Esc") + " no"
 	}
 	if confirm == confirmRestartWhenIdle {
 		return modalKeyStyle.Render("Y") + " restart when idle  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
