@@ -54,6 +54,7 @@ var (
 	workspaceCountActiveStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	workspaceCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	workspacePathWarningStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	workspaceUpgradeFooterStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -67,9 +68,10 @@ var (
 )
 
 type workspaceRenderOptions struct {
-	loadingText   string
-	loadingFrame  string
-	loadingAgents map[string]bool
+	loadingText         string
+	loadingFrame        string
+	loadingAgents       map[string]bool
+	workspaceFooterText string
 }
 
 type framePalette struct {
@@ -246,7 +248,7 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 	if width >= minTwoPaneNavWidth {
 		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, width-minAgentsPaneWidth))
 		groupWidth := width - workspaceWidth
-		workspaces := renderWorkspacesPane(cfg, st, workspaceWidth, height)
+		workspaces := renderWorkspacesPaneWithOptions(cfg, st, workspaceWidth, height, options)
 		groups := renderGroupsPaneWithOptions(cfg, st, groupWidth, height, groupCursor, options)
 		lines := make([]string, 0, height)
 		for index := 0; index < height; index++ {
@@ -255,12 +257,16 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 		return lines
 	}
 	if st.Focus == state.FocusWorkspaces {
-		return renderWorkspacesPane(cfg, st, width, height)
+		return renderWorkspacesPaneWithOptions(cfg, st, width, height, options)
 	}
 	return renderGroupsPaneWithOptions(cfg, st, width, height, groupCursor, options)
 }
 
 func renderWorkspacesPane(cfg config.Config, st state.State, width int, height int) []string {
+	return renderWorkspacesPaneWithOptions(cfg, st, width, height, workspaceRenderOptions{})
+}
+
+func renderWorkspacesPaneWithOptions(cfg config.Config, st state.State, width int, height int, options workspaceRenderOptions) []string {
 	content := []string{}
 	cardWidth := max(2, width-2-(navHorizontalPadding*2))
 	for _, workspace := range st.Workspaces {
@@ -273,7 +279,56 @@ func renderWorkspacesPane(cfg config.Config, st state.State, width int, height i
 	if len(content) == 0 {
 		content = renderCenteredPaneHelp(width, height, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
+	if footer := renderWorkspaceFooter(options.workspaceFooterText, width, height); len(footer) > 0 {
+		content = pinBottomPaneContent(content, footer, max(0, height-2))
+	}
 	return renderPaneFrame("Workspaces", "", width, height, st.Focus == state.FocusWorkspaces, content)
+}
+
+func renderWorkspaceFooter(message string, width int, height int) []string {
+	message = strings.TrimSpace(message)
+	if message == "" || width <= 0 || height <= 3 {
+		return nil
+	}
+	rowWidth := max(0, width-2-(navHorizontalPadding*2))
+	if rowWidth <= 0 {
+		return nil
+	}
+	wrapped := []string{}
+	for _, paragraph := range strings.Split(message, "\n") {
+		paragraph = strings.Join(strings.Fields(paragraph), " ")
+		if paragraph == "" {
+			continue
+		}
+		wrapped = append(wrapped, wrapPlain(paragraph, rowWidth, 3-len(wrapped))...)
+		if len(wrapped) >= 3 {
+			break
+		}
+	}
+	lines := make([]string, 0, len(wrapped))
+	for _, line := range wrapped {
+		line = padVisual(clip(line, rowWidth), rowWidth)
+		lines = append(lines, strings.Repeat(" ", navHorizontalPadding)+workspaceUpgradeFooterStyle.Render(line))
+	}
+	return lines
+}
+
+func pinBottomPaneContent(content []string, footer []string, contentHeight int) []string {
+	if contentHeight <= 0 || len(footer) == 0 {
+		return content
+	}
+	if len(footer) >= contentHeight {
+		return footer[len(footer)-contentHeight:]
+	}
+	bodyHeight := contentHeight - len(footer)
+	if len(content) > bodyHeight {
+		content = content[:bodyHeight]
+	}
+	next := append([]string{}, content...)
+	for len(next) < bodyHeight {
+		next = append(next, "")
+	}
+	return append(next, footer...)
 }
 
 type workspaceCardCounts struct {

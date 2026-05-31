@@ -62,6 +62,7 @@ const (
 	confirmDeleteGroup        confirmKind = "delete-group"
 	confirmDeleteAgent        confirmKind = "delete-agent"
 	confirmRestartWhenIdle    confirmKind = "restart-when-idle"
+	confirmCancelRestartIdle  confirmKind = "cancel-restart-when-idle"
 )
 
 const (

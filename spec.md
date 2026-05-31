@@ -111,6 +111,9 @@ When a newly installed `weft` client finds an older compatible supervisor:
 - clearly distinguish a client-only reopen from a supervisor restart: if the
   supervisor is still older, reopening the dashboard alone is not enough to
   finish the runtime upgrade
+- show a concise bottom-of-Workspaces-pane tip with the client version,
+  supervisor version, and the `U` restart-when-idle action while the dashboard
+  navigation is open
 - keep existing agents and PTYs running
 - offer a restart-when-idle action for the supervisor from the dashboard
 
@@ -123,7 +126,8 @@ The in-dashboard restart action must be safe by default. If live Codex
 terminals are running, it queues the restart and waits until no live Codex
 terminal remains before creating a pre-upgrade backup, stopping the supervisor,
 and starting the upgraded supervisor. It must not kill live Codex terminals just
-because the user queued the action.
+because the user queued the action. When restart-when-idle is queued, pressing
+`U` opens a confirmation to cancel the queued restart without stopping agents.
 
 If the supervisor protocol is incompatible with the client, the client should
 explain the situation and offer the least destructive recovery path:
@@ -191,6 +195,15 @@ Do not render card-level `parked`, `stopped`, `quiet`, or `error` categories. Th
 The default card title is the display path, for example `~/code/personal/weft`. A workspace can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
 
 Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workspaces pane has focus. Use a subtler blue border when the selected workspace is active but focus is in the Agents pane.
+
+When a newly installed client is attached to an older compatible supervisor, the
+bottom of the Workspaces pane shows a concise upgrade tip such as
+`Upgrade pending: client 7.5.5, supervisor 7.4.0. Press U to restart when idle.`
+The tip must not imply that reopening the dashboard is enough to finish the
+upgrade, and it must not suggest destructive reset commands while live agents
+can keep running. Once restart-when-idle is queued, the Workspaces-pane tip
+changes to explain that closing agents will finish the upgrade and that `U`
+cancels the queued restart.
 
 Counts should use subtle colors:
 

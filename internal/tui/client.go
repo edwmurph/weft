@@ -160,11 +160,17 @@ func (m ClientModel) View() string {
 	}
 	loadingText := m.snapshot.LoadingText
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
+	options := workspaceRenderOptions{
+		loadingFrame:        loadingFrame,
+		loadingAgents:       loadingAgentSet(m.snapshot.LoadingAgentIDs),
+		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade),
+	}
 	if loadingText != "" {
 		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
-		return renderLoadingWorkspaceWithNavWidthAndAgents(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, loadingText, loadingFrame, loadingAgentSet(m.snapshot.LoadingAgentIDs), m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
+		options.loadingText = loadingText
+		return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, "", m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 	}
-	return renderWorkspaceWithNavWidthAndAgents(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, m.snapshot.CodexContent, loadingFrame, loadingAgentSet(m.snapshot.LoadingAgentIDs), m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
+	return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, m.snapshot.CodexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 }
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -217,8 +223,8 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
 		return m, m.request("new", nil)
-	case m.canRestartWhenIdle() && strings.EqualFold(msg.String(), "u"):
-		m.startRestartWhenIdleConfirm()
+	case m.canActOnUpgradeQueue() && strings.EqualFold(msg.String(), "u"):
+		m.startUpgradeQueueConfirm()
 	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
@@ -289,11 +295,15 @@ func (m *ClientModel) startDeleteConfirm() {
 	}
 }
 
-func (m *ClientModel) startRestartWhenIdleConfirm() {
+func (m *ClientModel) startUpgradeQueueConfirm() {
 	if !m.canRestartWhenIdle() {
 		return
 	}
-	m.confirm = confirmRestartWhenIdle
+	if m.upgrade.RestartWhenIdleQueued {
+		m.confirm = confirmCancelRestartIdle
+	} else {
+		m.confirm = confirmRestartWhenIdle
+	}
 	m.pendingID = upgradeTarget(*m.upgrade)
 	m.mode = modeConfirm
 }
@@ -331,6 +341,9 @@ func (m *ClientModel) applyConfirm() tea.Cmd {
 	case confirmRestartWhenIdle:
 		m.localRestartWhenIdle = true
 		return m.request("restart_when_idle", nil)
+	case confirmCancelRestartIdle:
+		m.localRestartWhenIdle = false
+		return m.request("cancel_restart_when_idle", nil)
 	}
 	return nil
 }
@@ -448,7 +461,7 @@ func dashboardUpgradeMessage(upgrade ipc.Upgrade) string {
 		return upgrade.Message
 	}
 	if upgrade.RestartWhenIdleQueued {
-		return fmt.Sprintf("Upgrade queued: supervisor %s will restart when idle; live Codex terminals stay running.", upgrade.SupervisorVersion)
+		return ""
 	}
 	if !upgrade.Compatible {
 		return upgrade.Message
@@ -462,12 +475,32 @@ func dashboardUpgradeMessage(upgrade ipc.Upgrade) string {
 	return fmt.Sprintf("Upgrade ready: supervisor %s is idle. Press U to restart it now.", upgrade.SupervisorVersion)
 }
 
+func workspaceUpgradeFooterText(upgrade *ipc.Upgrade) string {
+	if upgrade == nil || !upgrade.RestartRequired {
+		return ""
+	}
+	if !upgrade.Compatible {
+		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop agents before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+	}
+	if upgrade.RestartWhenIdleQueued {
+		return fmt.Sprintf("Upgrade queued: client %s, supervisor %s.\nClose agents to finish, or press U to cancel.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+	}
+	if upgrade.RunningAgents > 0 {
+		return fmt.Sprintf("Upgrade pending: client %s, supervisor %s.\nPress U to restart when idle.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+	}
+	return fmt.Sprintf("Upgrade ready: client %s, supervisor %s.\nPress U to restart now.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+}
+
 func upgradeTarget(upgrade ipc.Upgrade) string {
 	return fmt.Sprintf("client %s, supervisor %s", upgrade.ClientVersion, upgrade.SupervisorVersion)
 }
 
 func (m ClientModel) canRestartWhenIdle() bool {
 	return m.upgrade != nil && m.upgrade.Compatible && m.upgrade.RestartRequired
+}
+
+func (m ClientModel) canActOnUpgradeQueue() bool {
+	return m.canRestartWhenIdle()
 }
 
 func restartWhenIdleUnsupported(response ipc.Response) bool {

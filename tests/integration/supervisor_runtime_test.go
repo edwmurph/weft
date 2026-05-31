@@ -14,6 +14,7 @@ import (
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
+	weftversion "github.com/edwmurph/weft/internal/version"
 )
 
 func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
@@ -295,6 +296,11 @@ func TestDashboardUpgradeRestartWhenIdlePreservesLiveAgent(t *testing.T) {
 	waitState(t, newEnv, bin, func(st state.State) bool {
 		return st.Focus == state.FocusAgents && st.NavOpen
 	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") &&
+			strings.Contains(capture, "client "+weftversion.Version+", supervisor 3.9.0") &&
+			strings.Contains(capture, "Press U to restart when idle")
+	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "u")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Restart supervisor when idle?") &&
@@ -302,12 +308,40 @@ func TestDashboardUpgradeRestartWhenIdlePreservesLiveAgent(t *testing.T) {
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "y")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade: queued") &&
-			strings.Contains(capture, "stay running")
+		return strings.Contains(capture, "Upgrade queued") &&
+			strings.Contains(capture, "Close agents to finish") &&
+			strings.Contains(capture, "press U to cancel")
 	})
 	if pid := readPID(t, runtimeDir); pid != oldPID {
 		t.Fatalf("restart when idle killed live agent, pid %q -> %q", oldPID, pid)
 	}
+
+	directRun(t, newEnv, "send-keys", "-t", pane, "u")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Cancel queued supervisor restart?") &&
+			strings.Contains(capture, "Y cancel restart") &&
+			strings.Contains(capture, "N keep queued")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "y")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Upgrade pending") &&
+			strings.Contains(capture, "Press U to restart when idle") &&
+			!strings.Contains(capture, "Upgrade queued")
+	})
+	if pid := readPID(t, runtimeDir); pid != oldPID {
+		t.Fatalf("canceling restart when idle changed supervisor pid, %q -> %q", oldPID, pid)
+	}
+
+	directRun(t, newEnv, "send-keys", "-t", pane, "u")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Restart supervisor when idle?") &&
+			strings.Contains(capture, "Y restart when idle")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "y")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Upgrade queued") &&
+			strings.Contains(capture, "Close agents to finish")
+	})
 
 	runWeft(t, newEnv, bin, "close", agentID)
 	if !waitForBool(8*time.Second, func() bool {

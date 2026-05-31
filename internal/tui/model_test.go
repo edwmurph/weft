@@ -13,6 +13,7 @@ import (
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/ptyx"
 	"github.com/edwmurph/weft/internal/state"
+	weftversion "github.com/edwmurph/weft/internal/version"
 )
 
 func TestEmptyDashboardStartsInAgentsFocus(t *testing.T) {
@@ -254,7 +255,14 @@ func TestClientUpgradeBannerOpensRestartWhenIdleConfirm(t *testing.T) {
 		t.Fatalf("upgrade = %#v", model.upgrade)
 	}
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Upgrade: pending", "reopening alone is not enough", "Press U"} {
+	for _, expected := range []string{
+		"Upgrade: pending",
+		"reopening alone is not enough",
+		"Press U",
+		"client " + weftversion.Version,
+		"supervisor 3.9.0",
+		"Press U to restart when idle",
+	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade banner missing %q:\n%s", expected, got)
 		}
@@ -269,6 +277,50 @@ func TestClientUpgradeBannerOpensRestartWhenIdleConfirm(t *testing.T) {
 	for _, expected := range []string{"Restart supervisor when idle?", "client ", "supervisor 3.9.0", "Y restart when idle"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("restart confirm missing %q:\n%s", expected, got)
+		}
+	}
+}
+
+func TestClientQueuedUpgradeFooterOpensCancelConfirm(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithAgent(rt.Workspace)
+	st.Focus = state.FocusAgents
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:       true,
+		Snapshot: &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Upgrade: &ipc.Upgrade{
+			ClientVersion:         weftversion.Version,
+			SupervisorVersion:     "3.9.0",
+			Compatible:            true,
+			RestartRequired:       true,
+			RestartWhenIdleQueued: true,
+			RunningAgents:         1,
+		},
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Upgrade queued", "client " + weftversion.Version, "supervisor 3.9.0", "Close agents to finish", "press U to cancel"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("queued upgrade footer missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "live Codex terminals stay running") {
+		t.Fatalf("queued upgrade should not render the old Agent Console banner:\n%s", got)
+	}
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmCancelRestartIdle {
+		t.Fatalf("cancel confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	}
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{"Cancel queued supervisor restart?", "Y cancel restart", "N keep queued"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("cancel restart confirm missing %q:\n%s", expected, got)
 		}
 	}
 }

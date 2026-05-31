@@ -435,6 +435,8 @@ func confirmTitle(confirm confirmKind) string {
 		return "Delete agent"
 	case confirmRestartWhenIdle:
 		return "Restart supervisor when idle?"
+	case confirmCancelRestartIdle:
+		return "Cancel queued supervisor restart?"
 	default:
 		return "Delete item"
 	}
@@ -444,7 +446,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 	if confirm == confirmAddLaunchWorkspace {
 		return "Current directory"
 	}
-	if confirm == confirmRestartWhenIdle {
+	if confirm == confirmRestartWhenIdle || confirm == confirmCancelRestartIdle {
 		return "Upgrade"
 	}
 	if confirm == confirmDeleteAgent {
@@ -456,6 +458,9 @@ func confirmTargetLabel(confirm confirmKind) string {
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmRestartWhenIdle {
 		return "Weft waits until no live Codex terminals are running, then restarts the supervisor."
+	}
+	if confirm == confirmCancelRestartIdle {
+		return "Keeps the current supervisor running and removes the queued restart."
 	}
 	if confirm == confirmDeleteAgent {
 		return "Stops the Codex terminal, then removes this agent from Weft."
@@ -469,6 +474,9 @@ func renderConfirmActions(confirm confirmKind) string {
 	}
 	if confirm == confirmRestartWhenIdle {
 		return modalKeyStyle.Render("Y") + " restart when idle  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
+	}
+	if confirm == confirmCancelRestartIdle {
+		return modalKeyStyle.Render("Y") + " cancel restart  " + modalKeyStyle.Render("N") + " keep queued  " + modalKeyStyle.Render("Esc") + " keep queued"
 	}
 	if confirm == confirmDeleteAgent {
 		return modalKeyStyle.Render("Y") + " stop and delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
@@ -493,6 +501,8 @@ func confirmTarget(confirm confirmKind, st state.State, pendingID string, render
 			return renderAgentTitle(*agent)
 		}
 	case confirmRestartWhenIdle:
+		return pendingID
+	case confirmCancelRestartIdle:
 		return pendingID
 	}
 	return "item"

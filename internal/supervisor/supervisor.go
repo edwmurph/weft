@@ -309,6 +309,10 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		response := restartWhenIdle(rt, engine, control, request, cancel)
 		applyClientState(&response, clients, request.Args["client_id"])
 		return withSupervisorFields(response, request, control), nil
+	case "cancel_restart_when_idle":
+		response := cancelRestartWhenIdle(engine, control)
+		applyClientState(&response, clients, request.Args["client_id"])
+		return withSupervisorFields(response, request, control), nil
 	case "shutdown":
 		go cancel()
 		return withSupervisorFields(ipc.Response{OK: true, Message: "Weft supervisor stopped"}, request, control), nil
@@ -384,6 +388,14 @@ func restartWhenIdle(rt config.Runtime, engine *tui.Model, control *supervisorCo
 		return supervisorSnapshotResponse(engine, restartWhenIdleQueuedMessage(blocked))
 	}
 	return triggerIdleRestart(rt, engine, control, restart, cancel)
+}
+
+func cancelRestartWhenIdle(engine *tui.Model, control *supervisorControl) ipc.Response {
+	if control == nil || control.restartWhenIdle == nil {
+		return supervisorSnapshotResponse(engine, "No restart when idle is queued.")
+	}
+	control.restartWhenIdle = nil
+	return supervisorSnapshotResponse(engine, "Restart when idle canceled.")
 }
 
 func maybeRestartWhenIdle(rt config.Runtime, engine *tui.Model, control *supervisorControl, response ipc.Response, cancel context.CancelFunc) ipc.Response {
