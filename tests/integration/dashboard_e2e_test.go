@@ -284,12 +284,33 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	})
 
 	directRun(t, env, "send-keys", "-t", pane, "k")
+	time.Sleep(250 * time.Millisecond)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "shipit") && !agentRowVisible(capture, "Ship Agent")
 	})
+	directRun(t, env, "send-keys", "-t", pane, "r")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Rename group") &&
+			strings.Contains(capture, "shipit")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-u")
+	directRun(t, env, "send-keys", "-l", "-t", pane, "shipit-later")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		return groupByPath(st, "shipit-later") != nil
+	})
+	directRun(t, env, "send-keys", "-t", pane, "d")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Delete group") &&
+			strings.Contains(capture, "shipit-later")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Escape")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return !strings.Contains(capture, "Delete group")
+	})
 	directRun(t, env, "send-keys", "-t", pane, "j")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "shipit") && agentRowVisible(capture, "Ship Agent")
+		return strings.Contains(capture, "shipit-later") && agentRowVisible(capture, "Ship Agent")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "C-c")
 	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {

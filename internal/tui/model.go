@@ -117,6 +117,7 @@ type Model struct {
 	confirm               confirmKind
 	pendingID             string
 	groupCursor           int
+	groupCursorPinned     bool
 	lastNavFocus          state.Focus
 	promptSuggestionOpen  bool
 	promptSuggestionIndex int
@@ -497,6 +498,7 @@ func (m *Model) moveSelection(delta int) {
 				m.state.SelectedGroupID = groups[0].ID
 			}
 			m.groupCursor = 0
+			m.groupCursorPinned = false
 			m.save()
 		}
 		return
@@ -519,6 +521,7 @@ func (m *Model) applyGroupCursor(row groupRow) {
 			m.state.ActiveAgentID = agent.ID
 		}
 	}
+	m.groupCursorPinned = true
 	m.save()
 }
 
@@ -530,6 +533,7 @@ func (m *Model) reorderSelectedAgent(delta int) {
 	if agent == nil {
 		return
 	}
+	agentID := agent.ID
 	next, moved, err := state.ReorderAgent(m.state, agent.ID, delta)
 	if err != nil {
 		m.message = err.Error()
@@ -539,7 +543,7 @@ func (m *Model) reorderSelectedAgent(delta int) {
 		return
 	}
 	m.state = next
-	m.syncGroupCursor()
+	m.syncGroupCursorToAgent(agentID)
 	m.save()
 }
 
@@ -605,7 +609,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 		}
 		m.state = next
 		m.message = "renamed group"
-		m.syncGroupCursor()
+		m.syncGroupCursorToSelectedGroup()
 		m.save()
 	case promptWorkspaceTitle:
 		next, err := state.SetWorkspaceTitle(m.state, m.pendingID, value)
@@ -657,7 +661,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 		}
 		m.state = next
 		m.message = "moved agent"
-		m.syncGroupCursor()
+		m.syncGroupCursorToAgent(agent.ID)
 		m.save()
 	}
 	return nil
@@ -719,7 +723,7 @@ func (m *Model) newAgent(title string) tea.Cmd {
 		return nil
 	}
 	m.state = next
-	m.syncGroupCursor()
+	m.syncGroupCursorToAgent(agent.ID)
 	m.snapNavWidthToTarget()
 	m.save()
 	return tea.Batch(m.startPTYCmd(agent.ID), m.startNavAnimation(), tickLoading())
@@ -765,6 +769,7 @@ func (m *Model) toggleSelectedGroup(groupID string) {
 	for index, row := range m.groupRows() {
 		if row.kind == groupRowGroup && row.groupID == groupID {
 			m.groupCursor = index
+			m.groupCursorPinned = true
 			break
 		}
 	}
@@ -775,12 +780,17 @@ func (m *Model) syncGroupCursor() {
 	rows := m.groupRows()
 	if len(rows) == 0 {
 		m.groupCursor = 0
+		m.groupCursorPinned = false
+		return
+	}
+	if m.groupCursorPinned && m.groupCursorMatchesState(rows) {
 		return
 	}
 	if m.state.ActiveAgentID != "" {
 		for index, row := range rows {
 			if row.kind == groupRowAgent && row.agentID == m.state.ActiveAgentID {
 				m.groupCursor = index
+				m.groupCursorPinned = true
 				return
 			}
 		}
@@ -788,10 +798,65 @@ func (m *Model) syncGroupCursor() {
 	for index, row := range rows {
 		if row.groupID == m.state.SelectedGroupID {
 			m.groupCursor = index
+			m.groupCursorPinned = true
 			return
 		}
 	}
 	m.groupCursor = 0
+	m.groupCursorPinned = true
+}
+
+func (m *Model) syncGroupCursorToAgent(agentID string) {
+	rows := m.groupRows()
+	if len(rows) == 0 {
+		m.groupCursor = 0
+		m.groupCursorPinned = false
+		return
+	}
+	if agentID != "" {
+		for index, row := range rows {
+			if row.kind == groupRowAgent && row.agentID == agentID {
+				m.groupCursor = index
+				m.groupCursorPinned = true
+				return
+			}
+		}
+	}
+	m.syncGroupCursor()
+}
+
+func (m *Model) syncGroupCursorToSelectedGroup() {
+	rows := m.groupRows()
+	if len(rows) == 0 {
+		m.groupCursor = 0
+		m.groupCursorPinned = false
+		return
+	}
+	if m.state.SelectedGroupID != "" {
+		for index, row := range rows {
+			if row.kind == groupRowGroup && row.groupID == m.state.SelectedGroupID {
+				m.groupCursor = index
+				m.groupCursorPinned = true
+				return
+			}
+		}
+	}
+	m.syncGroupCursor()
+}
+
+func (m Model) groupCursorMatchesState(rows []groupRow) bool {
+	if m.groupCursor < 0 || m.groupCursor >= len(rows) {
+		return false
+	}
+	row := rows[m.groupCursor]
+	switch row.kind {
+	case groupRowGroup:
+		return row.groupID != "" && row.groupID == m.state.SelectedGroupID
+	case groupRowAgent:
+		return row.agentID != "" && row.agentID == m.state.ActiveAgentID
+	default:
+		return false
+	}
 }
 
 func (m Model) findGroupByPath(workspaceID string, path string) *state.Group {
@@ -1468,7 +1533,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		if moved {
 			m.state = next
-			m.syncGroupCursor()
+			m.syncGroupCursorToAgent(id)
 			m.save()
 		}
 		return m.ipcResponse("reordered Codex agent"), nil
@@ -1509,7 +1574,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			return ipcError("rename_group_failed", err), nil
 		}
 		m.state = next
-		m.syncGroupCursor()
+		m.syncGroupCursorToSelectedGroup()
 		m.save()
 		return m.ipcResponse("renamed group"), nil
 	case "rename_workspace":
@@ -1559,7 +1624,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			m.state.ActiveAgentID = id
 			m.state.SelectedWorkspaceID = agent.WorkspaceID
 			m.state.SelectedGroupID = agent.GroupID
-			m.syncGroupCursor()
+			m.syncGroupCursorToAgent(id)
 			m.save()
 			return m.ipcResponse("selected Codex agent"), nil
 		}
@@ -1582,7 +1647,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			return ipcError("move_agent_failed", err), nil
 		}
 		m.state = next
-		m.syncGroupCursor()
+		m.syncGroupCursorToAgent(agent.ID)
 		m.save()
 		return m.ipcResponse("moved Codex agent"), nil
 	case "add_workspace":
