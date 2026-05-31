@@ -92,6 +92,27 @@ func TestApplyPTYDataUsesAgentID(t *testing.T) {
 	}
 }
 
+func TestSnapshotMarksAgentsLoadingUntilVisibleContent(t *testing.T) {
+	st := testStateWithAgent(t.TempDir())
+	model := Model{
+		cfg:     config.DefaultConfig(),
+		state:   st,
+		screens: map[string]*TerminalScreen{"a": NewTerminalScreen(80, 24)},
+		visible: map[string]bool{},
+	}
+
+	snapshot := model.Snapshot()
+	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
+		t.Fatalf("loading agent ids = %#v", snapshot.LoadingAgentIDs)
+	}
+
+	model.screens["a"].Write("ready\n")
+	snapshot = model.Snapshot()
+	if len(snapshot.LoadingAgentIDs) != 0 {
+		t.Fatalf("agent with visible content should not be marked loading: %#v", snapshot.LoadingAgentIDs)
+	}
+}
+
 func TestIPCLaunchWorkspaceSelectsExistingWorkspace(t *testing.T) {
 	rt := testRuntime(t)
 	other := t.TempDir()

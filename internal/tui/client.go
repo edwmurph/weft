@@ -43,6 +43,7 @@ type ClientModel struct {
 	confirm                 confirmKind
 	pendingID               string
 	promptSuggestionOpen    bool
+	loadingTickerActive     bool
 	launchWorkspacePrompted bool
 	codexInputQueue         []map[string]string
 	codexInputInFlight      bool
@@ -99,14 +100,16 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applyResponse(typed.response)
 		nextCodexInput := m.nextCodexInputRequest()
+		nextLoadingTick := m.ensureLoadingTick()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
-			return m, tea.Batch(nextCodexInput, m.request("client_detached", nil), tea.Quit)
+			return m, tea.Batch(nextCodexInput, nextLoadingTick, m.request("client_detached", nil), tea.Quit)
 		}
-		return m, nextCodexInput
+		return m, tea.Batch(nextCodexInput, nextLoadingTick)
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
 	case loadingTick:
-		if strings.TrimSpace(m.snapshot.LoadingText) == "" {
+		if !m.hasLoadingAnimation() {
+			m.loadingTickerActive = false
 			return m, nil
 		}
 		m.loading++
@@ -131,11 +134,12 @@ func (m ClientModel) View() string {
 		return m.modalView(m.renderConfirmModal())
 	}
 	loadingText := m.snapshot.LoadingText
+	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
 	if loadingText != "" {
-		loadingText = loadingFrames[m.loading%len(loadingFrames)] + strings.TrimPrefix(loadingText, loadingFrames[0])
-		return renderLoadingWorkspaceWithNavWidth(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, loadingText, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
+		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
+		return renderLoadingWorkspaceWithNavWidthAndAgents(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, loadingText, loadingFrame, loadingAgentSet(m.snapshot.LoadingAgentIDs), m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
 	}
-	return renderWorkspaceWithNavWidth(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, m.snapshot.CodexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
+	return renderWorkspaceWithNavWidthAndAgents(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, m.snapshot.CodexContent, loadingFrame, loadingAgentSet(m.snapshot.LoadingAgentIDs), m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor)
 }
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -352,6 +356,18 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 		m.message = fmt.Sprintf("Weft client %s found running supervisor %s. Restarting the supervisor can stop live Codex terminals. Saved layout and metadata remain.", version.Version, response.SupervisorVersion)
 	}
 	m.maybePromptForLaunchWorkspace()
+}
+
+func (m *ClientModel) ensureLoadingTick() tea.Cmd {
+	if !m.hasLoadingAnimation() || m.loadingTickerActive {
+		return nil
+	}
+	m.loadingTickerActive = true
+	return tickLoading()
+}
+
+func (m ClientModel) hasLoadingAnimation() bool {
+	return strings.TrimSpace(m.snapshot.LoadingText) != "" || len(m.snapshot.LoadingAgentIDs) > 0
 }
 
 func (m *ClientModel) maybePromptForLaunchWorkspace() {

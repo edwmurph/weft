@@ -57,7 +57,20 @@ var (
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	agentReadyStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+	agentRunningStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
+	agentWorkingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	agentLoadingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	agentShippingStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	agentAttentionStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	agentErrorStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 )
+
+type workspaceRenderOptions struct {
+	loadingText   string
+	loadingFrame  string
+	loadingAgents map[string]bool
+}
 
 type framePalette struct {
 	border lipgloss.Style
@@ -131,7 +144,7 @@ func renderWorkspaceWithNavWidth(
 	navWidth int,
 	groupCursor int,
 ) string {
-	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, navWidth, groupCursor, "")
+	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, navWidth, groupCursor, workspaceRenderOptions{})
 }
 
 func renderLoadingWorkspaceWithNavWidth(
@@ -145,7 +158,46 @@ func renderLoadingWorkspaceWithNavWidth(
 	navWidth int,
 	groupCursor int,
 ) string {
-	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, groupCursor, loadingText)
+	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, groupCursor, workspaceRenderOptions{loadingText: loadingText})
+}
+
+func renderWorkspaceWithNavWidthAndAgents(
+	cfg config.Config,
+	st state.State,
+	codexTitle string,
+	codexContent string,
+	loadingFrame string,
+	loadingAgents map[string]bool,
+	width int,
+	height int,
+	message string,
+	navWidth int,
+	groupCursor int,
+) string {
+	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, navWidth, groupCursor, workspaceRenderOptions{
+		loadingFrame:  loadingFrame,
+		loadingAgents: loadingAgents,
+	})
+}
+
+func renderLoadingWorkspaceWithNavWidthAndAgents(
+	cfg config.Config,
+	st state.State,
+	codexTitle string,
+	loadingText string,
+	loadingFrame string,
+	loadingAgents map[string]bool,
+	width int,
+	height int,
+	message string,
+	navWidth int,
+	groupCursor int,
+) string {
+	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, groupCursor, workspaceRenderOptions{
+		loadingText:   loadingText,
+		loadingFrame:  loadingFrame,
+		loadingAgents: loadingAgents,
+	})
 }
 
 func renderWorkspaceView(
@@ -158,7 +210,7 @@ func renderWorkspaceView(
 	message string,
 	navWidth int,
 	groupCursor int,
-	loadingText string,
+	options workspaceRenderOptions,
 ) string {
 	if width <= 0 || height <= 0 {
 		return ""
@@ -171,13 +223,13 @@ func renderWorkspaceView(
 		navWidth = width - codexWidth
 	}
 	if navWidth <= 0 {
-		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, loadingText), "\n")
+		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText), "\n")
 	}
 	if codexWidth <= 0 {
-		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor), "\n")
+		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
 	}
-	nav := renderNavSection(cfg, st, navWidth, height, groupCursor)
-	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, loadingText)
+	nav := renderNavSection(cfg, st, navWidth, height, groupCursor, options)
+	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText)
 	lines := make([]string, 0, height)
 	for index := 0; index < height; index++ {
 		left := lineAt(nav, index, navWidth)
@@ -187,7 +239,7 @@ func renderWorkspaceView(
 	return strings.Join(lines, "\n")
 }
 
-func renderNavSection(cfg config.Config, st state.State, width int, height int, groupCursor int) []string {
+func renderNavSection(cfg config.Config, st state.State, width int, height int, groupCursor int, options workspaceRenderOptions) []string {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
@@ -195,7 +247,7 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, width-minAgentsPaneWidth))
 		groupWidth := width - workspaceWidth
 		workspaces := renderWorkspacesPane(cfg, st, workspaceWidth, height)
-		groups := renderGroupsPane(cfg, st, groupWidth, height, groupCursor)
+		groups := renderGroupsPaneWithOptions(cfg, st, groupWidth, height, groupCursor, options)
 		lines := make([]string, 0, height)
 		for index := 0; index < height; index++ {
 			lines = append(lines, lineAt(workspaces, index, workspaceWidth)+lineAt(groups, index, groupWidth))
@@ -205,7 +257,7 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 	if st.Focus == state.FocusWorkspaces {
 		return renderWorkspacesPane(cfg, st, width, height)
 	}
-	return renderGroupsPane(cfg, st, width, height, groupCursor)
+	return renderGroupsPaneWithOptions(cfg, st, width, height, groupCursor, options)
 }
 
 func renderWorkspacesPane(cfg config.Config, st state.State, width int, height int) []string {
@@ -393,17 +445,15 @@ func workspaceCardCountLabels(counts workspaceCardCounts) []string {
 }
 
 func renderGroupsPane(cfg config.Config, st state.State, width int, height int, groupCursor int) []string {
+	return renderGroupsPaneWithOptions(cfg, st, width, height, groupCursor, workspaceRenderOptions{})
+}
+
+func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, height int, groupCursor int, options workspaceRenderOptions) []string {
 	content := []string{}
 	rowIndex := 0
+	rowWidth := max(0, width-2-(navHorizontalPadding*2))
 	for _, agent := range state.UngroupedAgentsForWorkspace(st, st.SelectedWorkspaceID) {
-		title := renderAgentTitleForState(cfg, st, agent)
-		agentRow := "• " + title
-		agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
-		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
-			agentRow = activeAgentStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
-		} else if agent.ID == st.ActiveAgentID {
-			agentRow = activePaneStyle.Render(agentRow)
-		}
+		agentRow := renderAgentRow(cfg, st, agent, rowWidth, false, rowIndex == groupCursor && st.Focus == state.FocusAgents, options)
 		content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
 		rowIndex++
 	}
@@ -415,9 +465,9 @@ func renderGroupsPane(cfg config.Config, st state.State, width int, height int, 
 		if state.IsGroupCollapsed(st, group.ID) {
 			indicator = "▸ "
 		}
-		groupRow := rowLine(indicator+group.Path, fmtInt(state.AgentCountForGroup(st, group.ID)), max(0, width-2-(navHorizontalPadding*2)))
+		groupRow := rowLine(indicator+group.Path, fmtInt(state.AgentCountForGroup(st, group.ID)), rowWidth)
 		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
-			groupRow = activeAgentStyle.Render(padVisual(groupRow, max(0, width-2-(navHorizontalPadding*2))))
+			groupRow = activeAgentStyle.Render(padVisual(groupRow, rowWidth))
 		} else {
 			groupRow = groupHeaderStyle.Render(groupRow)
 		}
@@ -427,14 +477,7 @@ func renderGroupsPane(cfg config.Config, st state.State, width int, height int, 
 			continue
 		}
 		for _, agent := range state.AgentsForGroup(st, group.ID) {
-			title := renderAgentTitleForState(cfg, st, agent)
-			agentRow := "  • " + title
-			agentRow = clip(agentRow, max(0, width-2-(navHorizontalPadding*2)))
-			if rowIndex == groupCursor && st.Focus == state.FocusAgents {
-				agentRow = activeAgentStyle.Render(padVisual(agentRow, max(0, width-2-(navHorizontalPadding*2))))
-			} else if agent.ID == st.ActiveAgentID {
-				agentRow = activePaneStyle.Render(agentRow)
-			}
+			agentRow := renderAgentRow(cfg, st, agent, rowWidth, true, rowIndex == groupCursor && st.Focus == state.FocusAgents, options)
 			content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
 			rowIndex++
 		}
@@ -447,6 +490,70 @@ func renderGroupsPane(cfg config.Config, st state.State, width int, height int, 
 		}
 	}
 	return renderPaneFrame("Agents", "", width, height, st.Focus == state.FocusAgents, content)
+}
+
+func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width int, nested bool, selected bool, options workspaceRenderOptions) string {
+	title := renderAgentTitleForState(cfg, st, agent)
+	marker := "•"
+	if agentIsLoadingForRender(agent, options.loadingAgents) {
+		marker = loadingFrameForRender(options.loadingFrame)
+	}
+	prefix := marker + " "
+	if nested {
+		prefix = "  " + prefix
+	}
+	row := clip(prefix+title, width)
+	if selected {
+		return activeAgentStyle.Render(padVisual(row, width))
+	}
+	if agent.ID == st.ActiveAgentID {
+		return activePaneStyle.Render(row)
+	}
+	return agentRowStyle(agent, options.loadingAgents).Render(row)
+}
+
+func agentRowStyle(agent state.Agent, loadingAgents map[string]bool) lipgloss.Style {
+	if agentIsLoadingForRender(agent, loadingAgents) {
+		return agentLoadingStyle
+	}
+	switch titles.RenderStatus(agent) {
+	case string(state.StatusReady):
+		return agentReadyStyle
+	case string(state.StatusRunning):
+		return agentRunningStyle
+	case "working":
+		return agentWorkingStyle
+	case string(state.StatusShipping):
+		return agentShippingStyle
+	case string(state.StatusError):
+		return agentErrorStyle
+	case string(state.StatusStopped), string(state.StatusSitting):
+		return mutedStyle
+	default:
+		return agentAttentionStyle
+	}
+}
+
+func agentIsLoadingForRender(agent state.Agent, loadingAgents map[string]bool) bool {
+	return agent.Status == state.StatusStarting || loadingAgents[agent.ID]
+}
+
+func loadingFrameForRender(frame string) string {
+	if strings.TrimSpace(frame) != "" {
+		return frame
+	}
+	return loadingFrames[0]
+}
+
+func loadingAgentSet(ids []string) map[string]bool {
+	if len(ids) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
 }
 
 func renderCenteredPaneHelp(width int, height int, lines ...string) []string {

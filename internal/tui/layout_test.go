@@ -265,6 +265,51 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	}
 }
 
+func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	cfg := config.DefaultConfig()
+	cfg.TitleTemplate = "{title}"
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Agents: []state.Agent{
+			{ID: "loading", WorkspaceID: "w", Title: "Booting", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "working", WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "failed", WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+
+	got := strings.Join(renderGroupsPaneWithOptions(cfg, st, 42, 12, 99, workspaceRenderOptions{
+		loadingFrame:  "⠼",
+		loadingAgents: map[string]bool{"loading": true},
+	}), "\n")
+	stripped := ansi.Strip(got)
+	if !strings.Contains(stripped, "⠼ Booting") || strings.Contains(stripped, "• Booting") {
+		t.Fatalf("loading row should replace the static marker with the spinner:\n%s", stripped)
+	}
+	for _, expected := range []string{
+		agentLoadingStyle.Render("⠼ Booting"),
+		agentWorkingStyle.Render("• Review"),
+		agentErrorStyle.Render("• Broken"),
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("agents pane missing styled row %q:\n%s", expected, got)
+		}
+	}
+	for _, forbidden := range []string{"running", "working", "error"} {
+		if strings.Contains(strings.ToLower(stripped), forbidden) {
+			t.Fatalf("agent rows should not render fixed status text %q:\n%s", forbidden, stripped)
+		}
+	}
+}
+
 func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Repair(state.Empty(), "/tmp/project")

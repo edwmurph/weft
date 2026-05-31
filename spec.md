@@ -225,6 +225,8 @@ Each agent row renders:
 
 Agent rows must not render fixed status tags. Status can appear only if the agent title template includes a status variable.
 
+Agent rows may use subtle row color to make derived state easier to scan. Rows for agents whose Codex PTY is still starting or has not produced visible content replace the static bullet marker with the shared loading spinner frame. This loading animation is visual only and must not add status text.
+
 Group rows should be visually distinct from agent rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Agent rows should use a lighter marker and indentation when nested under a group.
 
 ## Agent Preview And Console

@@ -406,6 +406,19 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		if !loadingLineIsCentered(colorOnlyCapture) {
 			t.Fatalf("dashboard should center startup loading state:\n%s", colorOnlyCapture)
 		}
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		loadingNavCapture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Agents") &&
+				strings.Contains(capture, "Fake Codex Ready") &&
+				agentLineHasLoadingFrame(capture, "Fake Codex Ready")
+		})
+		if strings.Contains(loadingNavCapture, "• Fake Codex Ready") {
+			t.Fatalf("loading agent row should not keep the static bullet marker:\n%s", loadingNavCapture)
+		}
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, collapsedCodexToolbar) && !strings.Contains(capture, "Agents")
+		})
 		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent color-only startup covered", time.Since(started).Round(time.Millisecond))
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, ">_ OpenAI Codex") &&
@@ -1342,6 +1355,20 @@ func loadingLineIsCentered(capture string) bool {
 		index := strings.Index(line, "Starting Codex")
 		if index >= 0 {
 			return index > 40
+		}
+	}
+	return false
+}
+
+func agentLineHasLoadingFrame(capture string, title string) bool {
+	for _, line := range strings.Split(capture, "\n") {
+		if !strings.Contains(line, title) {
+			continue
+		}
+		for _, frame := range []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"} {
+			if strings.Contains(line, frame) {
+				return true
+			}
 		}
 	}
 	return false

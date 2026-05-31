@@ -191,13 +191,14 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		title = m.renderAgentTitle(*active)
 	}
 	return ipc.Snapshot{
-		State:        m.state,
-		CodexTitle:   title,
-		CodexContent: content,
-		LoadingText:  loadingText,
-		Message:      m.message,
-		NavWidth:     m.targetNavWidth(),
-		GroupCursor:  m.groupCursor,
+		State:           m.state,
+		CodexTitle:      title,
+		CodexContent:    content,
+		LoadingText:     loadingText,
+		LoadingAgentIDs: m.loadingAgentIDs(),
+		Message:         m.message,
+		NavWidth:        m.targetNavWidth(),
+		GroupCursor:     m.groupCursor,
 	}
 }
 
@@ -229,7 +230,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case navAnimationTick:
 		return m, m.stepNavAnimation()
 	case loadingTick:
-		if !m.codexLoading() {
+		if !m.anyAgentLoading() {
 			return m, nil
 		}
 		m.loading++
@@ -274,9 +275,9 @@ func (m Model) View() string {
 		title = m.renderAgentTitle(*active)
 	}
 	if loadingText != "" {
-		return renderLoadingWorkspaceWithNavWidth(m.cfg, m.state, title, loadingText, m.width, m.height, m.message, m.navWidth, m.groupCursor)
+		return renderLoadingWorkspaceWithNavWidthAndAgents(m.cfg, m.state, title, loadingText, m.loadingFrame(), m.loadingAgentSet(), m.width, m.height, m.message, m.navWidth, m.groupCursor)
 	}
-	return renderWorkspaceWithNavWidth(m.cfg, m.state, title, content, m.width, m.height, m.message, m.navWidth, m.groupCursor)
+	return renderWorkspaceWithNavWidthAndAgents(m.cfg, m.state, title, content, m.loadingFrame(), m.loadingAgentSet(), m.width, m.height, m.message, m.navWidth, m.groupCursor)
 }
 
 func (m Model) modalView(content string) string {
@@ -1086,16 +1087,61 @@ func (m *Model) activeOutput() string {
 
 func (m Model) codexLoading() bool {
 	active := state.ActiveAgent(m.state)
-	if active == nil || active.Status == state.StatusError || active.Status == state.StatusStopped {
+	if active == nil {
 		return false
 	}
-	screen := m.screens[active.ID]
-	return screen == nil || (!screen.HasVisibleContent() && !m.visible[active.ID])
+	return m.agentLoading(active.ID)
+}
+
+func (m Model) anyAgentLoading() bool {
+	for _, agent := range m.state.Agents {
+		if m.agentLoading(agent.ID) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) loadingAgentIDs() []string {
+	ids := make([]string, 0)
+	for _, agent := range m.state.Agents {
+		if m.agentLoading(agent.ID) {
+			ids = append(ids, agent.ID)
+		}
+	}
+	return ids
+}
+
+func (m Model) loadingAgentSet() map[string]bool {
+	ids := m.loadingAgentIDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+func (m Model) agentLoading(agentID string) bool {
+	agent := state.AgentByID(m.state, agentID)
+	if agent == nil || agent.Status == state.StatusError || agent.Status == state.StatusStopped {
+		return false
+	}
+	if agent.Status == state.StatusStarting {
+		return true
+	}
+	screen := m.screens[agentID]
+	return screen == nil || (!screen.HasVisibleContent() && !m.visible[agentID])
+}
+
+func (m Model) loadingFrame() string {
+	return loadingFrames[m.loading%len(loadingFrames)]
 }
 
 func (m Model) loadingLabel() string {
-	frame := loadingFrames[m.loading%len(loadingFrames)]
-	return frame + " Starting Codex"
+	return m.loadingFrame() + " Starting Codex"
 }
 
 func (m *Model) save() {
