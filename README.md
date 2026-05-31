@@ -293,3 +293,9 @@ The repository ignores `.weft/` so each worktree can keep an isolated local
 runtime for manual testing. Use `scripts/create-worktree.sh <slug>` to create
 or repair a detached worktree with the local `.env` and config links needed for
 manual runtime checks.
+
+When all auxiliary worktrees are disposable, run
+`scripts/cleanup-worktrees.sh`. It targets only Git-registered worktrees under
+this repo's `.worktrees/`, stops each worktree's `WEFT_ROOT` supervisor when one
+is present, removes the worktree, and prunes stale Git worktree metadata. Pass
+`--dry-run` to preview the plan or `--yes` to skip the confirmation prompt.

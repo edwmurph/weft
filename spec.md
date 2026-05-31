@@ -172,6 +172,22 @@ Runtime backups live under `backups/<id>/` by default. A backup includes
 files when present. Backups must not include sockets, locks, pid files, or live
 PTY/process state.
 
+## Development Worktree Hygiene
+
+Repository-local development worktrees live under the primary checkout's
+`.worktrees/` directory and are created with `scripts/create-worktree.sh
+<slug>`. They should use `WEFT_ROOT=<worktree>` for manual Weft launches so each
+worktree keeps its own `.weft/` runtime, supervisor socket, pid file, state, and
+logs.
+
+`scripts/cleanup-worktrees.sh` is the destructive cleanup path for disposable
+auxiliary worktrees. It targets only Git-registered worktrees under
+`.worktrees/`, preserves the primary checkout and registered external
+worktrees, stops each target's `WEFT_ROOT` supervisor when one is present,
+removes the worktree, and prunes stale Git worktree metadata. The script shows a
+plan and asks for confirmation by default; `--dry-run` previews the same plan
+without changing anything, and `--yes` confirms the cleanup for unattended use.
+
 ## Primary Layout
 
 The app has three logical panes.
