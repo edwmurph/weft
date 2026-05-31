@@ -326,7 +326,7 @@ Left/Right Move focus between workspaces and agents panes
 j/k     Move selection within the focused navigation pane
 w       Add workspace
 g       Create group in selected workspace
-n       Create agent in the current group when the cursor is on a group or grouped agent; otherwise create a top-level agent
+n       Create a top-level agent with no group
 m       Move selected agent to another group in the same workspace, or clear its group
 r       Rename selected workspace title, group, or agent title
 d       Delete/remove selected item
@@ -569,8 +569,7 @@ Create agent:
 
 - Requires an existing selected workspace.
 - Creates an agent in the selected workspace.
-- If the cursor is on a group or grouped agent, create the agent in that group.
-- Otherwise create a top-level agent with no group.
+- Always creates a top-level agent with no group, even when the cursor is on a group or grouped agent.
 - Starts a Codex PTY with the agent workspace as the process working directory.
 - Copies the configured global title template into the agent title.
 

@@ -998,10 +998,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		st := waitState(t, env, bin, func(st state.State) bool {
-			group := groupByPath(st, "renamed")
 			return len(st.Agents) == 1 &&
-				group != nil &&
-				st.Agents[0].GroupID == group.ID &&
+				st.Agents[0].GroupID == "" &&
 				st.Agents[0].Status == state.StatusRunning &&
 				st.Focus == state.FocusCodex
 		})
@@ -1010,6 +1008,17 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
 			return st.Focus == state.FocusAgents && st.NavOpen
+		})
+		directRun(t, env, "send-keys", "-t", pane, "m")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Move agent")
+		})
+		directRun(t, env, "send-keys", "-l", "-t", pane, "renamed")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			group := groupByPath(st, "renamed")
+			agent := findAgent(st, firstAgentID)
+			return group != nil && agent != nil && agent.GroupID == group.ID
 		})
 		directRun(t, env, "send-keys", "-t", pane, "k")
 		time.Sleep(250 * time.Millisecond)

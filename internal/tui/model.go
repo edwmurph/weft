@@ -679,8 +679,7 @@ func (m *Model) newAgent(title string) tea.Cmd {
 		m.message = "add a workspace first"
 		return nil
 	}
-	groupID := m.groupIDForNewAgent()
-	next, agent, err := state.AddAgent(m.state, shortID(), workspace.ID, groupID, title, state.NowISO())
+	next, agent, err := state.AddAgent(m.state, shortID(), workspace.ID, "", title, state.NowISO())
 	if err != nil {
 		m.message = err.Error()
 		return nil
@@ -722,18 +721,6 @@ func (m Model) currentGroupRow() groupRow {
 
 func (m Model) groupRows() []groupRow {
 	return groupRowsForState(m.state)
-}
-
-func (m Model) groupIDForNewAgent() string {
-	row := m.currentGroupRow()
-	switch row.kind {
-	case groupRowGroup:
-		return row.groupID
-	case groupRowAgent:
-		return row.groupID
-	default:
-		return ""
-	}
 }
 
 func (m *Model) toggleSelectedGroup(groupID string) {

@@ -1252,7 +1252,7 @@ func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 	}
 }
 
-func TestNewAgentUsesCurrentGroupOnlyWhenCursorIsGrouped(t *testing.T) {
+func TestNewAgentAlwaysCreatesTopLevelWhenGroupSelected(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
@@ -1265,26 +1265,25 @@ func TestNewAgentUsesCurrentGroupOnlyWhenCursorIsGrouped(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
-	if got := model.state.Agents[len(model.state.Agents)-1].GroupID; got != "f" {
-		t.Fatalf("group row should create grouped agent, got group %q", got)
+	if got := model.state.Agents[len(model.state.Agents)-1].GroupID; got != "" {
+		t.Fatalf("group row should create top-level agent, got group %q", got)
 	}
+}
 
-	ungrouped := model.state.Agents[len(model.state.Agents)-1]
-	ungrouped.ID = "ungrouped"
-	ungrouped.GroupID = ""
-	model.state.Agents = append([]state.Agent{ungrouped}, model.state.Agents...)
-	model.state.ActiveAgentID = "ungrouped"
+func TestNewAgentAlwaysCreatesTopLevelWhenAgentSelected(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
 	model.state.NavOpen = true
 	model.state.Focus = state.FocusAgents
 	model.syncGroupCursor()
 
-	cmd = model.newAgent("Top-level")
+	cmd := model.newAgent("Top-level")
 	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
 	if got := model.state.Agents[len(model.state.Agents)-1].GroupID; got != "" {
-		t.Fatalf("top-level agent row should create ungrouped agent, got group %q", got)
+		t.Fatalf("grouped agent row should create top-level agent, got group %q", got)
 	}
 }
 
