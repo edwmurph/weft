@@ -56,7 +56,6 @@ func RunClient(rt config.Runtime, cfg config.Config) error {
 	options := []tea.ProgramOption{
 		tea.WithInput(os.Stdin),
 		tea.WithOutput(os.Stdout),
-		tea.WithMouseCellMotion(),
 	}
 	if os.Getenv("WEFT_HEADLESS") == "1" {
 		options = append(options, tea.WithoutRenderer())

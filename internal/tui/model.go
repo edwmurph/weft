@@ -1175,7 +1175,7 @@ func (m Model) ptyWidth() int {
 }
 
 func (m Model) ptyHeight() int {
-	return max(5, m.height-1)
+	return max(5, m.height-2)
 }
 
 func (m Model) effectiveNavWidth() int {

@@ -125,6 +125,7 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 	waitForEscapedCapture(t, env, pane, func(capture string) bool {
 		return strings.Contains(capture, keyboardProtocolSetup)
 	})
+	assertClientDoesNotEnableMouseTracking(t, capturePaneEscaped(t, env, pane))
 	directRun(t, env, "send-keys", "-l", "-t", pane, "probe")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	capture := waitForOutput(t, clientOutput, func(capture string) bool {
@@ -443,6 +444,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, "48;2;40;40;49") &&
 				strings.Contains(capture, "Summarize recent commits")
 		})
+		assertClientDoesNotEnableMouseTracking(t, capturePaneEscaped(t, env, pane))
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 		assertCodexBoxNotDrifted(t, clientOutput())
 	})
@@ -1347,6 +1349,15 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	}
 	if !empty && strings.Contains(capture, "No Codex agent open") {
 		t.Fatalf("dashboard kept empty state after agent was created:\n%s", capture)
+	}
+}
+
+func assertClientDoesNotEnableMouseTracking(t *testing.T, capture string) {
+	t.Helper()
+	for _, forbidden := range []string{"\x1b[?1002h", "\x1b[?1003h", "\x1b[?1006h"} {
+		if strings.Contains(capture, forbidden) {
+			t.Fatalf("client should not enable mouse tracking because it blocks terminal drag selection; found %q in raw capture", forbidden)
+		}
 	}
 }
 

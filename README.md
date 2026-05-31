@@ -208,9 +208,10 @@ quit = "C-c"
 In CODEX focus, Weft keeps the `Agent Console` framed while forwarding Codex
 input through the active PTY. The attached client enables enhanced terminal
 keyboard reporting so multiline shortcuts such as `Shift+Enter` are forwarded
-to Codex. Press the drawer key, `C-b` by default, to return to the dashboard.
-`C-c` stays with Codex while Codex has focus. To close Weft, return to the
-dashboard and press `C-c`, or run `weft close` from another shell.
+to Codex. It leaves terminal mouse tracking off, so normal drag selection still
+works over chat output. Press the drawer key, `C-b` by default, to return to
+the dashboard. `C-c` stays with Codex while Codex has focus. To close Weft,
+return to the dashboard and press `C-c`, or run `weft close` from another shell.
 
 ## Config And State
 

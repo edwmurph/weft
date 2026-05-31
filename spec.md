@@ -294,6 +294,8 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
   supported keyboard escape sequences into the active Codex PTY.
 - Codex-owned terminal behavior, including multiline shortcuts such as
   Shift+Enter in supporting terminals, is preserved inside the framed pane.
+- Weft does not enable terminal mouse tracking, so native terminal drag
+  selection remains available over `Agent Console` and `Agent Preview` output.
 - C-c is not intercepted by Weft while Codex has focus.
 - User exits back to dashboard with the configured drawer/navigation key.
 
@@ -606,6 +608,10 @@ Rules:
 - Codex receives input only in Codex Focus State.
 - The active Codex PTY width matches the visible Codex content width inside the
   frame and left padding, so terminal wrapping aligns with what the user sees.
+- The active Codex PTY height matches the visible content rows inside the frame.
+- Cached PTY screen resizes preserve bottom rows first, and terminal
+  top/bottom scrolling regions are honored so Codex chat footers and composers
+  do not disappear behind the frame.
 - Closing the TUI client does not stop PTYs.
 - Restarting the supervisor stops PTYs unless a future implementation supports explicit PTY handoff.
 - The active TUI client sends terminal size changes to the supervisor, and the supervisor resizes the active Codex PTY.

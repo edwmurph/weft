@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -56,6 +57,56 @@ func TestTerminalScreenWrapsLongPrintableLines(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "uvwxy\nz") {
 		t.Fatalf("screen did not keep final wrapped line:\n%q", rendered)
+	}
+}
+
+func TestTerminalScreenResizePreservesBottomRows(t *testing.T) {
+	screen := NewTerminalScreen(12, 6)
+	for row := 1; row <= 6; row++ {
+		screen.Write(fmt.Sprintf("\x1b[%d;1Hline%d", row, row))
+	}
+
+	screen.Resize(12, 3)
+	rendered := screen.String()
+
+	for _, expected := range []string{"line4", "line5", "line6"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("resize should preserve bottom row %q:\n%q", expected, rendered)
+		}
+	}
+	for _, forbidden := range []string{"line1", "line2", "line3"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("resize should drop top row %q before bottom rows:\n%q", forbidden, rendered)
+		}
+	}
+}
+
+func TestTerminalScreenScrollRegionKeepsFooterPinned(t *testing.T) {
+	screen := NewTerminalScreen(20, 6)
+
+	screen.Write("\x1b[6;1Hfooter")
+	screen.Write("\x1b[2;5r\x1b[5;1Hline1\r\nline2\r\nline3")
+	lines := strings.Split(screen.String(), "\n")
+
+	if !strings.Contains(lines[5], "footer") {
+		t.Fatalf("scrolling inside region should not consume footer row:\n%q", screen.String())
+	}
+	if !strings.Contains(lines[4], "line3") {
+		t.Fatalf("scrolling region should keep the newest region content at the bottom:\n%q", screen.String())
+	}
+}
+
+func TestTerminalScreenWidthResizePreservesScrollRegion(t *testing.T) {
+	screen := NewTerminalScreen(20, 6)
+
+	screen.Write("\x1b[6;1Hfooter")
+	screen.Write("\x1b[2;5r")
+	screen.Resize(24, 6)
+	screen.Write("\x1b[5;1Hline1\r\nline2")
+	lines := strings.Split(screen.String(), "\n")
+
+	if !strings.Contains(lines[5], "footer") {
+		t.Fatalf("width resize should keep scroll region from consuming footer row:\n%q", screen.String())
 	}
 }
 

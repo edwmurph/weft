@@ -24,6 +24,9 @@ type TerminalScreen struct {
 	cursorVisible bool
 	savedRow      int
 	savedCol      int
+	scrollTop     int
+	scrollBottom  int
+	originMode    bool
 	style         cellbuf.Style
 	defaults      cellbuf.Style
 	parser        *ansi.Parser
@@ -31,6 +34,7 @@ type TerminalScreen struct {
 
 func NewTerminalScreen(cols int, rows int) *TerminalScreen {
 	screen := &TerminalScreen{cols: max(1, cols), rows: max(1, rows), cursorVisible: true}
+	screen.resetScrollRegion()
 	screen.clearAll()
 	parser := ansi.NewParser()
 	parser.SetHandler(ansi.Handler{
@@ -55,14 +59,25 @@ func (s *TerminalScreen) Resize(cols int, rows int) {
 		return
 	}
 	old := s.cells
+	oldRows := s.rows
+	rowsChanged := rows != s.rows
 	s.cols = cols
 	s.rows = rows
 	s.cells = make([][]terminalCell, rows)
+	sourceStart := max(0, oldRows-rows)
+	destStart := max(0, rows-oldRows)
 	for row := range s.cells {
 		s.cells[row] = blankCells(cols, cellbuf.Style{})
-		if row < len(old) {
-			copy(s.cells[row], old[row])
+		sourceRow := sourceStart + row - destStart
+		if sourceRow >= 0 && sourceRow < len(old) {
+			copy(s.cells[row], old[sourceRow])
 		}
+	}
+	if rowsChanged {
+		rowDelta := destStart - sourceStart
+		s.row += rowDelta
+		s.savedRow += rowDelta
+		s.resetScrollRegion()
 	}
 	s.clampCursor()
 }
@@ -170,26 +185,30 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 
 	switch final {
 	case 'A':
-		s.row = max(0, s.row-param(0, 1))
+		minRow, _ := s.verticalBounds()
+		s.row = max(minRow, s.row-param(0, 1))
 	case 'B':
-		s.row = min(s.rows-1, s.row+param(0, 1))
+		_, maxRow := s.verticalBounds()
+		s.row = min(maxRow, s.row+param(0, 1))
 	case 'C':
 		s.col = min(s.cols-1, s.col+param(0, 1))
 	case 'D':
 		s.col = max(0, s.col-param(0, 1))
 	case 'E':
-		s.row = min(s.rows-1, s.row+param(0, 1))
+		_, maxRow := s.verticalBounds()
+		s.row = min(maxRow, s.row+param(0, 1))
 		s.col = 0
 	case 'F':
-		s.row = max(0, s.row-param(0, 1))
+		minRow, _ := s.verticalBounds()
+		s.row = max(minRow, s.row-param(0, 1))
 		s.col = 0
 	case 'G':
 		s.col = min(max(0, param(0, 1)-1), s.cols-1)
 	case 'H', 'f':
-		s.row = min(max(0, param(0, 1)-1), s.rows-1)
+		s.row = s.cursorRow(param(0, 1))
 		s.col = min(max(0, param(1, 1)-1), s.cols-1)
 	case 'd':
-		s.row = min(max(0, param(0, 1)-1), s.rows-1)
+		s.row = s.cursorRow(param(0, 1))
 	case 'J':
 		s.eraseDisplay(param(0, 0))
 	case 'K':
@@ -206,6 +225,10 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 		s.deleteChars(param(0, 1))
 	case '@':
 		s.insertChars(param(0, 1))
+	case 'r':
+		if prefix == 0 {
+			s.setScrollRegion(param(0, 1), param(1, s.rows))
+		}
 	case 's':
 		if prefix == 0 {
 			s.savedRow, s.savedCol = s.row, s.col
@@ -217,10 +240,15 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 	case 'h', 'l':
 		if prefix == '?' {
 			if paramsContain(params, 47, 1047, 1049) {
+				s.resetScrollRegion()
 				s.clearAll()
 			}
 			if paramsContain(params, 25) {
 				s.cursorVisible = final == 'h'
+			}
+			if paramsContain(params, 6) {
+				s.originMode = final == 'h'
+				s.cursorHome()
 			}
 		}
 	case 'm':
@@ -234,6 +262,9 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 func (s *TerminalScreen) handleESC(cmd ansi.Cmd) {
 	switch cmd.Final() {
 	case 'c':
+		s.resetScrollRegion()
+		s.originMode = false
+		s.cursorVisible = true
 		s.clearAll()
 	case '7':
 		s.savedRow, s.savedCol = s.row, s.col
@@ -326,42 +357,69 @@ func (s *TerminalScreen) clearRow(row int) {
 }
 
 func (s *TerminalScreen) newline() {
-	s.row++
-	if s.row >= s.rows {
-		s.scrollUp(1)
-		s.row = s.rows - 1
+	if s.row == s.scrollBottom {
+		s.scrollUpRegion(s.scrollTop, s.scrollBottom, 1)
+		return
 	}
+	if s.row < s.rows-1 {
+		s.row++
+		return
+	}
+	s.scrollUpRegion(0, s.rows-1, 1)
 }
 
 func (s *TerminalScreen) reverseIndex() {
-	if s.row == 0 {
-		s.scrollDown(1)
+	if s.row == s.scrollTop {
+		s.scrollDownRegion(s.scrollTop, s.scrollBottom, 1)
 		return
 	}
-	s.row--
+	if s.row > 0 {
+		s.row--
+		return
+	}
+	s.scrollDownRegion(0, s.rows-1, 1)
 }
 
 func (s *TerminalScreen) scrollUp(count int) {
-	count = min(max(1, count), s.rows)
-	copy(s.cells, s.cells[count:])
-	for row := s.rows - count; row < s.rows; row++ {
+	s.scrollUpRegion(s.scrollTop, s.scrollBottom, count)
+}
+
+func (s *TerminalScreen) scrollUpRegion(top int, bottom int, count int) {
+	if top < 0 || bottom >= s.rows || top > bottom {
+		return
+	}
+	height := bottom - top + 1
+	count = min(max(1, count), height)
+	copy(s.cells[top:bottom+1], s.cells[top+count:bottom+1])
+	for row := bottom - count + 1; row <= bottom; row++ {
 		s.cells[row] = blankCells(s.cols, s.style)
 	}
 }
 
 func (s *TerminalScreen) scrollDown(count int) {
-	count = min(max(1, count), s.rows)
-	for row := s.rows - 1; row >= count; row-- {
+	s.scrollDownRegion(s.scrollTop, s.scrollBottom, count)
+}
+
+func (s *TerminalScreen) scrollDownRegion(top int, bottom int, count int) {
+	if top < 0 || bottom >= s.rows || top > bottom {
+		return
+	}
+	height := bottom - top + 1
+	count = min(max(1, count), height)
+	for row := bottom; row >= top+count; row-- {
 		s.cells[row] = s.cells[row-count]
 	}
-	for row := 0; row < count; row++ {
+	for row := top; row < top+count; row++ {
 		s.cells[row] = blankCells(s.cols, s.style)
 	}
 }
 
 func (s *TerminalScreen) insertLines(count int) {
-	count = min(max(1, count), s.rows-s.row)
-	for row := s.rows - 1; row >= s.row+count; row-- {
+	if s.row < s.scrollTop || s.row > s.scrollBottom {
+		return
+	}
+	count = min(max(1, count), s.scrollBottom-s.row+1)
+	for row := s.scrollBottom; row >= s.row+count; row-- {
 		s.cells[row] = s.cells[row-count]
 	}
 	for row := s.row; row < s.row+count; row++ {
@@ -370,11 +428,14 @@ func (s *TerminalScreen) insertLines(count int) {
 }
 
 func (s *TerminalScreen) deleteLines(count int) {
-	count = min(max(1, count), s.rows-s.row)
-	for row := s.row; row < s.rows-count; row++ {
+	if s.row < s.scrollTop || s.row > s.scrollBottom {
+		return
+	}
+	count = min(max(1, count), s.scrollBottom-s.row+1)
+	for row := s.row; row <= s.scrollBottom-count; row++ {
 		s.cells[row] = s.cells[row+count]
 	}
-	for row := s.rows - count; row < s.rows; row++ {
+	for row := s.scrollBottom - count + 1; row <= s.scrollBottom; row++ {
 		s.cells[row] = blankCells(s.cols, s.style)
 	}
 }
@@ -402,10 +463,51 @@ func (s *TerminalScreen) deleteChars(count int) {
 }
 
 func (s *TerminalScreen) clampCursor() {
+	s.scrollTop = min(max(0, s.scrollTop), s.rows-1)
+	s.scrollBottom = min(max(s.scrollTop, s.scrollBottom), s.rows-1)
 	s.row = min(max(0, s.row), s.rows-1)
 	s.col = min(max(0, s.col), s.cols-1)
 	s.savedRow = min(max(0, s.savedRow), s.rows-1)
 	s.savedCol = min(max(0, s.savedCol), s.cols-1)
+}
+
+func (s *TerminalScreen) resetScrollRegion() {
+	s.scrollTop = 0
+	s.scrollBottom = max(0, s.rows-1)
+}
+
+func (s *TerminalScreen) setScrollRegion(top int, bottom int) {
+	top = min(max(1, top), s.rows) - 1
+	bottom = min(max(1, bottom), s.rows) - 1
+	if top >= bottom {
+		return
+	}
+	s.scrollTop = top
+	s.scrollBottom = bottom
+	s.cursorHome()
+}
+
+func (s *TerminalScreen) cursorHome() {
+	s.row = 0
+	if s.originMode {
+		s.row = s.scrollTop
+	}
+	s.col = 0
+}
+
+func (s *TerminalScreen) cursorRow(line int) int {
+	line = max(1, line) - 1
+	if s.originMode {
+		return min(max(s.scrollTop, s.scrollTop+line), s.scrollBottom)
+	}
+	return min(max(0, line), s.rows-1)
+}
+
+func (s *TerminalScreen) verticalBounds() (int, int) {
+	if s.originMode {
+		return s.scrollTop, s.scrollBottom
+	}
+	return 0, s.rows - 1
 }
 
 func (s *TerminalScreen) blankCell() terminalCell {

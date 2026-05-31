@@ -279,6 +279,21 @@ func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
 	}
 }
 
+func TestPTYHeightMatchesVisibleCodexContentHeight(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.height = 32
+
+	if got, want := model.ptyHeight(), 30; got != want {
+		t.Fatalf("pty height = %d, want visible content height %d", got, want)
+	}
+
+	model.height = 4
+	if got, want := model.ptyHeight(), 5; got != want {
+		t.Fatalf("minimum pty height = %d, want %d", got, want)
+	}
+}
+
 func TestIPCCodexFocusResizesScreenToVisibleConsoleWidth(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
