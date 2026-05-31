@@ -135,6 +135,77 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 	}
 }
 
+func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	staleWorkspace := filepath.Join(tmp, "old-worktree")
+	if err := os.Mkdir(staleWorkspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "workspace", "add", workspace)
+	runWeft(t, env, bin, "workspace", "add", staleWorkspace)
+	if err := os.Remove(staleWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Workspaces) == 2 && state.WorkspaceByPath(st, staleWorkspace) != nil
+	})
+	stale := state.WorkspaceByPath(st, staleWorkspace)
+	if stale == nil {
+		t.Fatalf("stale workspace missing before client attach: %#v", st.Workspaces)
+	}
+
+	pane := "stale-workspace-client"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitState(t, env, bin, func(st state.State) bool {
+		selected := state.WorkspaceByID(st, st.SelectedWorkspaceID)
+		return selected != nil && selected.Path == workspace
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "path missing; press d to remove")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "Left")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusWorkspaces
+	})
+	directRun(t, env, "send-keys", "-t", pane, "j")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID == stale.ID
+	})
+	time.Sleep(300 * time.Millisecond)
+	st = waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID == stale.ID
+	})
+	if st.SelectedWorkspaceID != stale.ID {
+		t.Fatalf("stale workspace selection bounced back: %#v", st)
+	}
+
+	directRun(t, env, "send-keys", "-t", pane, "d")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Delete workspace")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "y")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Workspaces) == 1 &&
+			state.WorkspaceByPath(st, staleWorkspace) == nil &&
+			state.WorkspaceByPath(st, workspace) != nil
+	})
+}
+
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")

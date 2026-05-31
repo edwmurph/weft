@@ -296,12 +296,19 @@ func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 	rt := m.runtime
 	clientID := m.clientID
 	return func() tea.Msg {
-		args = cloneArgs(args)
-		args["client_id"] = clientID
-		args["launch_workspace"] = rt.Workspace
+		args = clientRequestArgs(rt, clientID, command, args)
 		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 		return clientResponseMsg{command: command, response: response, err: err}
 	}
+}
+
+func clientRequestArgs(rt config.Runtime, clientID string, command string, args map[string]string) map[string]string {
+	next := cloneArgs(args)
+	next["client_id"] = clientID
+	if command == "attach_client" {
+		next["launch_workspace"] = rt.Workspace
+	}
+	return next
 }
 
 func (m ClientModel) enqueueCodexInput(args map[string]string) (ClientModel, tea.Cmd) {

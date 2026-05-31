@@ -161,6 +161,11 @@ The left pane lists configured workspaces as vertically stacked bordered cards.
 When there are no configured workspaces, the pane shows centered help text telling
 the user that there are no workspaces and to press the configured add-workspace key.
 
+Stored workspaces remain selectable even when their path is missing, unreadable,
+or no longer a directory. In that bad-state case the card shows a visible warning
+line such as `path missing; press d to remove`, using the configured delete key,
+so the user can navigate to the entry and remove it without resetting all state.
+
 Each card renders:
 
 - a title in the top border
@@ -480,6 +485,7 @@ Add workspace:
 - User provides an existing filesystem path.
 - Weft must not auto-add the launch directory during state repair or first supervisor start.
 - When an interactive client opens from a launch directory that is already configured, Weft selects that workspace automatically.
+- Launch-directory selection happens only when the interactive client attaches. It must not run on every snapshot, navigation, or delete request, because that would keep snapping selection back to the launch workspace and prevent removing stale workspace entries.
 - When an interactive client opens from a launch directory that is not configured, Weft asks whether to add it before mutating state.
 - Dashboard prompt opens with the selected workspace's parent directory prefilled.
 - Dashboard prompt uses the shared bordered form input.

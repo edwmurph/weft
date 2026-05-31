@@ -146,6 +146,26 @@ func TestClientDoesNotPromptForExistingLaunchWorkspace(t *testing.T) {
 	}
 }
 
+func TestClientRequestArgsOnlySelectLaunchWorkspaceOnAttach(t *testing.T) {
+	rt := config.Runtime{Workspace: "/tmp/project"}
+
+	attach := clientRequestArgs(rt, "client-1", "attach_client", nil)
+	if attach["client_id"] != "client-1" {
+		t.Fatalf("attach client_id = %q", attach["client_id"])
+	}
+	if attach["launch_workspace"] != rt.Workspace {
+		t.Fatalf("attach launch workspace = %q", attach["launch_workspace"])
+	}
+
+	nav := clientRequestArgs(rt, "client-1", "nav_move", map[string]string{"delta": "1"})
+	if nav["client_id"] != "client-1" || nav["delta"] != "1" {
+		t.Fatalf("nav args = %#v", nav)
+	}
+	if _, ok := nav["launch_workspace"]; ok {
+		t.Fatalf("nav request should not reselect launch workspace: %#v", nav)
+	}
+}
+
 func TestSnapshotShowsActiveAgentStartError(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()

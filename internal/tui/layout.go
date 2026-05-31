@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -51,6 +52,7 @@ var (
 	workspaceCountMutedStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	workspaceCountActiveStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	workspaceCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	workspacePathWarningStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
@@ -202,7 +204,7 @@ func renderWorkspacesPane(cfg config.Config, st state.State, width int, height i
 	cardWidth := max(2, width-2-(navHorizontalPadding*2))
 	for _, workspace := range st.Workspaces {
 		selected := workspace.ID == st.SelectedWorkspaceID
-		card := renderWorkspaceCard(st, workspace, cardWidth, selected, st.Focus == state.FocusWorkspaces)
+		card := renderWorkspaceCard(cfg, st, workspace, cardWidth, selected, st.Focus == state.FocusWorkspaces)
 		for _, line := range card {
 			content = append(content, strings.Repeat(" ", navHorizontalPadding)+line)
 		}
@@ -219,7 +221,7 @@ type workspaceCardCounts struct {
 	needsAttention int
 }
 
-func renderWorkspaceCard(st state.State, workspace state.Workspace, width int, selected bool, focused bool) []string {
+func renderWorkspaceCard(cfg config.Config, st state.State, workspace state.Workspace, width int, selected bool, focused bool) []string {
 	if width < 2 {
 		return []string{""}
 	}
@@ -234,8 +236,13 @@ func renderWorkspaceCard(st state.State, workspace state.Workspace, width int, s
 	top := borderStyle.Render(workspaceCardTopLine(title, width))
 	counts := workspaceCardCountsForWorkspace(st, workspace.ID)
 	body := borderStyle.Render(borderVertical) + renderWorkspaceCardCounts(counts, innerWidth) + borderStyle.Render(borderVertical)
+	lines := []string{top, body}
+	if warning := workspaceCardPathWarning(cfg, workspace, innerWidth); warning != "" {
+		lines = append(lines, borderStyle.Render(borderVertical)+warning+borderStyle.Render(borderVertical))
+	}
 	bottom := borderStyle.Render(workspaceCardBottomLine(width))
-	return []string{top, body, bottom}
+	lines = append(lines, bottom)
+	return lines
 }
 
 func workspaceCardTopLine(title string, width int) string {
@@ -261,6 +268,33 @@ func workspaceCardTitle(workspace state.Workspace) string {
 		return title
 	}
 	return pathx.Display(workspace.Path)
+}
+
+func workspaceCardPathWarning(cfg config.Config, workspace state.Workspace, width int) string {
+	issue := workspacePathIssue(workspace.Path)
+	if issue == "" || width <= 0 {
+		return ""
+	}
+	message := issue + "; press " + cfg.KeyBindings.Delete + " to remove"
+	return workspacePathWarningStyle.Render(padVisual(clip(" "+message, width), width))
+}
+
+func workspacePathIssue(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "path missing"
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "path missing"
+		}
+		return "path unreadable"
+	}
+	if !info.IsDir() {
+		return "path is not a directory"
+	}
+	return ""
 }
 
 func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspaceCardCounts {

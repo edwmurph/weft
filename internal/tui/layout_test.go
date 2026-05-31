@@ -137,6 +137,23 @@ func TestRenderWorkspaceCardsUseDefaultPathAndTitleOverride(t *testing.T) {
 	}
 }
 
+func TestRenderWorkspaceCardFlagsMissingPath(t *testing.T) {
+	cfg := config.DefaultConfig()
+	stalePath := filepath.Join(t.TempDir(), "stale-worktree")
+	if err := os.Mkdir(stalePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	st := layoutState(stalePath)
+	if err := os.Remove(stalePath); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 9), "\n"))
+	if !strings.Contains(got, "path missing; press d to remove") {
+		t.Fatalf("missing workspace path should be visible and actionable:\n%s", got)
+	}
+}
+
 func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 	cfg := config.DefaultConfig()
 	now := state.NowISO()
