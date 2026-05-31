@@ -453,6 +453,16 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"    printf 'side prompt\\n'\n"+
 			"    continue\n"+
 			"  fi\n"+
+			"  if [ \"$line\" = \"waiting status\" ]; then\n"+
+			"    printf '\\033]2;Fake Codex Waiting\\007'\n"+
+			"    printf '\\033[2J\\033[Hwaiting for approval\\n'\n"+
+			"    continue\n"+
+			"  fi\n"+
+			"  if [ \"$line\" = \"ready status\" ]; then\n"+
+			"    printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"    printf '\\033[2J\\033[Hready again\\n'\n"+
+			"    continue\n"+
+			"  fi\n"+
 			"  printf '\\033]2;Fake Codex Working\\007'\n"+
 			"  printf '\\033[2J\\033[H'\n"+
 			"  printf '╭──────────────────────────────────────────────────────────╮\\n'\n"+
@@ -906,6 +916,33 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Ready")
 		})
+	})
+
+	timedStep(t, "status template passes through Codex waiting status", func() {
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		directRun(t, env, "send-keys", "-l", "-t", pane, "waiting status")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			return agent != nil && strings.Contains(agent.CodexTitle, "Waiting")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Codex Waiting") && !strings.Contains(capture, "Codex running")
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		directRun(t, env, "send-keys", "-l", "-t", pane, "ready status")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 	})
 
 	timedStep(t, "help modal closes", func() {

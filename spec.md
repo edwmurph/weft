@@ -422,7 +422,7 @@ killed
 error
 ```
 
-The exact derivation of `ready`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex terminal title, it preserves the exact casing of the matched Codex status token, such as `Ready` or `Working`; fallback lifecycle statuses remain the lowercase model values above.
+The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex terminal title, it preserves the exact casing of the matched Codex status token, such as `Ready`, `Waiting`, or `Working`; fallback lifecycle statuses remain the lowercase model values above.
 
 ## Title Templates
 

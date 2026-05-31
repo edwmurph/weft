@@ -67,7 +67,7 @@ func codexActivityStatus(title string) string {
 		return !unicode.IsLetter(r)
 	}) {
 		switch strings.ToLower(token) {
-		case "ready", "working":
+		case "ready", "waiting", "idle", "working", "shipping", "starting":
 			return token
 		}
 	}

@@ -61,6 +61,14 @@ func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
 	if got := CanonicalStatus(agent); got != "working" {
 		t.Fatalf("canonical status = %q", got)
 	}
+
+	agent.CodexTitle = "Fake Codex Waiting"
+	if got := RenderStatus(agent); got != "Waiting" {
+		t.Fatalf("got %q", got)
+	}
+	if got := CanonicalStatus(agent); got != "waiting" {
+		t.Fatalf("canonical status = %q", got)
+	}
 }
 
 func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
