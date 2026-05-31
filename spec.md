@@ -295,6 +295,10 @@ Group rows should be visually distinct from agent rows. Use the chevron/collapse
 
 When the Agents pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or agent row visible.
 
+The Agents pane cursor is persisted separately from the active Codex thread.
+Moving the cursor to a group row must survive supervisor refreshes, restarts,
+and upgrades without snapping back to the active agent inside that group.
+
 `Shift+Up` and `Shift+Down` on a selected agent row move that agent one row up
 or down within its current group. Top-level agents reorder only within the
 top-level ungrouped area. Reordering never moves an agent into or out of a
@@ -505,13 +509,14 @@ Current persisted shape:
 type State struct {
     Version             int         `json:"version"`
     ActiveAgentID       string      `json:"active_agent_id,omitempty"`
+    SelectedAgentID     string      `json:"selected_agent_id,omitempty"`
     SelectedWorkspaceID string      `json:"selected_workspace_id,omitempty"`
     SelectedGroupID     string      `json:"selected_group_id,omitempty"`
     Focus               Focus       `json:"focus"`
     NavOpen             bool        `json:"nav_open"`
     Workspaces          []Workspace `json:"workspaces"`
     Groups              []Group     `json:"groups"`
-    Agents           []Agent   `json:"agents"`
+    Agents              []Agent     `json:"agents"`
     CollapsedGroupIDs []string `json:"collapsed_group_ids,omitempty"`
 }
 

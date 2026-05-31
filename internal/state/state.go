@@ -76,6 +76,7 @@ type Agent struct {
 type State struct {
 	Version             int         `json:"version"`
 	ActiveAgentID       string      `json:"active_agent_id,omitempty"`
+	SelectedAgentID     string      `json:"selected_agent_id,omitempty"`
 	SelectedWorkspaceID string      `json:"selected_workspace_id,omitempty"`
 	SelectedGroupID     string      `json:"selected_group_id,omitempty"`
 	Focus               Focus       `json:"focus"`
@@ -298,6 +299,9 @@ func Repair(st State, fallbackWorkspace string) State {
 	if st.ActiveAgentID != "" && AgentByID(st, st.ActiveAgentID) == nil {
 		st.ActiveAgentID = ""
 	}
+	if st.SelectedAgentID != "" && AgentByID(st, st.SelectedAgentID) == nil {
+		st.SelectedAgentID = ""
+	}
 	if st.SelectedWorkspaceID == "" || WorkspaceByID(st, st.SelectedWorkspaceID) == nil {
 		if len(st.Workspaces) > 0 {
 			st.SelectedWorkspaceID = st.Workspaces[0].ID
@@ -307,6 +311,13 @@ func Repair(st State, fallbackWorkspace string) State {
 	}
 	if st.SelectedGroupID != "" && (GroupByID(st, st.SelectedGroupID) == nil || groupWorkspace(st, st.SelectedGroupID) != st.SelectedWorkspaceID) {
 		st.SelectedGroupID = ""
+	}
+	if selected := AgentByID(st, st.SelectedAgentID); selected != nil {
+		if selected.WorkspaceID != st.SelectedWorkspaceID {
+			st.SelectedAgentID = ""
+		} else {
+			st.SelectedGroupID = selected.GroupID
+		}
 	}
 
 	if st.NavOpen {
@@ -327,6 +338,13 @@ func Repair(st State, fallbackWorkspace string) State {
 			st.Focus = FocusAgents
 		} else {
 			st.Focus = FocusCodex
+		}
+	}
+	if st.SelectedAgentID == "" && st.ActiveAgentID != "" {
+		active := AgentByID(st, st.ActiveAgentID)
+		if active != nil && active.WorkspaceID == st.SelectedWorkspaceID && (st.Focus == FocusCodex || !st.NavOpen || st.SelectedGroupID == "") {
+			st.SelectedAgentID = active.ID
+			st.SelectedGroupID = active.GroupID
 		}
 	}
 	return st
@@ -545,6 +563,9 @@ func CloseAgent(st State, agentID string) State {
 		}
 	}
 	st.Agents = append(st.Agents[:index], st.Agents[index+1:]...)
+	if st.SelectedAgentID == agentID {
+		st.SelectedAgentID = ""
+	}
 	if st.ActiveAgentID != agentID {
 		return st
 	}
@@ -557,10 +578,12 @@ func CloseAgent(st State, agentID string) State {
 		}
 		next := candidates[nextIndex]
 		st.ActiveAgentID = next.ID
+		st.SelectedAgentID = next.ID
 		st.SelectedWorkspaceID = next.WorkspaceID
 		st.SelectedGroupID = next.GroupID
 	} else {
 		st.ActiveAgentID = ""
+		st.SelectedAgentID = ""
 		st.NavOpen = true
 		st.Focus = FocusAgents
 		st.SelectedWorkspaceID = removed.WorkspaceID
@@ -609,6 +632,7 @@ func ReorderAgent(st State, agentID string, delta int) (State, bool, error) {
 	st.Agents[index].UpdatedAt = now
 	st.Agents[target].UpdatedAt = now
 	st.ActiveAgentID = selected.ID
+	st.SelectedAgentID = selected.ID
 	st.SelectedWorkspaceID = selected.WorkspaceID
 	st.SelectedGroupID = selected.GroupID
 	return st, true, nil
@@ -635,6 +659,7 @@ func MoveAgent(st State, agentID string, groupID string) (State, error) {
 		}
 		st.Agents[index].GroupID = groupID
 		st.Agents[index].UpdatedAt = NowISO()
+		st.SelectedAgentID = agentID
 		st.SelectedGroupID = groupID
 		return st, nil
 	}
@@ -676,7 +701,11 @@ func SelectWorkspace(st State, workspaceID string) State {
 	if WorkspaceByID(st, workspaceID) == nil {
 		return st
 	}
+	if st.SelectedWorkspaceID == workspaceID {
+		return st
+	}
 	st.SelectedWorkspaceID = workspaceID
+	st.SelectedAgentID = ""
 	st.SelectedGroupID = ""
 	if groups := GroupsForWorkspace(st, workspaceID); len(groups) > 0 {
 		st.SelectedGroupID = groups[0].ID
@@ -712,6 +741,9 @@ func RemoveWorkspace(st State, workspaceID string) (State, []Agent, error) {
 		if AgentByID(st, st.ActiveAgentID) == nil {
 			st.ActiveAgentID = ""
 		}
+	}
+	if st.SelectedAgentID != "" && AgentByID(st, st.SelectedAgentID) == nil {
+		st.SelectedAgentID = ""
 	}
 	st.SelectedWorkspaceID = ""
 	st.SelectedGroupID = ""
@@ -805,6 +837,9 @@ func DeleteGroup(st State, groupID string) (State, error) {
 	if st.SelectedGroupID == groupID {
 		st.SelectedGroupID = ""
 	}
+	if selected := AgentByID(st, st.SelectedAgentID); selected != nil && selected.GroupID == groupID {
+		st.SelectedAgentID = ""
+	}
 	return Repair(st, ""), nil
 }
 
@@ -854,6 +889,7 @@ func AddAgent(st State, id string, workspaceID string, groupID string, title str
 	}
 	st.Agents = append(st.Agents, agent)
 	st.ActiveAgentID = id
+	st.SelectedAgentID = id
 	st.SelectedWorkspaceID = workspaceID
 	st.SelectedGroupID = groupID
 	st.Focus = FocusCodex

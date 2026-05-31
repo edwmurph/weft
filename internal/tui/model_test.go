@@ -1435,6 +1435,7 @@ func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveAgent(t *testing.T) {
 	model := NewModel(rt, config.DefaultConfig(), state.State{
 		Version:             state.Version,
 		ActiveAgentID:       "planning-agent",
+		SelectedAgentID:     "planning-agent",
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "planning",
 		Focus:               state.FocusAgents,
@@ -1475,6 +1476,32 @@ func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveAgent(t *testing.T) {
 	model.syncGroupCursor()
 	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "shipit" {
 		t.Fatalf("sync should keep shipit group row, got %#v", row)
+	}
+}
+
+func TestGroupCursorSyncRestoresPersistedGroupRow(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		ActiveAgentID:       "planning-agent",
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "planning",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "in-progress", WorkspaceID: "w", Path: "in progress", CreatedAt: now, UpdatedAt: now},
+			{ID: "planning", WorkspaceID: "w", Path: "planning", CreatedAt: now, UpdatedAt: now},
+		},
+		Agents: []state.Agent{
+			{ID: "progress-a", WorkspaceID: "w", GroupID: "in-progress", Title: "Progress A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "planning-agent", WorkspaceID: "w", GroupID: "planning", Title: "Planning", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+		},
+	})
+
+	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "planning" {
+		t.Fatalf("persisted group row should win after model start, got %#v", row)
 	}
 }
 

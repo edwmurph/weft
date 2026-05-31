@@ -458,6 +458,7 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if agent := m.selectedAgent(); agent != nil {
+			m.state.SelectedAgentID = agent.ID
 			m.state.ActiveAgentID = agent.ID
 			m.state.SelectedWorkspaceID = agent.WorkspaceID
 			m.state.SelectedGroupID = agent.GroupID
@@ -497,6 +498,7 @@ func (m *Model) moveSelection(delta int) {
 			if groups := state.GroupsForWorkspace(m.state, m.state.SelectedWorkspaceID); len(groups) > 0 {
 				m.state.SelectedGroupID = groups[0].ID
 			}
+			m.state.SelectedAgentID = ""
 			m.groupCursor = 0
 			m.groupCursorPinned = false
 			m.save()
@@ -514,9 +516,11 @@ func (m *Model) moveSelection(delta int) {
 func (m *Model) applyGroupCursor(row groupRow) {
 	switch row.kind {
 	case groupRowGroup:
+		m.state.SelectedAgentID = ""
 		m.state.SelectedGroupID = row.groupID
 	case groupRowAgent:
 		if agent := state.AgentByID(m.state, row.agentID); agent != nil {
+			m.state.SelectedAgentID = agent.ID
 			m.state.SelectedGroupID = agent.GroupID
 			m.state.ActiveAgentID = agent.ID
 		}
@@ -765,6 +769,7 @@ func (m Model) groupRows() []groupRow {
 
 func (m *Model) toggleSelectedGroup(groupID string) {
 	m.state = state.ToggleGroupCollapsed(m.state, groupID)
+	m.state.SelectedAgentID = ""
 	m.state.SelectedGroupID = groupID
 	for index, row := range m.groupRows() {
 		if row.kind == groupRowGroup && row.groupID == groupID {
@@ -786,9 +791,9 @@ func (m *Model) syncGroupCursor() {
 	if m.groupCursorPinned && m.groupCursorMatchesState(rows) {
 		return
 	}
-	if m.state.ActiveAgentID != "" {
+	if m.state.SelectedAgentID != "" {
 		for index, row := range rows {
-			if row.kind == groupRowAgent && row.agentID == m.state.ActiveAgentID {
+			if row.kind == groupRowAgent && row.agentID == m.state.SelectedAgentID {
 				m.groupCursor = index
 				m.groupCursorPinned = true
 				return
@@ -796,10 +801,19 @@ func (m *Model) syncGroupCursor() {
 		}
 	}
 	for index, row := range rows {
-		if row.groupID == m.state.SelectedGroupID {
+		if row.kind == groupRowGroup && row.groupID == m.state.SelectedGroupID {
 			m.groupCursor = index
 			m.groupCursorPinned = true
 			return
+		}
+	}
+	if m.state.ActiveAgentID != "" {
+		for index, row := range rows {
+			if row.kind == groupRowAgent && row.agentID == m.state.ActiveAgentID {
+				m.groupCursor = index
+				m.groupCursorPinned = true
+				return
+			}
 		}
 	}
 	m.groupCursor = 0
@@ -817,6 +831,11 @@ func (m *Model) syncGroupCursorToAgent(agentID string) {
 		for index, row := range rows {
 			if row.kind == groupRowAgent && row.agentID == agentID {
 				m.groupCursor = index
+				m.state.SelectedAgentID = agentID
+				if agent := state.AgentByID(m.state, agentID); agent != nil {
+					m.state.SelectedWorkspaceID = agent.WorkspaceID
+					m.state.SelectedGroupID = agent.GroupID
+				}
 				m.groupCursorPinned = true
 				return
 			}
@@ -836,6 +855,7 @@ func (m *Model) syncGroupCursorToSelectedGroup() {
 		for index, row := range rows {
 			if row.kind == groupRowGroup && row.groupID == m.state.SelectedGroupID {
 				m.groupCursor = index
+				m.state.SelectedAgentID = ""
 				m.groupCursorPinned = true
 				return
 			}
@@ -853,6 +873,9 @@ func (m Model) groupCursorMatchesState(rows []groupRow) bool {
 	case groupRowGroup:
 		return row.groupID != "" && row.groupID == m.state.SelectedGroupID
 	case groupRowAgent:
+		if m.state.SelectedAgentID != "" {
+			return row.agentID == m.state.SelectedAgentID
+		}
 		return row.agentID != "" && row.agentID == m.state.ActiveAgentID
 	default:
 		return false
@@ -1738,6 +1761,7 @@ func (m *Model) openSelection() tea.Cmd {
 		return nil
 	}
 	if agent := m.selectedAgent(); agent != nil {
+		m.state.SelectedAgentID = agent.ID
 		m.state.ActiveAgentID = agent.ID
 		m.state.SelectedWorkspaceID = agent.WorkspaceID
 		m.state.SelectedGroupID = agent.GroupID

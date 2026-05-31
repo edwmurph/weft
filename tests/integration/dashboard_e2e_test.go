@@ -318,6 +318,110 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	}
 }
 
+func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+	for _, group := range []string{"in progress", "shipit", "planning"} {
+		runWeft(t, env, bin, "group", "add", group)
+	}
+	for _, title := range []string{"Progress A", "Progress B"} {
+		runWeft(t, env, bin, "new", title)
+		runWeft(t, env, bin, "move-right")
+	}
+	runWeft(t, env, bin, "new", "Planning Agent")
+	pane := "planning-cursor-client"
+	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 130, 18)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar) ||
+			strings.Contains(capture, "Workspaces")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusAgents && st.NavOpen
+	})
+	directRun(t, env, "send-keys", "-t", pane, "m")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Move agent")
+	})
+	directRun(t, env, "send-keys", "-l", "-t", pane, "planning")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		group := groupByPath(st, "planning")
+		active := state.ActiveAgent(st)
+		return group != nil && active != nil && active.Title == "Planning Agent" && active.GroupID == group.ID
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return !strings.Contains(capture, "Move agent") &&
+			strings.Contains(capture, "planning (1)") &&
+			agentRowVisible(capture, "Planning Agent")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "k")
+	time.Sleep(250 * time.Millisecond)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "planning") && agentRowVisible(capture, "Planning Agent")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "r")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Rename group") && strings.Contains(capture, "planning")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Escape")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return !strings.Contains(capture, "Rename group")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-c")
+	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
+		t.Fatalf("planning cursor client did not exit")
+	}
+
+	runWeft(t, env, bin, "close", "--kill", "--yes")
+	runWeft(t, env, bin, "--no-attach")
+	clientOutput, clientDone = startDirectDashboardClient(t, env, bin, workspace, pane+"-reattach", 130, 18)
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusAgents && st.NavOpen
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") &&
+			strings.Contains(capture, "planning (1)")
+	})
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "r")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Rename group") && strings.Contains(capture, "planning")
+	})
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "Escape")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return !strings.Contains(capture, "Rename group")
+	})
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "j")
+	time.Sleep(250 * time.Millisecond)
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "r")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Variables") && strings.Contains(capture, "Planning Agent")
+	})
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "Escape")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return !strings.Contains(capture, "Variables")
+	})
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "C-c")
+	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
+		t.Fatalf("reattached planning cursor client did not exit")
+	}
+}
+
 func TestAgentConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
