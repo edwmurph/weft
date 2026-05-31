@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/edwmurph/weft/internal/config"
@@ -90,6 +91,13 @@ func enhancedKeyboardInputFromMsg(msg tea.Msg) (enhancedKeyboardInput, bool) {
 }
 
 func (input enhancedKeyboardInput) codexInputArgs() map[string]string {
+	if input.hasKey {
+		args := codexInputArgs(input.key)
+		if len(input.encoded) > 0 {
+			args["encoded"] = string(input.encoded)
+		}
+		return args
+	}
 	kind := input.input
 	if kind == "" {
 		kind = codexInputRaw
@@ -327,6 +335,12 @@ func (event csiKeyboardEvent) keyMsg() (tea.KeyMsg, bool) {
 			return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")}, true
 		}
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: event.text}, true
+	}
+	if event.final == 'u' && event.modifiers&6 == 0 {
+		r := rune(event.keyCode)
+		if unicode.IsPrint(r) && r != ' ' {
+			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}, true
+		}
 	}
 	return tea.KeyMsg{}, false
 }

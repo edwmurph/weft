@@ -286,4 +286,6 @@ fake `codex_command`. Use
 to see per-step dashboard timing logs.
 
 The repository ignores `.weft/` so each worktree can keep an isolated local
-runtime for manual testing.
+runtime for manual testing. Use `scripts/create-worktree.sh <slug>` to create
+or repair a detached worktree with the local `.env` and config links needed for
+manual runtime checks.

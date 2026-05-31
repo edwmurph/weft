@@ -74,6 +74,36 @@ func TestEnhancedKeyboardInputPreservesShiftTabForCodex(t *testing.T) {
 	}
 }
 
+func TestEnhancedKeyboardInputMapsPrintableAndEnterCSIUForCodexCapture(t *testing.T) {
+	for _, tc := range []struct {
+		raw       string
+		wantInput string
+		wantText  string
+	}{
+		{raw: "\x1b[102u", wantInput: "text", wantText: "f"},
+		{raw: "\x1b[63u", wantInput: "text", wantText: "?"},
+		{raw: "\x1b[13u", wantInput: "enter"},
+	} {
+		input, ok := enhancedKeyboardInputFromMsg(testCSIMessage(unknownCSIString(tc.raw)))
+		if !ok {
+			t.Fatalf("expected enhanced input for %q", tc.raw)
+		}
+		if !input.hasKey {
+			t.Fatalf("expected parsed key for %q", tc.raw)
+		}
+		args := input.codexInputArgs()
+		if got := args["encoded"]; got != tc.raw {
+			t.Fatalf("encoded = %q, want %q", got, tc.raw)
+		}
+		if got := args["input"]; got != tc.wantInput {
+			t.Fatalf("input = %q, want %q", got, tc.wantInput)
+		}
+		if got := args["text"]; got != tc.wantText {
+			t.Fatalf("text = %q, want %q", got, tc.wantText)
+		}
+	}
+}
+
 func TestEnhancedKeyboardInputMapsCSIUCtrlC(t *testing.T) {
 	for _, raw := range []string{"\x1b[99;5u", "\x1b[27;5;99~"} {
 		input, ok := enhancedKeyboardInputFromMsg(testCSIMessage(unknownCSIString(raw)))

@@ -607,6 +607,61 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 	}
 }
 
+func TestTitleHookCapturesEnhancedKeyboardProtocolInput(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	payloadPath := filepath.Join(t.TempDir(), "payload.json")
+	model.cfg.TitleTemplate = "{status} {auto}"
+	model.state.Agents[0].Title = model.cfg.TitleTemplate
+	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
+
+	sendEnhanced := func(raw string) tea.Cmd {
+		t.Helper()
+		input, ok := enhancedKeyboardInputFromMsg(testCSIMessage(unknownCSIString(raw)))
+		if !ok {
+			t.Fatalf("expected enhanced input for %q", raw)
+		}
+		updated, cmd := model.handleEnhancedKeyboardInput(input)
+		model = updated.(Model)
+		return cmd
+	}
+	for _, raw := range []string{
+		"\x1b[102u", "\x1b[105u", "\x1b[120u", "\x1b[32u", "\x1b[108u",
+		"\x1b[111u", "\x1b[103u", "\x1b[105u", "\x1b[110u",
+	} {
+		if cmd := sendEnhanced(raw); cmd != nil {
+			t.Fatalf("hook should not run before Enter for %q", raw)
+		}
+	}
+	cmd := sendEnhanced("\x1b[13u")
+	if cmd == nil {
+		t.Fatal("expected title hook command")
+	}
+	if agent := state.AgentByID(model.state, "a"); agent == nil || !agent.AutoTitleAttempted {
+		t.Fatalf("agent should be marked attempted: %#v", agent)
+	}
+	msg := cmd().(titleHookMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	model.applyTitleHook(msg)
+
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.AutoTitle != "Generated title" {
+		t.Fatalf("auto title = %#v", agent)
+	}
+	if got := model.renderAgentTitle(*agent); got != "running Generated title" {
+		t.Fatalf("rendered title = %q", got)
+	}
+	raw, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"first_message":"fix login"`) {
+		t.Fatalf("payload missing enhanced keyboard first message:\n%s", raw)
+	}
+}
+
 func TestTitleHookBuffersShiftEnterUntilSubmit(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
