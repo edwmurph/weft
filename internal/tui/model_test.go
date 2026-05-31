@@ -238,6 +238,35 @@ func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
 	}
 }
 
+func TestIPCCodexFocusResizesScreenToVisibleConsoleWidth(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.width = 160
+	model.height = 32
+	model.state.Focus = state.FocusAgents
+	model.state.NavOpen = true
+	model.navWidth = model.targetNavWidth()
+	agentID := model.state.ActiveAgentID
+	model.screens[agentID] = NewTerminalScreen(model.ptyWidth(), model.ptyHeight())
+
+	splitWidth := model.screens[agentID].cols
+	if splitWidth >= 80 {
+		t.Fatalf("test setup expected narrow split screen, got %d", splitWidth)
+	}
+
+	response, _ := model.handleIPC(ipc.Request{Command: "focus", Args: map[string]string{"target": string(state.FocusCodex)}})
+	if !response.OK {
+		t.Fatalf("focus response failed: %#v", response)
+	}
+
+	if got, want := model.navWidth, 0; got != want {
+		t.Fatalf("codex focus nav width = %d, want %d", got, want)
+	}
+	if got, want := model.screens[agentID].cols, 157; got != want {
+		t.Fatalf("focused screen width = %d, want visible console width %d", got, want)
+	}
+}
+
 func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)

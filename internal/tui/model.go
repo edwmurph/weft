@@ -667,6 +667,7 @@ func (m *Model) newAgent(title string) tea.Cmd {
 	}
 	m.state = next
 	m.syncGroupCursor()
+	m.snapNavWidthToTarget()
 	m.save()
 	return tea.Batch(m.startPTYCmd(agent.ID), m.startNavAnimation(), tickLoading())
 }
@@ -1113,6 +1114,16 @@ func (m *Model) resizeScreens() {
 	}
 }
 
+func (m *Model) snapNavWidthToTarget() {
+	target := m.targetNavWidth()
+	if m.navWidth == target {
+		return
+	}
+	m.navWidth = target
+	m.resizePTYs()
+	m.resizeScreens()
+}
+
 func (m Model) ptyWidth() int {
 	return max(20, codexLineContentWidth(max(0, m.codexPaneWidth()-2)))
 }
@@ -1219,7 +1230,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		return m.ipcResponse(m.message), nil
 	case "toggle_drawer":
 		cmd := m.toggleDrawer()
-		m.navWidth = m.targetNavWidth()
+		m.snapNavWidthToTarget()
 		return m.ipcResponse("focus updated"), cmd
 	case "nav_move":
 		delta, err := strconv.Atoi(request.Args["delta"])
@@ -1241,7 +1252,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			title = m.cfg.TitleTemplate
 		}
 		cmd := m.newAgent(title)
-		m.navWidth = m.targetNavWidth()
+		m.snapNavWidthToTarget()
 		return m.ipcResponse("created Codex agent"), cmd
 	case "rename":
 		id := request.Args["id"]
@@ -1285,7 +1296,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			id = m.state.ActiveAgentID
 		}
 		cmd := m.closeAgent(id)
-		m.navWidth = m.targetNavWidth()
+		m.snapNavWidthToTarget()
 		return m.ipcResponse("closed Codex agent"), cmd
 	case "remove_workspace":
 		next, agents, err := state.RemoveWorkspace(m.state, request.Args["id"])
@@ -1298,7 +1309,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.state = state.Repair(next, m.runtime.Workspace)
 		m.syncGroupCursor()
 		m.save()
-		m.navWidth = m.targetNavWidth()
+		m.snapNavWidthToTarget()
 		return m.ipcResponse("removed workspace"), m.startNavAnimation()
 	case "remove_group":
 		next, err := state.DeleteGroup(m.state, request.Args["id"])
@@ -1378,11 +1389,11 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		switch target {
 		case state.FocusWorkspaces, state.FocusAgents:
 			m.focusNavPane(target)
-			m.navWidth = m.targetNavWidth()
+			m.snapNavWidthToTarget()
 			return m.ipcResponse("focus updated"), m.startNavAnimation()
 		case state.FocusCodex:
 			cmd := m.setCodexFocus()
-			m.navWidth = m.targetNavWidth()
+			m.snapNavWidthToTarget()
 			return m.ipcResponse("focus updated"), cmd
 		default:
 			return ipc.Response{OK: false, Message: "focus target must be workspaces, agents, or codex"}, nil

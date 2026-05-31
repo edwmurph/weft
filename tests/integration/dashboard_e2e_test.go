@@ -154,6 +154,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	startupMarker := filepath.Join(tmp, "fake-codex-color-only")
 	titleHookPayload := filepath.Join(tmp, "title-hook-payload.json")
 	inputLog := filepath.Join(tmp, "fake-codex-input.log")
+	ptySizeLog := filepath.Join(tmp, "fake-codex-pty-size")
 	titleHook := filepath.Join(tmp, "title-hook.sh")
 	if err := os.WriteFile(titleHook, []byte(
 		"#!/bin/sh\n"+
@@ -175,6 +176,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"if [ -n \"${STARTUP_MARKER:-}\" ]; then : > \"$STARTUP_MARKER\"; fi\n"+
 			"sleep \"$startup_delay\"\n"+
 			"printf '\\033[?1049h\\033[2J\\033[H'\n"+
+			"cols=$(stty size 2>/dev/null); cols=${cols#* }; if [ -n \"${PTY_SIZE_LOG:-}\" ]; then printf '%s\\n' \"$cols\" > \"$PTY_SIZE_LOG\"; fi\n"+
 			"printf '╭──────────────────────────────────────────────────────────╮\\n'\n"+
 			"printf '│ >_ OpenAI Codex (v0.fake.0)                               │\\n'\n"+
 			"printf '│                                                          │\\n'\n"+
@@ -218,6 +220,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		"STARTUP_DELAY=1.2",
 		"STARTUP_MARKER="+startupMarker,
 		"INPUT_LOG="+inputLog,
+		"PTY_SIZE_LOG="+ptySizeLog,
 		"PATH="+os.Getenv("PATH"),
 		"TERM=xterm-256color",
 	)
@@ -333,13 +336,23 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatalf("dashboard should center startup loading state:\n%s", colorOnlyCapture)
 		}
 		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent color-only startup covered", time.Since(started).Round(time.Millisecond))
-		waitForOutput(t, clientOutput, func(capture string) bool {
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, ">_ OpenAI Codex") &&
 				!strings.Contains(capture, "No Codex agent open") &&
 				!strings.Contains(capture, "Workspaces") &&
 				!strings.Contains(capture, "Agents") &&
 				strings.Contains(capture, collapsedCodexToolbar)
 		})
+		if !waitForBool(2*time.Second, func() bool {
+			data, _ := os.ReadFile(ptySizeLog)
+			return strings.TrimSpace(string(data)) == "157"
+		}) {
+			data, _ := os.ReadFile(ptySizeLog)
+			t.Fatalf("new Codex PTY should start at the full visible console width, got %q:\n%s", strings.TrimSpace(string(data)), capture)
+		}
+		if run := longestRuneRun(capture, 'x'); run < 120 {
+			t.Fatalf("long Codex output wrapped before using the full console width, longest run=%d:\n%s", run, capture)
+		}
 		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent first Codex content visible", time.Since(started).Round(time.Millisecond))
 		waitForEscapedCapture(t, env, pane, func(capture string) bool {
 			return strings.Contains(capture, keyboardProtocolSetup) &&
@@ -1261,6 +1274,22 @@ func loadingLineIsCentered(capture string) bool {
 		}
 	}
 	return false
+}
+
+func longestRuneRun(value string, target rune) int {
+	best := 0
+	current := 0
+	for _, r := range value {
+		if r == target {
+			current++
+			if current > best {
+				best = current
+			}
+			continue
+		}
+		current = 0
+	}
+	return best
 }
 
 func assertCodexBoxNotDrifted(t *testing.T, capture string) {
