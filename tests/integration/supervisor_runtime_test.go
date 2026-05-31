@@ -388,7 +388,8 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Upgrade supervisor and resume agents?") &&
 			strings.Contains(capture, "Y upgrade and resume") &&
-			strings.Contains(capture, "unsubmitted text are not preserved")
+			strings.Contains(capture, "unsubmitted text are not preserved, so") &&
+			strings.Contains(capture, "finish important work first")
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "y")
 	if !waitForBool(8*time.Second, func() bool {

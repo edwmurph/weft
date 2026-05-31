@@ -554,7 +554,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmRestartWhenIdle {
-		return "Closes idle Codex terminals, restarts the supervisor, then resumes those agents.\nRunning commands and unsubmitted text are not preserved; finish important work first."
+		return "Closes idle Codex terminals, restarts the supervisor, then resumes those agents. Running commands and unsubmitted text are not preserved, so finish important work first."
 	}
 	if confirm == confirmCancelRestartIdle {
 		return "Keeps the current supervisor running and removes the queued restart."

@@ -350,7 +350,9 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 		"Upgrade supervisor and resume agents?",
 		"supervisor 3.9.0 → " + weftversion.Version,
 		"Y upgrade and resume",
-		"unsubmitted text are not preserved",
+		"agents. Running commands",
+		"unsubmitted text are not preserved, so",
+		"finish important work first",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
