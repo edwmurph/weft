@@ -298,18 +298,20 @@ func TestClientRequestArgsOnlySelectLaunchWorkspaceOnAttach(t *testing.T) {
 		t.Fatalf("nav request should not reselect launch workspace: %#v", nav)
 	}
 
-	restart := clientRequestArgs(rt, "client-1", "restart_when_idle", nil)
-	if restart["client_id"] != "client-1" || restart["client_executable"] == "" {
-		t.Fatalf("restart args = %#v", restart)
+	upgrade := clientRequestArgs(rt, "client-1", "upgrade_resume", nil)
+	if upgrade["client_id"] != "client-1" || upgrade["client_executable"] == "" {
+		t.Fatalf("upgrade args = %#v", upgrade)
 	}
-	if _, ok := restart["launch_workspace"]; ok {
-		t.Fatalf("restart request should not reselect launch workspace: %#v", restart)
+	if _, ok := upgrade["launch_workspace"]; ok {
+		t.Fatalf("upgrade request should not reselect launch workspace: %#v", upgrade)
 	}
 }
 
-func TestClientUpgradeBannerOpensRestartWhenIdleConfirm(t *testing.T) {
+func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithAgent(rt.Workspace)
+	st.Agents[0].CodexTitle = "Fake Codex Ready"
+	st.Agents[0].CodexSessionID = "session-alpha"
 	st.Focus = state.FocusAgents
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
@@ -327,12 +329,12 @@ func TestClientUpgradeBannerOpensRestartWhenIdleConfirm(t *testing.T) {
 	}
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Upgrade: pending",
-		"reopening alone is not enough",
+		"Upgrade: ready",
+		"can restart and resume",
 		"Press U",
 		"client " + weftversion.Version,
 		"supervisor 3.9.0",
-		"Press U to restart when idle",
+		"Press U to upgrade and resume 1 idle agent",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade banner missing %q:\n%s", expected, got)
@@ -342,13 +344,45 @@ func TestClientUpgradeBannerOpensRestartWhenIdleConfirm(t *testing.T) {
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = updated.(ClientModel)
 	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmRestartWhenIdle {
-		t.Fatalf("restart confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+		t.Fatalf("upgrade confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
 	}
 	got = ansi.Strip(model.View())
-	for _, expected := range []string{"Restart supervisor when idle?", "client ", "supervisor 3.9.0", "Y restart when idle"} {
+	for _, expected := range []string{"Upgrade supervisor and resume agents?", "client ", "supervisor 3.9.0", "Y upgrade and resume", "unsubmitted text are not preserved"} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("restart confirm missing %q:\n%s", expected, got)
+			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
 		}
+	}
+}
+
+func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithAgent(rt.Workspace)
+	st.Agents[0].CodexTitle = "Fake Codex Working"
+	st.Focus = state.FocusAgents
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Upgrade pending", "Wait for 1 agent(s) to become idle"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("upgrade wait copy missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "Press U to upgrade") {
+		t.Fatalf("upgrade action should not show while agent is working:\n%s", got)
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode == modeConfirm {
+		t.Fatalf("blocked upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
 	}
 }
 

@@ -169,15 +169,15 @@ func TestRenderWorkspacesPaneShowsUpgradeFooterAtBottom(t *testing.T) {
 	st := layoutState("/tmp/project")
 
 	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 60, 12, workspaceRenderOptions{
-		workspaceFooterText: "Upgrade pending: client 7.5.5, supervisor 7.4.0.\nPress U to restart when idle.",
+		workspaceFooterText: "Upgrade ready: client 7.5.5, supervisor 7.4.0.\nPress U to upgrade and resume 1 idle agent.",
 	}), "\n"))
-	for _, expected := range []string{"Upgrade pending: client 7.5.5, supervisor 7.4.0.", "Press U to restart when idle."} {
+	for _, expected := range []string{"Upgrade ready: client 7.5.5, supervisor 7.4.0.", "Press U to upgrade and resume 1 idle agent."} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade footer missing %q:\n%s", expected, got)
 		}
 	}
 	lines := strings.Split(got, "\n")
-	if !strings.Contains(lines[len(lines)-3], "Upgrade pending") || !strings.Contains(lines[len(lines)-2], "Press U") {
+	if !strings.Contains(lines[len(lines)-3], "Upgrade ready") || !strings.Contains(lines[len(lines)-2], "Press U") {
 		t.Fatalf("upgrade footer should be pinned to pane bottom:\n%s", got)
 	}
 }

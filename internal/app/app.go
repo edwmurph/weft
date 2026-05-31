@@ -386,9 +386,9 @@ func upgradeSummary(upgrade *ipc.Upgrade) string {
 		return fmt.Sprintf("restart when idle queued, %d live Codex terminal(s)", upgrade.RunningAgents)
 	}
 	if upgrade.RunningAgents > 0 {
-		return fmt.Sprintf("restart pending, %d live Codex terminal(s)", upgrade.RunningAgents)
+		return fmt.Sprintf("upgrade pending, wait for idle/resumable agents (%d live)", upgrade.RunningAgents)
 	}
-	return "restart pending"
+	return "upgrade ready"
 }
 
 func rename(args []string) error {

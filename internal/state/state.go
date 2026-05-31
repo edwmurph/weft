@@ -67,6 +67,7 @@ type Agent struct {
 	AutoTitleAttempted bool        `json:"auto_title_attempted,omitempty"`
 	AutoTitleError     string      `json:"auto_title_error,omitempty"`
 	CodexTitle         string      `json:"codex_title,omitempty"`
+	CodexSessionID     string      `json:"codex_session_id,omitempty"`
 	Status             AgentStatus `json:"status"`
 	CreatedAt          string      `json:"created_at"`
 	UpdatedAt          string      `json:"updated_at"`

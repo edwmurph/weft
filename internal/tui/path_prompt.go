@@ -505,7 +505,10 @@ func renderConfirmPrompt(confirm confirmKind, target string, width int) string {
 		modalValueStyle.Render(clip(target, width)),
 	}
 	if detail := confirmDetail(confirm); detail != "" {
-		lines = append(lines, "", mutedStyle.Render(clip(detail, width)))
+		lines = append(lines, "")
+		for _, line := range strings.Split(detail, "\n") {
+			lines = append(lines, mutedStyle.Render(clip(line, width)))
+		}
 	}
 	lines = append(lines, "", renderConfirmActions(confirm))
 	return strings.Join(lines, "\n")
@@ -522,7 +525,7 @@ func confirmTitle(confirm confirmKind) string {
 	case confirmDeleteAgent:
 		return "Delete agent"
 	case confirmRestartWhenIdle:
-		return "Restart supervisor when idle?"
+		return "Upgrade supervisor and resume agents?"
 	case confirmCancelRestartIdle:
 		return "Cancel queued supervisor restart?"
 	default:
@@ -545,7 +548,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmRestartWhenIdle {
-		return "Weft waits until no live Codex terminals are running, then restarts the supervisor."
+		return "Closes idle Codex terminals, restarts the supervisor, then runs codex resume.\nRunning commands and unsubmitted text are not preserved; finish important work first."
 	}
 	if confirm == confirmCancelRestartIdle {
 		return "Keeps the current supervisor running and removes the queued restart."
@@ -561,7 +564,7 @@ func renderConfirmActions(confirm confirmKind) string {
 		return modalKeyStyle.Render("Enter") + " yes  " + modalKeyStyle.Render("Esc") + " no"
 	}
 	if confirm == confirmRestartWhenIdle {
-		return modalKeyStyle.Render("Y") + " restart when idle  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
+		return modalKeyStyle.Render("Y") + " upgrade and resume  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
 	}
 	if confirm == confirmCancelRestartIdle {
 		return modalKeyStyle.Render("Y") + " cancel restart  " + modalKeyStyle.Render("N") + " keep queued  " + modalKeyStyle.Render("Esc") + " keep queued"

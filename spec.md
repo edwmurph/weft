@@ -218,13 +218,18 @@ The default card title is the display path, for example `~/code/personal/weft`. 
 Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workspaces pane has focus. Use a subtler blue border when the selected workspace is active but focus is in the Agents pane.
 
 When a newly installed client is attached to an older compatible supervisor, the
-bottom of the Workspaces pane shows a concise upgrade tip such as
-`Upgrade pending: client 7.5.5, supervisor 7.4.0. Press U to restart when idle.`
+bottom of the Workspaces pane shows a concise upgrade tip. While any Codex agent
+is still active, the tip waits for idle/resumable agents, for example
+`Upgrade pending: client 7.5.5, supervisor 7.4.0. Wait for 1 agent(s) to become idle.`
+When all remaining agents are idle and have saved Codex session IDs, the tip
+shows the action, for example
+`Upgrade ready: client 7.5.5, supervisor 7.4.0. Press U to upgrade and resume 2 idle agent(s).`
 The tip must not imply that reopening the dashboard is enough to finish the
 upgrade, and it must not suggest destructive reset commands while live agents
-can keep running. Once restart-when-idle is queued, the Workspaces-pane tip
-changes to explain that closing agents will finish the upgrade and that `U`
-cancels the queued restart.
+can be resumed. The confirmation modal explains that Weft closes idle Codex
+terminals, restarts the supervisor, and runs `codex resume <session-id>` for
+each saved agent. It also warns that running commands and unsubmitted terminal
+input are not preserved, so users should finish important work first.
 
 Counts should use subtle colors:
 
@@ -509,6 +514,7 @@ type Agent struct {
     AutoTitleAttempted bool `json:"auto_title_attempted,omitempty"`
     AutoTitleError string `json:"auto_title_error,omitempty"`
     CodexTitle string      `json:"codex_title,omitempty"`
+    CodexSessionID string  `json:"codex_session_id,omitempty"`
     Status     AgentStatus `json:"status"`
     CreatedAt  string      `json:"created_at"`
     UpdatedAt  string      `json:"updated_at"`

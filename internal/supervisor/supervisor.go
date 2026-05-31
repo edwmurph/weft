@@ -14,6 +14,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/edwmurph/weft/internal/codexsession"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/runtimebackup"
@@ -43,6 +44,7 @@ type restartRequest struct {
 	clientVersion string
 	backupID      string
 	runningAgents int
+	message       string
 }
 
 type supervisorControl struct {
@@ -316,6 +318,10 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		response := cancelRestartWhenIdle(engine, control)
 		applyClientState(&response, clients, request.Args["client_id"])
 		return withSupervisorFields(response, request, control), nil
+	case "upgrade_resume":
+		response := upgradeResume(rt, engine, control, request, cancel)
+		applyClientState(&response, clients, request.Args["client_id"])
+		return withSupervisorFields(response, request, control), nil
 	case "shutdown":
 		go cancel()
 		return withSupervisorFields(ipc.Response{OK: true, Message: "Weft supervisor stopped"}, request, control), nil
@@ -363,7 +369,7 @@ func withSupervisorFields(response ipc.Response, request ipc.Request, control *s
 	response = ipc.AnnotateUpgrade(response, request.ClientVersion, false)
 	if response.Upgrade != nil && control != nil {
 		if control.restartNow != nil {
-			response.Upgrade.Message = restartNowMessage(control.restartNow.backupID)
+			response.Upgrade.Message = restartNowMessage(*control.restartNow)
 			response.Upgrade.BackupID = control.restartNow.backupID
 		} else if control.restartWhenIdle != nil {
 			response.Upgrade.RestartWhenIdleQueued = true
@@ -392,6 +398,26 @@ func restartWhenIdle(rt config.Runtime, engine *tui.Model, control *supervisorCo
 		return supervisorSnapshotResponse(engine, restartWhenIdleQueuedMessage(blocked))
 	}
 	return triggerIdleRestart(rt, engine, control, restart, cancel)
+}
+
+func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) ipc.Response {
+	response := supervisorSnapshotResponse(engine, "")
+	response.ProtocolVersion = ipc.ProtocolVersion
+	response.SupervisorVersion = ReportedVersion()
+	upgrade := ipc.UpgradeStatus(response, request.ClientVersion)
+	if upgrade == nil {
+		return supervisorSnapshotResponse(engine, "No supervisor upgrade needed; client and supervisor are current.")
+	}
+	if !upgrade.Compatible {
+		return ipc.ErrorResponse("upgrade_incompatible", "Cannot upgrade from the dashboard because the supervisor protocol is incompatible. Use `weft close --kill` when ready.")
+	}
+	report := engine.PrepareUpgradeResume()
+	if !report.CanUpgrade() {
+		return ipc.ErrorResponse("upgrade_resume_blocked", upgradeResumeBlockedMessage(report))
+	}
+	restart := restartRequestFromRequest(request)
+	restart.runningAgents = report.Total
+	return triggerResumeUpgrade(rt, engine, control, restart, cancel)
 }
 
 func cancelRestartWhenIdle(engine *tui.Model, control *supervisorControl) ipc.Response {
@@ -440,7 +466,20 @@ func triggerIdleRestart(rt config.Runtime, engine *tui.Model, control *superviso
 	control.restartNow = &restart
 	control.restartWhenIdle = nil
 	go cancel()
-	return supervisorSnapshotResponse(engine, restartNowMessage(backup.ID))
+	return supervisorSnapshotResponse(engine, restartNowMessage(restart))
+}
+
+func triggerResumeUpgrade(rt config.Runtime, engine *tui.Model, control *supervisorControl, restart restartRequest, cancel context.CancelFunc) ipc.Response {
+	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade resume restart", IncludeLogs: true})
+	if err != nil {
+		return supervisorSnapshotResponse(engine, fmt.Sprintf("Upgrade canceled: could not create pre-upgrade backup: %v", err))
+	}
+	restart.backupID = backup.ID
+	restart.message = upgradeResumeRestartMessage(restart.runningAgents, backup.ID)
+	control.restartNow = &restart
+	control.restartWhenIdle = nil
+	go cancel()
+	return supervisorSnapshotResponse(engine, restart.message)
 }
 
 func supervisorSnapshotResponse(engine *tui.Model, message string) ipc.Response {
@@ -472,11 +511,41 @@ func restartWhenIdleQueuedMessage(runningAgents int) string {
 	return fmt.Sprintf("Restart when idle queued: Weft will not stop %d Codex terminal(s); the supervisor restarts after they close.", runningAgents)
 }
 
-func restartNowMessage(backupID string) string {
-	if backupID == "" {
+func restartNowMessage(restart restartRequest) string {
+	if restart.message != "" {
+		return restart.message
+	}
+	if restart.backupID == "" {
 		return "Restarting idle supervisor to finish the upgrade."
 	}
-	return "Restarting idle supervisor to finish the upgrade. Backup: " + backupID + "."
+	return "Restarting idle supervisor to finish the upgrade. Backup: " + restart.backupID + "."
+}
+
+func upgradeResumeRestartMessage(agents int, backupID string) string {
+	if agents <= 0 {
+		if backupID == "" {
+			return "Restarting supervisor to finish the upgrade."
+		}
+		return "Restarting supervisor to finish the upgrade. Backup: " + backupID + "."
+	}
+	if backupID == "" {
+		return fmt.Sprintf("Closing and resuming %d idle Codex agent(s) to finish the supervisor upgrade.", agents)
+	}
+	return fmt.Sprintf("Closing and resuming %d idle Codex agent(s) to finish the supervisor upgrade. Backup: %s.", agents, backupID)
+}
+
+func upgradeResumeBlockedMessage(report codexsession.Report) string {
+	var blockers []string
+	if len(report.Busy) > 0 {
+		blockers = append(blockers, fmt.Sprintf("%d still active", len(report.Busy)))
+	}
+	if len(report.Missing) > 0 {
+		blockers = append(blockers, fmt.Sprintf("%d missing a Codex session id", len(report.Missing)))
+	}
+	if len(blockers) == 0 {
+		return "Upgrade waits for idle, resumable Codex agents before closing terminals and restarting the supervisor."
+	}
+	return "Upgrade waits for idle, resumable Codex agents before closing terminals and restarting the supervisor: " + strings.Join(blockers, ", ") + "."
 }
 
 func ReportedVersion() string {

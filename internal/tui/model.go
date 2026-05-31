@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/edwmurph/weft/internal/codexsession"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/navigation"
@@ -106,6 +107,7 @@ type Model struct {
 	visible           map[string]bool
 	codexInputBuffers map[string][]rune
 	agentInterrupts   map[string]time.Time
+	sessionCaptures   map[string]time.Time
 	dataCh            chan ptyx.Data
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -146,6 +148,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
 		agentInterrupts:   map[string]time.Time{},
+		sessionCaptures:   map[string]time.Time{},
 		dataCh:            make(chan ptyx.Data, 64),
 		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
 	}
@@ -223,6 +226,15 @@ func (m *Model) LiveAgentCount() int {
 		count++
 	}
 	return count
+}
+
+func (m *Model) PrepareUpgradeResume() codexsession.Report {
+	next, report := codexsession.PrepareResumeState(m.state, m.runtime.Workspace)
+	if report.Assigned > 0 {
+		m.state = next
+		m.save()
+	}
+	return report
 }
 
 func (m Model) activeErrorText() string {
@@ -726,6 +738,7 @@ func (m *Model) killAgentPTY(agentID string) {
 	delete(m.screens, agentID)
 	delete(m.visible, agentID)
 	delete(m.agentInterrupts, agentID)
+	delete(m.sessionCaptures, agentID)
 }
 
 func (m *Model) selectedAgent() *state.Agent {
@@ -992,7 +1005,7 @@ func (m *Model) startPTY(agentID string) {
 		m.screens[agentID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
 	}
 	workspace := m.agentWorkspace(agentID)
-	ptySession, err := ptyx.Start(m.ctx, agentID, m.cfg.CodexCommand, workspace, m.ptyWidth(), m.ptyHeight(), func(data ptyx.Data) {
+	ptySession, err := ptyx.Start(m.ctx, agentID, m.codexCommandForAgent(agentID), workspace, m.ptyWidth(), m.ptyHeight(), func(data ptyx.Data) {
 		m.dataCh <- data
 	})
 	if err != nil {
@@ -1017,7 +1030,7 @@ func (m *Model) startPTYCmd(agentID string) tea.Cmd {
 		return nil
 	}
 	ctx := m.ctx
-	command := m.cfg.CodexCommand
+	command := m.codexCommandForAgent(agentID)
 	workspace := m.agentWorkspace(agentID)
 	cols := m.ptyWidth()
 	rows := m.ptyHeight()
@@ -1062,6 +1075,9 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 func (m *Model) applyPTYData(data ptyx.Data) {
 	if state.AgentByID(m.state, data.AgentID) == nil {
 		return
+	}
+	if data.Text != "" || data.Title != "" {
+		m.captureCodexSession(data.AgentID)
 	}
 	if data.Err != nil {
 		delete(m.ptys, data.AgentID)
@@ -1110,6 +1126,33 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		})
 		m.save()
 	}
+}
+
+func (m *Model) captureCodexSession(agentID string) {
+	agent := state.AgentByID(m.state, agentID)
+	if agent == nil || strings.TrimSpace(agent.CodexSessionID) != "" {
+		return
+	}
+	now := time.Now()
+	if last, ok := m.sessionCaptures[agentID]; ok && now.Sub(last) < time.Second {
+		return
+	}
+	m.sessionCaptures[agentID] = now
+	next, assigned := codexsession.AssignMissingSessionIDs(m.state, m.runtime.Workspace)
+	if assigned == 0 {
+		return
+	}
+	m.state = next
+	delete(m.sessionCaptures, agentID)
+	m.save()
+}
+
+func (m Model) codexCommandForAgent(agentID string) string {
+	command := m.cfg.CodexCommand
+	if agent := state.AgentByID(m.state, agentID); agent != nil && strings.TrimSpace(agent.CodexSessionID) != "" {
+		command = codexsession.ResumeCommand(command, agent.CodexSessionID)
+	}
+	return command
 }
 
 func (m *Model) activeOutput() string {
@@ -1776,7 +1819,7 @@ func renderHelp(cfg config.Config) string {
 		"Shift+Up/Down reorder agent",
 		fmt.Sprintf("%s rename", cfg.KeyBindings.Rename),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
-		"U restart supervisor when idle during upgrade",
+		"U upgrade supervisor and resume idle agents",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),
 		"",

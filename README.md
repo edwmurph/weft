@@ -41,9 +41,12 @@ brew install edwmurph/tap/weft
 
 After `brew upgrade weft`, reopen the dashboard with `weft`. If only the client
 needed to reopen, Weft will be current. If the older supervisor is still
-running, the dashboard shows an upgrade banner; press `U` to queue a safe
-restart when idle. Weft will not stop live Codex terminals for that queued
-restart.
+running, the dashboard shows an upgrade banner. Weft waits until open Codex
+agents are idle and have saved Codex session IDs, then shows `U` as the upgrade
+action. Confirming that modal closes the idle Codex terminals, restarts the
+supervisor, and runs `codex resume <session-id>` for each agent. Running shell
+commands and unsubmitted terminal input are not preserved, so finish important
+work first; the safer habit is still to upgrade after agents are idle or closed.
 
 Then run Weft from a project directory. On first interactive launch, Weft asks
 whether to add that directory as a workspace:

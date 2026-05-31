@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/edwmurph/weft/internal/codexsession"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/runtimebackup"
@@ -31,9 +32,10 @@ type clientResponseMsg struct {
 
 type clientSnapshotTick struct{}
 
-type localRestartMsg struct {
-	backupID string
-	err      error
+type localUpgradeMsg struct {
+	backupID      string
+	resumedAgents int
+	err           error
 }
 
 type ClientModel struct {
@@ -56,8 +58,9 @@ type ClientModel struct {
 	promptSuggestionIndex   int
 	loadingTickerActive     bool
 	launchWorkspacePrompted bool
-	localRestartWhenIdle    bool
-	localRestartInFlight    bool
+	localUpgradeResume      bool
+	localUpgradeInFlight    bool
+	lastResumeScan          time.Time
 	codexInputQueue         []map[string]string
 	codexInputInFlight      bool
 }
@@ -107,15 +110,21 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.codexInputInFlight = false
 		}
 		if typed.err != nil {
-			if typed.command == "restart_when_idle" && restartWhenIdleUnsupported(typed.response) {
-				m.message = "Restart when idle queued locally; Weft will wait for Codex agents to close."
-				return m, tea.Batch(m.localRestartWhenIdleCmd(), m.nextCodexInputRequest())
+			if typed.command == "upgrade_resume" && upgradeResumeUnsupported(typed.response) {
+				m.message = "Upgrading locally; Weft will close idle Codex terminals and resume saved sessions."
+				return m, tea.Batch(m.localUpgradeResumeCmd(), m.nextCodexInputRequest())
+			}
+			if typed.command == "upgrade_resume" {
+				m.localUpgradeResume = false
 			}
 			m.message = typed.err.Error()
 			return m, m.nextCodexInputRequest()
 		}
 		m.applyResponse(typed.response)
-		restartCmd := m.localRestartWhenIdleCmd()
+		if typed.command == "upgrade_resume" {
+			m.localUpgradeResume = false
+		}
+		restartCmd := m.localUpgradeResumeCmd()
 		nextCodexInput := m.nextCodexInputRequest()
 		nextLoadingTick := m.ensureLoadingTick()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
@@ -124,14 +133,19 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(nextCodexInput, nextLoadingTick, restartCmd)
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
-	case localRestartMsg:
-		m.localRestartInFlight = false
+	case localUpgradeMsg:
+		m.localUpgradeInFlight = false
 		if typed.err != nil {
-			m.message = "Restart when idle failed: " + typed.err.Error()
+			m.localUpgradeResume = false
+			m.message = "Upgrade failed: " + typed.err.Error()
 			return m, nil
 		}
-		m.localRestartWhenIdle = false
-		m.message = "Restarted idle supervisor to finish the upgrade. Backup: " + typed.backupID + "."
+		m.localUpgradeResume = false
+		if typed.resumedAgents > 0 {
+			m.message = fmt.Sprintf("Upgraded supervisor and resumed %d Codex agent(s). Backup: %s.", typed.resumedAgents, typed.backupID)
+		} else {
+			m.message = "Upgraded supervisor. Backup: " + typed.backupID + "."
+		}
 		return m, m.request("attach_client", nil)
 	case loadingTick:
 		if !m.hasLoadingAnimation() {
@@ -164,7 +178,7 @@ func (m ClientModel) View() string {
 	options := workspaceRenderOptions{
 		loadingFrame:        loadingFrame,
 		loadingAgents:       loadingAgentSet(m.snapshot.LoadingAgentIDs),
-		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade),
+		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
 	}
 	if loadingText != "" {
 		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
@@ -316,12 +330,16 @@ func (m *ClientModel) startDeleteConfirm() {
 }
 
 func (m *ClientModel) startUpgradeQueueConfirm() {
-	if !m.canRestartWhenIdle() {
+	if m.upgrade == nil {
 		return
 	}
 	if m.upgrade.RestartWhenIdleQueued {
 		m.confirm = confirmCancelRestartIdle
 	} else {
+		if !m.canUpgradeResumeNow() {
+			m.message = upgradeResumeWaitingMessage(codexsession.BuildReport(m.snapshot.State))
+			return
+		}
 		m.confirm = confirmRestartWhenIdle
 	}
 	m.pendingID = upgradeTarget(*m.upgrade)
@@ -359,10 +377,10 @@ func (m *ClientModel) applyConfirm() tea.Cmd {
 	case confirmDeleteAgent:
 		return m.request("close", map[string]string{"id": m.pendingID})
 	case confirmRestartWhenIdle:
-		m.localRestartWhenIdle = true
-		return m.request("restart_when_idle", nil)
+		m.localUpgradeResume = true
+		return m.request("upgrade_resume", nil)
 	case confirmCancelRestartIdle:
-		m.localRestartWhenIdle = false
+		m.localUpgradeResume = false
 		return m.request("cancel_restart_when_idle", nil)
 	}
 	return nil
@@ -392,7 +410,7 @@ func clientRequestArgs(rt config.Runtime, clientID string, command string, args 
 	if command == "attach_client" {
 		next["launch_workspace"] = rt.Workspace
 	}
-	if command == "restart_when_idle" {
+	if command == "restart_when_idle" || command == "upgrade_resume" {
 		if exe := clientExecutablePath(); exe != "" {
 			next["client_executable"] = exe
 		}
@@ -447,9 +465,10 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	if upgrade != nil {
 		m.upgrade = upgrade
 		if upgrade.RestartWhenIdleQueued {
-			m.localRestartWhenIdle = false
+			m.localUpgradeResume = false
 		}
-		m.message = dashboardUpgradeMessage(*upgrade)
+		m.prepareSnapshotUpgradeResume(*upgrade)
+		m.message = dashboardUpgradeMessage(*upgrade, m.snapshot.State)
 	} else {
 		m.upgrade = nil
 	}
@@ -476,7 +495,7 @@ func clientUpgradeFromResponse(response ipc.Response) *ipc.Upgrade {
 	return ipc.UpgradeStatus(response, version.Version)
 }
 
-func dashboardUpgradeMessage(upgrade ipc.Upgrade) string {
+func dashboardUpgradeMessage(upgrade ipc.Upgrade, st state.State) string {
 	if upgrade.AutoRestarted {
 		return upgrade.Message
 	}
@@ -489,13 +508,20 @@ func dashboardUpgradeMessage(upgrade ipc.Upgrade) string {
 	if !upgrade.RestartRequired {
 		return upgrade.Message
 	}
-	if upgrade.RunningAgents > 0 {
-		return fmt.Sprintf("Upgrade pending: supervisor %s must restart. Press U to restart when idle; reopening alone is not enough (%d live).", upgrade.SupervisorVersion, upgrade.RunningAgents)
+	report := codexsession.BuildReport(st)
+	if len(report.Busy) > 0 {
+		return fmt.Sprintf("Upgrade pending: supervisor %s must restart. Wait for %d Codex agent(s) to become idle; reopening alone is not enough.", upgrade.SupervisorVersion, len(report.Busy))
+	}
+	if len(report.Missing) > 0 {
+		return fmt.Sprintf("Upgrade pending: supervisor %s must restart. Waiting for %d Codex session id(s); reopening alone is not enough.", upgrade.SupervisorVersion, len(report.Missing))
+	}
+	if report.Total > 0 {
+		return fmt.Sprintf("Upgrade ready: supervisor %s can restart and resume %d idle Codex agent(s). Press U to continue.", upgrade.SupervisorVersion, report.Total)
 	}
 	return fmt.Sprintf("Upgrade ready: supervisor %s is idle. Press U to restart it now.", upgrade.SupervisorVersion)
 }
 
-func workspaceUpgradeFooterText(upgrade *ipc.Upgrade) string {
+func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
 	}
@@ -505,8 +531,15 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade) string {
 	if upgrade.RestartWhenIdleQueued {
 		return fmt.Sprintf("Upgrade queued: client %s, supervisor %s.\nClose agents to finish, or press U to cancel.", upgrade.ClientVersion, upgrade.SupervisorVersion)
 	}
-	if upgrade.RunningAgents > 0 {
-		return fmt.Sprintf("Upgrade pending: client %s, supervisor %s.\nPress U to restart when idle.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+	report := codexsession.BuildReport(st)
+	if len(report.Busy) > 0 {
+		return fmt.Sprintf("Upgrade pending: client %s, supervisor %s.\nWait for %d agent(s) to become idle.", upgrade.ClientVersion, upgrade.SupervisorVersion, len(report.Busy))
+	}
+	if len(report.Missing) > 0 {
+		return fmt.Sprintf("Upgrade pending: client %s, supervisor %s.\nWaiting for %d Codex session id(s).", upgrade.ClientVersion, upgrade.SupervisorVersion, len(report.Missing))
+	}
+	if report.Total > 0 {
+		return fmt.Sprintf("Upgrade ready: client %s, supervisor %s.\nPress U to upgrade and resume %d idle agent(s).", upgrade.ClientVersion, upgrade.SupervisorVersion, report.Total)
 	}
 	return fmt.Sprintf("Upgrade ready: client %s, supervisor %s.\nPress U to restart now.", upgrade.ClientVersion, upgrade.SupervisorVersion)
 }
@@ -515,36 +548,77 @@ func upgradeTarget(upgrade ipc.Upgrade) string {
 	return fmt.Sprintf("client %s, supervisor %s", upgrade.ClientVersion, upgrade.SupervisorVersion)
 }
 
-func (m ClientModel) canRestartWhenIdle() bool {
+func (m ClientModel) canUpgradePending() bool {
 	return m.upgrade != nil && m.upgrade.Compatible && m.upgrade.RestartRequired
 }
 
-func (m ClientModel) canActOnUpgradeQueue() bool {
-	return m.canRestartWhenIdle()
+func (m ClientModel) canUpgradeResumeNow() bool {
+	return m.canUpgradePending() && codexsession.BuildReport(m.snapshot.State).CanUpgrade()
 }
 
-func restartWhenIdleUnsupported(response ipc.Response) bool {
+func (m ClientModel) canActOnUpgradeQueue() bool {
+	return m.canUpgradePending() && (m.upgrade.RestartWhenIdleQueued || m.canUpgradeResumeNow())
+}
+
+func upgradeResumeUnsupported(response ipc.Response) bool {
 	return response.Error != nil && response.Error.Code == "unknown_command"
 }
 
-func (m *ClientModel) localRestartWhenIdleCmd() tea.Cmd {
-	if !m.localRestartWhenIdle || m.localRestartInFlight || !m.canRestartWhenIdle() || len(m.snapshot.State.Agents) > 0 {
+func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
+	if !upgrade.Compatible || !upgrade.RestartRequired || upgrade.RestartWhenIdleQueued {
+		return
+	}
+	report := codexsession.BuildReport(m.snapshot.State)
+	if len(report.Missing) == 0 || len(report.Busy) > 0 || time.Since(m.lastResumeScan) < time.Second {
+		return
+	}
+	next, prepared := codexsession.PrepareResumeState(m.snapshot.State, m.runtime.Workspace)
+	m.snapshot.State = next
+	m.lastResumeScan = time.Now()
+	if prepared.Assigned > 0 {
+		m.message = fmt.Sprintf("Found %d Codex session id(s) for upgrade resume.", prepared.Assigned)
+	}
+}
+
+func upgradeResumeWaitingMessage(report codexsession.Report) string {
+	if len(report.Busy) > 0 {
+		return fmt.Sprintf("Upgrade waits until %d Codex agent(s) are idle.", len(report.Busy))
+	}
+	if len(report.Missing) > 0 {
+		return fmt.Sprintf("Upgrade waits until %d Codex session id(s) are available.", len(report.Missing))
+	}
+	return "Upgrade is not ready yet."
+}
+
+func (m *ClientModel) localUpgradeResumeCmd() tea.Cmd {
+	if !m.localUpgradeResume || m.localUpgradeInFlight || !m.canUpgradePending() {
 		return nil
 	}
-	m.localRestartInFlight = true
+	next, report := codexsession.PrepareResumeState(m.snapshot.State, m.runtime.Workspace)
+	m.snapshot.State = next
+	if !report.CanUpgrade() {
+		m.localUpgradeResume = false
+		m.message = upgradeResumeWaitingMessage(report)
+		return nil
+	}
+	m.localUpgradeInFlight = true
 	rt := m.runtime
 	exe := clientExecutablePath()
+	resumedAgents := report.Total
 	return func() tea.Msg {
-		backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade restart when idle", IncludeLogs: true})
+		if err := state.NewStore(rt.StatePath, rt.Workspace).Write(next); err != nil {
+			return localUpgradeMsg{err: fmt.Errorf("could not save Codex resume sessions: %w", err)}
+		}
+		backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade resume restart", IncludeLogs: true})
 		if err != nil {
-			return localRestartMsg{err: fmt.Errorf("could not create pre-upgrade backup: %w", err)}
+			return localUpgradeMsg{err: fmt.Errorf("could not create pre-upgrade backup: %w", err)}
 		}
 		_, _ = ipc.Call(rt.SocketPath, ipc.Request{Command: "shutdown"}, time.Second)
 		waitForClientSupervisorStop(rt, 2*time.Second)
 		if err := startClientSupervisor(rt, exe); err != nil {
-			return localRestartMsg{err: err}
+			return localUpgradeMsg{err: err}
 		}
-		return localRestartMsg{backupID: backup.ID}
+		return localUpgradeMsg{backupID: backup.ID, resumedAgents: resumedAgents}
 	}
 }
 

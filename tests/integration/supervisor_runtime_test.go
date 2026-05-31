@@ -313,7 +313,7 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 		t.Fatalf("running upgrade output missing live-terminal warning:\n%s", out)
 	}
 	status := runWeft(t, newEnv, bin, "status")
-	if !strings.Contains(status, "supervisor version: 3.9.0") || !strings.Contains(status, "upgrade: restart pending, 1 live Codex terminal") {
+	if !strings.Contains(status, "supervisor version: 3.9.0") || !strings.Contains(status, "upgrade: upgrade pending, wait for idle/resumable agents (1 live)") {
 		t.Fatalf("status missing upgrade details:\n%s", status)
 	}
 
@@ -332,16 +332,18 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 	}
 }
 
-func TestDashboardUpgradeRestartWhenIdlePreservesLiveAgent(t *testing.T) {
+func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
 
 	bin := buildWeft(t)
 	tmp := t.TempDir()
-	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
-	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
-	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
+	fakeCodex, codexHome, resumeLog := writeResumeFakeCodex(t, tmp, "fake-codex-resume.sh")
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	codexEnv := []string{"CODEX_HOME=" + codexHome, "FAKE_CODEX_LOG=" + resumeLog}
+	oldEnv := appendUniqueEnv(upgradeEnv(runtimeDir, workspace, bin, "3.9.0"), codexEnv...)
+	newEnv := appendUniqueEnv(baseIntegrationEnv(runtimeDir, workspace, bin), codexEnv...)
 	t.Cleanup(func() {
 		cmd := exec.Command(bin, "close", "--kill", "--yes")
 		cmd.Env = newEnv
@@ -353,14 +355,21 @@ func TestDashboardUpgradeRestartWhenIdlePreservesLiveAgent(t *testing.T) {
 	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
 	runWeft(t, oldEnv, bin, "new", "Alpha")
 	st := waitState(t, oldEnv, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
+		return len(st.Agents) == 1 &&
+			st.Agents[0].Status == state.StatusRunning &&
+			strings.Contains(st.Agents[0].CodexTitle, "Ready")
 	})
+	if st.Agents[0].CodexSessionID == "" {
+		logData, _ := os.ReadFile(resumeLog)
+		t.Fatalf("agent did not capture Codex session id: %#v\nfake log:\n%s", st.Agents[0], logData)
+	}
 	agentID := st.Agents[0].ID
+	sessionID := st.Agents[0].CodexSessionID
 
-	pane := "upgrade-restart-when-idle"
+	pane := "upgrade-resume"
 	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade: pending") &&
+		return strings.Contains(capture, "Upgrade: ready") &&
 			strings.Contains(capture, "Press U")
 	})
 	if pid := readPID(t, runtimeDir); pid != oldPID {
@@ -373,62 +382,43 @@ func TestDashboardUpgradeRestartWhenIdlePreservesLiveAgent(t *testing.T) {
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workspaces") &&
 			strings.Contains(capture, "client "+weftversion.Version+", supervisor 3.9.0") &&
-			strings.Contains(capture, "Press U to restart when idle")
+			strings.Contains(capture, "Press U to upgrade and resume 1 idle agent")
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "u")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Restart supervisor when idle?") &&
-			strings.Contains(capture, "Y restart when idle")
+		return strings.Contains(capture, "Upgrade supervisor and resume agents?") &&
+			strings.Contains(capture, "Y upgrade and resume") &&
+			strings.Contains(capture, "unsubmitted text are not preserved")
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "y")
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade queued") &&
-			strings.Contains(capture, "Close agents to finish") &&
-			strings.Contains(capture, "press U to cancel")
-	})
-	if pid := readPID(t, runtimeDir); pid != oldPID {
-		t.Fatalf("restart when idle killed live agent, pid %q -> %q", oldPID, pid)
-	}
-
-	directRun(t, newEnv, "send-keys", "-t", pane, "u")
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Cancel queued supervisor restart?") &&
-			strings.Contains(capture, "Y cancel restart") &&
-			strings.Contains(capture, "N keep queued")
-	})
-	directRun(t, newEnv, "send-keys", "-t", pane, "y")
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade pending") &&
-			strings.Contains(capture, "Press U to restart when idle") &&
-			!strings.Contains(capture, "Upgrade queued")
-	})
-	if pid := readPID(t, runtimeDir); pid != oldPID {
-		t.Fatalf("canceling restart when idle changed supervisor pid, %q -> %q", oldPID, pid)
-	}
-
-	directRun(t, newEnv, "send-keys", "-t", pane, "u")
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Restart supervisor when idle?") &&
-			strings.Contains(capture, "Y restart when idle")
-	})
-	directRun(t, newEnv, "send-keys", "-t", pane, "y")
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade queued") &&
-			strings.Contains(capture, "Close agents to finish")
-	})
-
-	runWeft(t, newEnv, bin, "close", agentID)
 	if !waitForBool(8*time.Second, func() bool {
 		data, err := os.ReadFile(filepath.Join(runtimeDir, "weftd.pid"))
 		return err == nil && strings.TrimSpace(string(data)) != oldPID
 	}) {
-		t.Fatalf("supervisor did not restart after agent became idle; pid still %q\nscreen:\n%s", oldPID, clientOutput())
+		t.Fatalf("supervisor did not restart after upgrade confirmation; pid still %q\nscreen:\n%s", oldPID, clientOutput())
+	}
+	st = waitState(t, newEnv, bin, func(st state.State) bool {
+		agent := state.AgentByID(st, agentID)
+		return agent != nil &&
+			agent.Status == state.StatusRunning &&
+			agent.CodexSessionID == sessionID &&
+			strings.Contains(agent.CodexTitle, "Ready")
+	})
+	if len(st.Agents) != 1 {
+		t.Fatalf("upgrade resume should preserve agent rows: %#v", st.Agents)
+	}
+	if !waitForBool(4*time.Second, func() bool {
+		data, err := os.ReadFile(resumeLog)
+		return err == nil && strings.Contains(string(data), "resume:"+sessionID)
+	}) {
+		data, _ := os.ReadFile(resumeLog)
+		t.Fatalf("fake Codex was not resumed with session %q:\n%s", sessionID, data)
 	}
 	status := runWeft(t, newEnv, bin, "status")
 	if !strings.Contains(status, "upgrade: current") {
-		t.Fatalf("status should be current after restart when idle:\n%s", status)
+		t.Fatalf("status should be current after upgrade resume:\n%s", status)
 	}
-	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade restart when idle")
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade resume restart")
 }
 
 func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
@@ -600,6 +590,37 @@ func writeFakeCodex(t *testing.T, dir string, name string) string {
 	return fakeCodex
 }
 
+func writeResumeFakeCodex(t *testing.T, dir string, name string) (string, string, string) {
+	t.Helper()
+	codexHome := filepath.Join(dir, "codex-home")
+	resumeLog := filepath.Join(dir, "fake-codex.log")
+	fakeCodex := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeCodex, []byte(
+		"#!/bin/sh\n"+
+			"mkdir -p \"$CODEX_HOME/sessions/2026/05/31\"\n"+
+			"if [ \"$1\" = \"resume\" ]; then\n"+
+			"  printf 'resume:%s\\n' \"$2\" >> \"$FAKE_CODEX_LOG\"\n"+
+			"else\n"+
+			"  sid=\"fake-$$\"\n"+
+			"  ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')\n"+
+			"  session=\"$CODEX_HOME/sessions/2026/05/31/rollout-$sid.jsonl\"\n"+
+			"  printf '{\"type\":\"session_meta\",\"payload\":{\"id\":\"%s\",\"cwd\":\"%s\",\"timestamp\":\"%s\"}}\\n' \"$sid\" \"$PWD\" \"$ts\" > \"$session\"\n"+
+			"  printf 'session:%s\\n' \"$sid\" >> \"$FAKE_CODEX_LOG\"\n"+
+			"fi\n"+
+			"printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"trap 'exit 0' HUP INT TERM\n"+
+			"while IFS= read -r line; do\n"+
+			"  printf '\\033]2;Fake Codex Working\\007'\n"+
+			"  printf 'echo:%s\\n' \"$line\"\n"+
+			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"done\n"+
+			"while :; do sleep 1; done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeCodex, codexHome, resumeLog
+}
+
 func baseIntegrationEnv(runtimeDir string, workspace string, bin string) []string {
 	return append(os.Environ(),
 		"WEFT_HOME="+runtimeDir,
@@ -629,6 +650,29 @@ func filteredEnv(dropKeys ...string) []string {
 		}
 	}
 	return env
+}
+
+func appendUniqueEnv(env []string, values ...string) []string {
+	drop := map[string]bool{}
+	for _, value := range values {
+		if index := strings.Index(value, "="); index >= 0 {
+			drop[value[:index]+"="] = true
+		}
+	}
+	next := make([]string, 0, len(env)+len(values))
+	for _, item := range env {
+		skip := false
+		for prefix := range drop {
+			if strings.HasPrefix(item, prefix) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			next = append(next, item)
+		}
+	}
+	return append(next, values...)
 }
 
 func upgradeEnv(runtimeDir string, workspace string, bin string, version string) []string {
