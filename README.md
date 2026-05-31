@@ -133,9 +133,12 @@ command that follows the same stdin/stdout contract. Set
 `WEFT_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
 outside the agent workspace.
 
-The dashboard has `Workspaces`, `Agents`, and `Console` panes. Workspaces
-and agents live in the left-side navigation panes; the console stays ready on
-the right. Agents can sit directly in a workspace as top-level rows. Groups are
+The dashboard has `Workspaces`, `Agents`, and `Agent Preview` panes. Workspaces
+and agents live in the left-side navigation panes; the preview stays ready on
+the right as a read-only live cropped lens into the selected agent. Press
+`Enter` to open the selected thread in the focused `Agent Console`, where Codex
+input is forwarded. Agents can sit directly in a workspace as top-level rows.
+Groups are
 optional collapsible sections inside the `Agents` pane, and `Enter` on a group
 opens or collapses it. Dashboard forms use bordered inputs, compact
 validation/status lines, and state-specific key hints. In the `Workspaces` pane,
@@ -171,12 +174,12 @@ help = "?"
 quit = "C-c"
 ```
 
-In CODEX focus, Weft keeps the Console pane framed while forwarding Codex input
-through the active PTY. The attached client enables enhanced terminal keyboard
-reporting so multiline shortcuts such as `Shift+Enter` are forwarded to Codex.
-Press the drawer key, `C-b` by default, to return to the dashboard. `C-c`
-stays with Codex while Codex has focus. To close Weft, return to the dashboard
-and press `C-c`, or run `weft close` from another shell.
+In CODEX focus, Weft keeps the `Agent Console` framed while forwarding Codex
+input through the active PTY. The attached client enables enhanced terminal
+keyboard reporting so multiline shortcuts such as `Shift+Enter` are forwarded
+to Codex. Press the drawer key, `C-b` by default, to return to the dashboard.
+`C-c` stays with Codex while Codex has focus. To close Weft, return to the
+dashboard and press `C-c`, or run `weft close` from another shell.
 
 ## Config And State
 

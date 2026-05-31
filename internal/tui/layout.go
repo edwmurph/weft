@@ -52,6 +52,7 @@ var (
 	workspaceCountActiveStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	workspaceCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
 
 type framePalette struct {
@@ -475,27 +476,36 @@ func renderCodexFrame(
 	}
 	palette := paletteFor(active)
 	innerWidth := max(0, width-2)
-	topLabel := ""
+	agentActive := state.ActiveAgent(st) != nil
+	previewMode := !navCollapsed
+	topLabel := "Agent Preview"
+	topRightLabel := ""
 	if navCollapsed && active {
-		topLabel = "Console  " + codexCollapsedTopShortcuts(cfg)
-	} else {
-		topLabel = "Console"
+		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg)
+	} else if navCollapsed {
+		topLabel = "Agent Console"
+	} else if agentActive {
+		topRightLabel = "live · cropped"
 	}
 	lines := []string{
-		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, "", max(0, innerWidth-2)), innerWidth)),
+		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, topRightLabel, max(0, innerWidth-2)), innerWidth)),
 	}
 	contentHeight := max(0, height-2)
-	empty := state.ActiveAgent(st) == nil
+	empty := !agentActive
 	contentLines := renderCodexContent(content, max(0, innerWidth-codexLeftPadding), contentHeight, empty, len(st.Workspaces) > 0, loadingText)
 	for len(contentLines) < contentHeight {
 		contentLines = append(contentLines, "")
 	}
 	for _, line := range contentLines[:contentHeight] {
 		contentWidth := codexLineContentWidth(innerWidth)
-		lines = append(lines, palette.border.Render(borderVertical)+codexLeftPad(innerWidth)+padVisual(clip(line, contentWidth), contentWidth)+palette.border.Render(borderVertical))
+		renderedLine := padVisual(clip(line, contentWidth), contentWidth)
+		if previewMode && !empty {
+			renderedLine = previewClipLine(line, contentWidth)
+		}
+		lines = append(lines, palette.border.Render(borderVertical)+codexLeftPad(innerWidth)+renderedLine+palette.border.Render(borderVertical))
 	}
 	rightLabel := ""
-	if state.ActiveAgent(st) != nil {
+	if agentActive {
 		rightLabel = title
 	}
 	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))
@@ -515,9 +525,6 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 	lines := lastLines(content, height)
 	for len(lines) < height {
 		lines = append(lines, "")
-	}
-	for index := range lines {
-		lines[index] = clip(lines[index], width)
 	}
 	return lines
 }
@@ -686,6 +693,33 @@ func codexLineContentWidth(width int) int {
 		return 0
 	}
 	return max(0, width-min(codexLeftPadding, width))
+}
+
+func previewClipLine(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return padVisual(value, width)
+	}
+	marker := previewCropMarkerStyle.Render(" …")
+	markerWidth := lipgloss.Width(marker)
+	contentWidth := max(0, width-markerWidth)
+	return padVisual(clipPlain(value, contentWidth), contentWidth) + marker
+}
+
+func clipPlain(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	runes := []rune(value)
+	for len(runes) > 0 && lipgloss.Width(string(runes)) > width {
+		runes = runes[:len(runes)-1]
+	}
+	return string(runes)
 }
 
 func clip(value string, width int) string {

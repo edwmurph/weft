@@ -214,7 +214,7 @@ func keyDoctorAdvice(samples []keyDoctorSample) string {
 		}, "\n") + "\n"
 	}
 	if hasOptionBackspace && strings.HasPrefix(optionBackspace.Label, "alt+") {
-		return "OK: Option+Backspace is distinguishable. Weft can handle it and forward it into the Console pane.\n"
+		return "OK: Option+Backspace is distinguishable. Weft can handle it and forward it into the Agent Console.\n"
 	}
 	return "Info: Option+Backspace is distinguishable, but it is not a standard Meta/Esc Backspace sequence.\n"
 }

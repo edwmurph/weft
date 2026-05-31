@@ -206,16 +206,23 @@ Agent rows must not render fixed status tags. Status can appear only if the agen
 
 Group rows should be visually distinct from agent rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Agent rows should use a lighter marker and indentation when nested under a group.
 
-## Codex Pane
+## Agent Preview And Console
 
-The main pane shows either:
+The main agent pane has two modes:
+
+- `Agent Preview` when command center navigation is open
+- `Agent Console` when the selected Codex thread is focused and maximized
+
+The pane shows either:
 
 - a centered empty message when no agent is open, with a subtle Weft wordmark above it when space allows
 - the selected Codex thread when an agent is open
 
-When navigation is open, the Workspaces and Agents panes push the Console pane to the right. When the user presses `Enter` on an agent, navigation slides away left, the Console pane expands to the full terminal, and focus moves to Codex.
+When navigation is open, the Workspaces and Agents panes push `Agent Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the Codex PTY. When an agent is active, the preview top border shows `live · cropped` and clipped terminal lines use a subtle reserved right-edge marker so the pane reads as a live cropped lens instead of a full interactive terminal.
 
-Codex can only receive input when the Console pane is focused and maximized. When navigation is open, keyboard input controls Weft navigation and organization, not the Codex PTY.
+When the user presses `Enter` on an agent, navigation slides away left, `Agent Console` expands to the full terminal, and focus moves to Codex.
+
+Codex can only receive input when `Agent Console` is focused and maximized.
 
 ## Navigation States
 
@@ -227,7 +234,7 @@ Navigation panes are open.
 
 - Workspaces pane is visible.
 - Agents pane is visible.
-- Console pane is visible but not focused.
+- `Agent Preview` pane is visible but not focused when terminal width allows it.
 - Codex PTY does not receive normal key input.
 - User can create, delete, rename, move, and select objects.
 
@@ -251,11 +258,11 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
 
 ## Codex Focus State
 
-Console pane is maximized.
+`Agent Console` is maximized.
 
 - Workspaces and Agents panes are hidden offscreen to the left.
-- Console pane fills the terminal.
-- Weft keeps the framed Console pane visible while Codex is focused.
+- `Agent Console` fills the terminal.
+- Weft keeps the framed `Agent Console` pane visible while Codex is focused.
 - The attached client enables enhanced terminal keyboard reporting and forwards
   supported keyboard escape sequences into the active Codex PTY.
 - Codex-owned terminal behavior, including multiline shortcuts such as
@@ -562,7 +569,7 @@ workspace path
 Rules:
 
 - Starting an agent launches Codex in its workspace.
-- Switching agents changes which PTY is rendered in the Console pane.
+- Switching agents changes which PTY is rendered in `Agent Preview` or `Agent Console`.
 - Alt-modified keys are forwarded to Codex agent PTYs with an ESC prefix so terminal Meta key bindings keep working in the embedded Codex instance.
 - Forwarded Codex input preserves key order, including rapid typed or pasted text.
 - Moving an agent between groups does not affect its PTY.
@@ -639,7 +646,7 @@ Global `--clear`:
 
 `weft --help`, `weft help`, and `weft -h`:
 
-- show the same Weft ASCII mark used by the empty Console pane
+- show the same Weft ASCII mark used by the empty agent pane
 - leave blank space above the mark and a small left inset before the mark
 - advertise `weft` as the dashboard entry point rather than `weft start`
 - group commands by common dashboard use, agent organization, runtime, and
@@ -655,9 +662,9 @@ Minimum behavior:
 
 - The Workspaces pane has a fixed 64-column width when it is rendered beside the
   Agents pane.
-- At 120 columns and wider, show Workspaces, Agents, and Console panes together.
-- At medium widths where a fixed Workspaces pane and useful Console preview cannot
-  both fit, keep Workspaces and Agents visible and hide the Console preview.
+- At 120 columns and wider, show Workspaces, Agents, and `Agent Preview` panes together.
+- At medium widths where a fixed Workspaces pane and useful `Agent Preview` cannot
+  both fit, keep Workspaces and Agents visible and hide `Agent Preview`.
 - If navigation cannot fit, fall back to a single navigation pane that switches between workspaces and agents.
 - Codex Focus State must always give Codex the full available terminal.
 

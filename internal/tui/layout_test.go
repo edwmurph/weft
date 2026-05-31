@@ -33,17 +33,19 @@ func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	}
 }
 
-func TestRenderWorkspaceShowsWorkspacesAgentsAndConsole(t *testing.T) {
+func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
+	output := "output from a selected agent that is intentionally long enough to be cropped by the preview lens"
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 140, 24, "", minTwoPaneNavWidth, 1)
+	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", output, 140, 24, "", minTwoPaneNavWidth, 1)
 
 	for _, expected := range []string{
 		"Workspaces",
 		"Agents",
-		"Console",
+		"Agent Preview",
+		"live · cropped",
 		"▾ inbox",
 		"╭ /tmp/project",
 		"1 total",
@@ -60,6 +62,13 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndConsole(t *testing.T) {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("workspace missing %q:\n%s", expected, got)
 		}
+	}
+	stripped := ansi.Strip(got)
+	if !strings.Contains(stripped, " …│") {
+		t.Fatalf("wide preview should reserve a right-edge crop marker:\n%s", stripped)
+	}
+	if strings.Contains(stripped, "cropped by the preview lens…") {
+		t.Fatalf("preview should not attach generic clipping ellipsis to agent text:\n%s", stripped)
 	}
 	if strings.Contains(got, "ready") {
 		t.Fatalf("agent rows should not render fixed status tags unless template asks for them:\n%s", got)
@@ -102,8 +111,8 @@ func TestRenderWorkspaceKeepsFixedWorkspacePaneAtMediumWidth(t *testing.T) {
 			t.Fatalf("medium dashboard missing %q:\n%s", expected, got)
 		}
 	}
-	if strings.Contains(got, "No Codex agent open") {
-		t.Fatalf("medium dashboard should hide Codex preview before clipping fixed Workspaces:\n%s", got)
+	if strings.Contains(got, "No Codex agent open") || strings.Contains(got, "Agent Preview") {
+		t.Fatalf("medium dashboard should hide Agent Preview before clipping fixed Workspaces:\n%s", got)
 	}
 }
 
@@ -288,6 +297,9 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	if hintIndex < 0 || logoIndex > hintIndex {
 		t.Fatalf("empty dashboard should render wordmark above existing hint:\n%s", stripped)
 	}
+	if strings.Contains(stripped, "live · cropped") || strings.Contains(stripped, " …│") {
+		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
+	}
 
 	content := renderEmptyCodexContent(100, 24, true)
 	logoWidth := maxVisualWidth(emptyWeftLogo)
@@ -353,8 +365,11 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if !strings.Contains(got, "WEFT  C-b dashboard  C-c to Codex") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
-	if !strings.Contains(got, "Console") {
-		t.Fatalf("codex pane should render Console title:\n%s", got)
+	if !strings.Contains(got, "Agent Console") {
+		t.Fatalf("focused codex pane should render Agent Console title:\n%s", got)
+	}
+	if strings.Contains(got, "live · cropped") {
+		t.Fatalf("focused codex pane should not render preview crop label:\n%s", got)
 	}
 	if count := strings.Count(got, "C-c to Codex"); count != 1 {
 		t.Fatalf("collapsed codex should render shortcuts only once, got %d:\n%s", count, got)
