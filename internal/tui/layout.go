@@ -598,7 +598,7 @@ func agentRowStyle(agent state.Agent, loadingAgents map[string]bool) lipgloss.St
 		return agentShippingStyle
 	case string(state.StatusError):
 		return agentErrorStyle
-	case string(state.StatusStopped), string(state.StatusSitting):
+	case string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
 		return agentAttentionStyle
 	default:
 		return agentAttentionStyle
@@ -624,6 +624,8 @@ func agentMarkerForRender(agent state.Agent, loadingFrame string, loadingAgents 
 	}
 	switch titles.RenderStatus(agent) {
 	case string(state.StatusError):
+		return "!"
+	case string(state.StatusKilled):
 		return "!"
 	case string(state.StatusReady):
 		return "●"
@@ -731,7 +733,7 @@ func renderCodexFrame(
 	topLabel := "Agent Live Preview"
 	topRightLabel := ""
 	if navCollapsed && active {
-		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg, st, loadingText)
+		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg)
 	} else if navCollapsed {
 		topLabel = "Agent Console"
 	} else if agentActive {
@@ -914,8 +916,8 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 	return lines[:height]
 }
 
-func codexCollapsedTopShortcuts(cfg config.Config, st state.State, loadingText string) string {
-	return appTitle + "  " + cfg.KeyBindings.Drawer + " dashboard  " + codexQuitBindingLabel(cfg, st, loadingText)
+func codexCollapsedTopShortcuts(cfg config.Config) string {
+	return appTitle + "  " + cfg.KeyBindings.Drawer + " dashboard"
 }
 
 func paletteFor(active bool) framePalette {

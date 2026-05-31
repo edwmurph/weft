@@ -188,10 +188,6 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	}
 
-	quitPressed := bindingMatches(m.cfg.KeyBindings.Quit, msg)
-	if quitPressed && !m.activeCodexReceivesQuitBinding() {
-		return m, tea.Quit
-	}
 	if bindingMatches(m.cfg.KeyBindings.Drawer, msg) {
 		return m, m.request("toggle_drawer", nil)
 	}
@@ -200,6 +196,9 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.snapshot.State.Focus == state.FocusCodex {
 		return m, m.request("toggle_drawer", nil)
+	}
+	if bindingMatches(m.cfg.KeyBindings.Quit, msg) {
+		return m, tea.Quit
 	}
 	if bindingMatches(m.cfg.KeyBindings.Help, msg) {
 		m.mode = modeHelp
@@ -660,17 +659,6 @@ func (m ClientModel) renderConfirmModal() string {
 	return renderConfirmPrompt(m.confirm, confirmTarget(m.confirm, m.snapshot.State, m.pendingID, m.renderAgentTitle), width)
 }
 
-func (m ClientModel) activeCodexReceivesQuitBinding() bool {
-	if m.snapshot.State.Focus != state.FocusCodex {
-		return false
-	}
-	active := state.ActiveAgent(m.snapshot.State)
-	if active == nil {
-		return false
-	}
-	return activeAgentReceivesQuitBinding(*active, strings.TrimSpace(m.snapshot.LoadingText) != "")
-}
-
 func (m ClientModel) selectedAgent() *state.Agent {
 	return selectedAgentForState(m.snapshot.State, m.snapshot.GroupCursor)
 }
@@ -729,6 +717,10 @@ func codexInputArgs(msg tea.KeyMsg) map[string]string {
 			args["input"] = "text"
 			args["text"] = key
 		}
+	}
+	if isCtrlCKey(msg) {
+		args["input"] = "ctrl+c"
+		args["encoded"] = terminalKeyboardCtrlC
 	}
 	return args
 }

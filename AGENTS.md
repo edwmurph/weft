@@ -8,6 +8,7 @@
 - For implementation plans, explicitly include creating or using a detached worktree under `./.worktrees/<slug>` unless the user says otherwise.
 - If a requested change appears to contradict `spec.md`, pause before implementation. Propose the change, identify the specific spec item it deviates from, and confirm that the user wants both the product behavior to deviate and `spec.md` updated to match.
 - Treat `spec.md` as the living product contract. When accepted product behavior, UX, command semantics, state shape, or workflow expectations evolve, update `spec.md` in the same change.
+- If an implementation requires changing an integration test expectation and the intended behavior cannot be safely inferred from the user's original request, proceed with the implementation using best judgment, but explicitly highlight the integration expectation as a contract change during the work and in the final report.
 - If an implementation change causes drift with docs or agent instructions, update the docs/instructions in the same change to keep them accurate.
 - For broad refactor requests, use the repo-local `$weft-refactor` skill in `skills/weft-refactor/` and update its suggestion log.
 - After verified implementation work, summarize what changed, what verification passed, exactly how the user can test it locally, include the exact command(s) to retest the changed behavior, and offer to ship it. Then stop for review unless the user explicitly says **"ship it"**.

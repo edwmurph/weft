@@ -190,7 +190,7 @@ Each card renders:
 - `active`, the number of agents whose rendered/live status is `starting`, `running`, `working`, or `shipping`
 - `needs attention`, computed as `total - active`
 
-Do not render card-level `parked`, `stopped`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.
+Do not render card-level `parked`, `stopped`, `killed`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.
 
 The default card title is the display path, for example `~/code/personal/weft`. A workspace can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
 
@@ -328,11 +328,13 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
   framed pane.
 - Weft does not enable terminal mouse tracking, so native terminal drag
   selection remains available over `Agent Console` and `Agent Live Preview` output.
-- C-c is forwarded to Codex while the active agent is starting or working, so it
-  interrupts Codex like a normal Codex terminal. Once the active agent is ready
-  or stopped, C-c quits Weft.
-- The `Agent Console` toolbar shows the current C-c action as `C-c interrupt`
-  or `C-c quit`.
+- C-c belongs to Codex whenever `Agent Console` is focused and an active agent
+  exists. Weft does not use C-c to quit from `Agent Console`, and the toolbar
+  must not advertise C-c. While Codex reports active work, C-c must reach
+  Codex's interrupt path and must not return from or close a side conversation.
+- If the active Codex PTY exits while `Agent Console` is focused, Weft returns
+  to the dashboard `Agents` pane, keeps the agent selected, marks it killed,
+  and makes the exited state visible in agent metadata.
 - User exits back to dashboard with the configured drawer/navigation key.
 
 ## Initial Keybindings
@@ -372,6 +374,7 @@ ready
 sitting
 shipping
 stopped
+killed
 error
 ```
 

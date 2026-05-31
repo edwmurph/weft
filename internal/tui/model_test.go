@@ -397,8 +397,54 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	model.screens[model.state.Agents[0].ID].Write("ready\n")
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
-	if model.message != "closed Weft clients" {
-		t.Fatalf("C-c should close Weft after Codex is ready, message=%q", model.message)
+	if model.message != "" || model.state.Focus != state.FocusCodex {
+		t.Fatalf("C-c should still forward while Codex is ready, message=%q focus=%s", model.message, model.state.Focus)
+	}
+}
+
+func TestActivePTYExitReturnsToAgentsPane(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.width = 120
+	model.navWidth = 0
+	model.state.Focus = state.FocusCodex
+	model.state.NavOpen = false
+	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
+
+	model.applyPTYData(ptyx.Data{AgentID: "a", Err: os.ErrClosed})
+
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.Status != state.StatusStopped || agent.CodexTitle != "Codex exited" {
+		t.Fatalf("agent after PTY exit = %#v", agent)
+	}
+	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
+		t.Fatalf("PTY exit should recover to Agents pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
+	}
+	if model.ptys["a"] != nil {
+		t.Fatal("dead PTY should be removed from live PTY map")
+	}
+	if model.navWidth == 0 {
+		t.Fatal("dashboard nav should be visible after active PTY exit")
+	}
+}
+
+func TestRecentCtrlCPTYExitMarksAgentKilled(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.width = 120
+	model.navWidth = 0
+	model.state.Focus = state.FocusCodex
+	model.state.NavOpen = false
+	model.recordAgentInterrupt("a")
+
+	model.applyPTYData(ptyx.Data{AgentID: "a", Err: os.ErrClosed})
+
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.Status != state.StatusKilled || agent.CodexTitle != "Codex killed" {
+		t.Fatalf("agent after interrupted PTY exit = %#v", agent)
+	}
+	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
+		t.Fatalf("interrupted PTY exit should recover to Agents pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
 	}
 }
 
@@ -1477,7 +1523,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b dashboard  C-c interrupt") {
+	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b dashboard") || strings.Contains(got, "C-c") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 

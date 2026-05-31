@@ -148,21 +148,6 @@ func agentStatusIndicatesActivity(agent state.Agent) bool {
 	}
 }
 
-func activeAgentReceivesQuitBinding(agent state.Agent, loading bool) bool {
-	if loading {
-		return true
-	}
-	return agentStatusIndicatesActivity(agent)
-}
-
-func codexQuitBindingLabel(cfg config.Config, st state.State, loadingText string) string {
-	action := "quit"
-	if active := state.ActiveAgent(st); active != nil && activeAgentReceivesQuitBinding(*active, strings.TrimSpace(loadingText) != "") {
-		action = "interrupt"
-	}
-	return cfg.KeyBindings.Quit + " " + action
-}
-
 func autoTitleNotice(cfg config.Config, agent state.Agent, draftTitle string) string {
 	if !strings.Contains(draftTitle, titles.AutoTemplate) {
 		return ""

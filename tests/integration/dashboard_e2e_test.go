@@ -17,10 +17,8 @@ import (
 )
 
 const (
-	collapsedCodexToolbarPrefix    = "WEFT  C-b dashboard  C-c "
-	collapsedCodexInterruptToolbar = "WEFT  C-b dashboard  C-c interrupt"
-	collapsedCodexQuitToolbar      = "WEFT  C-b dashboard  C-c quit"
-	keyboardProtocolSetup          = "\x1b[>4;2m\x1b[>29u"
+	collapsedCodexToolbar = "WEFT  C-b dashboard"
+	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
 func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
@@ -314,6 +312,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	startupMarker := filepath.Join(tmp, "fake-codex-color-only")
 	titleHookPayload := filepath.Join(tmp, "title-hook-payload.json")
 	inputLog := filepath.Join(tmp, "fake-codex-input.log")
+	interruptLog := filepath.Join(tmp, "fake-codex-interrupt.log")
 	ptySizeLog := filepath.Join(tmp, "fake-codex-pty-size")
 	titleHook := filepath.Join(tmp, "title-hook.sh")
 	if err := os.WriteFile(titleHook, []byte(
@@ -325,7 +324,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	}
 	fakeCodex := filepath.Join(tmp, "fake-codex.sh")
 	if err := os.WriteFile(fakeCodex, []byte(
-		"#!/bin/sh\n"+
+		"#!/bin/bash\n"+
 			"startup_delay=${STARTUP_DELAY:-1.2}\n"+
 			"printf '\\033]2;Fake Codex Ready\\007'\n"+
 			"stty raw -echo\n"+
@@ -348,9 +347,54 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"i=0; while [ \"$i\" -lt 220 ]; do printf 'x'; i=$((i + 1)); done; printf '\\n'\n"+
 			"printf '\\033[20;8Hready'\n"+
 			"trap 'exit 0' HUP TERM\n"+
-			"trap 'printf \"\\033]2;Fake Codex Ready\\007\"' INT\n"+
+			"side_mode=0\n"+
+			"trap 'if [ -n \"${INTERRUPT_LOG:-}\" ]; then printf int >> \"$INTERRUPT_LOG\"; fi; if [ \"${side_mode:-0}\" -eq 1 ]; then side_mode=0; printf \"\\033]2;Fake Codex Ready\\007\"; printf \"\\033[2J\\033[Hreturned from side\\n\"; else printf \"\\033]2;Fake Codex Ready\\007\"; fi' INT\n"+
+			"read_work_interrupt() {\n"+
+			"  local active_side=\"$1\"\n"+
+			"  local max_reads=\"${2:-10}\"\n"+
+			"  local i=0 ch next seq\n"+
+			"  while [ \"$i\" -lt \"$max_reads\" ]; do\n"+
+			"    if IFS= read -r -s -n 1 -t 1 ch; then\n"+
+			"      if [ \"$ch\" = $'\\003' ]; then\n"+
+			"        if [ -n \"${INTERRUPT_LOG:-}\" ]; then printf int >> \"$INTERRUPT_LOG\"; fi\n"+
+			"        printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"        if [ \"$active_side\" -eq 1 ]; then\n"+
+			"          side_mode=0\n"+
+			"          printf '\\033[2J\\033[Hraw ctrl-c returned main thread\\n'\n"+
+			"        fi\n"+
+			"        return 0\n"+
+			"      fi\n"+
+			"      if [ \"$ch\" = $'\\033' ]; then\n"+
+			"        seq=$ch\n"+
+			"        while IFS= read -r -s -n 1 -t 1 next; do\n"+
+			"          seq=$seq$next\n"+
+			"          if [ \"$next\" = \"u\" ] || [ \"$next\" = \"~\" ]; then break; fi\n"+
+			"        done\n"+
+			"        if [ \"$seq\" = $'\\033' ] || [ \"$seq\" = $'\\033[99;5u' ] || [ \"$seq\" = $'\\033[99;5:1u' ] || [ \"$seq\" = $'\\033[27;5;99~' ]; then\n"+
+			"          if [ -n \"${INTERRUPT_LOG:-}\" ]; then printf int >> \"$INTERRUPT_LOG\"; fi\n"+
+			"          printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"          if [ \"$active_side\" -eq 1 ]; then\n"+
+			"            printf '\\033[2J\\033[Hinterrupted side work\\nside prompt\\n'\n"+
+			"          fi\n"+
+			"          return 0\n"+
+			"        fi\n"+
+			"      fi\n"+
+			"    fi\n"+
+			"    i=$((i + 1))\n"+
+			"  done\n"+
+			"  return 1\n"+
+			"}\n"+
 			"while IFS= read -r line; do\n"+
 			"  if [ -n \"${INPUT_LOG:-}\" ]; then printf '%s\\n' \"$line\" >> \"$INPUT_LOG\"; fi\n"+
+			"  if [ \"$line\" = \"/side\" ]; then\n"+
+			"    side_mode=1\n"+
+			"    printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"    printf '\\033[2J\\033[H'\n"+
+			"    printf 'Side conversation boundary.\\n'\n"+
+			"    printf 'You are in a side conversation, not the main thread.\\n'\n"+
+			"    printf 'side prompt\\n'\n"+
+			"    continue\n"+
+			"  fi\n"+
 			"  printf '\\033]2;Fake Codex Working\\007'\n"+
 			"  printf '\\033[2J\\033[H'\n"+
 			"  printf '╭──────────────────────────────────────────────────────────╮\\n'\n"+
@@ -360,7 +404,17 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"  i=0; while [ \"$i\" -lt 220 ]; do printf 'y'; i=$((i + 1)); done; printf '\\n'\n"+
 			"  printf 'received:%s\\n' \"$line\"\n"+
 			"  printf '\\033[10;5Hprompt'\n"+
-			"  sleep 1\n"+
+			"  if [ \"$line\" = \"interrupt signal\" ] || [ \"$line\" = \"side-work\" ]; then\n"+
+			"    saved_stty=$(stty -g)\n"+
+			"    stty raw -echo -isig\n"+
+			"    printf '\\nawaiting interrupt\\n'\n"+
+			"    read_work_interrupt \"$side_mode\" 8\n"+
+			"    interrupted=$?\n"+
+			"    stty \"$saved_stty\"\n"+
+			"    if [ \"$interrupted\" -eq 0 ]; then continue; fi\n"+
+			"  else\n"+
+			"    sleep 1\n"+
+			"  fi\n"+
 			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
 			"done\n"+
 			"while :; do sleep 1; done\n",
@@ -380,6 +434,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		"STARTUP_DELAY=1.2",
 		"STARTUP_MARKER="+startupMarker,
 		"INPUT_LOG="+inputLog,
+		"INTERRUPT_LOG="+interruptLog,
 		"PTY_SIZE_LOG="+ptySizeLog,
 		"PATH="+os.Getenv("PATH"),
 		"TERM=xterm-256color",
@@ -463,7 +518,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Starting Codex") &&
-				strings.Contains(capture, collapsedCodexInterruptToolbar) &&
+				strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "C-c") &&
 				!strings.Contains(capture, "No Codex agent open")
 		})
 		placeholderDuration := time.Since(started)
@@ -506,7 +562,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, collapsedCodexInterruptToolbar) && !strings.Contains(capture, "Agents")
+			return strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "C-c") &&
+				!strings.Contains(capture, "Agents")
 		})
 		t.Logf("dashboard_e2e metric=%q duration=%s", "new agent color-only startup covered", time.Since(started).Round(time.Millisecond))
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
@@ -514,7 +572,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				!strings.Contains(capture, "No Codex agent open") &&
 				!strings.Contains(capture, "Workspaces") &&
 				!strings.Contains(capture, "Agents") &&
-				strings.Contains(capture, collapsedCodexQuitToolbar)
+				strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "C-c")
 		})
 		if !waitForBool(2*time.Second, func() bool {
 			data, _ := os.ReadFile(ptySizeLog)
@@ -615,8 +674,42 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 	})
 
+	timedStep(t, "codex focus sends enhanced ctrl-c as Codex interrupt", func() {
+		before, _ := os.ReadFile(inputLog)
+		beforeInterrupt, _ := os.ReadFile(interruptLog)
+		directRun(t, env, "send-keys", "-l", "-t", pane, "interrupt signal")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			return agent != nil && strings.Contains(agent.CodexTitle, "Working")
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "received:interrupt signal") &&
+				strings.Contains(capture, "awaiting interrupt")
+		})
+		writeClientInput(t, "\x1b[27;5;99~")
+		if !waitForBool(2*time.Second, func() bool {
+			data, _ := os.ReadFile(interruptLog)
+			return len(data) > len(beforeInterrupt)
+		}) {
+			data, _ := os.ReadFile(interruptLog)
+			t.Fatalf("enhanced ctrl+c did not reach Codex as an interrupt:\nbefore=%q\nafter=%q", beforeInterrupt, data)
+		}
+		data, _ := os.ReadFile(inputLog)
+		if bytes.Contains(data[len(before):], []byte("\x1b[27;5;99~")) {
+			t.Fatalf("enhanced ctrl+c should not be submitted as prompt text:\nbefore=%q\nafter=%q", before, data)
+		}
+		if clientExited(clientDone) {
+			t.Fatal("enhanced ctrl+c should not quit Weft in Agent Console")
+		}
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
+		})
+	})
+
 	timedStep(t, "C-b opens dashboard", func() {
-		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		writeClientInput(t, "\x1b[98;5u")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		time.Sleep(250 * time.Millisecond)
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
@@ -778,7 +871,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 	})
 
-	timedStep(t, "C-c interrupts active Codex and quits Weft when ready", func() {
+	timedStep(t, "C-c stays owned by Codex in Agent Console", func() {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
@@ -795,13 +888,13 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:interrupt") &&
-				strings.Contains(capture, collapsedCodexInterruptToolbar)
+				strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "C-c")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-c")
 		time.Sleep(250 * time.Millisecond)
-		attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
-		if len(attached) != 1 || attached[0] != "1" {
-			t.Fatalf("C-c should stay with Codex while CODEX is running: %v", attached)
+		if clientExited(clientDone) {
+			t.Fatal("C-c in Agent Console should not quit Weft")
 		}
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
@@ -810,17 +903,13 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, collapsedCodexQuitToolbar)
+			return strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "C-c")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-c")
-		if !waitForBool(2*time.Second, func() bool {
-			attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
-			return len(attached) == 1 && attached[0] == "0"
-		}) {
-			t.Fatalf("dashboard C-c did not detach Weft clients")
-		}
-		if panes := directLines(t, env, "list-panes", "-t", pane, "-F", "#{pane_id}"); len(panes) != 1 {
-			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
+		time.Sleep(250 * time.Millisecond)
+		if clientExited(clientDone) {
+			t.Fatal("C-c in ready Agent Console should still not quit Weft")
 		}
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
@@ -828,7 +917,186 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				st.Agents[0].Status == state.StatusRunning &&
 				strings.Contains(st.Agents[0].CodexTitle, "Ready")
 		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusAgents && st.NavOpen
+		})
 	})
+}
+
+func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex := writeExitOnInterruptFakeCodex(t, tmp, "fake-codex-exits-on-int.sh")
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\n", fakeCodex, "{codex}")
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "ctrl-c-exit-client"
+	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?") &&
+			strings.Contains(capture, "Y yes")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "y")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Agents") &&
+			strings.Contains(capture, "No Codex agent open")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.Focus == state.FocusCodex &&
+			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+	})
+	firstAgentID := st.Agents[0].ID
+	capture := waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Exit-on-interrupt Codex Ready") &&
+			strings.Contains(capture, collapsedCodexToolbar)
+	})
+	if strings.Contains(capture, "C-c") {
+		t.Fatalf("Agent Console toolbar should not mention C-c:\n%s", capture)
+	}
+
+	directRun(t, env, "send-keys", "-t", pane, "C-c")
+	st = waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.ActiveAgentID == firstAgentID &&
+			st.Focus == state.FocusAgents &&
+			st.NavOpen &&
+			st.Agents[0].Status == state.StatusKilled &&
+			st.Agents[0].CodexTitle == "Codex killed"
+	})
+	if clientExited(clientDone) {
+		t.Fatal("C-c that exits Codex should not quit Weft")
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Agents") &&
+			strings.Contains(capture, "Codex killed")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	st = waitState(t, env, bin, func(st state.State) bool {
+		active := state.ActiveAgent(st)
+		return len(st.Agents) == 2 &&
+			active != nil &&
+			active.ID != firstAgentID &&
+			st.Focus == state.FocusCodex &&
+			strings.Contains(active.CodexTitle, "Ready")
+	})
+	secondAgentID := st.ActiveAgentID
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.ActiveAgentID == secondAgentID &&
+			st.Focus == state.FocusAgents &&
+			st.NavOpen
+	})
+	if clientExited(clientDone) {
+		t.Fatal("C-b dashboard return should keep Weft attached")
+	}
+}
+
+func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex := writeSideModeFakeCodex(t, tmp, "fake-codex-side-mode.sh")
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\n", fakeCodex, "{codex}")
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "ctrl-c-side-client"
+	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?") &&
+			strings.Contains(capture, "Y yes")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "y")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Agents") &&
+			strings.Contains(capture, "No Codex agent open")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.Focus == state.FocusCodex &&
+			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+	})
+	directRun(t, env, "send-keys", "-l", "-t", pane, "/side")
+	time.Sleep(100 * time.Millisecond)
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "You are in a side conversation") &&
+			strings.Contains(capture, collapsedCodexToolbar) &&
+			!strings.Contains(capture, "C-c")
+	})
+
+	directRun(t, env, "send-keys", "-l", "-t", pane, "side-work")
+	time.Sleep(100 * time.Millisecond)
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.Focus == state.FocusCodex &&
+			st.Agents[0].Status == state.StatusRunning &&
+			strings.Contains(st.Agents[0].CodexTitle, "Working")
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "received:side-work") &&
+			strings.Contains(capture, "awaiting side interrupt")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-c")
+	var wrongCapture string
+	if waitForBool(1*time.Second, func() bool {
+		wrongCapture = clientOutput()
+		return strings.Contains(wrongCapture, "raw ctrl-c returned main thread") ||
+			strings.Contains(wrongCapture, "enhanced ctrl-c returned main thread") ||
+			strings.Contains(wrongCapture, "Codex killed")
+	}) {
+		t.Fatalf("C-c during side work returned/closed the side agent instead of interrupting it:\n%s", wrongCapture)
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "interrupted side work") &&
+			strings.Contains(capture, "side prompt") &&
+			!strings.Contains(capture, "raw ctrl-c returned main thread") &&
+			!strings.Contains(capture, "enhanced ctrl-c returned main thread") &&
+			!strings.Contains(capture, "Codex killed") &&
+			strings.Contains(capture, collapsedCodexToolbar) &&
+			!strings.Contains(capture, "C-c")
+	})
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.Focus == state.FocusCodex &&
+			st.Agents[0].Status == state.StatusRunning &&
+			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+	})
+	if clientExited(clientDone) {
+		t.Fatal("C-c during side work should not quit Weft")
+	}
 }
 
 func TestDashboardOrganizationJourneysE2E(t *testing.T) {
@@ -1131,7 +1399,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		}
 		clientOutput, _ = startDirectDashboardClient(t, env, bin, alpha, pane+"-reattach", 150, 36)
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, collapsedCodexToolbarPrefix) ||
+			return strings.Contains(capture, collapsedCodexToolbar) ||
 				(strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Agents"))
 		})
 		if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
@@ -1247,14 +1515,16 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Starting Codex") &&
-			strings.Contains(capture, collapsedCodexInterruptToolbar)
+			strings.Contains(capture, collapsedCodexToolbar) &&
+			!strings.Contains(capture, "C-c")
 	})
 	assertPerformanceBudget(t, "agent startup placeholder visible", time.Since(started), time.Second)
 
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return (strings.Contains(capture, "Fake Codex dashboard ready") ||
 			strings.Contains(capture, "ready waiting for first message")) &&
-			strings.Contains(capture, collapsedCodexQuitToolbar)
+			strings.Contains(capture, collapsedCodexToolbar) &&
+			!strings.Contains(capture, "C-c")
 	})
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Agents) == 1 &&
@@ -1273,7 +1543,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 	started = time.Now()
 	clientOutput, _ = startDirectDashboardClient(t, env, bin, workspace, pane+"-reattach", 150, 36)
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, collapsedCodexToolbarPrefix) ||
+		return strings.Contains(capture, collapsedCodexToolbar) ||
 			strings.Contains(capture, "Fake Codex dashboard ready")
 	})
 	assertPerformanceBudget(t, "reattach renders running agent", time.Since(started), 8*time.Second)
@@ -1495,8 +1765,8 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	if count := strings.Count(capture, "WEFT"); count > 1 {
 		t.Fatalf("dashboard should render at most one WEFT frame label, got %d:\n%s", count, capture)
 	}
-	if count := strings.Count(capture, "C-c interrupt") + strings.Count(capture, "C-c quit"); count > 1 {
-		t.Fatalf("dashboard rendered duplicate footer/header labels, got %d:\n%s", count, capture)
+	if strings.Contains(capture, "C-c interrupt") || strings.Contains(capture, "C-c quit") {
+		t.Fatalf("Agent Console should not advertise C-c ownership:\n%s", capture)
 	}
 	if !empty && strings.Contains(capture, "No Codex agent open") {
 		t.Fatalf("dashboard kept empty state after agent was created:\n%s", capture)
@@ -1683,6 +1953,106 @@ func writeVisibleFakeCodex(t *testing.T, dir string, name string) string {
 			"  printf '\\033]2;Fake Codex Working\\007'\n"+
 			"  printf 'echo:%s\\n' \"$line\"\n"+
 			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"done\n"+
+			"while :; do sleep 1; done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeCodex
+}
+
+func writeExitOnInterruptFakeCodex(t *testing.T, dir string, name string) string {
+	t.Helper()
+	fakeCodex := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeCodex, []byte(
+		"#!/bin/bash\n"+
+			"printf '\\033]2;Exit-on-interrupt Codex Ready\\007'\n"+
+			"printf 'Exit-on-interrupt Codex Ready\\n'\n"+
+			"trap 'exit 0' HUP TERM\n"+
+			"trap 'exit 130' INT\n"+
+			"saved_stty=$(stty -g)\n"+
+			"stty raw -echo -isig\n"+
+			"while IFS= read -r -s -n 1 ch; do\n"+
+			"  if [ \"$ch\" = $'\\003' ]; then stty \"$saved_stty\"; exit 130; fi\n"+
+			"  if [ \"$ch\" = $'\\033' ]; then\n"+
+			"    seq=$ch\n"+
+			"    while IFS= read -r -s -n 1 -t 1 next; do\n"+
+			"      seq=$seq$next\n"+
+			"      if [ \"$next\" = \"u\" ] || [ \"$next\" = \"~\" ]; then break; fi\n"+
+			"    done\n"+
+			"    if [ \"$seq\" = $'\\033[99;5u' ] || [ \"$seq\" = $'\\033[99;5:1u' ] || [ \"$seq\" = $'\\033[27;5;99~' ]; then stty \"$saved_stty\"; exit 130; fi\n"+
+			"  fi\n"+
+			"done\n"+
+			"stty \"$saved_stty\"\n"+
+			"exit 130\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeCodex
+}
+
+func writeSideModeFakeCodex(t *testing.T, dir string, name string) string {
+	t.Helper()
+	fakeCodex := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeCodex, []byte(
+		"#!/bin/bash\n"+
+			"printf '\\033]2;Side-mode Codex Ready\\007'\n"+
+			"printf 'Side-mode Codex Ready\\n'\n"+
+			"trap 'exit 0' HUP TERM\n"+
+			"side_mode=0\n"+
+			"read_side_interrupt() {\n"+
+			"  local ch next seq\n"+
+			"  if IFS= read -r -s -n 1 -t 8 ch; then\n"+
+			"    if [ \"$ch\" = $'\\003' ]; then\n"+
+			"      side_mode=0\n"+
+			"      printf '\\033]2;Side-mode Codex Ready\\007'\n"+
+			"      printf '\\033[2J\\033[Hraw ctrl-c returned main thread\\n'\n"+
+			"      return 0\n"+
+			"    fi\n"+
+			"    if [ \"$ch\" = $'\\033' ]; then\n"+
+			"      seq=$ch\n"+
+			"      while IFS= read -r -s -n 1 -t 1 next; do\n"+
+			"        seq=$seq$next\n"+
+			"        if [ \"$next\" = \"u\" ] || [ \"$next\" = \"~\" ]; then break; fi\n"+
+			"      done\n"+
+			"      if [ \"$seq\" = $'\\033[99;5u' ] || [ \"$seq\" = $'\\033[99;5:1u' ] || [ \"$seq\" = $'\\033[27;5;99~' ]; then\n"+
+			"        side_mode=0\n"+
+			"        printf '\\033]2;Side-mode Codex Ready\\007'\n"+
+			"        printf '\\033[2J\\033[Henhanced ctrl-c returned main thread\\n'\n"+
+			"        return 0\n"+
+			"      fi\n"+
+			"      if [ \"$seq\" = $'\\033' ]; then\n"+
+			"        printf '\\033]2;Side-mode Codex Ready\\007'\n"+
+			"        printf '\\033[2J\\033[Hinterrupted side work\\nside prompt\\n'\n"+
+			"        return 0\n"+
+			"      fi\n"+
+			"    fi\n"+
+			"  fi\n"+
+			"  printf '\\033]2;Side-mode Codex Ready\\007'\n"+
+			"  printf '\\033[2J\\033[Hside work timed out\\n'\n"+
+			"  return 1\n"+
+			"}\n"+
+			"while IFS= read -r line; do\n"+
+			"  if [ \"$line\" = \"/side\" ]; then\n"+
+			"    side_mode=1\n"+
+			"    printf '\\033]2;Side-mode Codex Ready\\007'\n"+
+			"    printf '\\033[2J\\033[H'\n"+
+			"    printf 'Side conversation boundary.\\n'\n"+
+			"    printf 'You are in a side conversation, not the main thread.\\n'\n"+
+			"    printf 'side prompt\\n'\n"+
+			"    continue\n"+
+			"  fi\n"+
+			"  printf '\\033]2;Side-mode Codex Working\\007'\n"+
+			"  printf '\\033[2J\\033[Hreceived:%s\\n' \"$line\"\n"+
+			"  if [ \"$line\" = \"side-work\" ] && [ \"$side_mode\" -eq 1 ]; then\n"+
+			"    saved_stty=$(stty -g)\n"+
+			"    stty raw -echo -isig\n"+
+			"    printf 'awaiting side interrupt\\n'\n"+
+			"    read_side_interrupt\n"+
+			"    stty \"$saved_stty\"\n"+
+			"    continue\n"+
+			"  fi\n"+
+			"  printf '\\033]2;Side-mode Codex Ready\\007'\n"+
 			"done\n"+
 			"while :; do sleep 1; done\n",
 	), 0o700); err != nil {

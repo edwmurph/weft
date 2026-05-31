@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/state"
 )
 
 type testCSIMessage string
@@ -62,9 +64,6 @@ func TestEnhancedKeyboardInputPreservesShiftTabForCodex(t *testing.T) {
 		if !input.hasKey || input.key.Type != tea.KeyShiftTab {
 			t.Fatalf("shift tab should still be available as a key outside Codex focus, got %#v", input.key)
 		}
-		if !input.preserveForCodex {
-			t.Fatalf("shift tab should preserve raw bytes in Codex focus")
-		}
 		args := input.codexInputArgs()
 		if got := args["encoded"]; got != raw {
 			t.Fatalf("encoded = %q, want %q", got, raw)
@@ -84,6 +83,64 @@ func TestEnhancedKeyboardInputMapsCSIUCtrlC(t *testing.T) {
 		if !input.hasKey || input.key.Type != tea.KeyCtrlC {
 			t.Fatalf("expected ctrl+c key for %q, got %#v", raw, input.key)
 		}
+		if got := string(input.encoded); got != raw {
+			t.Fatalf("ctrl+c should keep raw encoded bytes, got %q want %q", got, raw)
+		}
+		if got := input.codexInputArgs()["input"]; got != "ctrl+c" {
+			t.Fatalf("ctrl+c should request terminal interrupt, got input kind %q", got)
+		}
+		if got := input.codexInputArgs()["encoded"]; got != raw {
+			t.Fatalf("ctrl+c should preserve enhanced terminal bytes, got encoded %q want %q", got, raw)
+		}
+		cfg := config.DefaultConfig()
+		active := &state.Agent{ID: "a"}
+		if input.shouldHandleAsKey(cfg, state.FocusCodex, active) {
+			t.Fatalf("ctrl+c should pass through to Codex in Codex focus for %q", raw)
+		}
+		if !input.shouldHandleAsKey(cfg, state.FocusAgents, active) {
+			t.Fatalf("ctrl+c should remain a Weft key outside Codex focus for %q", raw)
+		}
+	}
+}
+
+func TestEnhancedKeyboardInputKeepsDrawerKeyForWeftInCodexFocus(t *testing.T) {
+	input, ok := enhancedKeyboardInputFromMsg(testCSIMessage(unknownCSIString("\x1b[98;5u")))
+	if !ok {
+		t.Fatal("expected enhanced input for ctrl+b")
+	}
+	if !input.hasKey || input.key.Type != tea.KeyCtrlB {
+		t.Fatalf("expected ctrl+b key, got %#v", input.key)
+	}
+	cfg := config.DefaultConfig()
+	active := &state.Agent{ID: "a"}
+	if !input.shouldHandleAsKey(cfg, state.FocusCodex, active) {
+		t.Fatal("configured drawer key should stay owned by Weft in Codex focus")
+	}
+}
+
+func TestCodexInputArgsSendsPlainCtrlCAsEnhancedCodexKey(t *testing.T) {
+	args := codexInputArgs(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if got := args["input"]; got != "ctrl+c" {
+		t.Fatalf("input = %q, want ctrl+c", got)
+	}
+	if got := args["encoded"]; got != terminalKeyboardCtrlC {
+		t.Fatalf("encoded = %q, want enhanced ctrl+c %q", got, terminalKeyboardCtrlC)
+	}
+}
+
+func TestRouteCodexInputArgsSendsWorkingCtrlCAsInterruptKey(t *testing.T) {
+	args := map[string]string{"input": "ctrl+c", "encoded": terminalKeyboardCtrlC}
+	routed := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Working", Status: state.StatusRunning}, args)
+	if got := routed["encoded"]; got != terminalKeyboardInterrupt {
+		t.Fatalf("working ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
+	}
+	if got := args["encoded"]; got != terminalKeyboardCtrlC {
+		t.Fatalf("routeCodexInputArgs mutated original args, got %q", got)
+	}
+
+	ready := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}, args)
+	if got := ready["encoded"]; got != terminalKeyboardCtrlC {
+		t.Fatalf("ready ctrl+c encoded = %q, want original ctrl+c %q", got, terminalKeyboardCtrlC)
 	}
 }
 

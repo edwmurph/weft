@@ -10,6 +10,10 @@ func bindingMatches(binding string, msg tea.KeyMsg) bool {
 	return normalizeBinding(binding) == strings.ToLower(msg.String())
 }
 
+func isCtrlCKey(msg tea.KeyMsg) bool {
+	return msg.Type == tea.KeyCtrlC || strings.ToLower(msg.String()) == "ctrl+c"
+}
+
 func normalizeBinding(binding string) string {
 	value := strings.TrimSpace(binding)
 	value = strings.ReplaceAll(value, "C-", "ctrl+")

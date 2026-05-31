@@ -38,6 +38,7 @@ const (
 	StatusSitting  AgentStatus = "sitting"
 	StatusShipping AgentStatus = "shipping"
 	StatusStopped  AgentStatus = "stopped"
+	StatusKilled   AgentStatus = "killed"
 	StatusError    AgentStatus = "error"
 )
 

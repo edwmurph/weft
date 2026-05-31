@@ -58,6 +58,11 @@ func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
 	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusStopped) {
 		t.Fatalf("got %q", got)
 	}
+
+	agent.Status = state.StatusKilled
+	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusKilled) {
+		t.Fatalf("got %q", got)
+	}
 }
 
 func TestRenderAutoTemplateFallsBackToPending(t *testing.T) {

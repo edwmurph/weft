@@ -199,23 +199,24 @@ func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 			{ID: "ready", WorkspaceID: "w", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 			{ID: "live-ready", WorkspaceID: "w", Title: "Live Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "failed", WorkspaceID: "w", Title: "Failed", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
+			{ID: "killed", WorkspaceID: "w", Title: "Killed", Status: state.StatusKilled, CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
 	counts := workspaceCardCountsForWorkspace(st, "w")
-	if counts.total != 7 || counts.active != 4 || counts.needsAttention != 3 {
+	if counts.total != 8 || counts.active != 4 || counts.needsAttention != 4 {
 		t.Fatalf("counts = %#v", counts)
 	}
 	if counts.active+counts.needsAttention != counts.total {
 		t.Fatalf("counts should reconcile: %#v", counts)
 	}
 	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n")))
-	for _, expected := range []string{"7 total", "4 active", "3 needs attention", "3 needs attention │", "╭ /tmp/project", "│", "╰"} {
+	for _, expected := range []string{"8 total", "4 active", "4 needs attention", "4 needs attention │", "╭ /tmp/project", "│", "╰"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("workspace card missing %q:\n%s", expected, got)
 		}
 	}
-	for _, forbidden := range []string{"parked", "stopped", "quiet", "error"} {
+	for _, forbidden := range []string{"parked", "stopped", "killed", "quiet", "error"} {
 		if strings.Contains(got, forbidden) {
 			t.Fatalf("workspace card should not render %q label:\n%s", forbidden, got)
 		}
@@ -368,6 +369,7 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 			{ID: "ready", WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "failed", WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
 			{ID: "stopped", WorkspaceID: "w", Title: "Paused", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
+			{ID: "killed", WorkspaceID: "w", Title: "Killed", Status: state.StatusKilled, CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
@@ -391,12 +393,16 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	if !strings.Contains(stripped, "◦ Paused") {
 		t.Fatalf("stopped row should use the attention marker:\n%s", stripped)
 	}
+	if !strings.Contains(stripped, "! Killed") {
+		t.Fatalf("killed row should use the attention marker:\n%s", stripped)
+	}
 	for _, expected := range []string{
 		agentRunningStyle.Render("⠼ Booting"),
 		agentWorkingStyle.Render("⠼ Review"),
 		agentReadyStyle.Render("● Respond"),
 		agentErrorStyle.Render("! Broken"),
 		agentAttentionStyle.Render("◦ Paused"),
+		agentAttentionStyle.Render("! Killed"),
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("agents pane missing styled row %q:\n%s", expected, got)
@@ -530,8 +536,11 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
 	}
-	if !strings.Contains(got, "WEFT  C-b dashboard  C-c quit") {
+	if !strings.Contains(got, "WEFT  C-b dashboard") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
+	}
+	if strings.Contains(got, "C-c") {
+		t.Fatalf("collapsed codex top toolbar should not advertise C-c:\n%s", got)
 	}
 	if !strings.Contains(got, "Agent Console") {
 		t.Fatalf("focused codex pane should render Agent Console title:\n%s", got)
@@ -539,15 +548,11 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "Agent Live Preview") || strings.Contains(got, "● Live") {
 		t.Fatalf("focused codex pane should not render live preview UI:\n%s", got)
 	}
-	if count := strings.Count(got, "C-c quit"); count != 1 {
-		t.Fatalf("collapsed codex should render shortcuts only once, got %d:\n%s", count, got)
-	}
-
 	st.Agents[0].Status = state.StatusRunning
 	st.Agents[0].CodexTitle = "Fake Codex Working"
 	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 80, 24, "", 0, 0)
-	if !strings.Contains(got, "WEFT  C-b dashboard  C-c interrupt") {
-		t.Fatalf("working codex toolbar should advertise interrupt:\n%s", got)
+	if !strings.Contains(got, "WEFT  C-b dashboard") || strings.Contains(got, "C-c") {
+		t.Fatalf("working codex toolbar should only advertise dashboard return:\n%s", got)
 	}
 }
 

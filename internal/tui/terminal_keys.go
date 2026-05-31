@@ -6,13 +6,17 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/titles"
 )
 
 const (
 	terminalKeyboardEnable     = "\x1b[>4;2m\x1b[>29u"
 	terminalKeyboardDisable    = "\x1b[>4;0m\x1b[<1u"
 	terminalKeyboardShiftEnter = "\x1b[13;2u"
+	terminalKeyboardCtrlC      = "\x1b[99;5u"
+	terminalKeyboardInterrupt  = "\x1b"
 
 	codexInputRaw        = "raw"
 	codexInputShiftEnter = "shift+enter"
@@ -20,11 +24,10 @@ const (
 )
 
 type enhancedKeyboardInput struct {
-	encoded          []byte
-	input            string
-	key              tea.KeyMsg
-	hasKey           bool
-	preserveForCodex bool
+	encoded []byte
+	input   string
+	key     tea.KeyMsg
+	hasKey  bool
 }
 
 type csiKeyboardEvent struct {
@@ -74,15 +77,14 @@ func enhancedKeyboardInputFromMsg(msg tea.Msg) (enhancedKeyboardInput, bool) {
 	}
 	if event.isShiftTab() {
 		return enhancedKeyboardInput{
-			encoded:          raw,
-			input:            codexInputShiftTab,
-			key:              tea.KeyMsg{Type: tea.KeyShiftTab},
-			hasKey:           true,
-			preserveForCodex: true,
+			encoded: raw,
+			input:   codexInputShiftTab,
+			key:     tea.KeyMsg{Type: tea.KeyShiftTab},
+			hasKey:  true,
 		}, true
 	}
 	if key, ok := event.keyMsg(); ok {
-		return enhancedKeyboardInput{key: key, hasKey: true}, true
+		return enhancedKeyboardInput{encoded: raw, key: key, hasKey: true}, true
 	}
 	return enhancedKeyboardInput{encoded: raw, input: codexInputRaw}, true
 }
@@ -92,19 +94,42 @@ func (input enhancedKeyboardInput) codexInputArgs() map[string]string {
 	if kind == "" {
 		kind = codexInputRaw
 	}
+	if isCtrlCKey(input.key) {
+		kind = "ctrl+c"
+		encoded := string(input.encoded)
+		if encoded == "" {
+			encoded = "\x03"
+		}
+		return map[string]string{"encoded": encoded, "input": kind}
+	}
 	return map[string]string{"encoded": string(input.encoded), "input": kind}
 }
 
-func (input enhancedKeyboardInput) shouldHandleAsKey(focus state.Focus, active *state.Agent) bool {
+func routeCodexInputArgs(agent state.Agent, args map[string]string) map[string]string {
+	if args["input"] != "ctrl+c" || titles.RenderStatus(agent) != "working" {
+		return args
+	}
+	routed := make(map[string]string, len(args))
+	for key, value := range args {
+		routed[key] = value
+	}
+	routed["encoded"] = terminalKeyboardInterrupt
+	return routed
+}
+
+func (input enhancedKeyboardInput) shouldHandleAsKey(cfg config.Config, focus state.Focus, active *state.Agent) bool {
 	if !input.hasKey {
 		return false
 	}
-	return !input.preserveForCodex || focus != state.FocusCodex || active == nil
+	if focus == state.FocusCodex && active != nil && len(input.encoded) > 0 {
+		return bindingMatches(cfg.KeyBindings.Drawer, input.key)
+	}
+	return true
 }
 
 func (m Model) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {
 	active := state.ActiveAgent(m.state)
-	if input.shouldHandleAsKey(m.state.Focus, active) {
+	if input.shouldHandleAsKey(m.cfg, m.state.Focus, active) {
 		return m.handleKey(input.key)
 	}
 	if m.state.Focus != state.FocusCodex {
@@ -113,15 +138,12 @@ func (m Model) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Mod
 	if active == nil {
 		return m, nil
 	}
-	if pty := m.ptys[active.ID]; pty != nil {
-		_ = pty.Write(input.encoded)
-	}
-	return m, m.captureCodexInputArgs(*active, input.codexInputArgs())
+	return m, m.applyCodexInput(input.codexInputArgs())
 }
 
 func (m ClientModel) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {
 	active := state.ActiveAgent(m.snapshot.State)
-	if input.shouldHandleAsKey(m.snapshot.State.Focus, active) {
+	if input.shouldHandleAsKey(m.cfg, m.snapshot.State.Focus, active) {
 		return m.handleKey(input.key)
 	}
 	if m.snapshot.State.Focus == state.FocusCodex && active != nil {

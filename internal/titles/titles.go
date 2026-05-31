@@ -45,7 +45,7 @@ func NormalizeCodexTitle(title string) string {
 
 func RenderStatus(agent state.Agent) string {
 	switch agent.Status {
-	case state.StatusStarting, state.StatusStopped, state.StatusError, state.StatusReady, state.StatusSitting, state.StatusShipping:
+	case state.StatusStarting, state.StatusStopped, state.StatusKilled, state.StatusError, state.StatusReady, state.StatusSitting, state.StatusShipping:
 		return string(agent.Status)
 	}
 	if status := codexActivityStatus(agent.CodexTitle); status != "" {

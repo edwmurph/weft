@@ -105,6 +105,7 @@ type Model struct {
 	ptys              map[string]*ptyx.Session
 	visible           map[string]bool
 	codexInputBuffers map[string][]rune
+	agentInterrupts   map[string]time.Time
 	dataCh            chan ptyx.Data
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -144,6 +145,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		width: 100, height: 32, screens: map[string]*TerminalScreen{}, ptys: map[string]*ptyx.Session{},
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
+		agentInterrupts:   map[string]time.Time{},
 		dataCh:            make(chan ptyx.Data, 64),
 		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
 	}
@@ -339,20 +341,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	}
 
-	quitPressed := bindingMatches(m.cfg.KeyBindings.Quit, msg)
-	if quitPressed && !m.activeCodexReceivesQuitBinding() {
-		m.closeWeft()
-		return m, nil
-	}
 	if bindingMatches(m.cfg.KeyBindings.Drawer, msg) {
 		return m, m.toggleDrawer()
 	}
 	if m.state.Focus == state.FocusCodex && state.ActiveAgent(m.state) != nil {
 		if active := state.ActiveAgent(m.state); active != nil {
-			if pty := m.ptys[active.ID]; pty != nil {
-				_ = pty.Write(encodeKey(msg))
-			}
-			return m, m.captureCodexInput(*active, msg)
+			return m, m.applyCodexInput(codexInputArgs(msg))
 		}
 		return m, nil
 	}
@@ -360,6 +354,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd := m.openNav()
 		updated, nextCmd := m.handleNavKey(msg)
 		return updated, tea.Batch(cmd, nextCmd)
+	}
+	if bindingMatches(m.cfg.KeyBindings.Quit, msg) {
+		m.closeWeft()
+		return m, nil
 	}
 	if bindingMatches(m.cfg.KeyBindings.Help, msg) {
 		m.mode = modeHelp
@@ -399,17 +397,6 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 	}
 	return m, nil
-}
-
-func (m Model) activeCodexReceivesQuitBinding() bool {
-	if m.state.Focus != state.FocusCodex {
-		return false
-	}
-	active := state.ActiveAgent(m.state)
-	if active == nil || m.ptys[active.ID] == nil {
-		return false
-	}
-	return activeAgentReceivesQuitBinding(*active, m.codexLoading())
 }
 
 func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -738,6 +725,7 @@ func (m *Model) killAgentPTY(agentID string) {
 	}
 	delete(m.screens, agentID)
 	delete(m.visible, agentID)
+	delete(m.agentInterrupts, agentID)
 }
 
 func (m *Model) selectedAgent() *state.Agent {
@@ -1076,12 +1064,29 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		return
 	}
 	if data.Err != nil {
+		delete(m.ptys, data.AgentID)
+		activeExited := m.state.ActiveAgentID == data.AgentID
+		status := state.StatusStopped
+		title := "Codex exited"
+		if m.recentAgentInterrupt(data.AgentID) {
+			status = state.StatusKilled
+			title = "Codex killed"
+		}
+		delete(m.agentInterrupts, data.AgentID)
 		m.state = state.WithUpdatedAgent(m.state, data.AgentID, func(agent state.Agent) state.Agent {
 			if agent.Status != state.StatusError {
-				agent.Status = state.StatusStopped
+				agent.Status = status
+				agent.CodexTitle = title
 			}
 			return agent
 		})
+		if activeExited && m.state.Focus == state.FocusCodex {
+			m.state.NavOpen = true
+			m.state.Focus = state.FocusAgents
+			m.lastNavFocus = state.FocusAgents
+			m.syncGroupCursor()
+			m.snapNavWidthToTarget()
+		}
 		m.save()
 		return
 	}
@@ -1097,6 +1102,7 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		}
 	}
 	if data.Title != "" {
+		delete(m.agentInterrupts, data.AgentID)
 		m.state = state.WithUpdatedAgent(m.state, data.AgentID, func(agent state.Agent) state.Agent {
 			agent.CodexTitle = titles.NormalizeCodexTitle(data.Title)
 			agent.Status = state.StatusRunning
@@ -1165,7 +1171,7 @@ func (m Model) agentLoading(agentID string) bool {
 		return false
 	}
 	switch titles.RenderStatus(*agent) {
-	case string(state.StatusError), string(state.StatusStopped), string(state.StatusSitting):
+	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
 		return false
 	}
 	if agentStatusIndicatesActivity(*agent) {
@@ -1173,6 +1179,21 @@ func (m Model) agentLoading(agentID string) bool {
 	}
 	screen := m.screens[agentID]
 	return screen == nil || (!screen.HasVisibleContent() && !m.visible[agentID])
+}
+
+func (m Model) recentAgentInterrupt(agentID string) bool {
+	if m.agentInterrupts == nil {
+		return false
+	}
+	sentAt, ok := m.agentInterrupts[agentID]
+	return ok && time.Since(sentAt) <= 5*time.Second
+}
+
+func (m *Model) recordAgentInterrupt(agentID string) {
+	if m.agentInterrupts == nil {
+		m.agentInterrupts = map[string]time.Time{}
+	}
+	m.agentInterrupts[agentID] = time.Now()
 }
 
 func (m Model) loadingFrame() string {
@@ -1566,7 +1587,11 @@ func (m *Model) applyCodexInput(args map[string]string) tea.Cmd {
 	if active == nil {
 		return nil
 	}
+	args = routeCodexInputArgs(*active, args)
 	if pty := m.ptys[active.ID]; pty != nil {
+		if args["input"] == "ctrl+c" {
+			m.recordAgentInterrupt(active.ID)
+		}
 		_ = pty.Write([]byte(args["encoded"]))
 	}
 	return m.captureCodexInputArgs(*active, args)
