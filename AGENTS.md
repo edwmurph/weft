@@ -24,6 +24,8 @@
 - Write the ship commit subject as a concise user-facing release-note bullet. If the subject alone is not enough, add a commit-body `Release-Notes:` section with one or more Markdown bullets; those bullets replace the derived subject in the GitHub release notes.
 - After pushing, watch the latest `Publish Homebrew` run for `main` with `gh run watch --exit-status`. Treat ship as complete only after the workflow succeeds, creates the GitHub release, and updates the Homebrew tap.
 - After the publish workflow succeeds, fetch `origin main --tags`, fast-forward local `main` if the workflow added a release commit, verify `main...origin/main` is `0 0`, then report the commit hash, release tag, push result, workflow result, whether verification was reused or rerun, and what behavior was shipped.
+- In the final ship report, summarize what the user can verify now in the live published version, using installed-user commands such as `weft ...` when appropriate, not only worktree or source commands.
+- In the final ship report, print the published GitHub release notes for the shipped tag so the user can review the exact public release text.
 
 ## Git / Worktrees
 
