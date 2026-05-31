@@ -382,9 +382,6 @@ func upgradeSummary(upgrade *ipc.Upgrade) string {
 	if !upgrade.Compatible {
 		return "incompatible supervisor restart required"
 	}
-	if upgrade.RestartWhenIdleQueued {
-		return fmt.Sprintf("restart when idle queued, %d live Codex terminal(s)", upgrade.RunningAgents)
-	}
 	if upgrade.RunningAgents > 0 {
 		return fmt.Sprintf("upgrade pending, wait for idle/resumable agents (%d live)", upgrade.RunningAgents)
 	}

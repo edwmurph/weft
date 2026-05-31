@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-31 - Upgrade cutover prune
+
+- Request: Delete stale upgrade compatibility code while preserving the guarded dashboard `U` upgrade/resume flow.
+- Suggestions: Remove the client-local `upgrade_resume` fallback, drop the `restart_when_idle` queued restart command family and IPC field, keep supervisor-owned `upgrade_resume` plus Codex session resume, and document the hard-cut guidance for supervisors too old to support dashboard upgrade.
+- Outcome: Implemented in `.worktrees/upgrade-cutover-prune`; awaiting review.
+- Evidence: `internal/tui/client.go`, `internal/supervisor/supervisor.go`, `internal/ipc/ipc.go`, `internal/tui/model_test.go`, `spec.md`.
+
 ## 2026-05-31 - Codex console parity
 
 - Request: Assess and fix why Codex Vim mode behaves differently inside Weft, while keeping `C-b` as the dashboard escape.

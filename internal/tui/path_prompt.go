@@ -530,10 +530,8 @@ func confirmTitle(confirm confirmKind) string {
 		return "Delete group"
 	case confirmDeleteAgent:
 		return "Delete agent"
-	case confirmRestartWhenIdle:
+	case confirmUpgradeResume:
 		return "Upgrade supervisor and resume agents?"
-	case confirmCancelRestartIdle:
-		return "Cancel queued supervisor restart?"
 	default:
 		return "Delete item"
 	}
@@ -543,7 +541,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 	if confirm == confirmAddLaunchWorkspace {
 		return "Current directory"
 	}
-	if confirm == confirmRestartWhenIdle || confirm == confirmCancelRestartIdle {
+	if confirm == confirmUpgradeResume {
 		return "Supervisor"
 	}
 	if confirm == confirmDeleteAgent {
@@ -553,11 +551,8 @@ func confirmTargetLabel(confirm confirmKind) string {
 }
 
 func confirmDetail(confirm confirmKind) string {
-	if confirm == confirmRestartWhenIdle {
+	if confirm == confirmUpgradeResume {
 		return "Closes idle Codex terminals, restarts the supervisor, then resumes those agents. Running commands and unsubmitted text are not preserved, so finish important work first."
-	}
-	if confirm == confirmCancelRestartIdle {
-		return "Keeps the current supervisor running and removes the queued restart."
 	}
 	if confirm == confirmDeleteAgent {
 		return "Stops the Codex terminal, then removes this agent from Weft."
@@ -569,11 +564,8 @@ func renderConfirmActions(confirm confirmKind) string {
 	if confirm == confirmAddLaunchWorkspace {
 		return modalKeyStyle.Render("Enter") + " yes  " + modalKeyStyle.Render("Esc") + " no"
 	}
-	if confirm == confirmRestartWhenIdle {
+	if confirm == confirmUpgradeResume {
 		return modalKeyStyle.Render("Y") + " upgrade and resume  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
-	}
-	if confirm == confirmCancelRestartIdle {
-		return modalKeyStyle.Render("Y") + " cancel restart  " + modalKeyStyle.Render("N") + " keep queued  " + modalKeyStyle.Render("Esc") + " keep queued"
 	}
 	if confirm == confirmDeleteAgent {
 		return modalKeyStyle.Render("Y") + " stop and delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
@@ -597,9 +589,7 @@ func confirmTarget(confirm confirmKind, st state.State, pendingID string, render
 		if agent := state.AgentByID(st, pendingID); agent != nil {
 			return renderAgentTitle(*agent)
 		}
-	case confirmRestartWhenIdle:
-		return pendingID
-	case confirmCancelRestartIdle:
+	case confirmUpgradeResume:
 		return pendingID
 	}
 	return "item"

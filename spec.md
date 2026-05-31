@@ -113,22 +113,26 @@ When a newly installed `weft` client finds an older compatible supervisor:
   supervisor is still older, reopening the dashboard alone is not enough to
   finish the runtime upgrade
 - show a concise bottom-of-Workspaces-pane tip with the client version,
-  supervisor version, and the `U` restart-when-idle action while the dashboard
-  navigation is open
+  supervisor version, and the `U` upgrade/resume action while the dashboard
+  navigation is open when that action can proceed
 - keep existing agents and PTYs running
-- offer a restart-when-idle action for the supervisor from the dashboard
+- offer the dashboard upgrade action only through the supervisor-owned
+  `upgrade_resume` IPC command
 
 When no agents are running, Weft may restart the supervisor automatically to
 finish the upgrade after creating a runtime backup. When any agent PTY is
 running, Weft must not restart the supervisor without explicit confirmation
 because that can stop live Codex terminals.
 
-The in-dashboard restart action must be safe by default. If live Codex
-terminals are running, it queues the restart and waits until no live Codex
-terminal remains before creating a pre-upgrade backup, stopping the supervisor,
-and starting the upgraded supervisor. It must not kill live Codex terminals just
-because the user queued the action. When restart-when-idle is queued, pressing
-`U` opens a confirmation to cancel the queued restart without stopping agents.
+The in-dashboard upgrade action must be safe by default. While Codex agents are
+busy or missing saved session IDs, the dashboard shows pending copy and does not
+offer `U`. Once every remaining agent is idle and resumable, `U` opens a
+confirmation, creates a pre-upgrade backup, closes the idle Codex terminals,
+restarts the supervisor, and resumes agents with `codex resume <session-id>`.
+The client must not run duplicate local restart/resume logic. If a compatible
+but older supervisor does not support `upgrade_resume`, the client must explain
+that dashboard upgrade requires a newer supervisor and direct the user to
+`weft close --kill` when they are ready to stop running Codex terminals.
 
 If the supervisor protocol is incompatible with the client, the client should
 explain the situation and offer the least destructive recovery path:
@@ -909,7 +913,8 @@ Integration tests:
 - delete every group and agent from a workspace and keep an empty Agents pane
 - persist and reload selected workspace/group/agent state
 - upgrade with no running agents restarts the supervisor automatically
-- upgrade with running agents preserves the old supervisor and prompts before restart
+- upgrade with running agents preserves the old supervisor until agents are
+  idle/resumable and the user confirms `U`
 - source/dev binary without `WEFT_ROOT` or `WEFT_HOME` fails before creating default runtime files
 - automatic backups are created before `--clear`, `close --kill`, and idle
   upgrade auto-restart

@@ -342,7 +342,7 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = updated.(ClientModel)
-	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmRestartWhenIdle {
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmUpgradeResume {
 		t.Fatalf("upgrade confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
 	}
 	got = ansi.Strip(model.View())
@@ -392,52 +392,53 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 	}
 }
 
-func TestClientQueuedUpgradeFooterOpensCancelConfirm(t *testing.T) {
+func TestClientUpgradeResumeUnsupportedShowsCloseKillGuidance(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithAgent(rt.Workspace)
+	st.Agents[0].CodexTitle = "Fake Codex Ready"
+	st.Agents[0].CodexSessionID = "session-alpha"
 	st.Focus = state.FocusAgents
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
 	model.width = 160
 
 	model.applyResponse(ipc.Response{
-		OK:       true,
-		Snapshot: &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
-		Upgrade: &ipc.Upgrade{
-			ClientVersion:         weftversion.Version,
-			SupervisorVersion:     "3.9.0",
-			Compatible:            true,
-			RestartRequired:       true,
-			RestartWhenIdleQueued: true,
-			RunningAgents:         1,
-		},
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
 	})
 
-	got := ansi.Strip(model.View())
-	for _, expected := range []string{
-		"Upgrade queued",
-		"supervisor 3.9.0 → " + weftversion.Version,
-		"Close agents to finish",
-		"press U to cancel",
-	} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("queued upgrade footer missing %q:\n%s", expected, got)
-		}
+	response := ipc.ErrorResponse("unknown_command", "unknown command: upgrade_resume")
+	updated, cmd := model.Update(clientResponseMsg{
+		command:  "upgrade_resume",
+		response: response,
+		err:      *response.Error,
+	})
+	model = updated.(ClientModel)
+	if cmd != nil {
+		t.Fatalf("unsupported upgrade_resume should not start a local fallback command: %v", cmd)
 	}
-	if strings.Contains(got, "live Codex terminals stay running") {
-		t.Fatalf("queued upgrade should not render the old Agent Console banner:\n%s", got)
+	for _, expected := range []string{"Dashboard upgrade requires a newer supervisor", "weft close --kill", "saved layout and metadata remain"} {
+		if !strings.Contains(model.message, expected) {
+			t.Fatalf("unsupported guidance missing %q: %s", expected, model.message)
+		}
 	}
 
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
-	model = updated.(ClientModel)
-	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmCancelRestartIdle {
-		t.Fatalf("cancel confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "Run weft close --kill when ready") {
+		t.Fatalf("unsupported footer missing close guidance:\n%s", got)
 	}
-	got = ansi.Strip(model.View())
-	for _, expected := range []string{"Cancel queued supervisor restart?", "Y cancel restart", "N keep queued"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("cancel restart confirm missing %q:\n%s", expected, got)
-		}
+	updated, cmd = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode == modeConfirm {
+		t.Fatalf("unsupported upgrade_resume should not open confirm, mode=%s cmd=%v", model.mode, cmd)
 	}
 }
 

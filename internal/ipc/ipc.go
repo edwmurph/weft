@@ -36,15 +36,14 @@ type Response struct {
 }
 
 type Upgrade struct {
-	ClientVersion         string `json:"client_version"`
-	SupervisorVersion     string `json:"supervisor_version"`
-	Compatible            bool   `json:"compatible"`
-	RestartRequired       bool   `json:"restart_required"`
-	RestartWhenIdleQueued bool   `json:"restart_when_idle_queued,omitempty"`
-	AutoRestarted         bool   `json:"auto_restarted,omitempty"`
-	RunningAgents         int    `json:"running_agents"`
-	Message               string `json:"message,omitempty"`
-	BackupID              string `json:"backup_id,omitempty"`
+	ClientVersion     string `json:"client_version"`
+	SupervisorVersion string `json:"supervisor_version"`
+	Compatible        bool   `json:"compatible"`
+	RestartRequired   bool   `json:"restart_required"`
+	AutoRestarted     bool   `json:"auto_restarted,omitempty"`
+	RunningAgents     int    `json:"running_agents"`
+	Message           string `json:"message,omitempty"`
+	BackupID          string `json:"backup_id,omitempty"`
 }
 
 type Snapshot struct {

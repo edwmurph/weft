@@ -48,8 +48,7 @@ type restartRequest struct {
 }
 
 type supervisorControl struct {
-	restartWhenIdle *restartRequest
-	restartNow      *restartRequest
+	restartNow *restartRequest
 }
 
 func Ensure(rt config.Runtime) (EnsureResult, error) {
@@ -310,14 +309,6 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "Weft supervisor is running"}
 		applyClientState(&response, clients, request.Args["client_id"])
 		return withSupervisorFields(response, request, control), nil
-	case "restart_when_idle":
-		response := restartWhenIdle(rt, engine, control, request, cancel)
-		applyClientState(&response, clients, request.Args["client_id"])
-		return withSupervisorFields(response, request, control), nil
-	case "cancel_restart_when_idle":
-		response := cancelRestartWhenIdle(engine, control)
-		applyClientState(&response, clients, request.Args["client_id"])
-		return withSupervisorFields(response, request, control), nil
 	case "upgrade_resume":
 		response := upgradeResume(rt, engine, control, request, cancel)
 		applyClientState(&response, clients, request.Args["client_id"])
@@ -328,9 +319,6 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 	default:
 		response, cmd := engine.HandleSupervisorRequest(request)
 		applyClientState(&response, clients, request.Args["client_id"])
-		if commandCanMakeSupervisorIdle(request.Command) {
-			response = maybeRestartWhenIdle(rt, engine, control, response, cancel)
-		}
 		return withSupervisorFields(response, request, control), cmd
 	}
 }
@@ -371,33 +359,9 @@ func withSupervisorFields(response ipc.Response, request ipc.Request, control *s
 		if control.restartNow != nil {
 			response.Upgrade.Message = restartNowMessage(*control.restartNow)
 			response.Upgrade.BackupID = control.restartNow.backupID
-		} else if control.restartWhenIdle != nil {
-			response.Upgrade.RestartWhenIdleQueued = true
-			response.Upgrade.Message = restartWhenIdleQueuedMessage(control.restartWhenIdle.runningAgents)
 		}
 	}
 	return response
-}
-
-func restartWhenIdle(rt config.Runtime, engine *tui.Model, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) ipc.Response {
-	response := supervisorSnapshotResponse(engine, "")
-	response.ProtocolVersion = ipc.ProtocolVersion
-	response.SupervisorVersion = ReportedVersion()
-	upgrade := ipc.UpgradeStatus(response, request.ClientVersion)
-	if upgrade == nil {
-		return supervisorSnapshotResponse(engine, "No supervisor restart needed; client and supervisor are current.")
-	}
-	if !upgrade.Compatible {
-		return ipc.ErrorResponse("upgrade_incompatible", "Cannot restart from the dashboard because the supervisor protocol is incompatible. Use `weft close --kill` when ready.")
-	}
-	restart := restartRequestFromRequest(request)
-	blocked := restartWhenIdleBlockerCount(engine)
-	if blocked > 0 {
-		restart.runningAgents = blocked
-		control.restartWhenIdle = &restart
-		return supervisorSnapshotResponse(engine, restartWhenIdleQueuedMessage(blocked))
-	}
-	return triggerIdleRestart(rt, engine, control, restart, cancel)
 }
 
 func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) ipc.Response {
@@ -420,55 +384,6 @@ func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorCont
 	return triggerResumeUpgrade(rt, engine, control, restart, cancel)
 }
 
-func cancelRestartWhenIdle(engine *tui.Model, control *supervisorControl) ipc.Response {
-	if control == nil || control.restartWhenIdle == nil {
-		return supervisorSnapshotResponse(engine, "No restart when idle is queued.")
-	}
-	control.restartWhenIdle = nil
-	return supervisorSnapshotResponse(engine, "Restart when idle canceled.")
-}
-
-func maybeRestartWhenIdle(rt config.Runtime, engine *tui.Model, control *supervisorControl, response ipc.Response, cancel context.CancelFunc) ipc.Response {
-	if control == nil || control.restartWhenIdle == nil || control.restartNow != nil {
-		return response
-	}
-	if blocked := restartWhenIdleBlockerCount(engine); blocked > 0 {
-		control.restartWhenIdle.runningAgents = blocked
-		return response
-	}
-	return triggerIdleRestart(rt, engine, control, *control.restartWhenIdle, cancel)
-}
-
-func commandCanMakeSupervisorIdle(command string) bool {
-	switch command {
-	case "close", "remove_workspace":
-		return true
-	default:
-		return false
-	}
-}
-
-func restartWhenIdleBlockerCount(engine *tui.Model) int {
-	snapshot := engine.Snapshot()
-	if live := engine.LiveAgentCount(); live > 0 {
-		return live
-	}
-	return len(snapshot.State.Agents)
-}
-
-func triggerIdleRestart(rt config.Runtime, engine *tui.Model, control *supervisorControl, restart restartRequest, cancel context.CancelFunc) ipc.Response {
-	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade restart when idle", IncludeLogs: true})
-	if err != nil {
-		control.restartWhenIdle = nil
-		return supervisorSnapshotResponse(engine, fmt.Sprintf("Restart when idle canceled: could not create pre-upgrade backup: %v", err))
-	}
-	restart.backupID = backup.ID
-	control.restartNow = &restart
-	control.restartWhenIdle = nil
-	go cancel()
-	return supervisorSnapshotResponse(engine, restartNowMessage(restart))
-}
-
 func triggerResumeUpgrade(rt config.Runtime, engine *tui.Model, control *supervisorControl, restart restartRequest, cancel context.CancelFunc) ipc.Response {
 	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade resume restart", IncludeLogs: true})
 	if err != nil {
@@ -477,7 +392,6 @@ func triggerResumeUpgrade(rt config.Runtime, engine *tui.Model, control *supervi
 	restart.backupID = backup.ID
 	restart.message = upgradeResumeRestartMessage(restart.runningAgents, backup.ID)
 	control.restartNow = &restart
-	control.restartWhenIdle = nil
 	go cancel()
 	return supervisorSnapshotResponse(engine, restart.message)
 }
@@ -502,13 +416,6 @@ func restartRequestFromRequest(request ipc.Request) restartRequest {
 		}
 	}
 	return restartRequest{executable: exe, clientVersion: request.ClientVersion}
-}
-
-func restartWhenIdleQueuedMessage(runningAgents int) string {
-	if runningAgents <= 0 {
-		return "Restart when idle queued: Weft will restart the supervisor as soon as it is idle."
-	}
-	return fmt.Sprintf("Restart when idle queued: Weft will not stop %d Codex terminal(s); the supervisor restarts after they close.", runningAgents)
 }
 
 func restartNowMessage(restart restartRequest) string {
