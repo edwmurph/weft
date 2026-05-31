@@ -16,7 +16,7 @@ const (
 	appTitle                = "WEFT"
 	codexLeftPadding        = 1
 	navHorizontalPadding    = 1
-	fixedWorkspacePaneWidth = 64
+	fixedWorkspacePaneWidth = 60
 	minAgentsPaneWidth      = 28
 	defaultAgentsPaneWidth  = 48
 	minCodexPaneWidth       = 28

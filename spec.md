@@ -725,9 +725,9 @@ The UI should remain usable in small terminals.
 
 Minimum behavior:
 
-- The Workspaces pane has a fixed 64-column width when it is rendered beside the
+- The Workspaces pane has a fixed 60-column width when it is rendered beside the
   Agents pane.
-- At 120 columns and wider, show Workspaces, Agents, and `Agent Preview` panes together.
+- At 116 columns and wider, show Workspaces, Agents, and `Agent Preview` panes together.
 - At medium widths where a fixed Workspaces pane and useful `Agent Preview` cannot
   both fit, keep Workspaces and Agents visible and hide `Agent Preview`.
 - If navigation cannot fit, fall back to a single navigation pane that switches between workspaces and agents.

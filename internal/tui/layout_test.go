@@ -330,7 +330,7 @@ func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Repair(state.Empty(), "/tmp/project")
 
-	got := strings.Join(renderWorkspacesPane(cfg, st, 64, 12), "\n")
+	got := strings.Join(renderWorkspacesPane(cfg, st, fixedWorkspacePaneWidth, 12), "\n")
 
 	if !strings.Contains(got, "No workspaces") || !strings.Contains(got, "Press w to add one.") {
 		t.Fatalf("empty workspaces pane missing help:\n%s", got)
