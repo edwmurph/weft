@@ -432,62 +432,6 @@ func TestDetectDoctorTerminal(t *testing.T) {
 	}
 }
 
-func TestUpdateIterm2OptionBackspaceMappingUsesCurrentProfile(t *testing.T) {
-	data := map[string]any{
-		"Default Bookmark Guid": "default-guid",
-		"New Bookmarks": []any{
-			map[string]any{"Guid": "default-guid", "Name": "Default"},
-			map[string]any{"Guid": "active-guid", "Name": "Active", "Keyboard Map": map[string]any{}},
-		},
-	}
-
-	profile, changed, err := updateIterm2OptionBackspaceMapping(data, "Active")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !changed {
-		t.Fatal("expected mapping change")
-	}
-	if profile != "Active" {
-		t.Fatalf("profile = %q, want Active", profile)
-	}
-	active := data["New Bookmarks"].([]any)[1].(map[string]any)
-	keyboardMap := active["Keyboard Map"].(map[string]any)
-	entry := keyboardMap[iTerm2OptionBackspaceKey].(map[string]any)
-	if got := fmt.Sprint(entry["Action"]); got != "11" {
-		t.Fatalf("action = %q, want 11", got)
-	}
-	if got := entry["Text"]; got != iTerm2OptionBackspaceText {
-		t.Fatalf("text = %q, want %q", got, iTerm2OptionBackspaceText)
-	}
-}
-
-func TestUpdateIterm2OptionBackspaceMappingIsNoopWhenConfigured(t *testing.T) {
-	data := map[string]any{
-		"Default Bookmark Guid": "default-guid",
-		"New Bookmarks": []any{
-			map[string]any{
-				"Guid": "default-guid",
-				"Name": "Default",
-				"Keyboard Map": map[string]any{
-					iTerm2OptionBackspaceKey: map[string]any{"Action": float64(11), "Text": iTerm2OptionBackspaceText},
-				},
-			},
-		},
-	}
-
-	profile, changed, err := updateIterm2OptionBackspaceMapping(data, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if changed {
-		t.Fatal("mapping should already be configured")
-	}
-	if profile != "Default" {
-		t.Fatalf("profile = %q, want Default", profile)
-	}
-}
-
 func TestIterm2FixErrorIncludesDebugContext(t *testing.T) {
 	err := iterm2FixError(
 		"write updated preferences",

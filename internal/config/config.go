@@ -94,10 +94,6 @@ func DefaultConfig() Config {
 	}
 }
 
-func ResolveRuntime() (Runtime, error) {
-	return ResolveRuntimeWithOptions(ResolveOptions{})
-}
-
 func ResolveRuntimeWithOptions(options ResolveOptions) (Runtime, error) {
 	workspace, err := CurrentWorkspace()
 	if err != nil {
@@ -129,15 +125,6 @@ func CurrentWorkspace() (string, error) {
 		return filepath.Abs(expandHome(configured))
 	}
 	return os.Getwd()
-}
-
-func AppDir(workspace string) (string, error) {
-	dir, _, err := AppDirInfo(workspace)
-	return dir, err
-}
-
-func AppDirInfo(workspace string) (string, bool, error) {
-	return appDirInfo(workspace, "")
 }
 
 func appDirInfo(workspace string, autoRoot string) (string, bool, error) {

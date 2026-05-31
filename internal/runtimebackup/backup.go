@@ -177,14 +177,6 @@ func Load(path string) (Metadata, error) {
 	return meta, nil
 }
 
-func Restore(rt config.Runtime, backup Metadata) (RestoreResult, error) {
-	pre, err := Create(rt, Options{Reason: "pre-restore " + backup.ID, IncludeLogs: true})
-	if err != nil {
-		return RestoreResult{Backup: backup}, fmt.Errorf("could not create pre-restore backup: %w", err)
-	}
-	return RestoreWithPreRestore(rt, backup, &pre)
-}
-
 func RestoreWithPreRestore(rt config.Runtime, backup Metadata, pre *Metadata) (RestoreResult, error) {
 	result := RestoreResult{Backup: backup, PreRestore: pre}
 	files := map[string]FileMeta{}

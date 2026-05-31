@@ -173,22 +173,6 @@ func (s *Store) Write(next State) error {
 	})
 }
 
-func (s *Store) Update(mutator func(State) State) (State, error) {
-	var next State
-	err := withFileLock(s.LockPath, func() error {
-		current := Repair(Empty(), s.Workspace)
-		raw, err := os.ReadFile(s.Path)
-		if err == nil {
-			current, err = parseState(raw, s.Workspace)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		next = Repair(mutator(current), s.Workspace)
-		return writeJSONAtomic(s.Path, next)
-	})
-	return next, err
-}
-
 func parseState(raw []byte, fallbackWorkspace string) (State, error) {
 	var st State
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -454,10 +438,6 @@ func ActiveWorkspace(st State) *Workspace {
 	return WorkspaceByID(st, st.SelectedWorkspaceID)
 }
 
-func ActiveGroup(st State) *Group {
-	return GroupByID(st, st.SelectedGroupID)
-}
-
 func WorkspaceForAgent(st State, agent Agent) *Workspace {
 	return WorkspaceByID(st, agent.WorkspaceID)
 }
@@ -503,16 +483,6 @@ func UngroupedAgentsForWorkspace(st State, workspaceID string) []Agent {
 		}
 	}
 	return agents
-}
-
-func AgentCountForWorkspace(st State, workspaceID string) int {
-	count := 0
-	for _, agent := range st.Agents {
-		if agent.WorkspaceID == workspaceID {
-			count++
-		}
-	}
-	return count
 }
 
 func AgentCountForGroup(st State, groupID string) int {
@@ -948,15 +918,6 @@ func absolutePath(path string) string {
 		return abs
 	}
 	return path
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func validCollapsedGroupIDs(ids []string, groups map[string]Group) []string {

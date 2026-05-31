@@ -87,7 +87,7 @@ func TestUpgradeStatusDecisions(t *testing.T) {
 	st.Agents = []state.Agent{{ID: id, WorkspaceID: "w", Title: "Alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}}
 	response := ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.ProtocolVersion, SupervisorVersion: "3.9.0"}
 
-	upgrade := UpgradeStatus(response, "4.0.0")
+	upgrade := ipc.UpgradeStatus(response, "4.0.0")
 	if upgrade == nil {
 		t.Fatal("expected upgrade status")
 	}

@@ -49,7 +49,11 @@ func TestCreateListRestoreHandlesMissingState(t *testing.T) {
 	if err := os.WriteFile(rt.StatePath, []byte("current state\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Restore(rt, backup)
+	pre, err := Create(rt, Options{Reason: "pre-restore " + backup.ID, IncludeLogs: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RestoreWithPreRestore(rt, backup, &pre)
 	if err != nil {
 		t.Fatal(err)
 	}

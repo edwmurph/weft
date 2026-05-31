@@ -179,7 +179,7 @@ func TestRootEnvDerivesWorkspaceAndRuntime(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(RootEnv, root)
 
-	rt, err := ResolveRuntime()
+	rt, err := ResolveRuntimeWithOptions(ResolveOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestSpecificEnvOverridesRootEnv(t *testing.T) {
 	t.Setenv(WorkspaceEnv, workspace)
 	t.Setenv(AppDirEnv, runtimeDir)
 
-	rt, err := ResolveRuntime()
+	rt, err := ResolveRuntimeWithOptions(ResolveOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,12 +280,17 @@ func TestSpecificEnvOverridesRootEnv(t *testing.T) {
 func TestDefaultRuntimeIsGlobal(t *testing.T) {
 	t.Setenv(RootEnv, "")
 	t.Setenv(AppDirEnv, "")
-	dir, err := AppDir("/tmp/project")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	rt, err := ResolveRuntimeWithOptions(ResolveOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.HasSuffix(dir, "workspaces") || strings.Contains(dir, "project-") {
-		t.Fatalf("AppDir should be global, got %q", dir)
+	if rt.Dir != filepath.Join(home, ".weft") {
+		t.Fatalf("runtime dir = %q, want global home runtime", rt.Dir)
+	}
+	if strings.HasSuffix(rt.Dir, "workspaces") || strings.Contains(rt.Dir, "project-") {
+		t.Fatalf("runtime dir should be global, got %q", rt.Dir)
 	}
 }
 

@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-31 - MVP legacy prune
+
+- Request: Implement a narrow legacy/dead-code prune while preserving supervisor upgrades, dashboard `U`, `upgrade_resume`, Codex session IDs, and Codex resume.
+- Suggestions: Delete stale iTerm2 map-based plist editing helpers, remove unused wrapper/helper APIs that were only test-held, keep strict unsupported legacy-shape tests, and document the current-vs-legacy boundary in `spec.md` and `AGENTS.md`.
+- Outcome: Implemented in `.worktrees/mvp-legacy-prune`; awaiting review.
+- Evidence: `internal/app/doctor_keys.go`, `internal/config/config.go`, `internal/runtimebackup/backup.go`, `internal/state/state.go`, `internal/tui/client.go`, `internal/supervisor/supervisor.go`, `spec.md`, `AGENTS.md`.
+
 ## 2026-05-31 - Upgrade cutover prune
 
 - Request: Delete stale upgrade compatibility code while preserving the guarded dashboard `U` upgrade/resume flow.

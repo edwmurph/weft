@@ -57,8 +57,6 @@ type ClientModel struct {
 	launchWorkspacePrompted  bool
 	upgradeResumeUnsupported bool
 	lastResumeScan           time.Time
-	codexInputQueue          []map[string]string
-	codexInputInFlight       bool
 	toastText                string
 	toastID                  int
 	mouseSelection           consoleSelection
@@ -110,32 +108,28 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = typed.Height
 		return m, m.request("resize", map[string]string{"width": strconv.Itoa(typed.Width), "height": strconv.Itoa(typed.Height)})
 	case clientResponseMsg:
-		if typed.command == "codex_input" {
-			m.codexInputInFlight = false
-		}
 		if typed.err != nil {
 			if typed.command == "upgrade_resume" && upgradeResumeUnsupported(typed.response) {
 				m.upgradeResumeUnsupported = true
 				m.message = upgradeResumeUnsupportedMessage()
-				return m, m.nextCodexInputRequest()
+				return m, nil
 			}
 			if typed.command == "attach_client" && typed.response.Error == nil {
 				m.message = typed.err.Error()
 				return m, tickClientAttachRetry()
 			}
 			m.message = typed.err.Error()
-			return m, m.nextCodexInputRequest()
+			return m, nil
 		}
 		m.applyResponse(typed.response)
 		if typed.command == "upgrade_resume" {
 			m.upgradeResumeUnsupported = false
 		}
-		nextCodexInput := m.nextCodexInputRequest()
 		nextLoadingTick := m.ensureLoadingTick()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
-			return m, tea.Batch(nextCodexInput, nextLoadingTick, m.request("client_detached", nil), tea.Quit)
+			return m, tea.Batch(nextLoadingTick, m.request("client_detached", nil), tea.Quit)
 		}
-		return m, tea.Batch(nextCodexInput, nextLoadingTick)
+		return m, nextLoadingTick
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
 	case clientAttachRetryTick:
@@ -447,21 +441,6 @@ func clientExecutablePath() string {
 	return exe
 }
 
-func (m ClientModel) enqueueCodexInput(args map[string]string) (ClientModel, tea.Cmd) {
-	m.codexInputQueue = append(m.codexInputQueue, cloneArgs(args))
-	return m, m.nextCodexInputRequest()
-}
-
-func (m *ClientModel) nextCodexInputRequest() tea.Cmd {
-	if m.codexInputInFlight || len(m.codexInputQueue) == 0 {
-		return nil
-	}
-	args := m.codexInputQueue[0]
-	m.codexInputQueue = m.codexInputQueue[1:]
-	m.codexInputInFlight = true
-	return m.request("codex_input", args)
-}
-
 func cloneArgs(args map[string]string) map[string]string {
 	next := make(map[string]string, len(args)+1)
 	for key, value := range args {
@@ -700,10 +679,6 @@ func (m ClientModel) renderConfirmModal() string {
 
 func (m ClientModel) selectedAgent() *state.Agent {
 	return selectedAgentForState(m.snapshot.State, m.snapshot.GroupCursor)
-}
-
-func (m ClientModel) currentGroupRow() groupRow {
-	return currentGroupRowForState(m.snapshot.State, m.snapshot.GroupCursor)
 }
 
 func (m ClientModel) renderAgentTitle(agent state.Agent) string {

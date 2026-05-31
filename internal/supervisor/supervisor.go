@@ -473,10 +473,6 @@ func AnnotateUpgrade(response ipc.Response, autoRestarted bool) ipc.Response {
 	return ipc.AnnotateUpgrade(response, ReportedClientVersion(), autoRestarted)
 }
 
-func UpgradeStatus(response ipc.Response, clientVersion string) *ipc.Upgrade {
-	return ipc.UpgradeStatus(response, clientVersion)
-}
-
 func ShouldAutoRestart(response ipc.Response) bool {
 	return ipc.ShouldAutoRestart(response)
 }

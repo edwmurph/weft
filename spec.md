@@ -32,6 +32,21 @@ The core workflow is:
 - Event-driven speed: avoid polling loops and shelling out for routine runtime state.
 - Minimal dependencies: prefer the Go standard library and existing terminal/PTY dependencies before adding new packages.
 
+## Current And Legacy Boundary
+
+Current Weft behavior is the workspace, group, and agent model backed by one
+local supervisor. The supervisor owns all Codex PTYs, saves current state,
+captures Codex session IDs, and performs the dashboard `U` upgrade/resume flow
+through the supervisor-owned `upgrade_resume` IPC command. Resuming agents with
+`codex resume <session-id>` after an explicit dashboard upgrade is part of the
+current product contract, not legacy compatibility.
+
+Legacy behavior is unsupported unless this specification explicitly brings it
+back. Legacy includes tmux pane state, tab/column state, workdir/folder naming,
+hidden old commands, old config keys, state/config migration paths, and alias
+support for retired command or state shapes. Legacy files should be rejected
+with reset guidance rather than migrated by hidden compatibility code.
+
 ## Runtime Architecture
 
 Weft has two runtime roles in one shipped binary.

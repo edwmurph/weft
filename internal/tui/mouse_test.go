@@ -273,9 +273,6 @@ func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("mouse wheel scrollback should not forward input to Codex")
 	}
-	if len(model.codexInputQueue) != 0 {
-		t.Fatalf("codex input queue = %#v, want empty", model.codexInputQueue)
-	}
 	if model.codexScrollOffset != 3 {
 		t.Fatalf("scroll offset = %d, want 3", model.codexScrollOffset)
 	}
