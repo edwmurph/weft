@@ -47,7 +47,7 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 		"Agents",
 		"Agent Preview",
 		"live · cropped",
-		"▾ inbox",
+		"▾ inbox (1)",
 		"╭ /tmp/project",
 		"1 total",
 		"0 active",
@@ -235,6 +235,29 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 	}
 	if strings.Contains(got, "Agents") {
 		t.Fatalf("narrow nav should use one pane, got agents too:\n%s", got)
+	}
+}
+
+func TestRenderAgentsPaneShowsGroupCountInline(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TitleTemplate = "{title}"
+	st := layoutState("/tmp/project")
+	st.Agents = append(st.Agents, state.Agent{
+		ID:          "b",
+		WorkspaceID: "w",
+		GroupID:     "f",
+		Title:       "beta",
+		Status:      state.StatusReady,
+		CreatedAt:   state.NowISO(),
+		UpdatedAt:   state.NowISO(),
+	})
+
+	got := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n"))
+	if !strings.Contains(got, "▾ inbox (2)") {
+		t.Fatalf("group count should render inline after the title:\n%s", got)
+	}
+	if strings.Contains(got, "▾ inbox                 2") {
+		t.Fatalf("group count should not render as a far-right bare count:\n%s", got)
 	}
 }
 

@@ -460,7 +460,7 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		if state.IsGroupCollapsed(st, group.ID) {
 			indicator = "▸ "
 		}
-		groupRow := rowLine(indicator+group.Path, fmtInt(state.AgentCountForGroup(st, group.ID)), rowWidth)
+		groupRow := rowLine(indicator+group.Path+" ("+fmtInt(state.AgentCountForGroup(st, group.ID))+")", "", rowWidth)
 		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
 			groupRow = activeAgentStyle.Render(padVisual(groupRow, rowWidth))
 		} else {
