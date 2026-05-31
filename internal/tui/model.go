@@ -1213,9 +1213,21 @@ func (m Model) agentLoading(agentID string) bool {
 	if agent == nil {
 		return false
 	}
-	switch titles.CanonicalStatus(*agent) {
+	canonical := titles.CanonicalStatus(*agent)
+	switch canonical {
 	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
 		return false
+	}
+	// Many non-active agents don't have a captured screen buffer; rely on the Codex title-derived
+	// status first so we don't incorrectly show them as still "running"/loading.
+	// For the active agent, keep the stricter behavior that waits for visible content.
+	if agentID != m.state.ActiveAgentID {
+		switch canonical {
+		case "ready":
+			return false
+		case "working":
+			return true
+		}
 	}
 	if agentStatusIndicatesActivity(*agent) {
 		return true
