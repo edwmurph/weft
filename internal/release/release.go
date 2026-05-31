@@ -257,8 +257,7 @@ class %s < Formula
   end
 
   test do
-    ENV["WEFT_HOME"] = testpath/"weft-home"
-    ENV["WEFT_WORKSPACE"] = testpath
+    ENV["WEFT_ROOT"] = testpath
     assert_match "Terminal dashboard for Codex agent threads", shell_output("#{bin}/%s --help")
     assert_match "supervisor owns Codex PTYs", shell_output("#{bin}/%s doctor")
   end

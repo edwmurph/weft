@@ -116,7 +116,7 @@ func TestRenderFormulaBuildsGoBinaryFromSource(t *testing.T) {
 		`system "go", "build"`,
 		`BuildChannel=release`,
 		`./cmd/weft`,
-		`WEFT_HOME`,
+		`WEFT_ROOT`,
 		`weft doctor`,
 	} {
 		if !strings.Contains(formula, expected) {

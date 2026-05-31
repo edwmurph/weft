@@ -48,14 +48,14 @@ weft
 For local development from this repository:
 
 ```sh
-WEFT_HOME=$PWD/.weft WEFT_WORKSPACE=$PWD go run ./cmd/weft doctor
-WEFT_HOME=$PWD/.weft WEFT_WORKSPACE=$PWD go run ./cmd/weft
+WEFT_ROOT=$PWD go run ./cmd/weft doctor
+WEFT_ROOT=$PWD go run ./cmd/weft
 ```
 
 From another current directory, point Go at the worktree module first:
 
 ```sh
-WEFT_HOME=/path/to/weft-or-worktree/.weft WEFT_WORKSPACE=/path/to/weft-or-worktree go -C /path/to/weft-or-worktree run ./cmd/weft
+WEFT_ROOT=/path/to/weft-or-worktree go -C /path/to/weft-or-worktree run ./cmd/weft
 ```
 
 ## Usage
@@ -223,11 +223,14 @@ Weft stores runtime files globally:
 - `~/.weft/weftd.log`
 - `~/.weft/backups/`
 
-`WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace
-selection and the first-run add prompt.
-`WEFT_HOME` overrides the runtime directory directly for development and tests.
+`WEFT_ROOT` is the short development/worktree override. It sets the launch
+workspace to that path and stores runtime files in `$WEFT_ROOT/.weft`.
+`WEFT_WORKSPACE` overrides only the launch directory used for attach-time
+workspace selection and the first-run add prompt.
+`WEFT_HOME` overrides only the runtime directory directly for development and
+tests.
 Source-built Weft defaults to a fail-closed mode: it refuses to use the default
-`~/.weft` runtime unless `WEFT_HOME` is set, or unless
+`~/.weft` runtime unless `WEFT_ROOT` or `WEFT_HOME` is set, or unless
 `WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional one-off. Release builds
 from Homebrew use `~/.weft` by default.
 
@@ -252,8 +255,9 @@ WEFT_RUN_INTEGRATION=1 go test ./...
 go build ./cmd/weft
 ```
 
-Live integration tests use temporary `WEFT_HOME`, `WEFT_WORKSPACE`, and a fake
-`codex_command`. Use
+Live integration tests use temporary `WEFT_ROOT`, or separate temporary
+`WEFT_HOME` and `WEFT_WORKSPACE` values when they need distinct paths, plus a
+fake `codex_command`. Use
 `WEFT_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
 to see per-step dashboard timing logs.
 

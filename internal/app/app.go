@@ -719,7 +719,7 @@ func safeDevRuntimeCommand(rt config.Runtime) string {
 		}
 		worktree = cwd
 	}
-	return fmt.Sprintf("%s=%s %s=%s go -C %s run ./cmd/weft --clear", config.AppDirEnv, filepath.Join(worktree, ".weft"), config.WorkspaceEnv, worktree, worktree)
+	return fmt.Sprintf("%s=%s go -C %s run ./cmd/weft --clear", config.RootEnv, worktree, worktree)
 }
 
 func runningAgentCount(st *state.State) int {

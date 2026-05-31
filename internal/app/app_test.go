@@ -66,6 +66,7 @@ func TestSourceBuildRefusesDefaultMainRuntime(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv(config.RootEnv, "")
 	t.Setenv(config.AppDirEnv, "")
 	t.Setenv(config.WorkspaceEnv, workspace)
 	t.Setenv(config.AllowMainRuntimeEnv, "")
@@ -75,7 +76,7 @@ func TestSourceBuildRefusesDefaultMainRuntime(t *testing.T) {
 		t.Fatal("source build should refuse default runtime")
 	}
 	if !strings.Contains(err.Error(), "source builds refuse to use the default Weft runtime") ||
-		!strings.Contains(err.Error(), "WEFT_HOME="+workspace) ||
+		!strings.Contains(err.Error(), config.RootEnv+"="+workspace) ||
 		!strings.Contains(err.Error(), config.AllowMainRuntimeEnv+"=1") {
 		t.Fatalf("runtime guard error missing guidance:\n%s", err)
 	}
@@ -88,6 +89,7 @@ func TestSourceBuildAllowsExplicitRuntime(t *testing.T) {
 	withBuildChannel(t, "source")
 	workspace := t.TempDir()
 	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	t.Setenv(config.RootEnv, "")
 	t.Setenv(config.AppDirEnv, runtimeDir)
 	t.Setenv(config.WorkspaceEnv, workspace)
 	t.Setenv(config.AllowMainRuntimeEnv, "")
@@ -104,11 +106,35 @@ func TestSourceBuildAllowsExplicitRuntime(t *testing.T) {
 	}
 }
 
+func TestSourceBuildAllowsRootRuntime(t *testing.T) {
+	withBuildChannel(t, "source")
+	root := t.TempDir()
+	t.Setenv(config.RootEnv, root)
+	t.Setenv(config.AppDirEnv, "")
+	t.Setenv(config.WorkspaceEnv, "")
+	t.Setenv(config.AllowMainRuntimeEnv, "")
+
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Workspace != root {
+		t.Fatalf("workspace = %q, want root env %q", rt.Workspace, root)
+	}
+	if rt.Dir != filepath.Join(root, ".weft") {
+		t.Fatalf("runtime dir = %q, want root-local .weft", rt.Dir)
+	}
+	if !rt.HomeExplicit {
+		t.Fatalf("root env runtime should be explicit: %#v", rt)
+	}
+}
+
 func TestReleaseBuildAllowsDefaultRuntime(t *testing.T) {
 	withBuildChannel(t, "release")
 	home := t.TempDir()
 	workspace := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv(config.RootEnv, "")
 	t.Setenv(config.AppDirEnv, "")
 	t.Setenv(config.WorkspaceEnv, workspace)
 	t.Setenv(config.AllowMainRuntimeEnv, "")
@@ -130,6 +156,7 @@ func TestAllowMainRuntimeOverrideAllowsSourceDefaultRuntime(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv(config.RootEnv, "")
 	t.Setenv(config.AppDirEnv, "")
 	t.Setenv(config.WorkspaceEnv, workspace)
 	t.Setenv(config.AllowMainRuntimeEnv, "1")

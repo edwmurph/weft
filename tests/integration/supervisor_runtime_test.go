@@ -116,7 +116,7 @@ func TestSourceBuildDefaultRuntimeGuardFailsBeforeCreatingRuntime(t *testing.T) 
 	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := append(filteredEnv("WEFT_HOME", "WEFT_ALLOW_MAIN_RUNTIME"),
+	env := append(filteredEnv("WEFT_ROOT", "WEFT_HOME", "WEFT_ALLOW_MAIN_RUNTIME"),
 		"HOME="+home,
 		"WEFT_WORKSPACE="+workspace,
 		"PATH=/usr/bin:/bin",
@@ -134,6 +134,45 @@ func TestSourceBuildDefaultRuntimeGuardFailsBeforeCreatingRuntime(t *testing.T) 
 	}
 	if _, err := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(err) {
 		t.Fatalf("guard should not create default runtime, stat err = %v", err)
+	}
+}
+
+func TestRootEnvLaunchesIsolatedRuntime(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	root := filepath.Join(tmp, "worktree")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := append(filteredEnv("WEFT_ROOT", "WEFT_HOME", "WEFT_WORKSPACE", "WEFT_ALLOW_MAIN_RUNTIME"),
+		"HOME="+home,
+		"WEFT_ROOT="+root,
+		"PATH=/usr/bin:/bin",
+		"TERM=xterm-256color",
+	)
+
+	runWeft(t, env, bin, "--no-attach")
+	if _, err := os.Stat(filepath.Join(root, ".weft", "config.toml")); err != nil {
+		t.Fatalf("root env should create root-local config: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(err) {
+		t.Fatalf("root env should not touch default home runtime, stat err = %v", err)
+	}
+
+	runWeft(t, env, bin, "workspace", "add", root)
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Workspaces) == 1
+	})
+	if got := st.Workspaces[0].Path; got != root {
+		t.Fatalf("workspace path = %q, want root env path %q", got, root)
 	}
 }
 

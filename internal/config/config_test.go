@@ -8,6 +8,7 @@ import (
 )
 
 func TestEnsureConfigCreatesDefaults(t *testing.T) {
+	t.Setenv(RootEnv, "")
 	t.Setenv(AppDirEnv, "")
 	t.Setenv(WorkspaceEnv, "")
 	dir := t.TempDir()
@@ -157,7 +158,9 @@ close_weft = "C-q"
 }
 
 func TestCurrentWorkspacePrefersWorkspaceEnv(t *testing.T) {
+	root := t.TempDir()
 	workspace := t.TempDir()
+	t.Setenv(RootEnv, root)
 	t.Setenv(WorkspaceEnv, workspace)
 
 	got, err := CurrentWorkspace()
@@ -169,7 +172,50 @@ func TestCurrentWorkspacePrefersWorkspaceEnv(t *testing.T) {
 	}
 }
 
+func TestRootEnvDerivesWorkspaceAndRuntime(t *testing.T) {
+	t.Setenv(RootEnv, "")
+	t.Setenv(AppDirEnv, "")
+	t.Setenv(WorkspaceEnv, "")
+	root := t.TempDir()
+	t.Setenv(RootEnv, root)
+
+	rt, err := ResolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Workspace != root {
+		t.Fatalf("Workspace = %q, want root env %q", rt.Workspace, root)
+	}
+	if rt.Dir != filepath.Join(root, ".weft") {
+		t.Fatalf("Dir = %q, want root-local runtime", rt.Dir)
+	}
+	if !rt.HomeExplicit {
+		t.Fatalf("RootEnv should count as an explicit source-build runtime: %#v", rt)
+	}
+}
+
+func TestSpecificEnvOverridesRootEnv(t *testing.T) {
+	root := t.TempDir()
+	workspace := t.TempDir()
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	t.Setenv(RootEnv, root)
+	t.Setenv(WorkspaceEnv, workspace)
+	t.Setenv(AppDirEnv, runtimeDir)
+
+	rt, err := ResolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Workspace != workspace {
+		t.Fatalf("Workspace = %q, want specific workspace env %q", rt.Workspace, workspace)
+	}
+	if rt.Dir != runtimeDir {
+		t.Fatalf("Dir = %q, want specific home env %q", rt.Dir, runtimeDir)
+	}
+}
+
 func TestDefaultRuntimeIsGlobal(t *testing.T) {
+	t.Setenv(RootEnv, "")
 	t.Setenv(AppDirEnv, "")
 	dir, err := AppDir("/tmp/project")
 	if err != nil {

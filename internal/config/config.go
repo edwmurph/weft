@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	RootEnv                 = "WEFT_ROOT"
 	AppDirEnv               = "WEFT_HOME"
 	WorkspaceEnv            = "WEFT_WORKSPACE"
 	AllowMainRuntimeEnv     = "WEFT_ALLOW_MAIN_RUNTIME"
@@ -111,6 +112,9 @@ func CurrentWorkspace() (string, error) {
 	if configured := os.Getenv(WorkspaceEnv); configured != "" {
 		return filepath.Abs(expandHome(configured))
 	}
+	if configured := os.Getenv(RootEnv); configured != "" {
+		return filepath.Abs(expandHome(configured))
+	}
 	return os.Getwd()
 }
 
@@ -123,6 +127,13 @@ func AppDirInfo(workspace string) (string, bool, error) {
 	if configured := os.Getenv(AppDirEnv); configured != "" {
 		dir, err := filepath.Abs(expandHome(configured))
 		return dir, true, err
+	}
+	if configured := os.Getenv(RootEnv); configured != "" {
+		root, err := filepath.Abs(expandHome(configured))
+		if err != nil {
+			return "", true, err
+		}
+		return filepath.Join(root, defaultRuntimeDirectory), true, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {

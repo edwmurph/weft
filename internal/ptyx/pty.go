@@ -106,7 +106,7 @@ func (s *Session) readLoop(output func(Data)) {
 
 func childEnv(env []string, shell string) []string {
 	remove := map[string]bool{
-		"WEFT_HOME": true, "WEFT_WORKSPACE": true, "NO_COLOR": true,
+		"WEFT_ROOT": true, "WEFT_HOME": true, "WEFT_WORKSPACE": true, "NO_COLOR": true,
 	}
 	next := make([]string, 0, len(env)+1)
 	hasTerm := false

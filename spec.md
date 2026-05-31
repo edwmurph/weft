@@ -39,7 +39,7 @@ Weft has two runtime roles in one shipped binary.
 Weft also has a build channel. Release/Homebrew builds set
 `version.BuildChannel` to `release`; source builds default to `source`. A
 source build must fail closed before reading or mutating the default
-`~/.weft` runtime unless `WEFT_HOME` is set explicitly or
+`~/.weft` runtime unless `WEFT_ROOT` or `WEFT_HOME` is set explicitly or
 `WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional one-off. Help, version,
 and `weft doctor keys` remain available without runtime access.
 
@@ -47,7 +47,8 @@ and `weft doctor keys` remain available without runtime access.
 
 The supervisor is a local background process, referred to internally as `weftd`.
 It is started automatically by `weft` when needed and is scoped by
-`WEFT_HOME`. There is at most one active supervisor per runtime directory.
+`WEFT_HOME`, or by `$WEFT_ROOT/.weft` when only `WEFT_ROOT` is set. There is at
+most one active supervisor per runtime directory.
 
 The supervisor owns:
 
@@ -129,8 +130,8 @@ as the normal upgrade path.
 
 ## Runtime Files
 
-Weft stores runtime files globally under `~/.weft` by default, or under
-`WEFT_HOME` when set:
+Weft stores runtime files globally under `~/.weft` by default, under
+`$WEFT_ROOT/.weft` when `WEFT_ROOT` is set, or under `WEFT_HOME` when set:
 
 - `config.toml`
 - `state.json`
@@ -140,9 +141,12 @@ Weft stores runtime files globally under `~/.weft` by default, or under
 - `weftd.log`
 - `backups/`
 
-`WEFT_WORKSPACE` overrides the launch directory used for attach-time workspace context.
-Development and worktree runs should set `WEFT_HOME` to the worktree-local
-ignored `.weft/` directory and set `WEFT_WORKSPACE` to the same worktree path.
+`WEFT_ROOT` sets both development/worktree paths from one value: runtime files
+go in `$WEFT_ROOT/.weft`, and the launch workspace is `$WEFT_ROOT`.
+`WEFT_WORKSPACE` overrides only the launch directory used for attach-time
+workspace context. `WEFT_HOME` overrides only the runtime directory.
+Development and worktree runs should usually set `WEFT_ROOT` to the worktree
+path.
 The installed release command owns the real default `~/.weft` runtime.
 
 Runtime backups live under `backups/<id>/` by default. A backup includes
@@ -770,7 +774,7 @@ Unit tests:
 - layout width calculations and rendering breakpoints
 - prompt editing keystroke variants
 - deterministic command construction and state helpers
-- runtime guard decisions for source/release builds, explicit `WEFT_HOME`, and
+- runtime guard decisions for source/release builds, explicit `WEFT_ROOT` or `WEFT_HOME`, and
   `WEFT_ALLOW_MAIN_RUNTIME=1`
 - backup create/list/restore behavior, including missing state and pre-restore
   backup creation
@@ -793,14 +797,15 @@ Integration tests:
 - persist and reload selected workspace/group/agent state
 - upgrade with no running agents restarts the supervisor automatically
 - upgrade with running agents preserves the old supervisor and prompts before restart
-- source/dev binary without `WEFT_HOME` fails before creating default runtime files
+- source/dev binary without `WEFT_ROOT` or `WEFT_HOME` fails before creating default runtime files
 - automatic backups are created before `--clear`, `close --kill`, and idle
   upgrade auto-restart
 - backup restore confirms before stopping a running supervisor unless `--yes`
   is provided
 
-Integration tests should use temporary `WEFT_HOME`, temporary `WEFT_WORKSPACE`,
-and a fake `codex_command`. They should not require tmux.
+Integration tests should use temporary `WEFT_ROOT`, or temporary `WEFT_HOME`
+and `WEFT_WORKSPACE` when distinct paths are required, plus a fake
+`codex_command`. They should not require tmux.
 
 Verification workflow:
 
