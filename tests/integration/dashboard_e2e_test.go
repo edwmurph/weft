@@ -234,7 +234,9 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	for _, name := range []string{"alpha", "beta", "gamma", "delta", "shipit"} {
 		directRun(t, env, "send-keys", "-t", pane, "g")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Flat and unique in this workspace.")
+			return strings.Contains(capture, "Group required") &&
+				strings.Contains(capture, "[ ] Silent") &&
+				!strings.Contains(capture, "Enter create")
 		})
 		directRun(t, env, "send-keys", "-l", "-t", pane, name)
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -245,7 +247,7 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 			return groupByPath(st, name) != nil
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return !strings.Contains(capture, "Flat and unique in this workspace.")
+			return !strings.Contains(capture, "Create group")
 		})
 	}
 	directRun(t, env, "send-keys", "-t", pane, "n")
@@ -288,10 +290,11 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "shipit") && !agentRowVisible(capture, "Ship Agent")
 	})
-	directRun(t, env, "send-keys", "-t", pane, "r")
+	directRun(t, env, "send-keys", "-t", pane, "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Rename group") &&
-			strings.Contains(capture, "shipit")
+		return strings.Contains(capture, "Group") &&
+			strings.Contains(capture, "shipit") &&
+			strings.Contains(capture, "Silent")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "C-u")
 	directRun(t, env, "send-keys", "-l", "-t", pane, "shipit-later")
@@ -375,13 +378,13 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "planning") && agentRowVisible(capture, "Planning Agent")
 	})
-	directRun(t, env, "send-keys", "-t", pane, "r")
+	directRun(t, env, "send-keys", "-t", pane, "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Rename group") && strings.Contains(capture, "planning")
+		return strings.Contains(capture, "Group") && strings.Contains(capture, "planning")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "Escape")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return !strings.Contains(capture, "Rename group")
+		return !strings.Contains(capture, "Edit group")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "C-c")
 	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
@@ -398,17 +401,17 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 		return strings.Contains(capture, "Workspaces") &&
 			strings.Contains(capture, "planning (1)")
 	})
-	directRun(t, env, "send-keys", "-t", pane+"-reattach", "r")
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Rename group") && strings.Contains(capture, "planning")
+		return strings.Contains(capture, "Group") && strings.Contains(capture, "planning")
 	})
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "Escape")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return !strings.Contains(capture, "Rename group")
+		return !strings.Contains(capture, "Edit group")
 	})
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "j")
 	time.Sleep(250 * time.Millisecond)
-	directRun(t, env, "send-keys", "-t", pane+"-reattach", "r")
+	directRun(t, env, "send-keys", "-t", pane+"-reattach", "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Variables") && strings.Contains(capture, "Planning Agent")
 	})
@@ -955,10 +958,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "auto title variable reveals title generated from first message", func() {
-		directRun(t, env, "send-keys", "-t", pane, "r")
+		directRun(t, env, "send-keys", "-t", pane, "e")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Rename agent") &&
-				strings.Contains(capture, "Variables") &&
+			return strings.Contains(capture, "Variables") &&
 				strings.Contains(capture, "{auto}")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-u")
@@ -1010,15 +1012,14 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
-	timedStep(t, "rename modal saves status template", func() {
+	timedStep(t, "edit modal saves status template", func() {
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
 			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "r")
+		directRun(t, env, "send-keys", "-t", pane, "e")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Rename agent") &&
-				strings.Contains(capture, "Preview")
+			return strings.Contains(capture, "Preview")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-u")
 		directRun(t, env, "send-keys", "-l", "-t", pane, "Codex {status}")
@@ -1028,7 +1029,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return agent != nil && agent.Title == "Codex {status}"
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codex Ready") && !strings.Contains(capture, "Rename agent")
+			return strings.Contains(capture, "Codex Ready") && !strings.Contains(capture, "Edit agent")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 	})
@@ -1518,7 +1519,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 				return workspace != nil && st.SelectedWorkspaceID == workspace.ID
 			})
 		}
-		directRun(t, env, "send-keys", "-t", pane, "r")
+		directRun(t, env, "send-keys", "-t", pane, "e")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Rename workspace")
 		})
@@ -1532,7 +1533,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return strings.Contains(capture, "Alpha Workspace")
 		})
 
-		directRun(t, env, "send-keys", "-t", pane, "r")
+		directRun(t, env, "send-keys", "-t", pane, "e")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Rename workspace")
 		})
@@ -1561,15 +1562,30 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return groupByPath(st, "release") != nil
 		})
 
-		directRun(t, env, "send-keys", "-t", pane, "r")
+		directRun(t, env, "send-keys", "-t", pane, "e")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Rename group")
+			return strings.Contains(capture, "Group")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-u")
 		directRun(t, env, "send-keys", "-l", "-t", pane, "renamed")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return groupByPath(st, "renamed") != nil
+			group := groupByPath(st, "renamed")
+			return group != nil
+		})
+		directRun(t, env, "send-keys", "-t", pane, "e")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Group") && strings.Contains(capture, "renamed")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Tab")
+		directRun(t, env, "send-keys", "-t", pane, "Space")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			group := groupByPath(st, "renamed")
+			return group != nil && group.Silent
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "⊘ renamed")
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Enter")

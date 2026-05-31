@@ -53,6 +53,8 @@ type ClientModel struct {
 	pendingID               string
 	promptSuggestionOpen    bool
 	promptSuggestionIndex   int
+	editGroupField          int
+	editGroupSilent         bool
 	loadingTickerActive     bool
 	launchWorkspacePrompted bool
 	lastResumeScan          time.Time
@@ -247,8 +249,8 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
 		}
-	case bindingMatches(m.cfg.KeyBindings.Rename, msg):
-		m.startRenamePrompt()
+	case bindingMatches(m.cfg.KeyBindings.Edit, msg):
+		m.startEditPrompt()
 	case bindingMatches(m.cfg.KeyBindings.Delete, msg):
 		m.startDeleteConfirm()
 	case bindingMatches(m.cfg.KeyBindings.Open, msg) || msg.Type == tea.KeyEnter:
@@ -272,6 +274,26 @@ func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.prompt == promptGroup || m.prompt == promptEditGroup {
+		result := handleEditGroupPromptInputKey(m.input, m.promptContext(), m.editGroupField, m.editGroupSilent, msg)
+		m.input = result.input
+		m.editGroupField = result.field
+		m.editGroupSilent = result.silent
+		if result.message != "" {
+			m.message = result.message
+		}
+		switch result.action {
+		case promptInputCancel:
+			m.mode = modeNormal
+			return m, nil
+		case promptInputSubmit:
+			cmd := m.applyPrompt(result.value)
+			m.mode = modeNormal
+			return m, cmd
+		default:
+			return m, result.cmd
+		}
+	}
 	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, m.promptSuggestionIndex, msg)
 	m.input = result.input
 	m.promptSuggestionOpen = result.suggestionOpen
@@ -309,13 +331,18 @@ func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 	configurePromptInput(&m.input, m.promptContext(), value)
 	m.promptSuggestionOpen = false
 	m.promptSuggestionIndex = 0
+	m.editGroupField = 0
+	if prompt != promptGroup && prompt != promptEditGroup {
+		m.editGroupSilent = false
+	}
 	m.mode = modeInput
 }
 
-func (m *ClientModel) startRenamePrompt() {
-	prompt, id, value, ok := renamePromptTargetForState(m.snapshot.State, m.snapshot.GroupCursor)
+func (m *ClientModel) startEditPrompt() {
+	prompt, id, value, silent, ok := editPromptTargetForState(m.snapshot.State, m.snapshot.GroupCursor)
 	if ok {
 		m.pendingID = id
+		m.editGroupSilent = silent
 		m.startPrompt(prompt, value)
 	}
 }
@@ -347,12 +374,12 @@ func (m ClientModel) applyPrompt(value string) tea.Cmd {
 	case promptWorkspace:
 		return m.request("add_workspace", map[string]string{"path": value})
 	case promptGroup:
-		return m.request("add_group", map[string]string{"path": value})
-	case promptRenameGroup:
-		return m.request("rename_group", map[string]string{"id": m.pendingID, "path": value})
+		return m.request("add_group", map[string]string{"path": value, "silent": fmt.Sprintf("%t", m.editGroupSilent)})
+	case promptEditGroup:
+		return m.request("rename_group", map[string]string{"id": m.pendingID, "path": value, "silent": fmt.Sprintf("%t", m.editGroupSilent)})
 	case promptWorkspaceTitle:
 		return m.request("rename_workspace", map[string]string{"id": m.pendingID, "title": value})
-	case promptRenameAgent:
+	case promptEditAgent:
 		return m.request("rename", map[string]string{"id": m.pendingID, "title": value})
 	case promptMoveAgent:
 		if agent := m.selectedAgent(); agent != nil {
@@ -621,6 +648,9 @@ func (m ClientModel) modalView(content string) string {
 
 func (m ClientModel) renderInputModal() string {
 	width := max(36, min(m.width-16, 72))
+	if m.prompt == promptGroup || m.prompt == promptEditGroup {
+		return renderEditGroupPromptModal(m.promptContext(), m.input, width, m.height, m.editGroupField, m.editGroupSilent)
+	}
 	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.promptSuggestionIndex, m.renderPromptExtra(m.input, width))
 }
 

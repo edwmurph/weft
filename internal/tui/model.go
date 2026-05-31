@@ -51,8 +51,8 @@ const (
 	promptWorkspace      promptKind = "workspace"
 	promptGroup          promptKind = "group"
 	promptWorkspaceTitle promptKind = "workspace-title"
-	promptRenameGroup    promptKind = "rename-group"
-	promptRenameAgent    promptKind = "rename-agent"
+	promptEditGroup      promptKind = "edit-group"
+	promptEditAgent      promptKind = "edit-agent"
 	promptMoveAgent      promptKind = "move-agent"
 )
 
@@ -121,6 +121,8 @@ type Model struct {
 	lastNavFocus          state.Focus
 	promptSuggestionOpen  bool
 	promptSuggestionIndex int
+	editGroupField        int
+	editGroupSilent       bool
 }
 
 func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
@@ -330,6 +332,9 @@ func (m Model) modalView(content string) string {
 
 func (m Model) renderInputModal() string {
 	width := max(36, min(m.width-16, 72))
+	if m.prompt == promptGroup || m.prompt == promptEditGroup {
+		return renderEditGroupPromptModal(m.promptContext(), m.input, width, m.height, m.editGroupField, m.editGroupSilent)
+	}
 	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.promptSuggestionIndex, m.renderPromptExtra(m.input, width))
 }
 
@@ -386,6 +391,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.prompt == promptGroup || m.prompt == promptEditGroup {
+		result := handleEditGroupPromptInputKey(m.input, m.promptContext(), m.editGroupField, m.editGroupSilent, msg)
+		m.input = result.input
+		m.editGroupField = result.field
+		m.editGroupSilent = result.silent
+		if result.message != "" {
+			m.message = result.message
+		}
+		switch result.action {
+		case promptInputCancel:
+			m.mode = modeNormal
+			return m, nil
+		case promptInputSubmit:
+			cmd := m.applyPrompt(result.value)
+			m.mode = modeNormal
+			return m, cmd
+		default:
+			return m, result.cmd
+		}
+	}
 	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, m.promptSuggestionIndex, msg)
 	m.input = result.input
 	m.promptSuggestionOpen = result.suggestionOpen
@@ -443,8 +468,8 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
 		}
-	case bindingMatches(m.cfg.KeyBindings.Rename, msg):
-		m.startRenamePrompt()
+	case bindingMatches(m.cfg.KeyBindings.Edit, msg):
+		m.startEditPrompt()
 	case bindingMatches(m.cfg.KeyBindings.Delete, msg):
 		m.startDeleteConfirm()
 	case bindingMatches(m.cfg.KeyBindings.Open, msg) || msg.Type == tea.KeyEnter:
@@ -556,13 +581,18 @@ func (m *Model) startPrompt(prompt promptKind, value string) {
 	configurePromptInput(&m.input, m.promptContext(), value)
 	m.promptSuggestionOpen = false
 	m.promptSuggestionIndex = 0
+	m.editGroupField = 0
+	if prompt != promptGroup && prompt != promptEditGroup {
+		m.editGroupSilent = false
+	}
 	m.mode = modeInput
 }
 
-func (m *Model) startRenamePrompt() {
-	prompt, id, value, ok := renamePromptTargetForState(m.state, m.groupCursor)
+func (m *Model) startEditPrompt() {
+	prompt, id, value, silent, ok := editPromptTargetForState(m.state, m.groupCursor)
 	if ok {
 		m.pendingID = id
+		m.editGroupSilent = silent
 		m.startPrompt(prompt, value)
 	}
 }
@@ -596,7 +626,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 			m.message = "select a workspace first"
 			return nil
 		}
-		next, group, err := state.AddGroup(m.state, shortID(), workspace.ID, value, state.NowISO())
+		next, group, err := state.AddGroupWithSilent(m.state, shortID(), workspace.ID, value, state.NowISO(), m.editGroupSilent)
 		if err != nil {
 			m.message = err.Error()
 			return nil
@@ -605,14 +635,14 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 		m.message = "created group " + group.Path
 		m.syncGroupCursor()
 		m.save()
-	case promptRenameGroup:
-		next, err := state.RenameGroup(m.state, m.pendingID, value)
+	case promptEditGroup:
+		next, err := state.EditGroup(m.state, m.pendingID, value, m.editGroupSilent)
 		if err != nil {
 			m.message = err.Error()
 			return nil
 		}
 		m.state = next
-		m.message = "renamed group"
+		m.message = "updated group"
 		m.syncGroupCursorToSelectedGroup()
 		m.save()
 	case promptWorkspaceTitle:
@@ -628,7 +658,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 			m.message = "renamed workspace"
 		}
 		m.save()
-	case promptRenameAgent:
+	case promptEditAgent:
 		next, err := state.RenameAgent(m.state, m.pendingID, value)
 		if err != nil {
 			m.message = err.Error()
@@ -1612,14 +1642,26 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.save()
 		return m.ipcResponse("renamed Codex agent"), nil
 	case "rename_group":
-		next, err := state.RenameGroup(m.state, request.Args["id"], request.Args["path"])
+		groupID := request.Args["id"]
+		silent := false
+		if group := state.GroupByID(m.state, groupID); group != nil {
+			silent = group.Silent
+		}
+		if raw := strings.TrimSpace(request.Args["silent"]); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err != nil {
+				return ipc.ErrorResponse("invalid_silent", "silent must be a boolean"), nil
+			}
+			silent = parsed
+		}
+		next, err := state.EditGroup(m.state, groupID, request.Args["path"], silent)
 		if err != nil {
 			return ipcError("rename_group_failed", err), nil
 		}
 		m.state = next
 		m.syncGroupCursorToSelectedGroup()
 		m.save()
-		return m.ipcResponse("renamed group"), nil
+		return m.ipcResponse("updated group"), nil
 	case "rename_workspace":
 		next, err := state.SetWorkspaceTitle(m.state, request.Args["id"], request.Args["title"])
 		if err != nil {
@@ -1707,11 +1749,19 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		return m.ipcResponse(message), nil
 	case "add_group":
 		path := request.Args["path"]
+		silent := false
+		if raw := strings.TrimSpace(request.Args["silent"]); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err != nil {
+				return ipc.ErrorResponse("invalid_silent", "silent must be a boolean"), nil
+			}
+			silent = parsed
+		}
 		workspaceID := request.Args["workspace_id"]
 		if workspaceID == "" {
 			workspaceID = m.state.SelectedWorkspaceID
 		}
-		next, _, err := state.AddGroup(m.state, shortID(), workspaceID, path, state.NowISO())
+		next, _, err := state.AddGroupWithSilent(m.state, shortID(), workspaceID, path, state.NowISO(), silent)
 		if err != nil {
 			return ipcError("add_group_failed", err), nil
 		}
@@ -2068,7 +2118,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s new agent", cfg.KeyBindings.NewAgent),
 		fmt.Sprintf("%s move agent", cfg.KeyBindings.MoveAgent),
 		"Shift+Up/Down reorder agent",
-		fmt.Sprintf("%s rename", cfg.KeyBindings.Rename),
+		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
 		"U upgrade supervisor and resume idle agents",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),

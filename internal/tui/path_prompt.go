@@ -50,6 +50,16 @@ type promptInputResult struct {
 	cmd             tea.Cmd
 }
 
+type editGroupPromptResult struct {
+	input   textinput.Model
+	field   int
+	silent  bool
+	action  promptInputAction
+	value   string
+	message string
+	cmd     tea.Cmd
+}
+
 func configurePromptInput(input *textinput.Model, ctx promptContext, value string) {
 	input.KeyMap = promptInputKeyMap()
 	input.SetValue(value)
@@ -268,13 +278,67 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 	return result
 }
 
+func handleEditGroupPromptInputKey(input textinput.Model, ctx promptContext, field int, silent bool, msg tea.KeyMsg) editGroupPromptResult {
+	result := editGroupPromptResult{input: input, field: field, silent: silent}
+	keyText := strings.ToLower(msg.String())
+	switch msg.Type {
+	case tea.KeyEsc:
+		result.action = promptInputCancel
+		return result
+	case tea.KeyEnter:
+		value := strings.TrimSpace(result.input.Value())
+		if message := promptSubmitBlocker(ctx, value); message != "" {
+			result.message = message
+			return result
+		}
+		result.action = promptInputSubmit
+		result.value = value
+		return result
+	case tea.KeyTab, tea.KeyUp, tea.KeyDown:
+		next := result.field
+		switch msg.Type {
+		case tea.KeyTab:
+			next = (result.field + 1) % 2
+		case tea.KeyUp:
+			next = max(0, result.field-1)
+		case tea.KeyDown:
+			next = min(1, result.field+1)
+		}
+		result.field = next
+		if result.field == 0 {
+			result.input.Focus()
+		} else {
+			result.input.Blur()
+		}
+		return result
+	}
+	if keyText == "tab" {
+		result.field = (result.field + 1) % 2
+		if result.field == 0 {
+			result.input.Focus()
+		} else {
+			result.input.Blur()
+		}
+		return result
+	}
+	if result.field == 1 {
+		if msg.Type == tea.KeySpace || msg.String() == " " || keyText == "space" {
+			result.silent = !result.silent
+			return result
+		}
+		return result
+	}
+	result.input, result.cmd = result.input.Update(msg)
+	return result
+}
+
 func promptPlaceholder(prompt promptKind) string {
 	switch prompt {
 	case promptWorkspace:
 		return "~/code/project"
-	case promptGroup, promptRenameGroup, promptMoveAgent:
+	case promptGroup, promptEditGroup, promptMoveAgent:
 		return "release"
-	case promptWorkspaceTitle, promptRenameAgent:
+	case promptWorkspaceTitle, promptEditAgent:
 		return "Codex {status}"
 	default:
 		return ""
@@ -454,6 +518,53 @@ func renderPromptModal(ctx promptContext, input textinput.Model, width int, heig
 	return strings.Join(lines, "\n")
 }
 
+func renderEditGroupPromptModal(ctx promptContext, input textinput.Model, width int, _ int, field int, silent bool) string {
+	lines := []string{modalTitleStyle.Render(promptTitle(ctx.prompt)), ""}
+
+	groupLines := renderPromptInput("Group", input, width)
+	if field != 0 {
+		groupLines[0] = mutedStyle.Render(groupLines[0])
+	}
+	lines = append(lines, groupLines...)
+
+	canSubmit := strings.TrimSpace(input.Value()) != ""
+	if !canSubmit {
+		lines = append(lines, modalWarningStyle.Render(clip("Group required", width)))
+	}
+
+	checkbox := "[ ] Silent"
+	if silent {
+		checkbox = "[x] Silent"
+	}
+	checkboxLine := modalValueStyle.Render(checkbox)
+	if field == 1 {
+		checkboxLine = modalKeyStyle.Render(checkbox)
+	} else {
+		checkboxLine = mutedStyle.Render(checkbox)
+	}
+	lines = append(lines, "", checkboxLine)
+
+	lines = append(lines, "", renderEditGroupActions(ctx.prompt, canSubmit))
+	return strings.Join(lines, "\n")
+}
+
+func renderEditGroupActions(prompt promptKind, canSubmit bool) string {
+	actions := []string{
+		modalKeyStyle.Render("Tab") + " move",
+		modalKeyStyle.Render("Up/Down") + " move",
+		modalKeyStyle.Render("Space") + " toggle",
+		modalKeyStyle.Render("Esc") + " cancel",
+	}
+	if canSubmit {
+		label := "save"
+		if prompt == promptGroup {
+			label = "create"
+		}
+		actions = append([]string{modalKeyStyle.Render("Enter") + " " + label}, actions...)
+	}
+	return strings.Join(actions, "  ")
+}
+
 func promptTitle(prompt promptKind) string {
 	switch prompt {
 	case promptWorkspace:
@@ -462,10 +573,10 @@ func promptTitle(prompt promptKind) string {
 		return "Create group"
 	case promptWorkspaceTitle:
 		return "Rename workspace"
-	case promptRenameGroup:
-		return "Rename group"
-	case promptRenameAgent:
-		return "Rename agent"
+	case promptEditGroup:
+		return "Edit group"
+	case promptEditAgent:
+		return "Edit agent"
 	case promptMoveAgent:
 		return "Move agent"
 	default:
@@ -477,7 +588,7 @@ func promptLabel(prompt promptKind) string {
 	switch prompt {
 	case promptWorkspace:
 		return "Path"
-	case promptGroup, promptRenameGroup, promptMoveAgent:
+	case promptGroup, promptEditGroup, promptMoveAgent:
 		return "Group"
 	default:
 		return "Title"
@@ -486,8 +597,6 @@ func promptLabel(prompt promptKind) string {
 
 func promptHint(prompt promptKind) string {
 	switch prompt {
-	case promptGroup:
-		return "Flat and unique in this workspace."
 	case promptWorkspaceTitle:
 		return "Blank uses the path title."
 	case promptMoveAgent:
@@ -670,7 +779,7 @@ func inspectPromptStatus(ctx promptContext, raw string) promptStatus {
 	switch ctx.prompt {
 	case promptWorkspace:
 		return inspectWorkspacePromptPath(ctx.state, raw)
-	case promptGroup, promptRenameGroup:
+	case promptGroup, promptEditGroup:
 		if message := validateGroupPrompt(ctx, raw); message != "" {
 			return promptStatus{message: message, style: modalWarningStyle}
 		}
@@ -680,7 +789,7 @@ func inspectPromptStatus(ctx promptContext, raw string) promptStatus {
 			return promptStatus{message: "Blank uses path title", style: mutedStyle}
 		}
 		return promptStatus{message: "Ready", style: modalSuccessStyle}
-	case promptRenameAgent:
+	case promptEditAgent:
 		if raw == "" {
 			return promptStatus{message: "Title required", style: modalWarningStyle}
 		}
@@ -704,9 +813,9 @@ func promptSubmitBlocker(ctx promptContext, value string) string {
 		if !workspaceInputIsExistingDirectory(value) {
 			return inspectWorkspacePromptPath(ctx.state, value).message
 		}
-	case promptGroup, promptRenameGroup:
+	case promptGroup, promptEditGroup:
 		return validateGroupPrompt(ctx, value)
-	case promptRenameAgent:
+	case promptEditAgent:
 		if value == "" {
 			return "Title required"
 		}
@@ -736,7 +845,7 @@ func promptSubmitActionLabel(ctx promptContext, value string) string {
 			return "clear"
 		}
 		return "save"
-	case promptRenameGroup, promptRenameAgent:
+	case promptEditGroup, promptEditAgent:
 		return "save"
 	case promptMoveAgent:
 		if value == "" {
@@ -757,7 +866,7 @@ func validateGroupPrompt(ctx promptContext, value string) string {
 		return "No / in group names"
 	}
 	workspaceID := ctx.state.SelectedWorkspaceID
-	if ctx.prompt == promptRenameGroup {
+	if ctx.prompt == promptEditGroup {
 		group := state.GroupByID(ctx.state, ctx.pendingID)
 		if group == nil {
 			return "Group not found"

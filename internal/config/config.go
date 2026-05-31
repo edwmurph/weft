@@ -30,7 +30,7 @@ type KeyBindings struct {
 	NewGroup     string `toml:"new_group"`
 	NewAgent     string `toml:"new_agent"`
 	MoveAgent    string `toml:"move_agent"`
-	Rename       string `toml:"rename"`
+	Edit         string `toml:"edit"`
 	Delete       string `toml:"delete"`
 	Help         string `toml:"help"`
 	Quit         string `toml:"quit"`
@@ -77,7 +77,7 @@ func DefaultKeyBindings() KeyBindings {
 		NewGroup:     "g",
 		NewAgent:     "n",
 		MoveAgent:    "m",
-		Rename:       "r",
+		Edit:         "e",
 		Delete:       "d",
 		Help:         "?",
 		Quit:         "C-c",
@@ -224,7 +224,7 @@ func LoadConfig(path string) (Config, error) {
 			NewGroup     string `toml:"new_group"`
 			NewAgent     string `toml:"new_agent"`
 			MoveAgent    string `toml:"move_agent"`
-			Rename       string `toml:"rename"`
+			Edit         string `toml:"edit"`
 			Delete       string `toml:"delete"`
 			Help         string `toml:"help"`
 			Quit         string `toml:"quit"`
@@ -236,8 +236,15 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		keys := make([]string, 0, len(undecoded))
+		hasLegacyRename := false
 		for _, key := range undecoded {
 			keys = append(keys, key.String())
+			if key.String() == "key_bindings.rename" {
+				hasLegacyRename = true
+			}
+		}
+		if hasLegacyRename {
+			return Config{}, ConfigError{Message: fmt.Sprintf("unknown config key(s) in %s: key_bindings.rename (dashboard shortcut was renamed; use key_bindings.edit = \"e\" and delete key_bindings.rename)", path)}
 		}
 		return Config{}, ConfigError{Message: fmt.Sprintf("unknown config key(s) in %s: %s", path, strings.Join(keys, ", "))}
 	}
@@ -268,7 +275,7 @@ func LoadConfig(path string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.NewGroup, raw.KeyBindings.NewGroup)
 	applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.NewAgent)
 	applyBinding(&cfg.KeyBindings.MoveAgent, raw.KeyBindings.MoveAgent)
-	applyBinding(&cfg.KeyBindings.Rename, raw.KeyBindings.Rename)
+	applyBinding(&cfg.KeyBindings.Edit, raw.KeyBindings.Edit)
 	applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
@@ -292,7 +299,7 @@ func (c Config) Validate() error {
 		"drawer": c.KeyBindings.Drawer, "focus_left": c.KeyBindings.FocusLeft, "focus_right": c.KeyBindings.FocusRight,
 		"select_prev": c.KeyBindings.SelectPrev, "select_next": c.KeyBindings.SelectNext, "open": c.KeyBindings.Open,
 		"new_workspace": c.KeyBindings.NewWorkspace, "new_group": c.KeyBindings.NewGroup, "new_agent": c.KeyBindings.NewAgent,
-		"move_agent": c.KeyBindings.MoveAgent, "rename": c.KeyBindings.Rename, "delete": c.KeyBindings.Delete,
+		"move_agent": c.KeyBindings.MoveAgent, "edit": c.KeyBindings.Edit, "delete": c.KeyBindings.Delete,
 		"help": c.KeyBindings.Help, "quit": c.KeyBindings.Quit,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -330,7 +337,7 @@ new_workspace = "w"
 new_group = "g"
 new_agent = "n"
 move_agent = "m"
-rename = "r"
+edit = "e"
 delete = "d"
 help = "?"
 quit = "C-c"

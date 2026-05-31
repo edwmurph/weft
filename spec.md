@@ -14,7 +14,7 @@ The core workflow is:
 2. Use the left navigation panes to choose a workspace and agent.
 3. Press `Enter` to maximize and focus the selected console.
 4. Interact with Codex only while the Codex thread is focused and maximized.
-5. Reopen navigation to switch, organize, create, move, rename, or close agents.
+5. Reopen navigation to switch, organize, create, move, edit, or close agents.
 
 ## Design Principles
 
@@ -230,7 +230,7 @@ Each card renders:
 
 Do not render card-level `parked`, `stopped`, `killed`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.
 
-The default card title is the display path, for example `~/code/personal/weft`. A workspace can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank rename input clears the override and returns the card to the default path title.
+The default card title is the display path, for example `~/code/personal/weft`. A workspace can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank edit input clears the override and returns the card to the default path title.
 
 Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workspaces pane has focus. Use a subtler blue border when the selected workspace is active but focus is in the Agents pane.
 
@@ -354,7 +354,7 @@ Navigation panes are open.
 - Agents pane is visible.
 - `Agent Live Preview` pane is visible but not focused when terminal width allows it.
 - Codex PTY does not receive normal key input.
-- User can create, delete, rename, move, and select objects.
+- User can create, delete, edit, move, and select objects.
 
 ## Dashboard Form UX
 
@@ -513,11 +513,11 @@ contracts into the runtime. The title hook is just a shell command. If the hook
 times out, exits nonzero, is missing, or writes no title, `{auto}` renders as
 `auto title failed` and Weft does not retry for that agent.
 
-When `{auto}` is added in the rename pane, the UI should make hook readiness
+When `{auto}` is added in the edit pane, the UI should make hook readiness
 obvious. If `title_hook_command` is missing, show a configuration error. If the
 title is already generated, explain that it is ready. Otherwise, explain that
 auto title generation will run after the first submitted message. Hook failures
-should be saved on the agent and shown in the footer and rename pane.
+should be saved on the agent and shown in the footer and edit pane.
 
 ## Data Model
 
@@ -900,7 +900,7 @@ new_workspace = "w"
 new_group = "g"
 new_agent = "n"
 move_agent = "m"
-rename = "r"
+edit = "e"
 delete = "d"
 help = "?"
 quit = "C-c"

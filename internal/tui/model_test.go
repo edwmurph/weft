@@ -884,7 +884,7 @@ func TestTitleHookDoesNotRetryAfterAttempt(t *testing.T) {
 func TestRenameToAutoWithoutHookReportsConfigurationError(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
-	model.prompt = promptRenameAgent
+	model.prompt = promptEditAgent
 	model.pendingID = "a"
 
 	cmd := model.applyPrompt("{auto}")
@@ -924,7 +924,7 @@ func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
 	}
 	model.applyTitleHook(msg)
 
-	model.prompt = promptRenameAgent
+	model.prompt = promptEditAgent
 	model.pendingID = "a"
 	cmd = model.applyPrompt("{auto}")
 	if cmd != nil {
@@ -972,14 +972,14 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.groupCursor = 1
-	model.prompt = promptRenameAgent
+	model.prompt = promptEditAgent
 	model.mode = modeInput
 	model.pendingID = "a"
 	model.input.SetValue("{auto}")
 
 	got := ansi.Strip(model.View())
 	if !strings.Contains(got, "Auto title error") || !strings.Contains(got, "bad config") {
-		t.Fatalf("rename pane missing hook error:\n%s", got)
+		t.Fatalf("edit pane missing hook error:\n%s", got)
 	}
 }
 
@@ -1020,7 +1020,7 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 	}
 }
 
-func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
+func TestEditAgentPromptPreviewsEditedTitle(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
 	model.cfg.TitleTemplate = "{auto}"
@@ -1028,14 +1028,14 @@ func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.groupCursor = 1
-	model.prompt = promptRenameAgent
+	model.prompt = promptEditAgent
 	model.mode = modeInput
 	model.pendingID = "a"
 	model.input.SetValue("{codex}")
 
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Rename agent",
+		"Edit agent",
 		"Preview",
 		"Fake Codex Ready",
 		"Variables",
@@ -1044,12 +1044,12 @@ func TestRenameAgentPromptPreviewsEditedTitle(t *testing.T) {
 		"Esc cancel",
 	} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("rename modal missing %q:\n%s", expected, got)
+			t.Fatalf("edit modal missing %q:\n%s", expected, got)
 		}
 	}
 }
 
-func TestRenameAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
+func TestEditAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
 	model.state.Agents[0].Title = "{status} {auto}"
@@ -1059,17 +1059,17 @@ func TestRenameAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
 	model.state.NavOpen = true
 	model.groupCursor = 1
 
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	model = updated.(Model)
 
 	if cmd != nil {
 		t.Fatalf("rename prompt should not start command, got %#v", cmd)
 	}
-	if model.mode != modeInput || model.prompt != promptRenameAgent || model.pendingID != "a" {
+	if model.mode != modeInput || model.prompt != promptEditAgent || model.pendingID != "a" {
 		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s", model.mode, model.prompt, model.pendingID)
 	}
 	if got, want := model.input.Value(), "{status} {auto}"; got != want {
-		t.Fatalf("rename prompt value = %q, want stored title template %q", got, want)
+		t.Fatalf("edit prompt value = %q, want stored title template %q", got, want)
 	}
 	if got := model.renderAgentTitle(model.state.Agents[0]); got != "Ready Fix login" {
 		t.Fatalf("agent row title = %q", got)
@@ -1084,7 +1084,7 @@ func TestWorkspaceRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	model.state.NavOpen = true
 	model.lastNavFocus = state.FocusWorkspaces
 
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	model = updated.(Model)
 	if cmd != nil {
 		t.Fatalf("rename prompt should not start command, got %#v", cmd)
@@ -1103,7 +1103,7 @@ func TestWorkspaceRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 		t.Fatalf("title override = %q", got)
 	}
 
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	model = updated.(Model)
 	model.input.SetValue("")
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1113,6 +1113,108 @@ func TestWorkspaceRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	}
 	if model.message != "cleared workspace title" {
 		t.Fatalf("message = %q", model.message)
+	}
+}
+
+func TestDashboardEditShortcutIgnoresLegacyRenameKey(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Focus = state.FocusAgents
+	model.state.NavOpen = true
+	model.groupCursor = 1
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatalf("r should not start command, got %#v", cmd)
+	}
+	if model.mode != modeNormal {
+		t.Fatalf("mode = %s, want normal", model.mode)
+	}
+}
+
+func TestEditGroupPromptTogglesSilentAndSaves(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "g",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups:              []state.Group{{ID: "g", WorkspaceID: "w", Path: "release", Silent: false, CreatedAt: now, UpdatedAt: now}},
+		Agents:              []state.Agent{},
+	}
+	model := NewModel(rt, cfg, st)
+	defer killPTYs(model)
+	model.groupCursor = 0
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	model = updated.(Model)
+	if model.mode != modeInput || model.prompt != promptEditGroup || model.pendingID != "g" {
+		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s", model.mode, model.prompt, model.pendingID)
+	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(Model)
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(Model)
+	if !model.editGroupSilent {
+		t.Fatalf("expected silent toggle, got %#v", model.editGroupSilent)
+	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeNormal {
+		t.Fatalf("mode after save = %s", model.mode)
+	}
+	group := state.GroupByID(model.state, "g")
+	if group == nil || !group.Silent {
+		t.Fatalf("silent not persisted: %#v", group)
+	}
+}
+
+func TestCreateGroupPromptCanCreateSilentGroup(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups:              []state.Group{},
+		Agents:              []state.Agent{},
+	}
+	model := NewModel(rt, cfg, st)
+	defer killPTYs(model)
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	model = updated.(Model)
+	if model.mode != modeInput || model.prompt != promptGroup {
+		t.Fatalf("prompt state = mode:%s prompt:%s", model.mode, model.prompt)
+	}
+
+	model.input.SetValue("release")
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(Model)
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(Model)
+	if !model.editGroupSilent {
+		t.Fatalf("expected silent toggle, got %#v", model.editGroupSilent)
+	}
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+
+	if model.mode != modeNormal {
+		t.Fatalf("mode after save = %s", model.mode)
+	}
+	group := state.GroupByID(model.state, model.state.SelectedGroupID)
+	if group == nil || group.Path != "release" || !group.Silent {
+		t.Fatalf("group not created silent: %#v", group)
 	}
 }
 
@@ -1178,12 +1280,14 @@ func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
 		"Create group",
 		"Group",
 		"Group required",
-		"Flat and unique in this workspace.",
 		"Esc cancel",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("group prompt missing %q:\n%s", expected, got)
 		}
+	}
+	if strings.Contains(got, "Flat and unique in this workspace.") {
+		t.Fatalf("group prompt should not show hint copy:\n%s", got)
 	}
 	if strings.Contains(got, "Enter create") {
 		t.Fatalf("empty required prompt should not advertise submit:\n%s", got)
@@ -1194,10 +1298,13 @@ func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
 
 	model.input.SetValue("release")
 	got = ansi.Strip(model.View())
-	for _, expected := range []string{"Ready", "Enter create", "Esc cancel"} {
+	for _, expected := range []string{"Enter create", "Esc cancel"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("valid group prompt missing %q:\n%s", expected, got)
 		}
+	}
+	if strings.Contains(got, "Ready") {
+		t.Fatalf("valid group prompt should not show Ready status:\n%s", got)
 	}
 
 	model.startPrompt(promptWorkspaceTitle, "")

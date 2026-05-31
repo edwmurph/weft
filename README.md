@@ -139,7 +139,7 @@ you can plug in your own naming logic while keeping the dashboard focused on the
 saved title.
 
 New agents copy the global `title_template`, which defaults to
-`{status} {auto}`, into their own title so the rename pane opens with that
+`{status} {auto}`, into their own title so the edit pane opens with that
 editable template. Titles passed to `weft new` or `weft rename` can still
 include template variables:
 
@@ -167,12 +167,12 @@ JSON on stdin with `event`, `agent_id`, `workspace`, `group`, `status`,
 `title`, the agent `title_template`, `codex_title`, and `first_message`, then
 saves the first non-empty stdout line as the generated title.
 
-Set an agent title to `{auto}` in the rename pane, or run
+Set an agent title to `{auto}` in the edit pane, or run
 `weft rename <id> "{auto}"`, to display that saved generated title. To make new
 agents start with generated titles, set `title_template = "{auto}"`. Before the
 first message, `{auto}` renders as `waiting for first message`; failed hooks
 render as `auto title failed`, show a footer error, and keep the full error in
-the rename pane.
+the edit pane.
 
 Weft treats hooks as generic shell commands. The checked-in
 `hooks/auto-title-openai.sh` script is one real hook implementation; it reads
@@ -223,7 +223,7 @@ new_workspace = "w"
 new_group = "g"
 new_agent = "n"
 move_agent = "m"
-rename = "r"
+edit = "e"
 delete = "d"
 help = "?"
 quit = "C-c"

@@ -433,6 +433,7 @@ type workspaceCardCounts struct {
 	total          int
 	active         int
 	needsAttention int
+	silenced       int
 }
 
 func renderWorkspaceCard(cfg config.Config, st state.State, workspace state.Workspace, width int, selected bool, focused bool) []string {
@@ -520,14 +521,28 @@ func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspa
 		counts.total++
 		if workspaceCardAgentActive(agent) {
 			counts.active++
+			continue
 		}
+		if group := state.GroupByID(st, agent.GroupID); group != nil && group.Silent && workspaceCardAgentSilenced(agent) {
+			counts.silenced++
+			continue
+		}
+		counts.needsAttention++
 	}
-	counts.needsAttention = counts.total - counts.active
 	return counts
 }
 
 func workspaceCardAgentActive(agent state.Agent) bool {
 	return agentStatusIndicatesActivity(agent)
+}
+
+func workspaceCardAgentSilenced(agent state.Agent) bool {
+	switch titles.CanonicalStatus(agent) {
+	case string(state.StatusReady), string(state.StatusSitting), string(state.StatusStopped):
+		return true
+	default:
+		return false
+	}
 }
 
 func renderWorkspaceCardCounts(counts workspaceCardCounts, width int) string {
@@ -539,6 +554,7 @@ func renderWorkspaceCardCounts(counts workspaceCardCounts, width int) string {
 		workspaceCountMutedStyle,
 		workspaceActiveStyle(counts),
 		workspaceNeedsAttentionStyle(counts),
+		workspaceCountMutedStyle,
 	}
 	sum := 0
 	for _, label := range labels {
@@ -589,6 +605,7 @@ func workspaceCardCountLabels(counts workspaceCardCounts) []string {
 		fmtInt(counts.total) + " total",
 		fmtInt(counts.active) + " active",
 		fmtInt(counts.needsAttention) + " needs attention",
+		fmtInt(counts.silenced) + " silenced",
 	}
 }
 
@@ -617,7 +634,11 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		if state.IsGroupCollapsed(st, group.ID) {
 			indicator = "▸ "
 		}
-		groupRow := rowLine(indicator+group.Path+" ("+fmtInt(state.AgentCountForGroup(st, group.ID))+")", "", rowWidth)
+		silentMarker := ""
+		if group.Silent {
+			silentMarker = "⊘ "
+		}
+		groupRow := rowLine(indicator+silentMarker+group.Path+" ("+fmtInt(state.AgentCountForGroup(st, group.ID))+")", "", rowWidth)
 		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
 			groupRow = activeAgentStyle.Render(padVisual(groupRow, rowWidth))
 		} else {

@@ -262,14 +262,14 @@ func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 	}
 
 	counts := workspaceCardCountsForWorkspace(st, "w")
-	if counts.total != 8 || counts.active != 4 || counts.needsAttention != 4 {
+	if counts.total != 8 {
 		t.Fatalf("counts = %#v", counts)
 	}
-	if counts.active+counts.needsAttention != counts.total {
-		t.Fatalf("counts should reconcile: %#v", counts)
+	if counts.active+counts.needsAttention+counts.silenced != counts.total {
+		t.Fatalf("counts = %#v", counts)
 	}
 	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n")))
-	for _, expected := range []string{"8 total", "4 active", "4 needs attention", "4 needs attention │", "╭ /tmp/project", "│", "╰"} {
+	for _, expected := range []string{"8 total", "0 silenced", "needs attention", "╭ /tmp/project", "│", "╰"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("workspace card missing %q:\n%s", expected, got)
 		}
@@ -286,7 +286,7 @@ func TestRenderWorkspaceCardCountsColorOnlyNonzeroValues(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(previous)
 
-	zeroActive := renderWorkspaceCardCounts(workspaceCardCounts{total: 1, active: 0, needsAttention: 1}, 72)
+	zeroActive := renderWorkspaceCardCounts(workspaceCardCounts{total: 1, active: 0, needsAttention: 1, silenced: 0}, 72)
 	if !strings.Contains(zeroActive, workspaceCountMutedStyle.Render("0 active")) {
 		t.Fatalf("zero active should use muted style:\n%q", zeroActive)
 	}
@@ -297,7 +297,7 @@ func TestRenderWorkspaceCardCountsColorOnlyNonzeroValues(t *testing.T) {
 		t.Fatalf("nonzero needs attention should use amber style:\n%q", zeroActive)
 	}
 
-	zeroNeedsAttention := renderWorkspaceCardCounts(workspaceCardCounts{total: 1, active: 1, needsAttention: 0}, 72)
+	zeroNeedsAttention := renderWorkspaceCardCounts(workspaceCardCounts{total: 1, active: 1, needsAttention: 0, silenced: 0}, 72)
 	if !strings.Contains(zeroNeedsAttention, workspaceCountActiveStyle.Render("1 active")) {
 		t.Fatalf("nonzero active should use active color:\n%q", zeroNeedsAttention)
 	}
@@ -306,6 +306,38 @@ func TestRenderWorkspaceCardCountsColorOnlyNonzeroValues(t *testing.T) {
 	}
 	if strings.Contains(zeroNeedsAttention, workspaceCountNeedsAttentionStyle.Render("0 needs attention")) {
 		t.Fatalf("zero needs attention should not use amber color:\n%q", zeroNeedsAttention)
+	}
+}
+
+func TestWorkspaceCardCountsSilenceIdleAgentsInSilentGroups(t *testing.T) {
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "g", WorkspaceID: "w", Path: "release", Silent: true, CreatedAt: now, UpdatedAt: now},
+		},
+		Agents: []state.Agent{
+			{ID: "ready", WorkspaceID: "w", GroupID: "g", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "stopped", WorkspaceID: "w", GroupID: "g", Title: "Stopped", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
+			{ID: "error", WorkspaceID: "w", GroupID: "g", Title: "Error", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+
+	counts := workspaceCardCountsForWorkspace(st, "w")
+	if counts.total != 3 || counts.silenced != 2 || counts.needsAttention != 1 {
+		t.Fatalf("counts = %#v", counts)
+	}
+
+	rendered := ansi.Strip(renderWorkspaceCardCounts(counts, 72))
+	if !strings.Contains(rendered, "2 silenced") {
+		t.Fatalf("missing silenced count:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "1 needs attention") {
+		t.Fatalf("missing needs attention count:\n%s", rendered)
 	}
 }
 

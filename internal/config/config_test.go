@@ -46,6 +46,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.KeyBindings.NewWorkspace != "w" || cfg.KeyBindings.NewGroup != "g" || cfg.KeyBindings.NewAgent != "n" {
 		t.Fatalf("new bindings = %#v", cfg.KeyBindings)
 	}
+	if cfg.KeyBindings.Edit != "e" {
+		t.Fatalf("Edit = %q", cfg.KeyBindings.Edit)
+	}
 	if cfg.KeyBindings.Quit != "C-c" {
 		t.Fatalf("Quit = %q", cfg.KeyBindings.Quit)
 	}
@@ -80,7 +83,7 @@ new_workspace = "W"
 new_group = "G"
 new_agent = "A"
 move_agent = "M"
-rename = "R"
+edit = "E"
 delete = "D"
 help = "H"
 quit = "Q"
@@ -110,7 +113,7 @@ quit = "Q"
 		cfg.KeyBindings.NewGroup != "G" ||
 		cfg.KeyBindings.NewAgent != "A" ||
 		cfg.KeyBindings.MoveAgent != "M" ||
-		cfg.KeyBindings.Rename != "R" ||
+		cfg.KeyBindings.Edit != "E" ||
 		cfg.KeyBindings.Delete != "D" ||
 		cfg.KeyBindings.Help != "H" ||
 		cfg.KeyBindings.Quit != "Q" {
@@ -138,6 +141,10 @@ new_workdir = "z"
 new_folder = "x"
 close = "x"
 close_weft = "C-q"
+`,
+		"legacy rename binding": `
+[key_bindings]
+rename = "r"
 `,
 	} {
 		t.Run(name, func(t *testing.T) {

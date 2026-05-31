@@ -54,6 +54,7 @@ type Group struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspace_id"`
 	Path        string `json:"path"`
+	Silent      bool   `json:"silent,omitempty"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
 }
@@ -740,6 +741,10 @@ func SetWorkspaceTitle(st State, workspaceID string, title string) (State, error
 }
 
 func AddGroup(st State, id string, workspaceID string, path string, now string) (State, Group, error) {
+	return AddGroupWithSilent(st, id, workspaceID, path, now, false)
+}
+
+func AddGroupWithSilent(st State, id string, workspaceID string, path string, now string, silent bool) (State, Group, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return st, Group{}, fmt.Errorf("group name is required")
@@ -761,7 +766,7 @@ func AddGroup(st State, id string, workspaceID string, path string, now string) 
 	if now == "" {
 		now = NowISO()
 	}
-	group := Group{ID: id, WorkspaceID: workspaceID, Path: path, CreatedAt: now, UpdatedAt: now}
+	group := Group{ID: id, WorkspaceID: workspaceID, Path: path, Silent: silent, CreatedAt: now, UpdatedAt: now}
 	st.Groups = append(st.Groups, group)
 	st.SelectedWorkspaceID = workspaceID
 	st.SelectedGroupID = id
@@ -771,6 +776,14 @@ func AddGroup(st State, id string, workspaceID string, path string, now string) 
 }
 
 func RenameGroup(st State, groupID string, path string) (State, error) {
+	group := GroupByID(st, groupID)
+	if group == nil {
+		return st, fmt.Errorf("group not found")
+	}
+	return EditGroup(st, groupID, path, group.Silent)
+}
+
+func EditGroup(st State, groupID string, path string, silent bool) (State, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return st, fmt.Errorf("group name is required")
@@ -790,6 +803,7 @@ func RenameGroup(st State, groupID string, path string) (State, error) {
 	for index := range st.Groups {
 		if st.Groups[index].ID == groupID {
 			st.Groups[index].Path = path
+			st.Groups[index].Silent = silent
 			st.Groups[index].UpdatedAt = NowISO()
 			return st, nil
 		}

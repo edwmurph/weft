@@ -41,7 +41,7 @@ func confirmKeyCancels(confirm confirmKind, msg tea.KeyMsg) bool {
 }
 
 func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptKind, selectedAgent *state.Agent, input textinput.Model, width int) []string {
-	if prompt != promptRenameAgent {
+	if prompt != promptEditAgent {
 		return nil
 	}
 	lines := []string{"", modalLabelStyle.Render("Preview")}
@@ -62,25 +62,25 @@ func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptK
 	return lines
 }
 
-func renamePromptTargetForState(st state.State, groupCursor int) (promptKind, string, string, bool) {
+func editPromptTargetForState(st state.State, groupCursor int) (promptKind, string, string, bool, bool) {
 	if st.Focus == state.FocusWorkspaces {
 		if workspace := state.WorkspaceByID(st, st.SelectedWorkspaceID); workspace != nil {
-			return promptWorkspaceTitle, workspace.ID, workspace.Title, true
+			return promptWorkspaceTitle, workspace.ID, workspace.Title, false, true
 		}
-		return "", "", "", false
+		return "", "", "", false, false
 	}
 	row := currentGroupRowForState(st, groupCursor)
 	switch row.kind {
 	case groupRowGroup:
 		if group := state.GroupByID(st, row.groupID); group != nil {
-			return promptRenameGroup, group.ID, group.Path, true
+			return promptEditGroup, group.ID, group.Path, group.Silent, true
 		}
 	case groupRowAgent:
 		if agent := state.AgentByID(st, row.agentID); agent != nil {
-			return promptRenameAgent, agent.ID, agent.Title, true
+			return promptEditAgent, agent.ID, agent.Title, false, true
 		}
 	}
-	return "", "", "", false
+	return "", "", "", false, false
 }
 
 func deleteConfirmTargetForState(st state.State, groupCursor int) (confirmKind, string, bool) {

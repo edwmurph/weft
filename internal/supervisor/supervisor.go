@@ -83,13 +83,9 @@ func start(rt config.Runtime) (EnsureResult, error) {
 	if err := os.MkdirAll(rt.Dir, 0o700); err != nil {
 		return EnsureResult{}, err
 	}
-	exe := os.Getenv("WEFT_EXECUTABLE")
-	if exe == "" {
-		var err error
-		exe, err = os.Executable()
-		if err != nil {
-			return EnsureResult{}, err
-		}
+	exe, err := os.Executable()
+	if err != nil {
+		return EnsureResult{}, err
 	}
 	if err := startSupervisorProcess(rt, exe, supervisorEnv(rt, exe)); err != nil {
 		return EnsureResult{}, err
@@ -112,6 +108,10 @@ func startSupervisorProcess(rt config.Runtime, exe string, env []string) error {
 	log, err := os.OpenFile(LogPath(rt), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
+	}
+	resolvedExe, err := filepath.EvalSymlinks(exe)
+	if err == nil && resolvedExe != "" {
+		exe = resolvedExe
 	}
 	cmd := exec.Command(exe, CommandName)
 	cmd.Env = env

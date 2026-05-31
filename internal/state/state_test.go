@@ -234,6 +234,70 @@ func TestGroupValidationAndMoveAgent(t *testing.T) {
 	}
 }
 
+func TestEditGroupPersistsSilentAndPath(t *testing.T) {
+	st := stateWithWorkspace(t)
+	now := NowISO()
+	st.Groups = []Group{{ID: "g", WorkspaceID: "w", Path: "release", Silent: false, CreatedAt: now, UpdatedAt: now}}
+
+	next, err := EditGroup(st, "g", "release", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := GroupByID(next, "g")
+	if group == nil || group.Path != "release" || !group.Silent {
+		t.Fatalf("group not updated: %#v", group)
+	}
+
+	next, err = EditGroup(next, "g", "shipping", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group = GroupByID(next, "g")
+	if group == nil || group.Path != "shipping" || !group.Silent {
+		t.Fatalf("group not renamed+silent: %#v", group)
+	}
+
+	next, err = RenameGroup(next, "g", "shipping")
+	if err != nil {
+		t.Fatal(err)
+	}
+	group = GroupByID(next, "g")
+	if group == nil || !group.Silent {
+		t.Fatalf("rename should preserve silent: %#v", group)
+	}
+}
+
+func TestRepairDefaultsGroupSilentFalse(t *testing.T) {
+	now := NowISO()
+	st := State{
+		Version:    Version,
+		Focus:      FocusAgents,
+		NavOpen:    true,
+		Workspaces: []Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Groups:     []Group{{ID: "g", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now}},
+		Agents:     []Agent{},
+	}
+	repaired := Repair(st, "/tmp/project")
+	group := GroupByID(repaired, "g")
+	if group == nil || group.Silent {
+		t.Fatalf("silent should default false: %#v", group)
+	}
+}
+
+func TestAddGroupWithSilentSetsSilent(t *testing.T) {
+	st := testState(t)
+	next, group, err := AddGroupWithSilent(st, "release", st.SelectedWorkspaceID, "release", NowISO(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group.ID != "release" || !group.Silent {
+		t.Fatalf("group = %#v", group)
+	}
+	if got := GroupByID(next, "release"); got == nil || !got.Silent {
+		t.Fatalf("silent not persisted: %#v", got)
+	}
+}
+
 func TestReorderAgentStaysWithinGroupOrUngroupedArea(t *testing.T) {
 	st := stateWithWorkspace(t)
 	now := NowISO()
