@@ -194,6 +194,69 @@ func TestRootEnvDerivesWorkspaceAndRuntime(t *testing.T) {
 	}
 }
 
+func TestSourceCheckoutCWDCanDeriveWorkspaceAndRuntime(t *testing.T) {
+	t.Setenv(RootEnv, "")
+	t.Setenv(AppDirEnv, "")
+	t.Setenv(WorkspaceEnv, "")
+	root := writeSourceCheckout(t)
+	t.Chdir(root)
+
+	rt, err := ResolveRuntimeWithOptions(ResolveOptions{AutoRootFromCWD: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Workspace != root {
+		t.Fatalf("Workspace = %q, want checkout cwd %q", rt.Workspace, root)
+	}
+	if rt.Dir != filepath.Join(root, ".weft") {
+		t.Fatalf("Dir = %q, want cwd-local runtime", rt.Dir)
+	}
+	if !rt.HomeExplicit {
+		t.Fatalf("auto-rooted checkout should count as explicit: %#v", rt)
+	}
+}
+
+func TestSourceCheckoutCWDRespectsWorkspaceEnv(t *testing.T) {
+	t.Setenv(RootEnv, "")
+	t.Setenv(AppDirEnv, "")
+	root := writeSourceCheckout(t)
+	workspace := t.TempDir()
+	t.Setenv(WorkspaceEnv, workspace)
+	t.Chdir(root)
+
+	rt, err := ResolveRuntimeWithOptions(ResolveOptions{AutoRootFromCWD: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Workspace != workspace {
+		t.Fatalf("Workspace = %q, want workspace env %q", rt.Workspace, workspace)
+	}
+	if rt.Dir != filepath.Join(root, ".weft") {
+		t.Fatalf("Dir = %q, want checkout-local runtime", rt.Dir)
+	}
+}
+
+func TestAutoRootFromCWDRequiresSourceCheckout(t *testing.T) {
+	t.Setenv(RootEnv, "")
+	t.Setenv(AppDirEnv, "")
+	t.Setenv(WorkspaceEnv, "")
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Chdir(workspace)
+
+	rt, err := ResolveRuntimeWithOptions(ResolveOptions{AutoRootFromCWD: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Dir != filepath.Join(home, ".weft") {
+		t.Fatalf("Dir = %q, want default home runtime", rt.Dir)
+	}
+	if rt.HomeExplicit {
+		t.Fatalf("non-checkout cwd should not count as explicit: %#v", rt)
+	}
+}
+
 func TestSpecificEnvOverridesRootEnv(t *testing.T) {
 	root := t.TempDir()
 	workspace := t.TempDir()
@@ -224,4 +287,20 @@ func TestDefaultRuntimeIsGlobal(t *testing.T) {
 	if strings.HasSuffix(dir, "workspaces") || strings.Contains(dir, "project-") {
 		t.Fatalf("AppDir should be global, got %q", dir)
 	}
+}
+
+func writeSourceCheckout(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/edwmurph/weft\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmdDir := filepath.Join(root, "cmd", "weft")
+	if err := os.MkdirAll(cmdDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

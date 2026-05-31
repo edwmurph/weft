@@ -194,6 +194,63 @@ func TestRootEnvLaunchesIsolatedRuntime(t *testing.T) {
 	}
 }
 
+func TestSourceCheckoutCWDLaunchesIsolatedRuntime(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	root := writeIntegrationSourceCheckout(t, filepath.Join(tmp, "worktree"))
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	runtimeDir := filepath.Join(root, ".weft")
+	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := append(filteredEnv("WEFT_ROOT", "WEFT_HOME", "WEFT_WORKSPACE", "WEFT_ALLOW_MAIN_RUNTIME"),
+		"HOME="+home,
+		"WEFT_EXECUTABLE="+bin,
+		"PATH=/usr/bin:/bin",
+		"TERM=xterm-256color",
+	)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		cmd.Dir = root
+		_ = cmd.Run()
+	})
+
+	runWeftInDir(t, env, root, bin, "--no-attach")
+	if _, err := os.Stat(filepath.Join(runtimeDir, "weft.sock")); err != nil {
+		t.Fatalf("source checkout cwd should create checkout-local supervisor socket: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(err) {
+		t.Fatalf("source checkout cwd should not touch default home runtime, stat err = %v", err)
+	}
+
+	out := runWeftInDir(t, env, root, bin, "doctor")
+	for _, expected := range []string{
+		"info launch workspace: " + resolvedRoot,
+		"info runtime dir: " + filepath.Join(resolvedRoot, ".weft"),
+	} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("doctor output missing %q:\n%s", expected, out)
+		}
+	}
+}
+
 func TestUpgradeSimulationNoRunningAgentsRestartsSupervisor(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
@@ -599,6 +656,32 @@ func runWeft(t *testing.T, env []string, bin string, args ...string) string {
 		t.Fatalf("weft %v: %v\n%s", args, err, out)
 	}
 	return string(out)
+}
+
+func runWeftInDir(t *testing.T, env []string, dir string, bin string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Env = env
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("weft %v in %s: %v\n%s", args, dir, err, out)
+	}
+	return string(out)
+}
+
+func writeIntegrationSourceCheckout(t *testing.T, root string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "weft"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/edwmurph/weft\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cmd", "weft", "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }
 
 func assertBackupWithReason(t *testing.T, runtimeDir string, workspace string, reason string) runtimebackup.Metadata {

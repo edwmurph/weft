@@ -39,9 +39,10 @@ Weft has two runtime roles in one shipped binary.
 Weft also has a build channel. Release/Homebrew builds set
 `version.BuildChannel` to `release`; source builds default to `source`. A
 source build must fail closed before reading or mutating the default
-`~/.weft` runtime unless `WEFT_ROOT` or `WEFT_HOME` is set explicitly or
+`~/.weft` runtime unless it can infer a checkout-local runtime from the current
+working directory, `WEFT_ROOT` or `WEFT_HOME` is set explicitly, or
 `WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional one-off. Help, version,
-and `weft doctor keys` remain available without runtime access.
+and `weft doctor keys` remain available without default runtime access.
 
 ## Supervisor
 
@@ -156,10 +157,14 @@ Weft stores runtime files globally under `~/.weft` by default, under
 
 `WEFT_ROOT` sets both development/worktree paths from one value: runtime files
 go in `$WEFT_ROOT/.weft`, and the launch workspace is `$WEFT_ROOT`.
+When source-built Weft runs from a Weft source checkout or detached worktree
+without `WEFT_ROOT` or `WEFT_HOME`, the current working directory is treated as
+that root. This keeps `go -C /path/to/weft-or-worktree run ./cmd/weft ...`
+isolated to `/path/to/weft-or-worktree/.weft`.
 `WEFT_WORKSPACE` overrides only the launch directory used for attach-time
 workspace context. `WEFT_HOME` overrides only the runtime directory.
-Development and worktree runs should usually set `WEFT_ROOT` to the worktree
-path.
+Development and worktree runs should usually rely on checkout-local auto-rooting
+or set `WEFT_ROOT` to the worktree path.
 The installed release command owns the real default `~/.weft` runtime.
 
 Runtime backups live under `backups/<id>/` by default. A backup includes
@@ -867,6 +872,9 @@ Integration tests:
   upgrade auto-restart
 - backup restore confirms before stopping a running supervisor unless `--yes`
   is provided
+- source/dev runs from a Weft checkout derive their isolated runtime from the
+  checkout cwd, so `go -C <checkout> run ./cmd/weft --clear` does not need
+  `WEFT_ROOT`
 
 Integration tests should use temporary `WEFT_ROOT`, or temporary `WEFT_HOME`
 and `WEFT_WORKSPACE` when distinct paths are required, plus a fake

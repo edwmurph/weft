@@ -56,14 +56,14 @@ weft
 For local development from this repository:
 
 ```sh
-WEFT_ROOT=$PWD go run ./cmd/weft doctor
-WEFT_ROOT=$PWD go run ./cmd/weft
+go run ./cmd/weft doctor
+go run ./cmd/weft
 ```
 
 From another current directory, point Go at the worktree module first:
 
 ```sh
-WEFT_ROOT=/path/to/weft-or-worktree go -C /path/to/weft-or-worktree run ./cmd/weft
+go -C /path/to/weft-or-worktree run ./cmd/weft
 ```
 
 ## Usage
@@ -249,14 +249,18 @@ Weft stores runtime files globally:
 
 `WEFT_ROOT` is the short development/worktree override. It sets the launch
 workspace to that path and stores runtime files in `$WEFT_ROOT/.weft`.
+When source-built Weft runs from a Weft checkout or worktree without
+`WEFT_ROOT` or `WEFT_HOME`, it uses the current directory the same way, so
+`go -C /path/to/weft-or-worktree run ./cmd/weft` stores runtime files in that
+worktree's `.weft`.
 `WEFT_WORKSPACE` overrides only the launch directory used for attach-time
 workspace selection and the first-run add prompt.
 `WEFT_HOME` overrides only the runtime directory directly for development and
 tests.
 Source-built Weft defaults to a fail-closed mode: it refuses to use the default
-`~/.weft` runtime unless `WEFT_ROOT` or `WEFT_HOME` is set, or unless
-`WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional one-off. Release builds
-from Homebrew use `~/.weft` by default.
+`~/.weft` runtime unless it can infer a checkout-local runtime, `WEFT_ROOT` or
+`WEFT_HOME` is set, or `WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional
+one-off. Release builds from Homebrew use `~/.weft` by default.
 
 `weft backup create [--output <dir>] [--reason <text>]` writes a restorable
 copy of `config.toml`, `state.json`, metadata, and logs when present. `weft

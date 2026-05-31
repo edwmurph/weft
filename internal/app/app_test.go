@@ -172,6 +172,35 @@ func TestSourceBuildAllowsRootRuntime(t *testing.T) {
 	}
 }
 
+func TestSourceBuildAutoRootsFromCheckoutCWD(t *testing.T) {
+	withBuildChannel(t, "source")
+	home := t.TempDir()
+	root := writeAppTestSourceCheckout(t)
+	t.Setenv("HOME", home)
+	t.Setenv(config.RootEnv, "")
+	t.Setenv(config.AppDirEnv, "")
+	t.Setenv(config.WorkspaceEnv, "")
+	t.Setenv(config.AllowMainRuntimeEnv, "")
+	t.Chdir(root)
+
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Workspace != root {
+		t.Fatalf("workspace = %q, want checkout cwd %q", rt.Workspace, root)
+	}
+	if rt.Dir != filepath.Join(root, ".weft") {
+		t.Fatalf("runtime dir = %q, want checkout-local .weft", rt.Dir)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".weft", "config.toml")); err != nil {
+		t.Fatalf("checkout-local runtime should create config: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(err) {
+		t.Fatalf("source auto-root should not touch default home runtime, stat err = %v", err)
+	}
+}
+
 func TestReleaseBuildAllowsDefaultRuntime(t *testing.T) {
 	withBuildChannel(t, "release")
 	home := t.TempDir()
@@ -191,6 +220,29 @@ func TestReleaseBuildAllowsDefaultRuntime(t *testing.T) {
 	}
 	if rt.Dir != filepath.Join(home, ".weft") {
 		t.Fatalf("runtime dir = %q, want default under HOME", rt.Dir)
+	}
+}
+
+func TestReleaseBuildIgnoresCheckoutCWDAutoRoot(t *testing.T) {
+	withBuildChannel(t, "release")
+	home := t.TempDir()
+	root := writeAppTestSourceCheckout(t)
+	t.Setenv("HOME", home)
+	t.Setenv(config.RootEnv, "")
+	t.Setenv(config.AppDirEnv, "")
+	t.Setenv(config.WorkspaceEnv, "")
+	t.Setenv(config.AllowMainRuntimeEnv, "")
+	t.Chdir(root)
+
+	rt, _, _, err := resolveRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Dir != filepath.Join(home, ".weft") {
+		t.Fatalf("runtime dir = %q, want default home runtime", rt.Dir)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".weft")); !os.IsNotExist(err) {
+		t.Fatalf("release build should not touch checkout-local runtime, stat err = %v", err)
 	}
 }
 
@@ -466,6 +518,22 @@ func withBuildChannel(t *testing.T, channel string) {
 	t.Cleanup(func() {
 		weftversion.BuildChannel = previous
 	})
+}
+
+func writeAppTestSourceCheckout(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/edwmurph/weft\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmdDir := filepath.Join(root, "cmd", "weft")
+	if err := os.MkdirAll(cmdDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }
 
 func TestIterm2PlutilHelpersAddKeyMapping(t *testing.T) {

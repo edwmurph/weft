@@ -16,6 +16,7 @@ const (
 	WorkspaceEnv            = "WEFT_WORKSPACE"
 	AllowMainRuntimeEnv     = "WEFT_ALLOW_MAIN_RUNTIME"
 	defaultRuntimeDirectory = ".weft"
+	modulePath              = "github.com/edwmurph/weft"
 )
 
 type KeyBindings struct {
@@ -50,6 +51,10 @@ type Runtime struct {
 	StatePath    string
 	SocketPath   string
 	HomeExplicit bool
+}
+
+type ResolveOptions struct {
+	AutoRootFromCWD bool
 }
 
 type ConfigError struct {
@@ -90,11 +95,19 @@ func DefaultConfig() Config {
 }
 
 func ResolveRuntime() (Runtime, error) {
+	return ResolveRuntimeWithOptions(ResolveOptions{})
+}
+
+func ResolveRuntimeWithOptions(options ResolveOptions) (Runtime, error) {
 	workspace, err := CurrentWorkspace()
 	if err != nil {
 		return Runtime{}, err
 	}
-	dir, explicit, err := AppDirInfo(workspace)
+	autoRoot, err := autoRootFromCWD(options)
+	if err != nil {
+		return Runtime{}, err
+	}
+	dir, explicit, err := appDirInfo(workspace, autoRoot)
 	if err != nil {
 		return Runtime{}, err
 	}
@@ -124,6 +137,10 @@ func AppDir(workspace string) (string, error) {
 }
 
 func AppDirInfo(workspace string) (string, bool, error) {
+	return appDirInfo(workspace, "")
+}
+
+func appDirInfo(workspace string, autoRoot string) (string, bool, error) {
 	if configured := os.Getenv(AppDirEnv); configured != "" {
 		dir, err := filepath.Abs(expandHome(configured))
 		return dir, true, err
@@ -135,11 +152,57 @@ func AppDirInfo(workspace string) (string, bool, error) {
 		}
 		return filepath.Join(root, defaultRuntimeDirectory), true, nil
 	}
+	if autoRoot != "" {
+		return filepath.Join(autoRoot, defaultRuntimeDirectory), true, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", false, err
 	}
 	return filepath.Join(home, defaultRuntimeDirectory), false, nil
+}
+
+func autoRootFromCWD(options ResolveOptions) (string, error) {
+	if !options.AutoRootFromCWD || os.Getenv(AppDirEnv) != "" || os.Getenv(RootEnv) != "" {
+		return "", nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	root, ok := sourceCheckoutRoot(cwd)
+	if !ok {
+		return "", nil
+	}
+	return root, nil
+}
+
+func sourceCheckoutRoot(dir string) (string, bool) {
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return "", false
+	}
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return "", false
+	}
+	if modulePathFromGoMod(data) != modulePath {
+		return "", false
+	}
+	if info, err := os.Stat(filepath.Join(root, "cmd", "weft", "main.go")); err != nil || info.IsDir() {
+		return "", false
+	}
+	return root, true
+}
+
+func modulePathFromGoMod(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "module" {
+			return fields[1]
+		}
+	}
+	return ""
 }
 
 func EnsureConfig(rt Runtime) (Config, error) {

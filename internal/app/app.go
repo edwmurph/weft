@@ -324,7 +324,7 @@ func status(args []string) error {
 func versionCommand() error {
 	var response ipc.Response
 	var statusErr error
-	rt, runtimeErr := config.ResolveRuntime()
+	rt, runtimeErr := config.ResolveRuntimeWithOptions(runtimeResolveOptions())
 	if runtimeErr == nil {
 		response, statusErr = supervisor.Status(rt)
 	}
@@ -664,7 +664,7 @@ func configCommand(args []string) error {
 		return errors.New("config requires one of: info, path, show, init")
 	}
 	if args[0] == "init" {
-		rt, err := config.ResolveRuntime()
+		rt, err := config.ResolveRuntimeWithOptions(runtimeResolveOptions())
 		if err != nil {
 			return err
 		}
@@ -762,7 +762,7 @@ func loadRuntime() (config.Runtime, config.Config, *state.Store, error) {
 }
 
 func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
-	rt, err := config.ResolveRuntime()
+	rt, err := config.ResolveRuntimeWithOptions(runtimeResolveOptions())
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
@@ -775,6 +775,10 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	}
 	store := state.NewStore(rt.StatePath, rt.Workspace)
 	return rt, cfg, store, nil
+}
+
+func runtimeResolveOptions() config.ResolveOptions {
+	return config.ResolveOptions{AutoRootFromCWD: strings.TrimSpace(version.BuildChannel) != "release"}
 }
 
 func guardRuntimeAccess(rt config.Runtime) error {
