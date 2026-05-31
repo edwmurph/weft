@@ -655,21 +655,30 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Create group")
 		})
-		directRun(t, env, "send-keys", "-l", "-t", pane, "release")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "release-flow")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return groupByPath(st, "release") != nil
+			return groupByPath(st, "release-flow") != nil
 		})
 		directRun(t, env, "send-keys", "-t", pane, "m")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Move agent")
 		})
-		directRun(t, env, "send-keys", "-l", "-t", pane, "release")
+		directRun(t, env, "send-keys", "-l", "-t", pane, "flow")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "> release-flow") &&
+				strings.Contains(capture, "Enter choose")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "release-flow") &&
+				strings.Contains(capture, "Enter move")
+		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			agent := findAgent(st, firstID)
 			group := groupForAgent(st, agent)
-			return agent != nil && group != nil && group.Path == "release"
+			return agent != nil && group != nil && group.Path == "release-flow"
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})

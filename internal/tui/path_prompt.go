@@ -41,12 +41,13 @@ const (
 )
 
 type promptInputResult struct {
-	input          textinput.Model
-	suggestionOpen bool
-	action         promptInputAction
-	value          string
-	message        string
-	cmd            tea.Cmd
+	input           textinput.Model
+	suggestionOpen  bool
+	suggestionIndex int
+	action          promptInputAction
+	value           string
+	message         string
+	cmd             tea.Cmd
 }
 
 func configurePromptInput(input *textinput.Model, ctx promptContext, value string) {
@@ -57,7 +58,7 @@ func configurePromptInput(input *textinput.Model, ctx promptContext, value strin
 	input.Placeholder = promptPlaceholder(ctx.prompt)
 	if promptHasAutocomplete(ctx.prompt) {
 		input.ShowSuggestions = true
-		input.SetSuggestions(promptSuggestions(ctx, value))
+		input.SetSuggestions(promptMatchedSuggestions(ctx, value))
 		return
 	}
 	input.ShowSuggestions = true
@@ -176,12 +177,14 @@ func isOptionBackspaceGlyph(r rune) bool {
 	}
 }
 
-func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOpen bool, msg tea.KeyMsg) promptInputResult {
-	result := promptInputResult{input: input, suggestionOpen: suggestionOpen}
+func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOpen bool, suggestionIndex int, msg tea.KeyMsg) promptInputResult {
+	result := promptInputResult{input: input, suggestionOpen: suggestionOpen, suggestionIndex: suggestionIndex}
 	if handlePromptWordKey(&result.input, ctx.prompt, msg) {
 		refreshPromptInput(&result.input, ctx)
 		if promptHasAutocomplete(ctx.prompt) {
-			result.suggestionOpen = len(result.input.MatchedSuggestions()) > 0
+			suggestions := promptMatchedSuggestions(ctx, result.input.Value())
+			result.suggestionOpen = len(suggestions) > 0
+			result.suggestionIndex = promptSuggestionIndex(0, suggestions)
 		}
 		return result
 	}
@@ -189,14 +192,18 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 	case tea.KeyEsc:
 		if promptHasAutocomplete(ctx.prompt) && result.suggestionOpen {
 			result.suggestionOpen = false
+			result.suggestionIndex = 0
 			return result
 		}
 		result.action = promptInputCancel
 		return result
 	case tea.KeyEnter:
-		if promptHasAutocomplete(ctx.prompt) && result.suggestionOpen && completePromptSuggestion(&result.input, ctx) {
-			result.suggestionOpen = false
-			return result
+		if promptHasAutocomplete(ctx.prompt) && result.suggestionOpen {
+			if completePromptSuggestion(&result.input, ctx, result.suggestionIndex) {
+				result.suggestionOpen = false
+				result.suggestionIndex = 0
+				return result
+			}
 		}
 		value := strings.TrimSpace(result.input.Value())
 		if message := promptSubmitBlocker(ctx, value); message != "" {
@@ -207,18 +214,39 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 		result.value = value
 		return result
 	case tea.KeyTab:
-		if promptHasAutocomplete(ctx.prompt) && len(result.input.MatchedSuggestions()) > 0 {
+		if promptHasAutocomplete(ctx.prompt) {
+			suggestions := promptMatchedSuggestions(ctx, result.input.Value())
+			if len(suggestions) == 0 {
+				break
+			}
 			if result.suggestionOpen {
-				completePromptSuggestion(&result.input, ctx)
+				completePromptSuggestion(&result.input, ctx, result.suggestionIndex)
 				result.suggestionOpen = false
+				result.suggestionIndex = 0
 				return result
 			}
 			result.suggestionOpen = true
+			result.suggestionIndex = promptSuggestionIndex(result.suggestionIndex, suggestions)
 			return result
 		}
 	case tea.KeyUp, tea.KeyDown:
-		if promptHasAutocomplete(ctx.prompt) && len(result.input.MatchedSuggestions()) > 0 && !result.suggestionOpen {
-			result.suggestionOpen = true
+		if promptHasAutocomplete(ctx.prompt) {
+			suggestions := promptMatchedSuggestions(ctx, result.input.Value())
+			if len(suggestions) == 0 {
+				result.suggestionOpen = false
+				result.suggestionIndex = 0
+				return result
+			}
+			if !result.suggestionOpen {
+				result.suggestionOpen = true
+				result.suggestionIndex = promptSuggestionIndex(result.suggestionIndex, suggestions)
+				return result
+			}
+			delta := 1
+			if msg.Type == tea.KeyUp {
+				delta = -1
+			}
+			result.suggestionIndex = movePromptSuggestionIndex(result.suggestionIndex, delta, len(suggestions))
 			return result
 		}
 	}
@@ -226,10 +254,15 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 	result.input, result.cmd = result.input.Update(msg)
 	refreshPromptInput(&result.input, ctx)
 	if promptHasAutocomplete(ctx.prompt) {
+		suggestions := promptMatchedSuggestions(ctx, result.input.Value())
 		if result.input.Value() != oldValue {
-			result.suggestionOpen = len(result.input.MatchedSuggestions()) > 0
-		} else if len(result.input.MatchedSuggestions()) == 0 {
+			result.suggestionOpen = len(suggestions) > 0
+			result.suggestionIndex = 0
+		} else if len(suggestions) == 0 {
 			result.suggestionOpen = false
+			result.suggestionIndex = 0
+		} else {
+			result.suggestionIndex = promptSuggestionIndex(result.suggestionIndex, suggestions)
 		}
 	}
 	return result
@@ -256,7 +289,7 @@ func refreshPromptInput(input *textinput.Model, ctx promptContext) {
 	if !promptHasAutocomplete(ctx.prompt) {
 		return
 	}
-	input.SetSuggestions(promptSuggestions(ctx, input.Value()))
+	input.SetSuggestions(promptMatchedSuggestions(ctx, input.Value()))
 }
 
 func promptSuggestions(ctx promptContext, value string) []string {
@@ -270,8 +303,63 @@ func promptSuggestions(ctx promptContext, value string) []string {
 	}
 }
 
-func completePromptSuggestion(input *textinput.Model, ctx promptContext) bool {
-	suggestion := input.CurrentSuggestion()
+func promptMatchedSuggestions(ctx promptContext, value string) []string {
+	if !promptHasAutocomplete(ctx.prompt) {
+		return nil
+	}
+	suggestions := promptSuggestions(ctx, value)
+	switch ctx.prompt {
+	case promptWorkspace:
+		return suggestions
+	case promptMoveAgent:
+		return filterPromptSuggestions(suggestions, value)
+	default:
+		return nil
+	}
+}
+
+func filterPromptSuggestions(suggestions []string, value string) []string {
+	query := strings.ToLower(strings.TrimSpace(value))
+	if query == "" {
+		return nil
+	}
+	matched := make([]string, 0, len(suggestions))
+	for _, suggestion := range suggestions {
+		if strings.Contains(strings.ToLower(suggestion), query) {
+			matched = append(matched, suggestion)
+		}
+	}
+	return matched
+}
+
+func promptSuggestionIndex(index int, suggestions []string) int {
+	if len(suggestions) == 0 {
+		return 0
+	}
+	return max(0, min(index, len(suggestions)-1))
+}
+
+func movePromptSuggestionIndex(index int, delta int, count int) int {
+	if count <= 0 {
+		return 0
+	}
+	next := (index + delta) % count
+	if next < 0 {
+		next += count
+	}
+	return next
+}
+
+func promptCurrentSuggestion(ctx promptContext, value string, suggestionIndex int) string {
+	suggestions := promptMatchedSuggestions(ctx, value)
+	if len(suggestions) == 0 {
+		return ""
+	}
+	return suggestions[promptSuggestionIndex(suggestionIndex, suggestions)]
+}
+
+func completePromptSuggestion(input *textinput.Model, ctx promptContext, suggestionIndex int) bool {
+	suggestion := promptCurrentSuggestion(ctx, input.Value(), suggestionIndex)
 	if strings.TrimSpace(suggestion) == "" {
 		return false
 	}
@@ -337,7 +425,7 @@ func renderPromptActions(ctx promptContext, input textinput.Model, menuOpen bool
 	if label := promptSubmitActionLabel(ctx, input.Value()); label != "" {
 		actions = append(actions, modalKeyStyle.Render("Enter")+" "+label)
 	}
-	if promptHasAutocomplete(ctx.prompt) && len(input.MatchedSuggestions()) > 0 {
+	if promptHasAutocomplete(ctx.prompt) && len(promptMatchedSuggestions(ctx, input.Value())) > 0 {
 		actions = append(actions, modalKeyStyle.Render("Down")+" suggestions")
 	}
 	actions = append(actions, modalKeyStyle.Render("Esc")+" cancel")
@@ -349,10 +437,10 @@ func renderPromptStatus(ctx promptContext, value string, width int) string {
 	return status.style.Render(clip(status.message, width))
 }
 
-func renderPromptModal(ctx promptContext, input textinput.Model, width int, height int, menuOpen bool, extra []string) string {
+func renderPromptModal(ctx promptContext, input textinput.Model, width int, height int, menuOpen bool, suggestionIndex int, extra []string) string {
 	lines := []string{modalTitleStyle.Render(promptTitle(ctx.prompt)), ""}
 	lines = append(lines, renderPromptInput(promptLabel(ctx.prompt), input, width)...)
-	if suggestions := renderPromptSuggestionMenu(ctx, input, width, menuOpen, promptSuggestionRows(height)); len(suggestions) > 0 {
+	if suggestions := renderPromptSuggestionMenu(ctx, input, width, menuOpen, suggestionIndex, promptSuggestionRows(height)); len(suggestions) > 0 {
 		lines = append(lines, suggestions...)
 	}
 	lines = append(lines, renderPromptStatus(ctx, input.Value(), width))
@@ -508,16 +596,16 @@ func confirmTarget(confirm confirmKind, st state.State, pendingID string, render
 	return "item"
 }
 
-func renderPromptSuggestionMenu(ctx promptContext, input textinput.Model, width int, open bool, maxRows int) []string {
+func renderPromptSuggestionMenu(ctx promptContext, input textinput.Model, width int, open bool, suggestionIndex int, maxRows int) []string {
 	if !open {
 		return nil
 	}
-	suggestions := input.MatchedSuggestions()
+	suggestions := promptMatchedSuggestions(ctx, input.Value())
 	if len(suggestions) == 0 {
 		return nil
 	}
 	valueWidth := max(0, width-2)
-	selected := input.CurrentSuggestionIndex()
+	selected := promptSuggestionIndex(suggestionIndex, suggestions)
 	start, end := suggestionWindow(selected, len(suggestions), maxRows)
 	lines := make([]string, 0, end-start)
 	for index := start; index < end; index++ {
@@ -793,7 +881,7 @@ func workspacePathSuggestions(raw string) []string {
 		if strings.HasPrefix(name, ".") && !showHidden {
 			continue
 		}
-		if baseLower != "" && !strings.HasPrefix(strings.ToLower(name), baseLower) {
+		if baseLower != "" && !strings.Contains(strings.ToLower(name), baseLower) {
 			continue
 		}
 		suggestions = append(suggestions, withTrailingSeparator(joinPromptPath(dirText, name)))

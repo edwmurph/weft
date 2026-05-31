@@ -109,13 +109,14 @@ type Model struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 
-	input                textinput.Model
-	prompt               promptKind
-	confirm              confirmKind
-	pendingID            string
-	groupCursor          int
-	lastNavFocus         state.Focus
-	promptSuggestionOpen bool
+	input                 textinput.Model
+	prompt                promptKind
+	confirm               confirmKind
+	pendingID             string
+	groupCursor           int
+	lastNavFocus          state.Focus
+	promptSuggestionOpen  bool
+	promptSuggestionIndex int
 }
 
 func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
@@ -308,7 +309,7 @@ func (m Model) modalView(content string) string {
 
 func (m Model) renderInputModal() string {
 	width := max(36, min(m.width-16, 72))
-	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.renderPromptExtra(m.input, width))
+	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.promptSuggestionIndex, m.renderPromptExtra(m.input, width))
 }
 
 func (m Model) promptContext() promptContext {
@@ -368,9 +369,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, msg)
+	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, m.promptSuggestionIndex, msg)
 	m.input = result.input
 	m.promptSuggestionOpen = result.suggestionOpen
+	m.promptSuggestionIndex = result.suggestionIndex
 	if result.message != "" {
 		m.message = result.message
 	}
@@ -540,6 +542,7 @@ func (m *Model) startPrompt(prompt promptKind, value string) {
 	m.prompt = prompt
 	configurePromptInput(&m.input, m.promptContext(), value)
 	m.promptSuggestionOpen = false
+	m.promptSuggestionIndex = 0
 	m.mode = modeInput
 }
 

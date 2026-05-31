@@ -310,6 +310,8 @@ Autocomplete appears only when it has a useful known set:
 - path autocomplete for the add-workspace path prompt
 - group-name autocomplete for moving an agent to an existing group
 
+Autocomplete matches case-insensitive substrings in the relevant path segment or group name, not only prefixes from the beginning of the value.
+
 Autocomplete menus open directly under the input, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option closes the menu and leaves the form in a normal submit state.
 
 ## Codex Focus State
@@ -602,7 +604,7 @@ Move agent:
 
 - Moves the agent to another group in the same workspace.
 - Can also clear the group, moving the agent back to a top-level row.
-- Dashboard prompt autocompletes existing group names in that workspace after the user types a matching prefix.
+- Dashboard prompt autocompletes existing group names in that workspace after the user types any matching substring.
 - Does not restart the PTY.
 - Cross-workspace moves are out of scope for the first implementation.
 

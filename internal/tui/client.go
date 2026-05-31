@@ -53,6 +53,7 @@ type ClientModel struct {
 	confirm                 confirmKind
 	pendingID               string
 	promptSuggestionOpen    bool
+	promptSuggestionIndex   int
 	loadingTickerActive     bool
 	launchWorkspacePrompted bool
 	localRestartWhenIdle    bool
@@ -258,9 +259,10 @@ func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, msg)
+	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, m.promptSuggestionIndex, msg)
 	m.input = result.input
 	m.promptSuggestionOpen = result.suggestionOpen
+	m.promptSuggestionIndex = result.suggestionIndex
 	if result.message != "" {
 		m.message = result.message
 	}
@@ -293,6 +295,7 @@ func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 	m.prompt = prompt
 	configurePromptInput(&m.input, m.promptContext(), value)
 	m.promptSuggestionOpen = false
+	m.promptSuggestionIndex = 0
 	m.mode = modeInput
 }
 
@@ -641,7 +644,7 @@ func (m ClientModel) modalView(content string) string {
 
 func (m ClientModel) renderInputModal() string {
 	width := max(36, min(m.width-16, 72))
-	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.renderPromptExtra(m.input, width))
+	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.promptSuggestionIndex, m.renderPromptExtra(m.input, width))
 }
 
 func (m ClientModel) promptContext() promptContext {
