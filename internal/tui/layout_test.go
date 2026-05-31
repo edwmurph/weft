@@ -182,7 +182,7 @@ func TestRenderWorkspacesPaneShowsUpgradeFooterAtBottom(t *testing.T) {
 	}
 }
 
-func TestRenderWorkspacesPaneShowsVersionFooterInOpenSpace(t *testing.T) {
+func TestRenderWorkspacesPaneShowsVersionHeaderAboveWorkspaceCards(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState(t.TempDir())
 
@@ -191,29 +191,35 @@ func TestRenderWorkspacesPaneShowsVersionFooterInOpenSpace(t *testing.T) {
 	}), "\n"))
 	for _, expected := range []string{"Weft", "CLI        7.13.6", "Supervisor 7.13.6"} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("version footer missing %q:\n%s", expected, got)
+			t.Fatalf("version header missing %q:\n%s", expected, got)
 		}
 	}
 	for _, expected := range []string{"┌", "┐", "└", "┘"} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("version footer box missing %q:\n%s", expected, got)
+			t.Fatalf("version header box missing %q:\n%s", expected, got)
 		}
 	}
 	lines := strings.Split(got, "\n")
-	if !strings.Contains(lines[len(lines)-6], "┌") ||
-		!strings.Contains(lines[len(lines)-5], "Weft") ||
-		!strings.Contains(lines[len(lines)-4], "CLI        7.13.6") ||
-		!strings.Contains(lines[len(lines)-3], "Supervisor 7.13.6") ||
-		!strings.Contains(lines[len(lines)-2], "└") {
-		t.Fatalf("version footer should be pinned to pane bottom:\n%s", got)
+	if !strings.Contains(lines[1], "┌") ||
+		!strings.Contains(lines[2], "Weft") ||
+		!strings.Contains(lines[3], "CLI        7.13.6") ||
+		!strings.Contains(lines[4], "Supervisor 7.13.6") ||
+		!strings.Contains(lines[5], "└") {
+		t.Fatalf("version header should be pinned to pane top:\n%s", got)
 	}
-	brandLine := lines[len(lines)-5]
+	if strings.TrimSpace(strings.Trim(lines[6], " │")) != "" {
+		t.Fatalf("version header should leave one blank line before workspace cards:\n%s", got)
+	}
+	if !strings.Contains(lines[7], "╭") {
+		t.Fatalf("workspace cards should render below version header spacer:\n%s", got)
+	}
+	brandLine := lines[2]
 	if strings.Index(brandLine, "Weft") <= strings.Index(brandLine, "│")+1 {
-		t.Fatalf("brand title should be horizontally centered in the footer box:\n%s", got)
+		t.Fatalf("brand title should be horizontally centered in the header box:\n%s", got)
 	}
 }
 
-func TestRenderWorkspacesPaneOmitsVersionFooterWhenCardsFillPane(t *testing.T) {
+func TestRenderWorkspacesPaneOmitsVersionHeaderWhenCardsFillPane(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState(t.TempDir())
 	now := state.NowISO()
@@ -230,7 +236,7 @@ func TestRenderWorkspacesPaneOmitsVersionFooterWhenCardsFillPane(t *testing.T) {
 		workspaceInfoText: "Weft\nCLI        7.13.6\nSupervisor 7.13.6",
 	}), "\n"))
 	if strings.Contains(got, "CLI        7.13.6") || strings.Contains(got, "Supervisor 7.13.6") {
-		t.Fatalf("version footer should not hide workspace cards:\n%s", got)
+		t.Fatalf("version header should not hide workspace cards:\n%s", got)
 	}
 }
 

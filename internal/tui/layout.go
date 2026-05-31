@@ -273,25 +273,30 @@ func renderWorkspacesPane(cfg config.Config, st state.State, width int, height i
 }
 
 func renderWorkspacesPaneWithOptions(cfg config.Config, st state.State, width int, height int, options workspaceRenderOptions) []string {
-	content := []string{}
+	cards := []string{}
 	cardWidth := max(2, width-2-(navHorizontalPadding*2))
 	for _, workspace := range st.Workspaces {
 		selected := workspace.ID == st.SelectedWorkspaceID
 		card := renderWorkspaceCard(cfg, st, workspace, cardWidth, selected, st.Focus == state.FocusWorkspaces)
 		for _, line := range card {
-			content = append(content, strings.Repeat(" ", navHorizontalPadding)+line)
+			cards = append(cards, strings.Repeat(" ", navHorizontalPadding)+line)
 		}
 	}
-	hasWorkspaceCards := len(content) > 0
-	if len(content) == 0 {
+	hasWorkspaceCards := len(cards) > 0
+	content := cards
+	if !hasWorkspaceCards {
 		content = renderCenteredPaneHelp(width, height, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
 	contentHeight := max(0, height-2)
 	if footer := renderWorkspaceFooter(options.workspaceFooterText, width, height, workspaceUpgradeFooterStyle); len(footer) > 0 {
 		content = pinBottomPaneContent(content, footer, contentHeight)
-	} else if footer := renderWorkspaceInfoFooter(options.workspaceInfoText, width, height); len(footer) > 0 &&
-		workspaceInfoFooterFits(content, footer, contentHeight, hasWorkspaceCards) {
-		content = pinBottomPaneContent(content, footer, contentHeight)
+	} else if header := renderWorkspaceInfoHeader(options.workspaceInfoText, width, height); len(header) > 0 &&
+		workspaceInfoHeaderFits(cards, header, contentHeight, hasWorkspaceCards) {
+		if hasWorkspaceCards {
+			content = prependTopPaneContent(cards, workspaceInfoHeaderWithSpacer(header), contentHeight)
+		} else {
+			content = append(header, renderCenteredPaneHelpContent(max(0, width-2), max(0, contentHeight-len(header)), "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")...)
+		}
 	}
 	return renderPaneFrame("Workspaces", "", width, height, st.Focus == state.FocusWorkspaces, content)
 }
@@ -324,7 +329,7 @@ func renderWorkspaceFooter(message string, width int, height int, style lipgloss
 	return lines
 }
 
-func renderWorkspaceInfoFooter(message string, width int, height int) []string {
+func renderWorkspaceInfoHeader(message string, width int, height int) []string {
 	message = strings.TrimSpace(message)
 	if message == "" || width <= 0 || height <= 6 {
 		return nil
@@ -378,14 +383,32 @@ func renderWorkspaceInfoBox(content []string, rowWidth int) []string {
 	return lines
 }
 
-func workspaceInfoFooterFits(content []string, footer []string, contentHeight int, hasWorkspaceCards bool) bool {
-	if contentHeight <= 0 || len(footer) == 0 || len(footer) > contentHeight {
+func workspaceInfoHeaderFits(cards []string, header []string, contentHeight int, hasWorkspaceCards bool) bool {
+	if contentHeight <= 0 || len(header) == 0 || len(header) > contentHeight {
 		return false
 	}
 	if !hasWorkspaceCards {
-		return true
+		return len(header) < contentHeight
 	}
-	return len(content)+len(footer) < contentHeight
+	return len(cards)+len(workspaceInfoHeaderWithSpacer(header)) <= contentHeight
+}
+
+func workspaceInfoHeaderWithSpacer(header []string) []string {
+	return append(append([]string{}, header...), "")
+}
+
+func prependTopPaneContent(content []string, header []string, contentHeight int) []string {
+	if contentHeight <= 0 || len(header) == 0 {
+		return content
+	}
+	next := append([]string{}, header...)
+	for _, line := range content {
+		if len(next) >= contentHeight {
+			break
+		}
+		next = append(next, line)
+	}
+	return next
 }
 
 func pinBottomPaneContent(content []string, footer []string, contentHeight int) []string {
@@ -736,6 +759,10 @@ func loadingAgentSet(ids []string) map[string]bool {
 func renderCenteredPaneHelp(width int, height int, lines ...string) []string {
 	contentHeight := max(0, height-2)
 	innerWidth := max(0, width-2)
+	return renderCenteredPaneHelpContent(innerWidth, contentHeight, lines...)
+}
+
+func renderCenteredPaneHelpContent(innerWidth int, contentHeight int, lines ...string) []string {
 	if contentHeight == 0 {
 		return nil
 	}

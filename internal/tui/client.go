@@ -161,7 +161,7 @@ func (m ClientModel) View() string {
 		loadingFrame:        loadingFrame,
 		loadingAgents:       loadingAgentSet(m.snapshot.LoadingAgentIDs),
 		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
-		workspaceInfoText:   m.workspaceInfoFooterText(),
+		workspaceInfoText:   m.workspaceInfoHeaderText(),
 		codexToastText:      m.toastText,
 	}
 	if loadingText != "" {
@@ -461,7 +461,7 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	m.syncInputRouter()
 }
 
-func (m ClientModel) workspaceInfoFooterText() string {
+func (m ClientModel) workspaceInfoHeaderText() string {
 	clientVersion := strings.TrimSpace(m.snapshot.ActiveClientVersion)
 	if clientVersion == "" && m.upgrade != nil {
 		clientVersion = strings.TrimSpace(m.upgrade.ClientVersion)
