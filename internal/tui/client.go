@@ -28,21 +28,24 @@ type clientResponseMsg struct {
 
 type clientSnapshotTick struct{}
 
+type clientAttachRetryTick struct{}
+
 type clientToastTick struct {
 	id int
 }
 
 type ClientModel struct {
-	cfg      config.Config
-	runtime  config.Runtime
-	clientID string
-	snapshot ipc.Snapshot
-	width    int
-	height   int
-	mode     mode
-	message  string
-	upgrade  *ipc.Upgrade
-	loading  int
+	cfg               config.Config
+	runtime           config.Runtime
+	clientID          string
+	snapshot          ipc.Snapshot
+	width             int
+	height            int
+	mode              mode
+	message           string
+	upgrade           *ipc.Upgrade
+	loading           int
+	supervisorVersion string
 
 	input                    textinput.Model
 	prompt                   promptKind
@@ -116,6 +119,10 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = upgradeResumeUnsupportedMessage()
 				return m, m.nextCodexInputRequest()
 			}
+			if typed.command == "attach_client" && typed.response.Error == nil {
+				m.message = typed.err.Error()
+				return m, tickClientAttachRetry()
+			}
 			m.message = typed.err.Error()
 			return m, m.nextCodexInputRequest()
 		}
@@ -131,6 +138,8 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(nextCodexInput, nextLoadingTick)
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
+	case clientAttachRetryTick:
+		return m, m.request("attach_client", nil)
 	case clientToastTick:
 		if typed.id == m.toastID {
 			m.toastText = ""
@@ -170,6 +179,7 @@ func (m ClientModel) View() string {
 		loadingFrame:        loadingFrame,
 		loadingAgents:       loadingAgentSet(m.snapshot.LoadingAgentIDs),
 		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.upgradeResumeUnsupported),
+		workspaceInfoText:   m.workspaceInfoFooterText(),
 		codexToastText:      m.toastText,
 	}
 	if loadingText != "" {
@@ -403,9 +413,16 @@ func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 		if height > 0 {
 			args["height"] = strconv.Itoa(height)
 		}
-		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
+		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, clientRequestTimeout(command))
 		return clientResponseMsg{command: command, response: response, err: err}
 	}
+}
+
+func clientRequestTimeout(command string) time.Duration {
+	if command == "attach_client" {
+		return 5 * time.Second
+	}
+	return 2 * time.Second
 }
 
 func clientRequestArgs(rt config.Runtime, clientID string, command string, args map[string]string) map[string]string {
@@ -459,6 +476,9 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	} else if response.State != nil {
 		m.snapshot.State = *response.State
 	}
+	if strings.TrimSpace(response.SupervisorVersion) != "" {
+		m.supervisorVersion = strings.TrimSpace(response.SupervisorVersion)
+	}
 	if strings.TrimSpace(response.Message) != "" {
 		m.message = response.Message
 	}
@@ -481,6 +501,21 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	m.maybePromptForLaunchWorkspace()
 	m.syncCodexScroll()
 	m.syncInputRouter()
+}
+
+func (m ClientModel) workspaceInfoFooterText() string {
+	clientVersion := strings.TrimSpace(m.snapshot.ActiveClientVersion)
+	if clientVersion == "" && m.upgrade != nil {
+		clientVersion = strings.TrimSpace(m.upgrade.ClientVersion)
+	}
+	if clientVersion == "" {
+		clientVersion = version.Version
+	}
+	supervisorVersion := strings.TrimSpace(m.supervisorVersion)
+	if supervisorVersion == "" {
+		supervisorVersion = "starting"
+	}
+	return fmt.Sprintf("Weft\n%-10s %s\n%-10s %s", "CLI", clientVersion, "Supervisor", supervisorVersion)
 }
 
 func (m *ClientModel) syncCodexScroll() {
@@ -685,6 +720,12 @@ func (m ClientModel) messageText() string {
 func tickClientSnapshot() tea.Cmd {
 	return tea.Tick(clientSnapshotInterval, func(time.Time) tea.Msg {
 		return clientSnapshotTick{}
+	})
+}
+
+func tickClientAttachRetry() tea.Cmd {
+	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
+		return clientAttachRetryTick{}
 	})
 }
 

@@ -56,6 +56,9 @@ var (
 	workspaceCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	workspacePathWarningStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	workspaceUpgradeFooterStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	workspaceInfoBrandStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true).Underline(true)
+	workspaceInfoFooterStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	workspaceInfoBoxBorderStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -73,6 +76,7 @@ type workspaceRenderOptions struct {
 	loadingFrame        string
 	loadingAgents       map[string]bool
 	workspaceFooterText string
+	workspaceInfoText   string
 	codexToastText      string
 }
 
@@ -278,16 +282,21 @@ func renderWorkspacesPaneWithOptions(cfg config.Config, st state.State, width in
 			content = append(content, strings.Repeat(" ", navHorizontalPadding)+line)
 		}
 	}
+	hasWorkspaceCards := len(content) > 0
 	if len(content) == 0 {
 		content = renderCenteredPaneHelp(width, height, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
-	if footer := renderWorkspaceFooter(options.workspaceFooterText, width, height); len(footer) > 0 {
-		content = pinBottomPaneContent(content, footer, max(0, height-2))
+	contentHeight := max(0, height-2)
+	if footer := renderWorkspaceFooter(options.workspaceFooterText, width, height, workspaceUpgradeFooterStyle); len(footer) > 0 {
+		content = pinBottomPaneContent(content, footer, contentHeight)
+	} else if footer := renderWorkspaceInfoFooter(options.workspaceInfoText, width, height); len(footer) > 0 &&
+		workspaceInfoFooterFits(content, footer, contentHeight, hasWorkspaceCards) {
+		content = pinBottomPaneContent(content, footer, contentHeight)
 	}
 	return renderPaneFrame("Workspaces", "", width, height, st.Focus == state.FocusWorkspaces, content)
 }
 
-func renderWorkspaceFooter(message string, width int, height int) []string {
+func renderWorkspaceFooter(message string, width int, height int, style lipgloss.Style) []string {
 	message = strings.TrimSpace(message)
 	if message == "" || width <= 0 || height <= 3 {
 		return nil
@@ -310,9 +319,73 @@ func renderWorkspaceFooter(message string, width int, height int) []string {
 	lines := make([]string, 0, len(wrapped))
 	for _, line := range wrapped {
 		line = padVisual(clip(line, rowWidth), rowWidth)
-		lines = append(lines, strings.Repeat(" ", navHorizontalPadding)+workspaceUpgradeFooterStyle.Render(line))
+		lines = append(lines, strings.Repeat(" ", navHorizontalPadding)+style.Render(line))
 	}
 	return lines
+}
+
+func renderWorkspaceInfoFooter(message string, width int, height int) []string {
+	message = strings.TrimSpace(message)
+	if message == "" || width <= 0 || height <= 6 {
+		return nil
+	}
+	rowWidth := max(0, width-2-(navHorizontalPadding*2))
+	if rowWidth <= 0 {
+		return nil
+	}
+	content := []string{}
+	for _, line := range strings.Split(message, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		content = append(content, line)
+		if len(content) == 3 {
+			break
+		}
+	}
+	if len(content) == 0 {
+		return nil
+	}
+	lines := renderWorkspaceInfoBox(content, rowWidth)
+	for index := range lines {
+		lines[index] = strings.Repeat(" ", navHorizontalPadding) + lines[index]
+	}
+	return lines
+}
+
+func renderWorkspaceInfoBox(content []string, rowWidth int) []string {
+	if rowWidth < 4 {
+		return nil
+	}
+	contentWidth := maxVisualWidth(content)
+	contentWidth = min(contentWidth, max(0, rowWidth-4))
+	boxWidth := contentWidth + 4
+	top := workspaceInfoBoxBorderStyle.Render("┌" + strings.Repeat(borderHorizontal, max(0, boxWidth-2)) + "┐")
+	bottom := workspaceInfoBoxBorderStyle.Render("└" + strings.Repeat(borderHorizontal, max(0, boxWidth-2)) + "┘")
+	lines := []string{centerVisual(top, rowWidth)}
+	for index, line := range content {
+		style := workspaceInfoFooterStyle
+		if index == 0 {
+			style = workspaceInfoBrandStyle
+			line = padVisual(centerVisual(style.Render(clip(line, contentWidth)), contentWidth), contentWidth)
+		} else {
+			line = style.Render(padVisual(clip(line, contentWidth), contentWidth))
+		}
+		lines = append(lines, centerVisual(workspaceInfoBoxBorderStyle.Render(borderVertical)+" "+line+" "+workspaceInfoBoxBorderStyle.Render(borderVertical), rowWidth))
+	}
+	lines = append(lines, centerVisual(bottom, rowWidth))
+	return lines
+}
+
+func workspaceInfoFooterFits(content []string, footer []string, contentHeight int, hasWorkspaceCards bool) bool {
+	if contentHeight <= 0 || len(footer) == 0 || len(footer) > contentHeight {
+		return false
+	}
+	if !hasWorkspaceCards {
+		return true
+	}
+	return len(content)+len(footer) < contentHeight
 }
 
 func pinBottomPaneContent(content []string, footer []string, contentHeight int) []string {

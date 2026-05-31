@@ -73,12 +73,17 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		return strings.Contains(capture, "Add this workspace to Weft?") ||
 			strings.Contains(capture, "Workspaces")
 	})
-	if !waitForBool(8*time.Second, func() bool {
+	if !waitForBool(15*time.Second, func() bool {
 		versionOut = runWeft(t, env, bin, "version")
 		return strings.Contains(versionOut, "main dashboard version: "+weftversion.Version)
 	}) {
 		t.Fatalf("version missing attached dashboard version:\n%s", versionOut)
 	}
+	directRun(t, env, "send-keys", "-t", "version-dashboard", "Escape")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "CLI        "+weftversion.Version) &&
+			strings.Contains(capture, "Supervisor "+weftversion.Version)
+	})
 	if out := runWeft(t, env, bin, "doctor"); !strings.Contains(out, "supervisor owns Codex PTYs") {
 		t.Fatalf("doctor output missing supervisor ownership:\n%s", out)
 	}

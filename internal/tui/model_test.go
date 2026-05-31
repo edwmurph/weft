@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -276,6 +277,54 @@ func TestClientDoesNotPromptForExistingLaunchWorkspace(t *testing.T) {
 
 	if model.mode != modeNormal {
 		t.Fatalf("existing launch workspace should not prompt, mode=%s", model.mode)
+	}
+}
+
+func TestClientWorkspaceFooterShowsVersionInfo(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithWorkspace(t, rt.Workspace)
+	st.Focus = state.FocusWorkspaces
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 120
+	model.height = 20
+
+	model.applyResponse(ipc.Response{
+		OK: true,
+		Snapshot: &ipc.Snapshot{
+			State:               st,
+			CodexTitle:          "Codex",
+			CodexContent:        "No Codex agent open.",
+			NavWidth:            minTwoPaneNavWidth,
+			ActiveClientVersion: weftversion.Version,
+		},
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: weftversion.Version,
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Weft",
+		"CLI        " + weftversion.Version,
+		"Supervisor " + weftversion.Version,
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("workspace version footer missing %q:\n%s", expected, got)
+		}
+	}
+}
+
+func TestClientRetriesTransportAttachFailures(t *testing.T) {
+	model := NewClientModel(testRuntime(t), config.DefaultConfig())
+
+	updated, cmd := model.Update(clientResponseMsg{command: "attach_client", err: errors.New("i/o timeout")})
+	model = updated.(ClientModel)
+
+	if cmd == nil {
+		t.Fatal("transport attach failure should schedule an attach retry")
+	}
+	if model.message != "i/o timeout" {
+		t.Fatalf("message = %q", model.message)
 	}
 }
 

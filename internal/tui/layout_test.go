@@ -182,6 +182,58 @@ func TestRenderWorkspacesPaneShowsUpgradeFooterAtBottom(t *testing.T) {
 	}
 }
 
+func TestRenderWorkspacesPaneShowsVersionFooterInOpenSpace(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState(t.TempDir())
+
+	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 60, 12, workspaceRenderOptions{
+		workspaceInfoText: "Weft\nCLI        7.13.6\nSupervisor 7.13.6",
+	}), "\n"))
+	for _, expected := range []string{"Weft", "CLI        7.13.6", "Supervisor 7.13.6"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("version footer missing %q:\n%s", expected, got)
+		}
+	}
+	for _, expected := range []string{"┌", "┐", "└", "┘"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("version footer box missing %q:\n%s", expected, got)
+		}
+	}
+	lines := strings.Split(got, "\n")
+	if !strings.Contains(lines[len(lines)-6], "┌") ||
+		!strings.Contains(lines[len(lines)-5], "Weft") ||
+		!strings.Contains(lines[len(lines)-4], "CLI        7.13.6") ||
+		!strings.Contains(lines[len(lines)-3], "Supervisor 7.13.6") ||
+		!strings.Contains(lines[len(lines)-2], "└") {
+		t.Fatalf("version footer should be pinned to pane bottom:\n%s", got)
+	}
+	brandLine := lines[len(lines)-5]
+	if strings.Index(brandLine, "Weft") <= strings.Index(brandLine, "│")+1 {
+		t.Fatalf("brand title should be horizontally centered in the footer box:\n%s", got)
+	}
+}
+
+func TestRenderWorkspacesPaneOmitsVersionFooterWhenCardsFillPane(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState(t.TempDir())
+	now := state.NowISO()
+	for index := 1; index < 4; index++ {
+		st.Workspaces = append(st.Workspaces, state.Workspace{
+			ID:        fmtInt(index),
+			Path:      t.TempDir(),
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
+	}
+
+	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 60, 12, workspaceRenderOptions{
+		workspaceInfoText: "Weft\nCLI        7.13.6\nSupervisor 7.13.6",
+	}), "\n"))
+	if strings.Contains(got, "CLI        7.13.6") || strings.Contains(got, "Supervisor 7.13.6") {
+		t.Fatalf("version footer should not hide workspace cards:\n%s", got)
+	}
+}
+
 func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 	cfg := config.DefaultConfig()
 	now := state.NowISO()

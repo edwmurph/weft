@@ -235,6 +235,14 @@ terminals, restarts the supervisor, and runs `codex resume <session-id>` for
 each saved agent. It also warns that running commands and unsubmitted terminal
 input are not preserved, so users should finish important work first.
 
+When no upgrade tip is active and there is unused vertical space below the
+workspace cards, the bottom of the Workspaces pane shows compact runtime
+branding and version details inside a small centered box with sharp corners and
+compact padding. The box uses a small emphasized `Weft` mark followed by the
+current CLI version and running supervisor version, with the version values
+aligned in one column. This footer is secondary chrome: it must not hide
+workspace cards, and the upgrade tip takes priority when an upgrade is pending.
+
 Counts should use subtle colors:
 
 - `total`: muted neutral
