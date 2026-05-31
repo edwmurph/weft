@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	collapsedCodexToolbar = "WEFT  C-b command center  C-c to Codex"
+	collapsedCodexToolbar = "WEFT  C-b dashboard  C-c to Codex"
 	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
@@ -398,7 +398,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 	})
 
-	timedStep(t, "C-b opens command center", func() {
+	timedStep(t, "C-b opens dashboard", func() {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		time.Sleep(250 * time.Millisecond)
@@ -551,7 +551,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 	})
 
-	timedStep(t, "C-c stays with Codex focus and command center C-c closes weft", func() {
+	timedStep(t, "C-c stays with Codex focus and dashboard C-c closes weft", func() {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 1 &&
@@ -599,7 +599,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			attached := directLines(t, env, "display-message", "-p", "-t", pane, "#{session_attached}")
 			return len(attached) == 1 && attached[0] == "0"
 		}) {
-			t.Fatalf("command center C-c did not detach Weft clients")
+			t.Fatalf("dashboard C-c did not detach Weft clients")
 		}
 		if panes := directLines(t, env, "list-panes", "-t", pane, "-F", "#{pane_id}"); len(panes) != 1 {
 			t.Fatalf("pane count after C-c close = %d (%v), want 1", len(panes), panes)
@@ -880,7 +880,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 
 	timedStep(t, "refresh and second attach preserve selected running agent", func() {
 		out := runWeft(t, env, bin, "refresh")
-		if !strings.Contains(out, "refreshed Weft command center") {
+		if !strings.Contains(out, "refreshed Weft dashboard") {
 			t.Fatalf("refresh output missing message:\n%s", out)
 		}
 		clientOutput, _ = startDirectDashboardClient(t, env, bin, alpha, pane+"-reattach", 150, 36)
@@ -1019,7 +1019,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 
 	started = time.Now()
 	out := runWeft(t, env, bin, "refresh")
-	if !strings.Contains(out, "refreshed Weft command center") {
+	if !strings.Contains(out, "refreshed Weft dashboard") {
 		t.Fatalf("refresh output missing message:\n%s", out)
 	}
 	assertPerformanceBudget(t, "refresh command returns", time.Since(started), 3*time.Second)

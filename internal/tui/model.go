@@ -1203,7 +1203,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		return response, nil
 	case "refresh":
 		m.message = "refreshed"
-		return m.ipcResponse("refreshed Weft command center"), nil
+		return m.ipcResponse("refreshed Weft dashboard"), nil
 	case "resize":
 		width, _ := strconv.Atoi(request.Args["width"])
 		height, _ := strconv.Atoi(request.Args["height"])
@@ -1620,7 +1620,7 @@ func renderHelp(cfg config.Config) string {
 	lines := []string{
 		"Weft shortcuts",
 		"",
-		fmt.Sprintf("%s command center", cfg.KeyBindings.Drawer),
+		fmt.Sprintf("%s dashboard", cfg.KeyBindings.Drawer),
 		fmt.Sprintf("%s/%s panes", cfg.KeyBindings.FocusLeft, cfg.KeyBindings.FocusRight),
 		fmt.Sprintf("%s/%s select", cfg.KeyBindings.SelectPrev, cfg.KeyBindings.SelectNext),
 		fmt.Sprintf("%s open agent", cfg.KeyBindings.Open),

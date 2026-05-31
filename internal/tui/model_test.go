@@ -14,7 +14,7 @@ import (
 	"github.com/edwmurph/weft/internal/state"
 )
 
-func TestEmptyCommandCenterStartsInAgentsFocus(t *testing.T) {
+func TestEmptyDashboardStartsInAgentsFocus(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 
@@ -165,7 +165,7 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 		model = updated.(Model)
 
 		if cmd != nil {
-			t.Fatalf("%s should not start command center command in codex focus", msg.String())
+			t.Fatalf("%s should not start dashboard command in codex focus", msg.String())
 		}
 		if model.mode != modeNormal {
 			t.Fatalf("%s changed mode to %s", msg.String(), model.mode)
@@ -183,7 +183,7 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlB})
 	model = updated.(Model)
 	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
-		t.Fatalf("C-b should open command center, got %s/%t", model.state.Focus, model.state.NavOpen)
+		t.Fatalf("C-b should open dashboard, got %s/%t", model.state.Focus, model.state.NavOpen)
 	}
 
 	model.state.Focus = state.FocusCodex
@@ -1128,7 +1128,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b command center  C-c to Codex") {
+	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b dashboard  C-c to Codex") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 

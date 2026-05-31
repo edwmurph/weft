@@ -593,7 +593,7 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 }
 
 func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return appTitle + "  " + cfg.KeyBindings.Drawer + " command center  " + cfg.KeyBindings.Quit + " to Codex"
+	return appTitle + "  " + cfg.KeyBindings.Drawer + " dashboard  " + cfg.KeyBindings.Quit + " to Codex"
 }
 
 func paletteFor(active bool) framePalette {

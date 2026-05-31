@@ -22,7 +22,7 @@ func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 		t.Fatalf("minimum three-pane nav width = %d", got)
 	}
 	if got := workspaceNavFrameWidth(st, 100); got != 100 {
-		t.Fatalf("medium nav width = %d, want nav-only command center", got)
+		t.Fatalf("medium nav width = %d, want nav-only dashboard", got)
 	}
 	if got := workspaceNavFrameWidth(st, 70); got != 42 {
 		t.Fatalf("narrow nav width = %d", got)
@@ -254,7 +254,7 @@ func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	}
 }
 
-func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
+func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Repair(state.Empty(), "/tmp/project")
 
@@ -275,7 +275,7 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 	}
 	lines := strings.Split(got, "\n")
 	if strings.Contains(lines[len(lines)-1], "Codex") {
-		t.Fatalf("empty command center should not render default codex title in bottom border:\n%s", got)
+		t.Fatalf("empty dashboard should not render default codex title in bottom border:\n%s", got)
 	}
 
 	got = renderWorkspaceWithNavWidth(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", 0, 0)
@@ -283,10 +283,10 @@ func TestRenderWorkspaceEmptyCommandCenterShowsNewHint(t *testing.T) {
 	logoIndex := strings.Index(stripped, `●──┼──▶      ██║ █╗ ██║ █████╗   █████╗      ██║`)
 	hintIndex := strings.Index(stripped, "No Codex agent open")
 	if logoIndex < 0 {
-		t.Fatalf("empty command center missing Weft wordmark:\n%s", stripped)
+		t.Fatalf("empty dashboard missing Weft wordmark:\n%s", stripped)
 	}
 	if hintIndex < 0 || logoIndex > hintIndex {
-		t.Fatalf("empty command center should render wordmark above existing hint:\n%s", stripped)
+		t.Fatalf("empty dashboard should render wordmark above existing hint:\n%s", stripped)
 	}
 
 	content := renderEmptyCodexContent(100, 24, true)
@@ -350,7 +350,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
 	}
-	if !strings.Contains(got, "WEFT  C-b command center  C-c to Codex") {
+	if !strings.Contains(got, "WEFT  C-b dashboard  C-c to Codex") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
 	if !strings.Contains(got, "Console") {

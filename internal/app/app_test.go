@@ -26,12 +26,12 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		}
 	}
 	for _, expected := range []string{
-		"Supervisor-backed Codex command center.",
+		"Terminal dashboard for Codex agent threads.",
 		"weft [--clear] [--attach|--no-attach]",
 		"weft <command> [--clear]",
 		"weft --clear                 Clear runtime state, then open a fresh dashboard.",
 		"weft <command> --clear       Clear runtime state, then run the command.",
-		"weft workspace add <path>    Add a workspace to the command center.",
+		"weft workspace add <path>    Add a workspace to the dashboard.",
 		"weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
 		"weft doctor keys             Diagnose terminal key encoding.",
 	} {

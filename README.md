@@ -1,7 +1,7 @@
 <h1 align="center"><img src="assets/weft-logo.svg" alt="Weft" width="360"></h1>
 
 <p align="center">
-  <strong>Coordinate multiple Codex sessions from one supervisor-backed TUI.</strong>
+  <strong>A terminal dashboard for Codex agent threads.</strong>
 </p>
 
 <p align="center">
@@ -10,10 +10,13 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-Weft runs one local supervisor that owns embedded Codex PTYs, state, and title
-hooks. Terminal UI clients attach to that supervisor to render the command
-center, then detach without stopping running Codex processes. Workspaces,
-optional flat groups, and agents are managed inside one global state file.
+Weft treats each Codex session as an agent thread: a long-running line of work
+that may be editing, testing, waiting for review, or blocked while other threads
+keep moving. Parallel agents only improve throughput when the ready or blocked
+work is noticed quickly; that is the same practical lesson behind queueing and
+scheduling systems. Weft keeps those threads visible in one terminal dashboard
+so you can check status, switch context, and keep long-running tasks moving
+instead of letting finished or waiting agents sit idle.
 
 ## Getting Started
 
@@ -130,19 +133,21 @@ command that follows the same stdin/stdout contract. Set
 `WEFT_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
 outside the agent workspace.
 
-The command center has `Workspaces`, `Agents`, and `Console` panes. Agents can sit
-directly in a workspace as top-level rows. Groups are optional collapsible
-sections inside the `Agents` pane, and `Enter` on a group opens or collapses it.
-Dashboard forms use bordered inputs, compact validation/status lines, and
-state-specific key hints. In the `Workspaces` pane, `w` opens an add-workspace path
-prompt with a scrolling below-input autocomplete menu, arrow-key selection, and
-compact path status. Moving an agent autocompletes known group names after a
-matching prefix. Prompt inputs support Option/Alt word movement and deletion
-when the terminal sends Option as Meta/Esc. Alt-modified keys are also
-preserved when forwarded into Codex agent panes. `r` sets an optional card title
-and blank input clears it back to the display path.
+The dashboard has `Workspaces`, `Agents`, and `Console` panes. Workspaces
+and agents live in the left-side navigation panes; the console stays ready on
+the right. Agents can sit directly in a workspace as top-level rows. Groups are
+optional collapsible sections inside the `Agents` pane, and `Enter` on a group
+opens or collapses it. Dashboard forms use bordered inputs, compact
+validation/status lines, and state-specific key hints. In the `Workspaces` pane,
+`w` opens an add-workspace path prompt with a scrolling below-input autocomplete
+menu, arrow-key selection, and compact path status. Moving an agent
+autocompletes known group names after a matching prefix. Prompt inputs support
+Option/Alt word movement and deletion when the terminal sends Option as
+Meta/Esc. Alt-modified keys are also preserved when forwarded into Codex agent
+panes. `r` sets an optional card title and blank input clears it back to the
+display path.
 
-When the command center is open, press `?` for shortcuts. Defaults:
+When the dashboard is open, press `?` for shortcuts. Defaults:
 
 ```toml
 title_template = "{status} {auto}"
@@ -169,9 +174,9 @@ quit = "C-c"
 In CODEX focus, Weft keeps the Console pane framed while forwarding Codex input
 through the active PTY. The attached client enables enhanced terminal keyboard
 reporting so multiline shortcuts such as `Shift+Enter` are forwarded to Codex.
-Press the drawer key, `C-b` by default, to return to the command center. `C-c`
-stays with Codex while Codex has focus. To close Weft, return to the command
-center and press `C-c`, or run `weft close` from another shell.
+Press the drawer key, `C-b` by default, to return to the dashboard. `C-c`
+stays with Codex while Codex has focus. To close Weft, return to the dashboard
+and press `C-c`, or run `weft close` from another shell.
 
 ## Config And State
 

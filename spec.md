@@ -4,9 +4,9 @@ This is the living product and technical specification for Weft. Keep this file 
 
 ## Product Definition
 
-Weft is one global terminal command center for managing Codex agents across multiple workspaces.
+Weft is one global terminal dashboard for managing Codex agents across multiple workspaces.
 
-Weft is no longer one instance per workspace. One local Weft supervisor owns the global navigation state, the agent registry, and Codex PTYs. Terminal UI clients attach to that supervisor, render the command center, and can detach without stopping agents. Users can organize agents by workspace, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
+Weft is no longer one instance per workspace. One local Weft supervisor owns the global navigation state, the agent registry, and Codex PTYs. Terminal UI clients attach to that supervisor, render the dashboard, and can detach without stopping agents. Users can organize agents by workspace, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
 
 The core workflow is:
 
@@ -221,7 +221,7 @@ Codex can only receive input when the Console pane is focused and maximized. Whe
 
 Weft has two primary UI states.
 
-## Command Center State
+## Dashboard State
 
 Navigation panes are open.
 
@@ -261,7 +261,7 @@ Console pane is maximized.
 - Codex-owned terminal behavior, including multiline shortcuts such as
   Shift+Enter in supporting terminals, is preserved inside the framed pane.
 - C-c is not intercepted by Weft while Codex has focus.
-- User exits back to command center with the configured drawer/navigation key.
+- User exits back to dashboard with the configured drawer/navigation key.
 
 ## Initial Keybindings
 
@@ -269,7 +269,7 @@ These are product-level defaults and may map to existing config structures durin
 
 ```text
 Enter   Open selected agent and maximize Codex
-C-b     Toggle command center navigation
+C-b     Toggle dashboard navigation
 Left/Right Move focus between workspaces and agents panes
 j/k     Move selection within the focused navigation pane
 w       Add workspace
@@ -279,7 +279,7 @@ m       Move selected agent to another group in the same workspace, or clear its
 r       Rename selected workspace title, group, or agent title
 d       Delete/remove selected item
 ?       Help
-C-c     Quit Weft from command center focus
+C-c     Quit Weft from dashboard focus
 ```
 
 Deletion behavior depends on selected item type and is defined below.

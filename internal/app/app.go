@@ -134,7 +134,7 @@ func cliHelpText() string {
 	}
 	lines = append(lines,
 		"",
-		"Supervisor-backed Codex command center.",
+		"Terminal dashboard for Codex agent threads.",
 		"",
 		"Usage:",
 		"  weft [--clear] [--attach|--no-attach]",
@@ -156,7 +156,7 @@ func cliHelpText() string {
 		"  weft rename [id] <title>     Rename the selected agent or the given agent.",
 		"  weft close [id]              Close the active client or a Codex agent.",
 		"  weft group add <name>        Add a group in the current workspace.",
-		"  weft workspace add <path>    Add a workspace to the command center.",
+		"  weft workspace add <path>    Add a workspace to the dashboard.",
 		"  weft move-left               Move the selected agent out of its group.",
 		"  weft move-right              Move the selected agent into the selected group.",
 		"",
@@ -175,7 +175,7 @@ func cliHelpText() string {
 func start(args []string) error {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	attach := fs.Bool("attach", true, "attach to the Weft command center")
+	attach := fs.Bool("attach", true, "attach to the Weft dashboard")
 	noAttach := fs.Bool("no-attach", false, "start the Weft supervisor without attaching")
 	clearBeforeStart := fs.Bool("clear", false, "delete runtime state before starting")
 	if err := fs.Parse(args); err != nil {

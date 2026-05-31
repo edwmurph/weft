@@ -26,7 +26,7 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 ## 2026-05-30 - Framed Codex keyboard passthrough
 
 - Request: Diagnose why proxied Codex focus input differs from a normal Codex terminal, with Shift+Enter recognized by Weft but not inserted as a Codex newline.
-- Suggestions: Keep Weft's framed Codex pane active, enable enhanced terminal keyboard reporting in the attached client, forward modified-key escape sequences to the supervisor-owned Codex PTY, and reserve only the drawer key to return to the command center.
+- Suggestions: Keep Weft's framed Codex pane active, enable enhanced terminal keyboard reporting in the attached client, forward modified-key escape sequences to the supervisor-owned Codex PTY, and reserve only the drawer key to return to the dashboard.
 - Outcome: Implemented in `.worktrees/codex-shift-enter`; awaiting review.
 - Evidence: `internal/tui/terminal_keys.go`, `internal/tui/client.go`, `internal/tui/model.go`, `tests/integration/dashboard_e2e_test.go`.
 
@@ -37,11 +37,11 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Outcome: Implemented in `.worktrees/rebrand-weft`; GitHub repo and local origin remote were renamed to `edwmurph/weft`.
 - Evidence: `go.mod`, `cmd/weft`, `cmd/weft-release`, `internal/config`, `internal/tmuxhost`, `internal/release`, `.github/workflows/publish-homebrew.yml`, `README.md`, `spec.md`, `AGENTS.md`, `assets/weft-logo.svg`.
 
-## 2026-05-29 - Global command center layout
+## 2026-05-29 - Global dashboard layout
 
 - Request: Implement `spec.md`, preserving the working Go/tmux/PTX building blocks while redoing and extending the layout.
-- Suggestions: Keep the single tmux-hosted Bubble Tea pane, terminal screen renderer, IPC loop, startup loading, and TUI-owned Codex PTYs; replace the tab/column state and renderer with global workdirs, optional flat groups inside an Agents pane, top-level agents, command-center navigation, and full Codex focus.
-- Outcome: Implemented in `.worktrees/spec-command-center`; awaiting review.
+- Suggestions: Keep the single tmux-hosted Bubble Tea pane, terminal screen renderer, IPC loop, startup loading, and TUI-owned Codex PTYs; replace the tab/column state and renderer with global workdirs, optional flat groups inside an Agents pane, top-level agents, dashboard navigation, and full Codex focus.
+- Outcome: Implemented in the original spec layout worktree; awaiting review.
 - Evidence: `internal/state`, `internal/tui`, `internal/titles`, `internal/config`, `internal/tmuxhost`, `tests/integration`, `README.md`.
 
 ## 2026-05-29 - Close-Weft shortcut rename
