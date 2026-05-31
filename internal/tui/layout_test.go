@@ -247,7 +247,7 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	st.Agents[0].GroupID = ""
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 0)
-	if !strings.Contains(got, "Agents") || !strings.Contains(got, "• alpha") || strings.Contains(got, "▾") {
+	if !strings.Contains(got, "Agents") || !strings.Contains(got, "● alpha") || strings.Contains(got, "▾") {
 		t.Fatalf("top-level agent rendering mismatch:\n%s", got)
 	}
 
@@ -282,7 +282,9 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		Agents: []state.Agent{
 			{ID: "loading", WorkspaceID: "w", Title: "Booting", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
 			{ID: "working", WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "ready", WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "failed", WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
+			{ID: "stopped", WorkspaceID: "w", Title: "Paused", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
@@ -294,10 +296,24 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	if !strings.Contains(stripped, "⠼ Booting") || strings.Contains(stripped, "• Booting") {
 		t.Fatalf("loading row should replace the static marker with the spinner:\n%s", stripped)
 	}
+	if !strings.Contains(stripped, "⠼ Review") || strings.Contains(stripped, "• Review") {
+		t.Fatalf("working row should use the animated marker:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "● Respond") || strings.Contains(stripped, "⠼ Respond") {
+		t.Fatalf("ready row should use the attention marker instead of the spinner:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "! Broken") {
+		t.Fatalf("error row should use the error marker:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "◦ Paused") {
+		t.Fatalf("stopped row should use the attention marker:\n%s", stripped)
+	}
 	for _, expected := range []string{
-		agentLoadingStyle.Render("⠼ Booting"),
-		agentWorkingStyle.Render("• Review"),
-		agentErrorStyle.Render("• Broken"),
+		agentRunningStyle.Render("⠼ Booting"),
+		agentWorkingStyle.Render("⠼ Review"),
+		agentReadyStyle.Render("● Respond"),
+		agentErrorStyle.Render("! Broken"),
+		agentAttentionStyle.Render("◦ Paused"),
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("agents pane missing styled row %q:\n%s", expected, got)

@@ -139,16 +139,20 @@ func renderAgentWithTemplate(st state.State, agent state.Agent, template string)
 	return titles.RenderAgent(agent, workspace, group, template)
 }
 
-func activeAgentReceivesQuitBinding(agent state.Agent, loading bool) bool {
-	if loading {
-		return true
-	}
+func agentStatusIndicatesActivity(agent state.Agent) bool {
 	switch titles.RenderStatus(agent) {
 	case string(state.StatusStarting), string(state.StatusRunning), "working", string(state.StatusShipping):
 		return true
 	default:
 		return false
 	}
+}
+
+func activeAgentReceivesQuitBinding(agent state.Agent, loading bool) bool {
+	if loading {
+		return true
+	}
+	return agentStatusIndicatesActivity(agent)
 }
 
 func codexQuitBindingLabel(cfg config.Config, st state.State, loadingText string) string {

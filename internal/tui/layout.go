@@ -57,12 +57,12 @@ var (
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	agentReadyStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
-	agentRunningStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
+	agentReadyStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	agentRunningStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
 	agentWorkingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	agentLoadingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	agentShippingStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
-	agentAttentionStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	agentAttentionStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	agentErrorStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 )
 
@@ -374,12 +374,7 @@ func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspa
 }
 
 func workspaceCardAgentActive(agent state.Agent) bool {
-	switch titles.RenderStatus(agent) {
-	case string(state.StatusStarting), string(state.StatusRunning), "working", string(state.StatusShipping):
-		return true
-	default:
-		return false
-	}
+	return agentStatusIndicatesActivity(agent)
 }
 
 func renderWorkspaceCardCounts(counts workspaceCardCounts, width int) string {
@@ -494,10 +489,7 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 
 func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width int, nested bool, selected bool, options workspaceRenderOptions) string {
 	title := renderAgentTitleForState(cfg, st, agent)
-	marker := "•"
-	if agentIsLoadingForRender(agent, options.loadingAgents) {
-		marker = loadingFrameForRender(options.loadingFrame)
-	}
+	marker := agentMarkerForRender(agent, options.loadingFrame, options.loadingAgents)
 	prefix := marker + " "
 	if nested {
 		prefix = "  " + prefix
@@ -514,7 +506,7 @@ func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width 
 
 func agentRowStyle(agent state.Agent, loadingAgents map[string]bool) lipgloss.Style {
 	if agentIsLoadingForRender(agent, loadingAgents) {
-		return agentLoadingStyle
+		return agentLoadingStyleForStatus(titles.RenderStatus(agent))
 	}
 	switch titles.RenderStatus(agent) {
 	case string(state.StatusReady):
@@ -528,14 +520,43 @@ func agentRowStyle(agent state.Agent, loadingAgents map[string]bool) lipgloss.St
 	case string(state.StatusError):
 		return agentErrorStyle
 	case string(state.StatusStopped), string(state.StatusSitting):
-		return mutedStyle
+		return agentAttentionStyle
 	default:
 		return agentAttentionStyle
 	}
 }
 
+func agentLoadingStyleForStatus(status string) lipgloss.Style {
+	switch status {
+	case string(state.StatusRunning):
+		return agentRunningStyle
+	case "working":
+		return agentWorkingStyle
+	case string(state.StatusShipping):
+		return agentShippingStyle
+	default:
+		return agentLoadingStyle
+	}
+}
+
+func agentMarkerForRender(agent state.Agent, loadingFrame string, loadingAgents map[string]bool) string {
+	if agentIsLoadingForRender(agent, loadingAgents) {
+		return loadingFrameForRender(loadingFrame)
+	}
+	switch titles.RenderStatus(agent) {
+	case string(state.StatusError):
+		return "!"
+	case string(state.StatusReady):
+		return "●"
+	case string(state.StatusStopped), string(state.StatusSitting):
+		return "◦"
+	default:
+		return "●"
+	}
+}
+
 func agentIsLoadingForRender(agent state.Agent, loadingAgents map[string]bool) bool {
-	return agent.Status == state.StatusStarting || loadingAgents[agent.ID]
+	return agentStatusIndicatesActivity(agent) || loadingAgents[agent.ID]
 }
 
 func loadingFrameForRender(frame string) string {

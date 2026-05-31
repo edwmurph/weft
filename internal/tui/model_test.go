@@ -92,7 +92,7 @@ func TestApplyPTYDataUsesAgentID(t *testing.T) {
 	}
 }
 
-func TestSnapshotMarksAgentsLoadingUntilVisibleContent(t *testing.T) {
+func TestSnapshotMarksActiveAgentsLoadingUntilReady(t *testing.T) {
 	st := testStateWithAgent(t.TempDir())
 	model := Model{
 		cfg:     config.DefaultConfig(),
@@ -106,10 +106,22 @@ func TestSnapshotMarksAgentsLoadingUntilVisibleContent(t *testing.T) {
 		t.Fatalf("loading agent ids = %#v", snapshot.LoadingAgentIDs)
 	}
 
+	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
+	snapshot = model.Snapshot()
+	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
+		t.Fatalf("ready agent should keep loading until visible content: %#v", snapshot.LoadingAgentIDs)
+	}
+
 	model.screens["a"].Write("ready\n")
 	snapshot = model.Snapshot()
 	if len(snapshot.LoadingAgentIDs) != 0 {
-		t.Fatalf("agent with visible content should not be marked loading: %#v", snapshot.LoadingAgentIDs)
+		t.Fatalf("ready agent should not be marked loading: %#v", snapshot.LoadingAgentIDs)
+	}
+
+	model.state.Agents[0].CodexTitle = "Fake Codex Working"
+	snapshot = model.Snapshot()
+	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
+		t.Fatalf("working agent should be marked loading: %#v", snapshot.LoadingAgentIDs)
 	}
 }
 

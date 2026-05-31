@@ -1145,10 +1145,14 @@ func (m Model) loadingAgentSet() map[string]bool {
 
 func (m Model) agentLoading(agentID string) bool {
 	agent := state.AgentByID(m.state, agentID)
-	if agent == nil || agent.Status == state.StatusError || agent.Status == state.StatusStopped {
+	if agent == nil {
 		return false
 	}
-	if agent.Status == state.StatusStarting {
+	switch titles.RenderStatus(*agent) {
+	case string(state.StatusError), string(state.StatusStopped), string(state.StatusSitting):
+		return false
+	}
+	if agentStatusIndicatesActivity(*agent) {
 		return true
 	}
 	screen := m.screens[agentID]

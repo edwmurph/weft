@@ -238,7 +238,7 @@ Each agent row renders:
 
 Agent rows must not render fixed status tags. Status can appear only if the agent title template includes a status variable.
 
-Agent rows may use subtle row color to make derived state easier to scan. Rows for agents whose Codex PTY is still starting or has not produced visible content replace the static bullet marker with the shared loading spinner frame. This loading animation is visual only and must not add status text.
+Agent rows may use subtle row color and marker shape to make derived state easier to scan. Rows for active non-ready agents (`starting`, `running`, `working`, or `shipping`) replace the static bullet marker with the shared high-resolution Braille loading spinner frame. Rows whose Codex PTY has not produced visible content may also use the spinner until the agent is ready. Ready and other attention-needed rows use a stronger warm marker/color treatment, while errors use the error marker/color. These visuals are presentation only and must not add status text.
 
 Group rows should be visually distinct from agent rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Agent rows should use a lighter marker and indentation when nested under a group.
 
