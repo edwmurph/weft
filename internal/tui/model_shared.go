@@ -169,6 +169,22 @@ func agentStatusIndicatesActivity(agent state.Agent) bool {
 	}
 }
 
+func codexScreenStatus(screen *TerminalScreen) string {
+	if screen == nil {
+		return ""
+	}
+	content := strings.ToLower(screen.String())
+	hasSubmitAction := strings.Contains(content, "to submit answer") ||
+		strings.Contains(content, "to submit all")
+	hasQuestionPrompt := strings.Contains(content, "question ") ||
+		strings.Contains(content, "unanswered") ||
+		strings.Contains(content, "user_note:")
+	if hasSubmitAction && hasQuestionPrompt {
+		return "Ready"
+	}
+	return ""
+}
+
 func autoTitleNotice(cfg config.Config, agent state.Agent, draftTitle string) string {
 	if !strings.Contains(draftTitle, titles.AutoTemplate) {
 		return ""

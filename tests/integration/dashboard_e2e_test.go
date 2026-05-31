@@ -588,6 +588,14 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"    printf '\\033[2J\\033[Hready again\\n'\n"+
 			"    continue\n"+
 			"  fi\n"+
+			"  if [ \"$line\" = \"plan answer\" ]; then\n"+
+			"    printf '\\033]2;Fake Codex Running\\007'\n"+
+			"    printf '\\033[2J\\033[HQuestion 1\\n'\n"+
+			"    printf 'Choose the next step\\n'\n"+
+			"    printf '1 unanswered question\\n'\n"+
+			"    printf '\\nEnter to submit answer\\n'\n"+
+			"    continue\n"+
+			"  fi\n"+
 			"  printf '\\033]2;Fake Codex Working\\007'\n"+
 			"  printf '\\033[2J\\033[H'\n"+
 			"  printf '╭──────────────────────────────────────────────────────────╮\\n'\n"+
@@ -1068,6 +1076,24 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+	})
+
+	timedStep(t, "plan-mode request input renders ready status", func() {
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		directRun(t, env, "send-keys", "-l", "-t", pane, "plan answer")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, firstID)
+			return agent != nil && agent.Status == state.StatusReady && agent.CodexStatus == "Ready" && strings.Contains(agent.CodexTitle, "Running")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Codex Ready") &&
+				strings.Contains(capture, "1 needs attention") &&
+				!strings.Contains(capture, "Codex running")
+		})
 	})
 
 	timedStep(t, "help modal closes", func() {

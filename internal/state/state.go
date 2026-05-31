@@ -67,6 +67,7 @@ type Agent struct {
 	AutoTitleAttempted bool        `json:"auto_title_attempted,omitempty"`
 	AutoTitleError     string      `json:"auto_title_error,omitempty"`
 	CodexTitle         string      `json:"codex_title,omitempty"`
+	CodexStatus        string      `json:"codex_status,omitempty"`
 	CodexSessionID     string      `json:"codex_session_id,omitempty"`
 	Status             AgentStatus `json:"status"`
 	CreatedAt          string      `json:"created_at"`
@@ -269,6 +270,7 @@ func Repair(st State, fallbackWorkspace string) State {
 		if strings.TrimSpace(agent.Title) == "" {
 			agent.Title = DefaultAgentTitle
 		}
+		agent.CodexStatus = strings.TrimSpace(agent.CodexStatus)
 		if agent.Status == "" {
 			agent.Status = StatusStopped
 		}

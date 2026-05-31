@@ -1200,6 +1200,7 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		m.save()
 		return
 	}
+	screenStatus := ""
 	if data.Text != "" {
 		screen := m.screens[data.AgentID]
 		if screen == nil {
@@ -1210,12 +1211,31 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		if screen.HasVisibleContent() {
 			m.visible[data.AgentID] = true
 		}
+		screenStatus = codexScreenStatus(screen)
 	}
-	if data.Title != "" {
-		delete(m.agentInterrupts, data.AgentID)
+	if data.Title != "" || data.Text != "" {
+		title := titles.NormalizeCodexTitle(data.Title)
+		if data.Title != "" {
+			delete(m.agentInterrupts, data.AgentID)
+		}
 		m.state = state.WithUpdatedAgent(m.state, data.AgentID, func(agent state.Agent) state.Agent {
-			agent.CodexTitle = titles.NormalizeCodexTitle(data.Title)
-			agent.Status = state.StatusRunning
+			if data.Title != "" {
+				agent.CodexTitle = title
+				agent.CodexStatus = ""
+				agent.Status = state.StatusRunning
+			}
+			switch {
+			case screenStatus != "":
+				agent.CodexStatus = screenStatus
+				if titles.CodexActivityStatus(agent.CodexTitle) == "" {
+					agent.Status = state.StatusReady
+				}
+			case data.Text != "" && agent.CodexStatus != "":
+				agent.CodexStatus = ""
+				if agent.Status == state.StatusReady && titles.CodexActivityStatus(agent.CodexTitle) == "" {
+					agent.Status = state.StatusRunning
+				}
+			}
 			return agent
 		})
 		m.save()

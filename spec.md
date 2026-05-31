@@ -455,7 +455,7 @@ killed
 error
 ```
 
-The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex terminal title, it preserves the exact casing of the matched Codex status token, such as `Ready`, `Waiting`, or `Working`; fallback lifecycle statuses remain the lowercase model values above.
+The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex terminal title, it preserves the exact casing of the matched Codex status token, such as `Ready`, `Waiting`, or `Working`; fallback lifecycle statuses remain the lowercase model values above. When the Codex screen is stopped on a request-user-input prompt, such as Plan mode waiting for a user answer, Weft derives `Ready` for `{status}` even if the terminal title has not changed from a running-like title.
 
 ## Title Templates
 
@@ -566,6 +566,7 @@ type Agent struct {
     AutoTitleAttempted bool `json:"auto_title_attempted,omitempty"`
     AutoTitleError string `json:"auto_title_error,omitempty"`
     CodexTitle string      `json:"codex_title,omitempty"`
+    CodexStatus string     `json:"codex_status,omitempty"`
     CodexSessionID string  `json:"codex_session_id,omitempty"`
     Status     AgentStatus `json:"status"`
     CreatedAt  string      `json:"created_at"`

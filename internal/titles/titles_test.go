@@ -71,6 +71,22 @@ func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
 	}
 }
 
+func TestRenderStatusUsesScreenDerivedCodexStatus(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Running", CodexStatus: "Ready", Status: state.StatusRunning}
+
+	if got := RenderStatus(agent); got != "Ready" {
+		t.Fatalf("got %q", got)
+	}
+	if got := CanonicalStatus(agent); got != "ready" {
+		t.Fatalf("canonical status = %q", got)
+	}
+
+	agent.CodexTitle = "Fake Codex Working"
+	if got := RenderStatus(agent); got != "Working" {
+		t.Fatalf("live title status should win, got %q", got)
+	}
+}
+
 func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
 	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusStopped}
 

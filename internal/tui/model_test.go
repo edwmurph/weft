@@ -94,6 +94,35 @@ func TestApplyPTYDataUsesAgentID(t *testing.T) {
 	}
 }
 
+func TestApplyPTYDataMarksRequestUserInputScreenReady(t *testing.T) {
+	model := testModelWithAgent(t)
+
+	model.applyPTYData(ptyx.Data{AgentID: "a", Title: "Fake Codex Running"})
+	model.applyPTYData(ptyx.Data{AgentID: "a", Text: "\033[2J\033[HQuestion 1\nPick a path\n1 unanswered question\nEnter to submit answer\n"})
+
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil {
+		t.Fatal("agent missing")
+	}
+	if agent.CodexStatus != "Ready" || agent.Status != state.StatusReady {
+		t.Fatalf("agent status = %s/%q, want ready/Ready", agent.Status, agent.CodexStatus)
+	}
+	if got := model.renderAgentTitle(*agent); got != "alpha" {
+		t.Fatalf("configured title should remain unchanged, got %q", got)
+	}
+
+	agent.Title = "{status}"
+	if got := renderAgentTitleForState(model.cfg, model.state, *agent); got != "Ready" {
+		t.Fatalf("status title = %q, want Ready", got)
+	}
+
+	model.applyPTYData(ptyx.Data{AgentID: "a", Text: "\033[2J\033[Hworking again\n"})
+	agent = state.AgentByID(model.state, "a")
+	if agent == nil || agent.CodexStatus != "" || agent.Status != state.StatusRunning {
+		t.Fatalf("agent status after clearing prompt = %#v", agent)
+	}
+}
+
 func TestSnapshotMarksActiveAgentsLoadingUntilReady(t *testing.T) {
 	st := testStateWithAgent(t.TempDir())
 	model := Model{
