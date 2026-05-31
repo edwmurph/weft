@@ -28,10 +28,13 @@ type terminalCursorOverlay struct {
 	shape terminalCursorShape
 }
 
+const terminalScrollbackLimit = 2000
+
 type TerminalScreen struct {
 	cols          int
 	rows          int
 	cells         [][]terminalCell
+	history       [][]terminalCell
 	row           int
 	col           int
 	cursorVisible bool
@@ -103,16 +106,32 @@ func (s *TerminalScreen) Write(text string) {
 }
 
 func (s *TerminalScreen) String() string {
-	lines := make([]string, len(s.cells))
-	for row, cells := range s.cells {
+	return plainRowsString(s.cells)
+}
+
+func (s *TerminalScreen) ScrollbackString() string {
+	return plainRowsString(s.scrollbackRows())
+}
+
+func plainRowsString(rows [][]terminalCell) string {
+	lines := make([]string, len(rows))
+	for row, cells := range rows {
 		lines[row] = strings.TrimRight(plainCells(cells), " ")
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (s *TerminalScreen) PlainLines() []string {
-	lines := make([]string, len(s.cells))
-	for row, cells := range s.cells {
+	return plainRows(s.cells)
+}
+
+func (s *TerminalScreen) ScrollbackPlainLines() []string {
+	return plainRows(s.scrollbackRows())
+}
+
+func plainRows(rows [][]terminalCell) []string {
+	lines := make([]string, len(rows))
+	for row, cells := range rows {
 		lines[row] = plainCells(cells)
 	}
 	return lines
@@ -126,14 +145,31 @@ func (s *TerminalScreen) ANSIStringWithCursor(showCursor bool) string {
 	return s.ansiString(showCursor && s.cursorVisible)
 }
 
+func (s *TerminalScreen) ScrollbackANSIStringWithCursor(showCursor bool) string {
+	rows := s.scrollbackRows()
+	cursorRow := -1
+	if showCursor && s.cursorVisible {
+		cursorRow = len(s.history) + s.row
+	}
+	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, s.defaults)
+}
+
 func (s *TerminalScreen) ansiString(showCursor bool) string {
-	lines := make([]string, len(s.cells))
-	for row, cells := range s.cells {
+	cursorRow := -1
+	if showCursor {
+		cursorRow = s.row
+	}
+	return ansiRowsString(s.cells, cursorRow, s.col, s.cursorShape, s.defaults)
+}
+
+func ansiRowsString(rows [][]terminalCell, cursorRow int, cursorCol int, cursorShape terminalCursorShape, defaults cellbuf.Style) string {
+	lines := make([]string, len(rows))
+	for row, cells := range rows {
 		cursor := terminalCursorOverlay{col: -1}
-		if showCursor && row == s.row {
-			cursor = terminalCursorOverlay{col: s.col, shape: s.cursorShape}
+		if row == cursorRow {
+			cursor = terminalCursorOverlay{col: cursorCol, shape: cursorShape}
 		}
-		lines[row] = styledCells(cells, s.defaults, cursor)
+		lines[row] = styledCells(cells, defaults, cursor)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -266,6 +302,7 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 	case 'h', 'l':
 		if prefix == '?' {
 			if paramsContain(params, 47, 1047, 1049) {
+				s.history = nil
 				s.resetScrollRegion()
 				s.clearAll()
 			}
@@ -288,6 +325,7 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 func (s *TerminalScreen) handleESC(cmd ansi.Cmd) {
 	switch cmd.Final() {
 	case 'c':
+		s.history = nil
 		s.resetScrollRegion()
 		s.originMode = false
 		s.cursorVisible = true
@@ -339,7 +377,10 @@ func (s *TerminalScreen) eraseDisplay(mode int) {
 		for col := 0; col <= s.col && col < s.cols; col++ {
 			s.cells[s.row][col] = s.blankCell()
 		}
-	case 2, 3:
+	case 2:
+		s.clearAll()
+	case 3:
+		s.history = nil
 		s.clearAll()
 	}
 }
@@ -417,6 +458,9 @@ func (s *TerminalScreen) scrollUpRegion(top int, bottom int, count int) {
 	}
 	height := bottom - top + 1
 	count = min(max(1, count), height)
+	for row := top; row < top+count; row++ {
+		s.appendHistoryRow(s.cells[row])
+	}
 	copy(s.cells[top:bottom+1], s.cells[top+count:bottom+1])
 	for row := bottom - count + 1; row <= bottom; row++ {
 		s.cells[row] = blankCells(s.cols, s.style)
@@ -439,6 +483,21 @@ func (s *TerminalScreen) scrollDownRegion(top int, bottom int, count int) {
 	for row := top; row < top+count; row++ {
 		s.cells[row] = blankCells(s.cols, s.style)
 	}
+}
+
+func (s *TerminalScreen) appendHistoryRow(row []terminalCell) {
+	s.history = append(s.history, cloneTerminalCells(row))
+	if overflow := len(s.history) - terminalScrollbackLimit; overflow > 0 {
+		copy(s.history, s.history[overflow:])
+		s.history = s.history[:len(s.history)-overflow]
+	}
+}
+
+func (s *TerminalScreen) scrollbackRows() [][]terminalCell {
+	rows := make([][]terminalCell, 0, len(s.history)+len(s.cells))
+	rows = append(rows, s.history...)
+	rows = append(rows, s.cells...)
+	return rows
 }
 
 func (s *TerminalScreen) insertLines(count int) {
@@ -547,6 +606,12 @@ func blankCells(width int, style cellbuf.Style) []terminalCell {
 		row[index] = terminalCell{r: ' ', style: style}
 	}
 	return row
+}
+
+func cloneTerminalCells(cells []terminalCell) []terminalCell {
+	cloned := make([]terminalCell, len(cells))
+	copy(cloned, cells)
+	return cloned
 }
 
 func plainCells(cells []terminalCell) string {

@@ -224,6 +224,49 @@ func TestClientInputRouterReturnsMouseSequencesToBubbleTea(t *testing.T) {
 	}
 }
 
+func TestClientInputRouterHoldsSplitMouseSequencesForBubbleTea(t *testing.T) {
+	router := &clientInputRouter{
+		input:              io.MultiReader(bytes.NewBufferString("ready\x1b[<65;7;"), bytes.NewBufferString("7Mafter\x02j")),
+		drawer:             []byte{0x02},
+		drawerSequences:    bindingTerminalSequences("C-b"),
+		interruptSequences: terminalInterruptSequences(),
+	}
+	router.codexActive.Store(true)
+	var sent []struct {
+		command string
+		args    map[string]string
+	}
+	router.send = func(command string, args map[string]string) error {
+		sent = append(sent, struct {
+			command string
+			args    map[string]string
+		}{command: command, args: args})
+		return nil
+	}
+
+	buf := make([]byte, 64)
+	n, err := router.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+
+	if got := string(buf[:n]); got != "\x1b[<65;7;7Mj" {
+		t.Fatalf("split mouse and post-drawer bytes should return to Bubble Tea, got %q", got)
+	}
+	if len(sent) != 3 {
+		t.Fatalf("sent commands = %#v", sent)
+	}
+	if got := sent[0].args["encoded"]; got != "ready" {
+		t.Fatalf("raw prefix = %q, want ready", got)
+	}
+	if got := sent[1].args["encoded"]; got != "after" {
+		t.Fatalf("raw suffix = %q, want after", got)
+	}
+	if sent[2].command != "toggle_drawer" {
+		t.Fatalf("drawer command = %#v", sent[2])
+	}
+}
+
 func TestClientInputRouterLeavesDashboardBytesForBubbleTea(t *testing.T) {
 	router := &clientInputRouter{
 		input:              bytes.NewBufferString("n"),

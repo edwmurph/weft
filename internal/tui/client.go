@@ -70,6 +70,8 @@ type ClientModel struct {
 	toastText               string
 	toastID                 int
 	mouseSelection          consoleSelection
+	codexScrollOffset       int
+	codexScrollAgentID      string
 	inputRouter             *clientInputRouter
 }
 
@@ -203,10 +205,10 @@ func (m ClientModel) View() string {
 		options.loadingText = loadingText
 		return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, "", m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 	}
-	codexContent := m.snapshot.CodexContent
+	codexContent := m.codexVisibleContent()
 	if m.mouseSelection.active {
 		if area, ok := m.codexSelectionAreaForOffset(m.mouseSelection.colOffset); ok {
-			codexContent = selectedStyledCodexContent(m.snapshot.CodexContent, m.mouseSelection, area.width)
+			codexContent = selectedStyledCodexContent(codexContent, m.mouseSelection, area.width)
 			if strings.TrimSpace(codexContent) == "" {
 				codexContent = selectedCodexContent(m.codexPlainLines(), m.mouseSelection, area.width)
 			}
@@ -507,7 +509,21 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 		m.upgrade = nil
 	}
 	m.maybePromptForLaunchWorkspace()
+	m.syncCodexScroll()
 	m.syncInputRouter()
+}
+
+func (m *ClientModel) syncCodexScroll() {
+	activeID := ""
+	if active := state.ActiveAgent(m.snapshot.State); active != nil {
+		activeID = active.ID
+	}
+	if activeID == "" || activeID != m.codexScrollAgentID {
+		m.codexScrollAgentID = activeID
+		m.codexScrollOffset = 0
+		return
+	}
+	m.codexScrollOffset = min(max(0, m.codexScrollOffset), m.maxCodexScrollOffset())
 }
 
 func (m *ClientModel) syncInputRouter() {

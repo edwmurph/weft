@@ -362,12 +362,13 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
   shape requests, including block, underline, and bar cursor modes used by Vim
   insert/normal state.
 - Weft enables cell-level mouse tracking in the attached client. In focused
-  `Agent Console`, wheel events inside the console content are forwarded into
-  the active Codex PTY so Codex can scroll its chat history. Left-button drag
-  selection starts after Codex's shared visual margin, so the highlighted cells
-  and copied clipboard text match without post-copy text rewriting. While the
-  drag highlight is active, it preserves Codex's existing foreground and
-  background colors under the selection overlay.
+  `Agent Console`, trackpad or wheel scrolling anywhere in the console frame
+  moves through Weft's captured Codex scrollback instead of forwarding mouse
+  packets into the active Codex PTY. Left-button drag selection starts after
+  Codex's shared visual margin, so the highlighted cells and copied clipboard
+  text match without post-copy text rewriting. While the drag highlight is
+  active, it preserves Codex's existing foreground and background colors under
+  the selection overlay.
   The console border shows a short copy-confirmation toast.
   Mouse input outside the focused console remains a Weft dashboard concern and
   is not forwarded to Codex.
@@ -902,7 +903,7 @@ Integration tests:
 - open agent with `Enter`
 - collapse or open a group with `Enter`
 - verify nav panes collapse and Codex receives input
-- verify focused Agent Console mouse wheel forwarding and drag-copy selection
+- verify focused Agent Console mouse wheel scrollback and drag-copy selection
 - reopen navigation and switch agents
 - remove workspace and verify agents/PTYs close
 - delete every group and agent from a workspace and keep an empty Agents pane

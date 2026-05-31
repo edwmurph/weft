@@ -172,18 +172,6 @@ func TestSelectedStyledCodexContentPreservesCodexColors(t *testing.T) {
 	}
 }
 
-func TestCodexMouseInputArgsEncodesWheelForPTYCoordinates(t *testing.T) {
-	args := codexMouseInputArgs(tea.MouseEvent{
-		Button: tea.MouseButtonWheelDown,
-		Action: tea.MouseActionPress,
-		Shift:  true,
-	}, consolePoint{col: 2, row: 3})
-
-	if args["input"] != "mouse" || args["encoded"] != "\x1b[<69;3;4M" {
-		t.Fatalf("mouse args = %#v", args)
-	}
-}
-
 func TestClientMouseDragCopiesConsoleSelection(t *testing.T) {
 	oldWriteClipboard := writeClipboard
 	var copied string
@@ -247,6 +235,64 @@ func TestClientMouseDragCopiesConsoleSelection(t *testing.T) {
 	}
 	if model.mouseSelection.active {
 		t.Fatal("selection should clear after copy")
+	}
+}
+
+func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  80,
+		height: 8,
+		snapshot: ipc.Snapshot{
+			State: state.State{
+				Focus:         state.FocusCodex,
+				ActiveAgentID: "a",
+				Workspaces:    []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Agents:        []state.Agent{{ID: "a", WorkspaceID: "w"}},
+			},
+			CodexTitle:           "Codex",
+			CodexContent:         strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
+			CodexPlainLines:      []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+			CodexScrollback:      strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
+			CodexScrollbackLines: []string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+		},
+	}
+	area, ok := model.codexFrameArea()
+	if !ok {
+		t.Fatal("expected codex frame area")
+	}
+
+	updated, cmd := model.handleMouse(tea.MouseMsg{
+		X:      area.x,
+		Y:      area.y,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("mouse wheel scrollback should not forward input to Codex")
+	}
+	if len(model.codexInputQueue) != 0 {
+		t.Fatalf("codex input queue = %#v, want empty", model.codexInputQueue)
+	}
+	if model.codexScrollOffset != 3 {
+		t.Fatalf("scroll offset = %d, want 3", model.codexScrollOffset)
+	}
+	view := model.View()
+	if !strings.Contains(view, "history line 02") || strings.Contains(view, "history line 10") {
+		t.Fatalf("view should show older scrollback instead of bottom:\n%s", view)
+	}
+
+	updated, _ = model.handleMouse(tea.MouseMsg{
+		X:      area.x,
+		Y:      area.y,
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+	if model.codexScrollOffset != 0 {
+		t.Fatalf("scroll offset after wheel down = %d, want 0", model.codexScrollOffset)
 	}
 }
 

@@ -130,7 +130,7 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 				continue
 			}
 		}
-		keep := drawerPrefixSuffix(data, r.drawer)
+		keep := max(drawerPrefixSuffix(data, r.drawer), sgrMousePrefixSuffix(data, r.bracketedPasteActive))
 		if sendLen := len(data) - keep; sendLen > 0 {
 			r.sendCodexBytes(data[:sendLen])
 		}
@@ -179,6 +179,42 @@ func (r *clientInputRouter) findCodexControl(data []byte) (codexControlKind, int
 		}
 	}
 	return "", -1, 0
+}
+
+func sgrMousePrefixSuffix(data []byte, bracketedPasteActive bool) int {
+	if bracketedPasteActive {
+		return 0
+	}
+	for index := max(0, len(data)-32); index < len(data); index++ {
+		width, ok := incompleteSGRMousePrefix(data[index:])
+		if ok && index+width == len(data) {
+			return width
+		}
+	}
+	return 0
+}
+
+func incompleteSGRMousePrefix(data []byte) (int, bool) {
+	if len(data) < 3 || !bytes.HasPrefix(data, []byte("\x1b[<")) {
+		return 0, false
+	}
+	semicolons := 0
+	for index := 3; index < len(data); index++ {
+		switch data[index] {
+		case 'M', 'm':
+			return 0, false
+		case ';':
+			semicolons++
+			if semicolons > 2 {
+				return 0, false
+			}
+		default:
+			if data[index] < '0' || data[index] > '9' {
+				return 0, false
+			}
+		}
+	}
+	return len(data), true
 }
 
 func consumeSGRMouseSequence(data []byte) (int, bool) {

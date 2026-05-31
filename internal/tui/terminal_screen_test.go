@@ -60,6 +60,22 @@ func TestTerminalScreenWrapsLongPrintableLines(t *testing.T) {
 	}
 }
 
+func TestTerminalScreenKeepsScrolledRowsInScrollback(t *testing.T) {
+	screen := NewTerminalScreen(12, 3)
+
+	for row := 1; row <= 5; row++ {
+		screen.Write(fmt.Sprintf("line%02d\r\n", row))
+	}
+	scrollback := screen.ScrollbackString()
+
+	if !strings.Contains(scrollback, "line01") || !strings.Contains(scrollback, "line05") {
+		t.Fatalf("scrollback should include old and current rows:\n%q", scrollback)
+	}
+	if strings.Contains(screen.String(), "line01") {
+		t.Fatalf("visible screen should still show only the bottom rows:\n%q", screen.String())
+	}
+}
+
 func TestTerminalScreenResizePreservesBottomRows(t *testing.T) {
 	screen := NewTerminalScreen(12, 6)
 	for row := 1; row <= 6; row++ {

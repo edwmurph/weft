@@ -188,6 +188,8 @@ func (m *Model) Stop() {
 func (m *Model) Snapshot() ipc.Snapshot {
 	content := m.activeOutput()
 	plainLines := m.activePlainLines()
+	scrollbackContent := m.activeScrollbackOutput()
+	scrollbackPlainLines := m.activeScrollbackPlainLines()
 	loadingText := ""
 	if content == "" && m.codexLoading() {
 		loadingText = m.loadingLabel()
@@ -201,15 +203,17 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		title = m.renderAgentTitle(*active)
 	}
 	return ipc.Snapshot{
-		State:           m.state,
-		CodexTitle:      title,
-		CodexContent:    content,
-		CodexPlainLines: plainLines,
-		LoadingText:     loadingText,
-		LoadingAgentIDs: m.loadingAgentIDs(),
-		Message:         m.message,
-		NavWidth:        m.targetNavWidth(),
-		GroupCursor:     m.groupCursor,
+		State:                m.state,
+		CodexTitle:           title,
+		CodexContent:         content,
+		CodexPlainLines:      plainLines,
+		CodexScrollback:      scrollbackContent,
+		CodexScrollbackLines: scrollbackPlainLines,
+		LoadingText:          loadingText,
+		LoadingAgentIDs:      m.loadingAgentIDs(),
+		Message:              m.message,
+		NavWidth:             m.targetNavWidth(),
+		GroupCursor:          m.groupCursor,
 	}
 }
 
@@ -1182,6 +1186,34 @@ func (m Model) activePlainLines() []string {
 			return nil
 		}
 		return screen.PlainLines()
+	}
+	return nil
+}
+
+func (m *Model) activeScrollbackOutput() string {
+	active := state.ActiveAgent(m.state)
+	if active == nil {
+		return ""
+	}
+	if screen := m.screens[active.ID]; screen != nil {
+		if !screen.HasVisibleContent() && !m.visible[active.ID] {
+			return ""
+		}
+		return screen.ScrollbackANSIStringWithCursor(m.state.Focus == state.FocusCodex)
+	}
+	return ""
+}
+
+func (m Model) activeScrollbackPlainLines() []string {
+	active := state.ActiveAgent(m.state)
+	if active == nil {
+		return nil
+	}
+	if screen := m.screens[active.ID]; screen != nil {
+		if !screen.HasVisibleContent() && !m.visible[active.ID] {
+			return nil
+		}
+		return screen.ScrollbackPlainLines()
 	}
 	return nil
 }

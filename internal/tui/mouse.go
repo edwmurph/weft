@@ -48,7 +48,7 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.mouseSelection = consoleSelection{}
 		return m, nil
 	}
-	contentArea, ok := m.codexContentArea()
+	_, ok := m.codexContentArea()
 	if !ok {
 		m.mouseSelection = consoleSelection{}
 		return m, nil
@@ -56,12 +56,14 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	event := tea.MouseEvent(msg)
 	switch event.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown, tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
-		point, ok := consolePointFromMouse(event, contentArea)
+		frameArea, ok := m.codexFrameArea()
 		if !ok {
 			return m, nil
 		}
-		args := codexMouseInputArgs(event, point)
-		return m.enqueueCodexInput(args)
+		if !mouseInConsoleArea(event, frameArea) {
+			return m, nil
+		}
+		return m.scrollCodexHistory(event), nil
 	case tea.MouseButtonLeft:
 		switch event.Action {
 		case tea.MouseActionPress:
@@ -121,6 +123,10 @@ func (m ClientModel) codexContentArea() (consoleArea, bool) {
 	return codexContentAreaFor(m.snapshot.State, m.width, m.height, m.snapshot.NavWidth, m.messageText())
 }
 
+func (m ClientModel) codexFrameArea() (consoleArea, bool) {
+	return codexFrameAreaFor(m.width, m.height, m.snapshot.NavWidth)
+}
+
 func (m ClientModel) codexSelectionArea() (consoleArea, bool) {
 	return m.codexSelectionAreaForOffset(codexSelectableMargin(m.codexPlainLines()))
 }
@@ -141,13 +147,7 @@ func (m ClientModel) codexSelectionAreaForOffset(offset int) (consoleArea, bool)
 }
 
 func (m ClientModel) codexPlainLines() []string {
-	if len(m.snapshot.CodexPlainLines) > 0 {
-		return m.snapshot.CodexPlainLines
-	}
-	if strings.TrimSpace(m.snapshot.CodexContent) == "" {
-		return nil
-	}
-	return strings.Split(ansi.Strip(m.snapshot.CodexContent), "\n")
+	return m.codexVisiblePlainLines()
 }
 
 func codexContentAreaFor(st state.State, width int, height int, navWidth int, message string) (consoleArea, bool) {
@@ -185,6 +185,28 @@ func codexContentAreaFor(st state.State, width int, height int, navWidth int, me
 	}, true
 }
 
+func codexFrameAreaFor(width int, height int, navWidth int) (consoleArea, bool) {
+	if width <= 0 || height <= 0 {
+		return consoleArea{}, false
+	}
+	navWidth = min(max(0, navWidth), width)
+	codexWidth := width - navWidth
+	navOnly := navWidth >= width
+	if !navOnly && codexWidth < minCodexPaneWidth && navWidth > 0 {
+		codexWidth = min(width, minCodexPaneWidth)
+		navWidth = width - codexWidth
+	}
+	if codexWidth <= 0 {
+		return consoleArea{}, false
+	}
+	return consoleArea{x: navWidth, y: 0, width: codexWidth, height: height}, true
+}
+
+func mouseInConsoleArea(event tea.MouseEvent, area consoleArea) bool {
+	_, ok := consolePointFromMouse(event, area)
+	return ok
+}
+
 func consolePointFromMouse(event tea.MouseEvent, area consoleArea) (consolePoint, bool) {
 	if event.X < area.x || event.X >= area.x+area.width || event.Y < area.y || event.Y >= area.y+area.height {
 		return consolePoint{}, false
@@ -199,29 +221,72 @@ func clampConsolePoint(event tea.MouseEvent, area consoleArea) consolePoint {
 	}
 }
 
-func codexMouseInputArgs(event tea.MouseEvent, point consolePoint) map[string]string {
-	button := 64
+func (m ClientModel) scrollCodexHistory(event tea.MouseEvent) ClientModel {
+	delta := 3
 	switch event.Button {
+	case tea.MouseButtonWheelUp:
+		m.codexScrollOffset = min(m.maxCodexScrollOffset(), m.codexScrollOffset+delta)
 	case tea.MouseButtonWheelDown:
-		button = 65
-	case tea.MouseButtonWheelLeft:
-		button = 66
-	case tea.MouseButtonWheelRight:
-		button = 67
+		m.codexScrollOffset = max(0, m.codexScrollOffset-delta)
 	}
-	if event.Shift {
-		button += 4
+	return m
+}
+
+func (m ClientModel) maxCodexScrollOffset() int {
+	_, height := m.codexVisibleSize()
+	return max(0, len(m.codexScrollbackPlainLines())-height)
+}
+
+func (m ClientModel) codexVisibleContent() string {
+	lines := strings.Split(m.codexScrollbackContent(), "\n")
+	return strings.Join(codexViewportLines(lines, m.codexVisibleHeight(), m.codexScrollOffset), "\n")
+}
+
+func (m ClientModel) codexVisiblePlainLines() []string {
+	return codexViewportLines(m.codexScrollbackPlainLines(), m.codexVisibleHeight(), m.codexScrollOffset)
+}
+
+func (m ClientModel) codexScrollbackContent() string {
+	if m.snapshot.CodexScrollback != "" {
+		return m.snapshot.CodexScrollback
 	}
-	if event.Alt {
-		button += 8
+	return m.snapshot.CodexContent
+}
+
+func (m ClientModel) codexScrollbackPlainLines() []string {
+	if len(m.snapshot.CodexScrollbackLines) > 0 {
+		return m.snapshot.CodexScrollbackLines
 	}
-	if event.Ctrl {
-		button += 16
+	if len(m.snapshot.CodexPlainLines) > 0 {
+		return m.snapshot.CodexPlainLines
 	}
-	return map[string]string{
-		"input":   "mouse",
-		"encoded": fmt.Sprintf("\x1b[<%d;%d;%dM", button, point.col+1, point.row+1),
+	if strings.TrimSpace(m.snapshot.CodexContent) == "" {
+		return nil
 	}
+	return strings.Split(ansi.Strip(m.snapshot.CodexContent), "\n")
+}
+
+func (m ClientModel) codexVisibleHeight() int {
+	_, height := m.codexVisibleSize()
+	return height
+}
+
+func (m ClientModel) codexVisibleSize() (int, int) {
+	area, ok := m.codexContentArea()
+	if !ok {
+		return 0, 0
+	}
+	return area.width, area.height
+}
+
+func codexViewportLines(lines []string, height int, scrollOffset int) []string {
+	if height <= 0 || len(lines) == 0 {
+		return nil
+	}
+	scrollOffset = min(max(0, scrollOffset), max(0, len(lines)-height))
+	end := len(lines) - scrollOffset
+	start := max(0, end-height)
+	return append([]string(nil), lines[start:end]...)
 }
 
 func selectedCodexContent(lines []string, selection consoleSelection, width int) string {

@@ -297,16 +297,15 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	}
 }
 
-func TestAgentConsoleMouseWheelForwardsToCodexE2E(t *testing.T) {
+func TestAgentConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
 
 	bin := buildWeft(t)
 	tmp := t.TempDir()
-	mouseLog := filepath.Join(tmp, "fake-codex-mouse.log")
-	runtimeDir, workspace := createRuntime(t, tmp, writeMouseLoggingFakeCodex(t, tmp, "fake-codex-mouse.sh"))
-	env := append(baseIntegrationEnv(runtimeDir, workspace, bin), "MOUSE_LOG="+mouseLog)
+	runtimeDir, workspace := createRuntime(t, tmp, writeScrollbackFakeCodex(t, tmp, "fake-codex-scrollback.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
 	t.Cleanup(func() {
 		cmd := exec.Command(bin, "close", "--kill", "--yes")
 		cmd.Env = env
@@ -329,17 +328,26 @@ func TestAgentConsoleMouseWheelForwardsToCodexE2E(t *testing.T) {
 		return active != nil && active.Status == state.StatusRunning && st.Focus == state.FocusCodex
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Raw mouse fake ready")
+		return strings.Contains(capture, "history line 80")
 	})
 
-	writeClientInput(t, "\x1b[<65;7;7M")
-	if !waitForBool(2*time.Second, func() bool {
-		data, _ := os.ReadFile(mouseLog)
-		return bytes.Contains(data, []byte("\x1b[<65;5;6M\n"))
-	}) {
-		data, _ := os.ReadFile(mouseLog)
-		t.Fatalf("mouse wheel event was not forwarded to Codex PTY: %q", data)
+	writeClientInput(t, "\x1b[<65;7;")
+	writeClientInput(t, "7M")
+	writeClientInput(t, "\x1b[<64;7;")
+	writeClientInput(t, "7M")
+	for range 14 {
+		writeClientInput(t, "\x1b[<64;7;7M")
 	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "history line 20") &&
+			!strings.Contains(capture, "history line 80")
+	})
+	for range 16 {
+		writeClientInput(t, "\x1b[<65;7;7M")
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "history line 80")
+	})
 	assertDashboardNotCorrupt(t, clientOutput(), false)
 }
 
@@ -1858,7 +1866,7 @@ func assertClientEnablesMouseTracking(t *testing.T, capture string) {
 	t.Helper()
 	for _, expected := range []string{"\x1b[?1002h", "\x1b[?1006h"} {
 		if !strings.Contains(capture, expected) {
-			t.Fatalf("client should enable mouse tracking for Agent Console wheel and drag-copy support; missing %q in raw capture", expected)
+			t.Fatalf("client should enable mouse tracking for Agent Console scrollback and drag-copy support; missing %q in raw capture", expected)
 		}
 	}
 }
@@ -2051,24 +2059,17 @@ func writeVisibleFakeCodex(t *testing.T, dir string, name string) string {
 	return fakeCodex
 }
 
-func writeMouseLoggingFakeCodex(t *testing.T, dir string, name string) string {
+func writeScrollbackFakeCodex(t *testing.T, dir string, name string) string {
 	t.Helper()
 	fakeCodex := filepath.Join(dir, name)
 	if err := os.WriteFile(fakeCodex, []byte(
 		"#!/bin/bash\n"+
 			"printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"printf 'Raw mouse fake ready\\n'\n"+
+			"i=1\n"+
+			"while [ \"$i\" -le 80 ]; do printf 'history line %02d\\r\\n' \"$i\"; i=$((i + 1)); done\n"+
 			"trap 'stty sane 2>/dev/null; exit 0' HUP INT TERM\n"+
 			"stty raw -echo -isig\n"+
-			"while IFS= read -r -s -n 1 ch; do\n"+
-			"  if [ \"$ch\" != $'\\033' ]; then continue; fi\n"+
-			"  seq=$ch\n"+
-			"  while IFS= read -r -s -n 1 -t 1 next; do\n"+
-			"    seq=$seq$next\n"+
-			"    if [ \"$next\" = \"M\" ] || [ \"$next\" = \"m\" ] || [ \"$next\" = \"u\" ] || [ \"$next\" = \"~\" ]; then break; fi\n"+
-			"  done\n"+
-			"  if [[ \"$seq\" == $'\\033[<'* ]] && [ -n \"${MOUSE_LOG:-}\" ]; then printf '%s\\n' \"$seq\" >> \"$MOUSE_LOG\"; fi\n"+
-			"done\n",
+			"while :; do sleep 1; done\n",
 	), 0o700); err != nil {
 		t.Fatal(err)
 	}
