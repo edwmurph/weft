@@ -127,7 +127,11 @@ func clearBeforeRunningCommand() error {
 
 func cliHelpText() string {
 	lines := []string{""}
-	for _, line := range tui.WeftLogoLines() {
+	for _, line := range tui.WeftLogoWithVersionLines() {
+		if line == "" {
+			lines = append(lines, "")
+			continue
+		}
 		lines = append(lines, "  "+line)
 	}
 	lines = append(lines,

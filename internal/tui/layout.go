@@ -9,6 +9,7 @@ import (
 	"github.com/edwmurph/weft/internal/pathx"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/titles"
+	"github.com/edwmurph/weft/internal/version"
 )
 
 const (
@@ -54,6 +55,7 @@ var (
 	workspaceCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	workspacePathWarningStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
 
@@ -79,6 +81,13 @@ var (
 
 func WeftLogoLines() []string {
 	return append([]string(nil), emptyWeftLogo...)
+}
+
+func WeftLogoWithVersionLines() []string {
+	logoWidth := maxVisualWidth(emptyWeftLogo)
+	lines := WeftLogoLines()
+	lines = append(lines, "", centerVisual(version.Label(), logoWidth))
+	return lines
 }
 
 func workspaceNavFrameWidth(st state.State, width int) int {
@@ -575,15 +584,17 @@ func renderEmptyCodexContent(width int, height int, canCreateAgent bool) []strin
 			content = append(content, emptyLogoStyle.Render(padVisual(line, logoWidth)))
 		}
 		content = append(content, "")
+		content = append(content, emptyVersionStyle.Render(centerVisual(version.Label(), logoWidth)))
+		content = append(content, "")
 		content = append(content, centerVisual("No Codex agent open", logoWidth), centerVisual(hint, logoWidth))
 		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
 	}
-	content = append(content, "No Codex agent open", hint)
+	content = append(content, version.Label(), "No Codex agent open", hint)
 	return renderCenteredCodexContent(content, width, height)
 }
 
 func logoFits(logo []string, width int, height int) bool {
-	if len(logo) == 0 || height < len(logo)+3 {
+	if len(logo) == 0 || height < len(logo)+5 {
 		return false
 	}
 	for _, line := range logo {

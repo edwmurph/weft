@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	weftversion "github.com/edwmurph/weft/internal/version"
 	"github.com/muesli/termenv"
 )
 
@@ -314,6 +315,9 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	if hintIndex < 0 || logoIndex > hintIndex {
 		t.Fatalf("empty dashboard should render wordmark above existing hint:\n%s", stripped)
 	}
+	if !strings.Contains(stripped, weftversion.Label()) {
+		t.Fatalf("empty dashboard missing version label:\n%s", stripped)
+	}
 	if strings.Contains(stripped, "live · cropped") || strings.Contains(stripped, " …│") {
 		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
 	}
@@ -337,10 +341,13 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 			t.Fatalf("logo row %d should preserve art spacing inside one centered block:\nwant prefix %q\ngot         %q", index, expectedLeft+want, got)
 		}
 	}
-	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+1]); !strings.HasPrefix(got, expectedLeft+centerVisual("No Codex agent open", logoWidth)) {
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+1]); !strings.HasPrefix(got, expectedLeft+centerVisual(weftversion.Label(), logoWidth)) {
+		t.Fatalf("empty version should align inside centered logo block, got %q", got)
+	}
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+3]); !strings.HasPrefix(got, expectedLeft+centerVisual("No Codex agent open", logoWidth)) {
 		t.Fatalf("empty title should align inside centered logo block, got %q", got)
 	}
-	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+2]); !strings.HasPrefix(got, expectedLeft+centerVisual("Press n to create one.", logoWidth)) {
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+4]); !strings.HasPrefix(got, expectedLeft+centerVisual("Press n to create one.", logoWidth)) {
 		t.Fatalf("empty hint should align inside centered logo block, got %q", got)
 	}
 }

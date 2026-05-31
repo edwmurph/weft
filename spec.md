@@ -236,7 +236,7 @@ The main agent pane has two modes:
 
 The pane shows either:
 
-- a centered empty message when no agent is open, with a subtle Weft wordmark above it when space allows
+- a centered empty message when no agent is open, with a subtle Weft wordmark and version label above it when space allows
 - the selected Codex thread when an agent is open
 
 When navigation is open, the Workspaces and Agents panes push `Agent Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the Codex PTY. When an agent is active, the preview top border shows `live · cropped` and clipped terminal lines use a subtle reserved right-edge marker so the pane reads as a live cropped lens instead of a full interactive terminal.
@@ -685,6 +685,7 @@ Global `--clear`:
 `weft --help`, `weft help`, and `weft -h`:
 
 - show the same Weft ASCII mark used by the empty agent pane
+- show the active Weft version below the mark
 - leave blank space above the mark and a small left inset before the mark
 - advertise `weft` as the dashboard entry point
 - group commands by common dashboard use, agent organization, runtime, and

@@ -30,6 +30,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"Terminal dashboard for Codex agent threads.",
+		weftversion.Label(),
 		"weft [--clear] [--attach|--no-attach]",
 		"weft <command> [--clear]",
 		"weft --clear                 Clear runtime state, then open a fresh dashboard.",
