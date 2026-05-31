@@ -74,8 +74,8 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 	if strings.Contains(stripped, "● Live") || strings.Contains(stripped, " Live─") {
 		t.Fatalf("preview should not render live indicator text:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, " …│") {
-		t.Fatalf("wide preview should reserve a right-edge crop marker:\n%s", stripped)
+	if !strings.Contains(stripped, " … │") {
+		t.Fatalf("wide preview should reserve a right-edge crop marker with right padding:\n%s", stripped)
 	}
 	if strings.Contains(stripped, "cropped by the preview lens…") {
 		t.Fatalf("preview should not attach generic clipping ellipsis to agent text:\n%s", stripped)
@@ -462,7 +462,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	if !strings.Contains(stripped, weftversion.Label()) {
 		t.Fatalf("empty dashboard missing version label:\n%s", stripped)
 	}
-	if strings.Contains(stripped, "Agent Live Preview") || strings.Contains(stripped, " …│") {
+	if strings.Contains(stripped, "Agent Live Preview") || strings.Contains(stripped, " … │") {
 		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
 	}
 

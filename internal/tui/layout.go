@@ -13,21 +13,22 @@ import (
 )
 
 const (
-	appTitle                = "WEFT"
-	codexLeftPadding        = 1
-	navHorizontalPadding    = 1
-	fixedWorkspacePaneWidth = 60
-	minAgentsPaneWidth      = 28
-	defaultAgentsPaneWidth  = 48
-	minCodexPaneWidth       = 28
-	minTwoPaneNavWidth      = fixedWorkspacePaneWidth + minAgentsPaneWidth
-	minThreePaneWidth       = minTwoPaneNavWidth + minCodexPaneWidth
-	borderHorizontal        = "─"
-	borderVertical          = "│"
-	borderTopLeft           = "╭"
-	borderTopRight          = "╮"
-	borderBottomLeft        = "╰"
-	borderBottomRight       = "╯"
+	appTitle                 = "WEFT"
+	codexLeftPadding         = 1
+	codexPreviewRightPadding = 1
+	navHorizontalPadding     = 1
+	fixedWorkspacePaneWidth  = 60
+	minAgentsPaneWidth       = 28
+	defaultAgentsPaneWidth   = 48
+	minCodexPaneWidth        = 28
+	minTwoPaneNavWidth       = fixedWorkspacePaneWidth + minAgentsPaneWidth
+	minThreePaneWidth        = minTwoPaneNavWidth + minCodexPaneWidth
+	borderHorizontal         = "─"
+	borderVertical           = "│"
+	borderTopLeft            = "╭"
+	borderTopRight           = "╮"
+	borderBottomLeft         = "╰"
+	borderBottomRight        = "╯"
 )
 
 var (
@@ -741,7 +742,7 @@ func renderCodexFrame(
 	}
 	contentHeight := max(0, height-2)
 	empty := !agentActive
-	contentWidth := max(0, innerWidth-codexLeftPadding)
+	contentWidth := codexLineContentWidth(innerWidth, previewMode)
 	messageLines := renderStatusBanner(message, contentWidth, min(3, contentHeight))
 	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText)
 	if len(messageLines) > 0 {
@@ -750,13 +751,15 @@ func renderCodexFrame(
 	for len(contentLines) < contentHeight {
 		contentLines = append(contentLines, "")
 	}
+	leftPadding := codexLeftPad(innerWidth)
+	rightPadding := codexRightPad(innerWidth, previewMode)
 	for _, line := range contentLines[:contentHeight] {
-		contentWidth := codexLineContentWidth(innerWidth)
+		contentWidth := codexLineContentWidth(innerWidth, previewMode)
 		renderedLine := padVisual(clip(line, contentWidth), contentWidth)
 		if previewMode && !empty {
 			renderedLine = previewClipLine(line, contentWidth)
 		}
-		lines = append(lines, palette.border.Render(borderVertical)+codexLeftPad(innerWidth)+renderedLine+palette.border.Render(borderVertical))
+		lines = append(lines, palette.border.Render(borderVertical)+leftPadding+renderedLine+rightPadding+palette.border.Render(borderVertical))
 	}
 	rightLabel := ""
 	if agentActive && navCollapsed {
@@ -1000,11 +1003,22 @@ func codexLeftPad(width int) string {
 	return strings.Repeat(" ", min(codexLeftPadding, width))
 }
 
-func codexLineContentWidth(width int) int {
+func codexRightPad(width int, previewMode bool) string {
+	if width <= codexLeftPadding || !previewMode {
+		return ""
+	}
+	return strings.Repeat(" ", min(codexPreviewRightPadding, width-codexLeftPadding))
+}
+
+func codexLineContentWidth(width int, previewMode bool) int {
 	if width <= 0 {
 		return 0
 	}
-	return max(0, width-min(codexLeftPadding, width))
+	padding := min(codexLeftPadding, width)
+	if previewMode {
+		padding += min(codexPreviewRightPadding, max(0, width-padding))
+	}
+	return max(0, width-padding)
 }
 
 func previewClipLine(value string, width int) string {

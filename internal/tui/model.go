@@ -1182,7 +1182,7 @@ func (m *Model) snapNavWidthToTarget() {
 }
 
 func (m Model) ptyWidth() int {
-	return max(20, codexLineContentWidth(max(0, m.codexPaneWidth()-2)))
+	return max(20, codexLineContentWidth(max(0, m.codexPaneWidth()-2), m.effectiveNavWidth() > 0))
 }
 
 func (m Model) ptyHeight() int {

@@ -415,7 +415,7 @@ func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.navWidth = 60
-	if got, want := model.ptyWidth(), 37; got != want {
+	if got, want := model.ptyWidth(), 36; got != want {
 		t.Fatalf("split pty width = %d, want visible content width %d", got, want)
 	}
 }

@@ -269,7 +269,7 @@ The pane shows either:
 - a centered empty message when no agent is open, with a subtle Weft wordmark and version label above it when space allows
 - the selected Codex thread when an agent is open
 
-When navigation is open, the Workspaces and Agents panes push `Agent Live Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the Codex PTY. When an agent is active, the preview top border shows the selected agent title at the top right; clipped terminal lines use a subtle reserved right-edge marker so the pane reads as a live cropped lens instead of a full interactive terminal.
+When navigation is open, the Workspaces and Agents panes push `Agent Live Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the Codex PTY. When an agent is active, the preview top border shows the selected agent title at the top right; preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
 
 When the user presses `Enter` on an agent, navigation slides away left, `Agent Console` expands to the full terminal, and focus moves to Codex.
 
@@ -637,7 +637,8 @@ Rules:
 - Removing a workspace stops every PTY for agents in that workspace.
 - Codex receives input only in Codex Focus State.
 - The active Codex PTY width matches the visible Codex content width inside the
-  frame and left padding, so terminal wrapping aligns with what the user sees.
+  frame and the current pane padding, so terminal wrapping aligns with what the
+  user sees.
 - The active Codex PTY height matches the visible content rows inside the frame.
 - Cached PTY screen resizes preserve bottom rows first, and terminal
   top/bottom scrolling regions are honored so Codex chat footers and composers
