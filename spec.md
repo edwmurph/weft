@@ -242,6 +242,8 @@ Agent rows may use subtle row color and marker shape to make derived state easie
 
 Group rows should be visually distinct from agent rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Agent rows should use a lighter marker and indentation when nested under a group.
 
+When the Agents pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or agent row visible.
+
 ## Agent Preview And Console
 
 The main agent pane has two modes:

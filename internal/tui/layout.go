@@ -446,9 +446,13 @@ func renderGroupsPane(cfg config.Config, st state.State, width int, height int, 
 func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, height int, groupCursor int, options workspaceRenderOptions) []string {
 	content := []string{}
 	rowIndex := 0
+	selectedLine := -1
 	rowWidth := max(0, width-2-(navHorizontalPadding*2))
 	for _, agent := range state.UngroupedAgentsForWorkspace(st, st.SelectedWorkspaceID) {
 		agentRow := renderAgentRow(cfg, st, agent, rowWidth, false, rowIndex == groupCursor && st.Focus == state.FocusAgents, options)
+		if rowIndex == groupCursor {
+			selectedLine = len(content)
+		}
 		content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
 		rowIndex++
 	}
@@ -466,6 +470,9 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		} else {
 			groupRow = groupHeaderStyle.Render(groupRow)
 		}
+		if rowIndex == groupCursor {
+			selectedLine = len(content)
+		}
 		content = append(content, strings.Repeat(" ", navHorizontalPadding)+groupRow)
 		rowIndex++
 		if state.IsGroupCollapsed(st, group.ID) {
@@ -473,6 +480,9 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		}
 		for _, agent := range state.AgentsForGroup(st, group.ID) {
 			agentRow := renderAgentRow(cfg, st, agent, rowWidth, true, rowIndex == groupCursor && st.Focus == state.FocusAgents, options)
+			if rowIndex == groupCursor {
+				selectedLine = len(content)
+			}
 			content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
 			rowIndex++
 		}
@@ -484,7 +494,20 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 			content = renderCenteredPaneHelp(width, height, "No agents", "Press "+cfg.KeyBindings.NewAgent+" to create one.")
 		}
 	}
+	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))
 	return renderPaneFrame("Agents", "", width, height, st.Focus == state.FocusAgents, content)
+}
+
+func scrollPaneContentToLine(content []string, selectedLine int, visibleLines int) []string {
+	if visibleLines <= 0 || selectedLine < 0 || len(content) <= visibleLines {
+		return content
+	}
+	start := 0
+	if selectedLine >= visibleLines {
+		start = selectedLine - visibleLines + 1
+	}
+	start = min(start, len(content)-visibleLines)
+	return content[start:]
 }
 
 func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width int, nested bool, selected bool, options workspaceRenderOptions) string {

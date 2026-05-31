@@ -288,6 +288,39 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	}
 }
 
+func TestRenderAgentsPaneScrollsSelectedBottomGroupAgentIntoView(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TitleTemplate = "{title}"
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "shipit",
+		ActiveAgentID:       "ship",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "alpha", WorkspaceID: "w", Path: "alpha", CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", WorkspaceID: "w", Path: "beta", CreatedAt: now, UpdatedAt: now},
+			{ID: "gamma", WorkspaceID: "w", Path: "gamma", CreatedAt: now, UpdatedAt: now},
+			{ID: "delta", WorkspaceID: "w", Path: "delta", CreatedAt: now, UpdatedAt: now},
+			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
+		},
+		Agents: []state.Agent{{ID: "ship", WorkspaceID: "w", GroupID: "shipit", Title: "Ship Agent", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
+	}
+
+	groupSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 4), "\n"))
+	if !strings.Contains(groupSelected, "shipit") || strings.Contains(groupSelected, "Ship Agent") {
+		t.Fatalf("shipit group should sit at the bottom before moving into its hidden child:\n%s", groupSelected)
+	}
+
+	agentSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 5), "\n"))
+	if !strings.Contains(agentSelected, "shipit") || !strings.Contains(agentSelected, "Ship Agent") {
+		t.Fatalf("selected bottom group agent should scroll into view:\n%s", agentSelected)
+	}
+}
+
 func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256)

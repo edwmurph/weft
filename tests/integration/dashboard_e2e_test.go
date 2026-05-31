@@ -209,6 +209,76 @@ func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 	})
 }
 
+func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+
+	pane := "bottom-shipit-client"
+	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 11)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Agents")
+	})
+	for _, name := range []string{"alpha", "beta", "gamma", "delta", "shipit"} {
+		directRun(t, env, "send-keys", "-t", pane, "g")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Flat and unique in this workspace.")
+		})
+		directRun(t, env, "send-keys", "-l", "-t", pane, name)
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "> "+name)
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			return groupByPath(st, name) != nil
+		})
+	}
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	waitState(t, env, bin, func(st state.State) bool {
+		group := groupByPath(st, "shipit")
+		active := state.ActiveAgent(st)
+		return group != nil &&
+			active != nil &&
+			active.GroupID == group.ID &&
+			active.Status == state.StatusRunning
+	})
+	runWeft(t, env, bin, "rename", "Ship Agent")
+	waitState(t, env, bin, func(st state.State) bool {
+		active := state.ActiveAgent(st)
+		return active != nil && active.Title == "Ship Agent"
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusAgents && st.NavOpen
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "k")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "shipit") && !agentRowVisible(capture, "Ship Agent")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "j")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "shipit") && agentRowVisible(capture, "Ship Agent")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-c")
+	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
+		t.Fatalf("bottom shipit client did not exit after dashboard quit")
+	}
+}
+
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
@@ -1402,6 +1472,21 @@ func agentLineHasLoadingFrame(capture string, title string) bool {
 		}
 		for _, frame := range []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"} {
 			if strings.Contains(line, frame) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func agentRowVisible(capture string, title string) bool {
+	markers := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "●", "•", "◦", "!"}
+	for _, line := range strings.Split(capture, "\n") {
+		if !strings.Contains(line, title) {
+			continue
+		}
+		for _, marker := range markers {
+			if strings.Contains(line, marker+" "+title) {
 				return true
 			}
 		}
