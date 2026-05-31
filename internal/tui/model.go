@@ -416,6 +416,10 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusNavPane(state.FocusWorkspaces)
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
 		m.focusNavPane(state.FocusAgents)
+	case msg.Type == tea.KeyShiftUp:
+		m.reorderSelectedAgent(-1)
+	case msg.Type == tea.KeyShiftDown:
+		m.reorderSelectedAgent(1)
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
 		m.moveSelection(-1)
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
@@ -508,6 +512,27 @@ func (m *Model) applyGroupCursor(row groupRow) {
 			m.state.ActiveAgentID = agent.ID
 		}
 	}
+	m.save()
+}
+
+func (m *Model) reorderSelectedAgent(delta int) {
+	if m.state.Focus != state.FocusAgents {
+		return
+	}
+	agent := m.selectedAgent()
+	if agent == nil {
+		return
+	}
+	next, moved, err := state.ReorderAgent(m.state, agent.ID, delta)
+	if err != nil {
+		m.message = err.Error()
+		return
+	}
+	if !moved {
+		return
+	}
+	m.state = next
+	m.syncGroupCursor()
 	m.save()
 }
 
@@ -1296,6 +1321,30 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		m.moveSelection(delta)
 		return m.ipcResponse("selection updated"), nil
+	case "reorder_agent":
+		delta, err := strconv.Atoi(request.Args["delta"])
+		if err != nil || delta == 0 {
+			return ipc.ErrorResponse("invalid_delta", "delta must be a non-zero integer"), nil
+		}
+		id := request.Args["id"]
+		if id == "" {
+			if agent := m.selectedAgent(); agent != nil {
+				id = agent.ID
+			}
+		}
+		if id == "" {
+			return ipc.ErrorResponse("agent_not_found", "agent not found"), nil
+		}
+		next, moved, err := state.ReorderAgent(m.state, id, delta)
+		if err != nil {
+			return ipcError("reorder_agent_failed", err), nil
+		}
+		if moved {
+			m.state = next
+			m.syncGroupCursor()
+			m.save()
+		}
+		return m.ipcResponse("reordered Codex agent"), nil
 	case "open":
 		cmd := m.openSelection()
 		m.navWidth = m.targetNavWidth()
@@ -1696,6 +1745,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s new group", cfg.KeyBindings.NewGroup),
 		fmt.Sprintf("%s new agent", cfg.KeyBindings.NewAgent),
 		fmt.Sprintf("%s move agent", cfg.KeyBindings.MoveAgent),
+		"Shift+Up/Down reorder agent",
 		fmt.Sprintf("%s rename", cfg.KeyBindings.Rename),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
 		"U restart supervisor when idle during upgrade",

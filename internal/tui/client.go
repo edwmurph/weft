@@ -213,6 +213,10 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.request("focus", map[string]string{"target": "workspaces"})
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
 		return m, m.request("focus", map[string]string{"target": string(state.FocusAgents)})
+	case msg.Type == tea.KeyShiftUp:
+		return m.reorderSelectedAgent(-1)
+	case msg.Type == tea.KeyShiftDown:
+		return m.reorderSelectedAgent(1)
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
 		return m, m.request("nav_move", map[string]string{"delta": "-1"})
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
@@ -237,6 +241,20 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.request("open", nil)
 	}
 	return m, nil
+}
+
+func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {
+	if m.snapshot.State.Focus != state.FocusAgents {
+		return m, nil
+	}
+	agent := m.selectedAgent()
+	if agent == nil {
+		return m, nil
+	}
+	return m, m.request("reorder_agent", map[string]string{
+		"id":    agent.ID,
+		"delta": strconv.Itoa(delta),
+	})
 }
 
 func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

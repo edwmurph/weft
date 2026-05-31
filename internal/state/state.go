@@ -472,9 +472,6 @@ func AgentsForGroup(st State, groupID string) []Agent {
 			agents = append(agents, agent)
 		}
 	}
-	sort.SliceStable(agents, func(i, j int) bool {
-		return agents[i].CreatedAt < agents[j].CreatedAt
-	})
 	return agents
 }
 
@@ -485,9 +482,6 @@ func UngroupedAgentsForWorkspace(st State, workspaceID string) []Agent {
 			agents = append(agents, agent)
 		}
 	}
-	sort.SliceStable(agents, func(i, j int) bool {
-		return agents[i].CreatedAt < agents[j].CreatedAt
-	})
 	return agents
 }
 
@@ -539,6 +533,15 @@ func CloseAgent(st State, agentID string) State {
 	if index < 0 {
 		return st
 	}
+	workspaceIndex := 0
+	for i, agent := range st.Agents {
+		if i == index {
+			break
+		}
+		if agent.WorkspaceID == removed.WorkspaceID {
+			workspaceIndex++
+		}
+	}
 	st.Agents = append(st.Agents[:index], st.Agents[index+1:]...)
 	if st.ActiveAgentID != agentID {
 		return st
@@ -546,13 +549,7 @@ func CloseAgent(st State, agentID string) State {
 	st.ActiveAgentID = ""
 	candidates := agentsForWorkspace(st, removed.WorkspaceID)
 	if len(candidates) > 0 {
-		nextIndex := index
-		for candidateIndex, agent := range candidates {
-			if agent.CreatedAt > removed.CreatedAt || candidateIndex == len(candidates)-1 {
-				nextIndex = candidateIndex
-				break
-			}
-		}
+		nextIndex := workspaceIndex
 		if nextIndex >= len(candidates) {
 			nextIndex = len(candidates) - 1
 		}
@@ -568,6 +565,55 @@ func CloseAgent(st State, agentID string) State {
 		st.SelectedGroupID = removed.GroupID
 	}
 	return st
+}
+
+func ReorderAgent(st State, agentID string, delta int) (State, bool, error) {
+	if delta == 0 {
+		return st, false, nil
+	}
+	index := -1
+	selected := Agent{}
+	for i, agent := range st.Agents {
+		if agent.ID == agentID {
+			index = i
+			selected = agent
+			break
+		}
+	}
+	if index < 0 {
+		return st, false, fmt.Errorf("agent not found")
+	}
+	target := -1
+	if delta < 0 {
+		for i := index - 1; i >= 0; i-- {
+			if sameAgentOrderArea(st.Agents[i], selected) {
+				target = i
+				break
+			}
+		}
+	} else {
+		for i := index + 1; i < len(st.Agents); i++ {
+			if sameAgentOrderArea(st.Agents[i], selected) {
+				target = i
+				break
+			}
+		}
+	}
+	if target < 0 {
+		return st, false, nil
+	}
+	st.Agents[index], st.Agents[target] = st.Agents[target], st.Agents[index]
+	now := NowISO()
+	st.Agents[index].UpdatedAt = now
+	st.Agents[target].UpdatedAt = now
+	st.ActiveAgentID = selected.ID
+	st.SelectedWorkspaceID = selected.WorkspaceID
+	st.SelectedGroupID = selected.GroupID
+	return st, true, nil
+}
+
+func sameAgentOrderArea(left Agent, right Agent) bool {
+	return left.WorkspaceID == right.WorkspaceID && left.GroupID == right.GroupID
 }
 
 func MoveAgent(st State, agentID string, groupID string) (State, error) {
@@ -898,9 +944,6 @@ func agentsForWorkspace(st State, workspaceID string) []Agent {
 			agents = append(agents, agent)
 		}
 	}
-	sort.SliceStable(agents, func(i, j int) bool {
-		return agents[i].CreatedAt < agents[j].CreatedAt
-	})
 	return agents
 }
 

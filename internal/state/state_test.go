@@ -234,6 +234,58 @@ func TestGroupValidationAndMoveAgent(t *testing.T) {
 	}
 }
 
+func TestReorderAgentStaysWithinGroupOrUngroupedArea(t *testing.T) {
+	st := stateWithWorkspace(t)
+	now := NowISO()
+	st.Groups = []Group{
+		{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now},
+		{ID: "review", WorkspaceID: "w", Path: "review", CreatedAt: now, UpdatedAt: now},
+	}
+	st.Agents = []Agent{
+		{ID: "top-a", WorkspaceID: "w", GroupID: "", Title: "Top A", Status: StatusRunning, CreatedAt: "2026-01-01T00:03:00Z", UpdatedAt: now},
+		{ID: "release-a", WorkspaceID: "w", GroupID: "release", Title: "Release A", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z", UpdatedAt: now},
+		{ID: "review-a", WorkspaceID: "w", GroupID: "review", Title: "Review A", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
+		{ID: "release-b", WorkspaceID: "w", GroupID: "release", Title: "Release B", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
+		{ID: "top-b", WorkspaceID: "w", GroupID: "", Title: "Top B", Status: StatusRunning, CreatedAt: "2026-01-01T00:04:00Z", UpdatedAt: now},
+	}
+
+	next, moved, err := ReorderAgent(st, "release-b", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !moved {
+		t.Fatal("expected grouped agent to move")
+	}
+	if got, want := agentIDs(AgentsForGroup(next, "release")), []string{"release-b", "release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("release group order = %#v, want %#v", got, want)
+	}
+	if got, want := agentIDs(UngroupedAgentsForWorkspace(next, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ungrouped order changed = %#v, want %#v", got, want)
+	}
+	if next.ActiveAgentID != "release-b" || next.SelectedGroupID != "release" {
+		t.Fatalf("selection did not follow moved grouped agent: %#v", next)
+	}
+
+	next, moved, err = ReorderAgent(next, "top-b", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !moved {
+		t.Fatal("expected ungrouped agent to move")
+	}
+	if got, want := agentIDs(UngroupedAgentsForWorkspace(next, "w")), []string{"top-b", "top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ungrouped order = %#v, want %#v", got, want)
+	}
+
+	next, moved, err = ReorderAgent(next, "top-b", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved {
+		t.Fatal("first ungrouped agent should not move above its area")
+	}
+}
+
 func testState(t *testing.T) State {
 	t.Helper()
 	dir := t.TempDir()
@@ -264,4 +316,12 @@ func stateWithWorkspace(t *testing.T) State {
 		t.Fatal(err)
 	}
 	return st
+}
+
+func agentIDs(agents []Agent) []string {
+	ids := make([]string, 0, len(agents))
+	for _, agent := range agents {
+		ids = append(ids, agent.ID)
+	}
+	return ids
 }

@@ -1077,6 +1077,42 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	}
 }
 
+func TestShiftUpDownReordersSelectedAgentInAgentsPane(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		ActiveAgentID:       "b",
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Agents: []state.Agent{
+			{ID: "a", WorkspaceID: "w", Title: "Alpha", Status: state.StatusReady, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
+			{ID: "b", WorkspaceID: "w", Title: "Beta", Status: state.StatusReady, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
+		},
+	})
+	model.groupCursor = 1
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	model = updated.(Model)
+	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"b", "a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("shift up order = %#v, want %#v", got, want)
+	}
+	if model.groupCursor != 0 || model.state.ActiveAgentID != "b" {
+		t.Fatalf("selection should follow reordered agent: cursor=%d active=%q", model.groupCursor, model.state.ActiveAgentID)
+	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
+	model = updated.(Model)
+	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"a", "b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("shift down order = %#v, want %#v", got, want)
+	}
+	if model.groupCursor != 1 || model.state.ActiveAgentID != "b" {
+		t.Fatalf("selection should follow reordered agent: cursor=%d active=%q", model.groupCursor, model.state.ActiveAgentID)
+	}
+}
+
 func TestWorkspacePromptSuggestionMenuScrollsWithSelection(t *testing.T) {
 	parent := t.TempDir()
 	for index := 0; index < 12; index++ {
@@ -1421,6 +1457,14 @@ func killPTYs(model Model) {
 	for _, pty := range model.ptys {
 		pty.Kill()
 	}
+}
+
+func tuiAgentIDs(agents []state.Agent) []string {
+	ids := make([]string, 0, len(agents))
+	for _, agent := range agents {
+		ids = append(ids, agent.ID)
+	}
+	return ids
 }
 
 func testRuntime(t *testing.T) config.Runtime {

@@ -257,6 +257,11 @@ Group rows should be visually distinct from agent rows. Use the chevron/collapse
 
 When the Agents pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or agent row visible.
 
+`Shift+Up` and `Shift+Down` on a selected agent row move that agent one row up
+or down within its current group. Top-level agents reorder only within the
+top-level ungrouped area. Reordering never moves an agent into or out of a
+group, and does not restart the agent PTY.
+
 ## Agent Live Preview And Console
 
 The main agent pane has two modes:
@@ -341,6 +346,7 @@ w       Add workspace
 g       Create group in selected workspace
 n       Create a top-level agent with no group
 m       Move selected agent to another group in the same workspace, or clear its group
+Shift+Up/Down Reorder selected agent within its group or top-level area
 r       Rename selected workspace title, group, or agent title
 d       Delete/remove selected item
 ?       Help
@@ -599,6 +605,13 @@ Move agent:
 - Dashboard prompt autocompletes existing group names in that workspace after the user types a matching prefix.
 - Does not restart the PTY.
 - Cross-workspace moves are out of scope for the first implementation.
+
+Reorder agent:
+
+- `Shift+Up` and `Shift+Down` reorder the selected agent within its current
+  group, or within the top-level ungrouped area when the agent has no group.
+- Reordering never crosses group boundaries, never changes the workspace, and
+  does not restart the PTY.
 
 Close/delete agent:
 

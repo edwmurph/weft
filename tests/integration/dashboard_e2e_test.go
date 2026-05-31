@@ -972,6 +972,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 	})
 
 	var firstAgentID string
+	var secondAgentID string
 	timedStep(t, "group lifecycle and grouped agent journeys run through the dashboard", func() {
 		directRun(t, env, "send-keys", "-t", pane, "Right")
 		waitState(t, env, bin, func(st state.State) bool {
@@ -1078,6 +1079,9 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool {
 			active := state.ActiveAgent(st)
+			if active != nil {
+				secondAgentID = active.ID
+			}
 			return len(st.Agents) == 2 &&
 				active != nil &&
 				active.ID != firstAgentID &&
@@ -1087,6 +1091,21 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
 			return st.Focus == state.FocusAgents && st.NavOpen
+		})
+		directRun(t, env, "send-keys", "-t", pane, "S-Up")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Agents) == 2 &&
+				secondAgentID != "" &&
+				st.Agents[0].ID == secondAgentID &&
+				st.Agents[1].ID == firstAgentID &&
+				st.ActiveAgentID == secondAgentID
+		})
+		directRun(t, env, "send-keys", "-t", pane, "S-Down")
+		waitState(t, env, bin, func(st state.State) bool {
+			return len(st.Agents) == 2 &&
+				st.Agents[0].ID == firstAgentID &&
+				st.Agents[1].ID == secondAgentID &&
+				st.ActiveAgentID == secondAgentID
 		})
 		directRun(t, env, "send-keys", "-t", pane, "k")
 		time.Sleep(250 * time.Millisecond)
@@ -1400,6 +1419,10 @@ func directRun(t *testing.T, env []string, args ...string) {
 		writeClientInput(t, "\x1b[A")
 	case "Down":
 		writeClientInput(t, "\x1b[B")
+	case "S-Up":
+		writeClientInput(t, "\x1b[1;2A")
+	case "S-Down":
+		writeClientInput(t, "\x1b[1;2B")
 	case "Right":
 		writeClientInput(t, "\x1b[C")
 	case "Left":

@@ -188,7 +188,8 @@ input is forwarded. Agents can sit directly in a workspace as top-level rows,
 or they can be organized into optional collapsible groups inside the `Agents`
 pane. Use groups for whatever makes the work easier to scan: release tasks,
 experiments, review follow-ups, bug fixes, or blocked investigations. `Enter`
-on a group opens or collapses it.
+on a group opens or collapses it. When an agent row is selected,
+`Shift+Up`/`Shift+Down` moves it within its current group or top-level area.
 
 Dashboard forms use bordered inputs, compact validation/status lines, and
 state-specific key hints. In the `Workspaces` pane, `w` opens an add-workspace
