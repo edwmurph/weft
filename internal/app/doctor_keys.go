@@ -23,11 +23,9 @@ import (
 var errKeyDoctorCanceled = errors.New("key doctor canceled")
 
 const (
-	iTerm2OptionBackspaceKey       = "0x7f-0x80000-0x33"
-	iTerm2LegacyOptionBackspaceKey = "0x7f-0x80000"
-	iTerm2WrongOption3Key          = "0x33-0x80000"
-	iTerm2OptionEscValue           = "2"
-	iTerm2OptionBackspaceText      = "0x1b 0x7f"
+	iTerm2OptionBackspaceKey  = "0x7f-0x80000-0x33"
+	iTerm2OptionEscValue      = "2"
+	iTerm2OptionBackspaceText = "0x1b 0x7f"
 )
 
 var errPlistKeyMissing = errors.New("plist key missing")
@@ -605,9 +603,6 @@ func updateIterm2OptionBackspaceMappingFile(path string, profileIndex int) error
 			return err
 		}
 	}
-	if err := removeIterm2ObsoleteOptionBackspaceMappings(path, profileIndex); err != nil {
-		return err
-	}
 	if err := upsertPlistInteger(path, iterm2ProfileKeyPath(profileIndex, "Option Key Sends"), iTerm2OptionEscValue); err != nil {
 		return err
 	}
@@ -630,35 +625,6 @@ func iterm2OptionBackspaceEntryKeyPath(profileIndex int) string {
 
 func iterm2ProfileKeyPath(profileIndex int, key string) string {
 	return fmt.Sprintf("New Bookmarks.%d.%s", profileIndex, key)
-}
-
-func removeIterm2ObsoleteOptionBackspaceMappings(path string, profileIndex int) error {
-	for _, key := range []string{iTerm2LegacyOptionBackspaceKey, iTerm2WrongOption3Key} {
-		matches, err := iterm2KeyboardMappingMatches(path, profileIndex, key, iTerm2OptionBackspaceText)
-		if err != nil {
-			return err
-		}
-		if matches {
-			keyPath := fmt.Sprintf("New Bookmarks.%d.Keyboard Map.%s", profileIndex, key)
-			if err := plutilEdit("remove obsolete Option+Backspace key mapping", path, "-remove", keyPath); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func iterm2KeyboardMappingMatches(path string, profileIndex int, key string, text string) (bool, error) {
-	entryPath := fmt.Sprintf("New Bookmarks.%d.Keyboard Map.%s", profileIndex, key)
-	action, actionFound, err := plistExtractRawOptional(path, entryPath+".Action")
-	if err != nil {
-		return false, err
-	}
-	entryText, textFound, err := plistExtractRawOptional(path, entryPath+".Text")
-	if err != nil {
-		return false, err
-	}
-	return actionFound && textFound && action == "11" && entryText == text, nil
 }
 
 func plistExtractRaw(path string, keyPath string) (string, error) {

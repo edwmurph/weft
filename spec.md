@@ -144,10 +144,8 @@ busy or missing saved session IDs, the dashboard shows pending copy and does not
 offer `U`. Once every remaining agent is idle and resumable, `U` opens a
 confirmation, creates a pre-upgrade backup, closes the idle Codex terminals,
 restarts the supervisor, and resumes agents with `codex resume <session-id>`.
-The client must not run duplicate local restart/resume logic. If a compatible
-but older supervisor does not support `upgrade_resume`, the client must explain
-that dashboard upgrade requires a newer supervisor and direct the user to
-`weft close --kill` when they are ready to stop running Codex terminals.
+The client must not run duplicate local restart/resume logic or synthesize
+upgrade state that was not sent by the supervisor.
 
 If the supervisor protocol is incompatible with the client, the client should
 explain the situation and offer the least destructive recovery path:
@@ -834,7 +832,7 @@ Global `--clear`:
 - warns when Option+Backspace is indistinguishable from plain Backspace
 - recommends configuring the terminal to send Option as Meta/Esc, including iTerm2 Left/Right Option Key set to Esc+ and the `1b 7f` custom mapping for Option+Backspace
 - detects known terminal emulators from environment metadata
-- for detected iTerm2 sessions on macOS, offers to set Left/Right Option Key to Esc+, add the Option+Backspace fallback key mapping to the current iTerm profile, remove obsolete mappings written by earlier Weft attempts, write a plist backup first, and requires explicit confirmation
+- for detected iTerm2 sessions on macOS, offers to set Left/Right Option Key to Esc+, add the Option+Backspace fallback key mapping to the current iTerm profile, write a plist backup first, and requires explicit confirmation
 - when iTerm2 preferences already contain the full fix but the captured key still reports plain Backspace, explains that the current tab has not picked up the preference; for custom iTerm2 settings folders, recommends quitting and reopening iTerm2 because new tabs may keep using the in-memory profile
 - if automatic terminal configuration fails, reports the failed step, preferences path, profile, wrapped command/output when available, and the manual fallback
 - does not mutate terminal profiles or Weft configuration without explicit confirmation

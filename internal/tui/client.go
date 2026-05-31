@@ -47,22 +47,21 @@ type ClientModel struct {
 	loading           int
 	supervisorVersion string
 
-	input                    textinput.Model
-	prompt                   promptKind
-	confirm                  confirmKind
-	pendingID                string
-	promptSuggestionOpen     bool
-	promptSuggestionIndex    int
-	loadingTickerActive      bool
-	launchWorkspacePrompted  bool
-	upgradeResumeUnsupported bool
-	lastResumeScan           time.Time
-	toastText                string
-	toastID                  int
-	mouseSelection           consoleSelection
-	codexScrollOffset        int
-	codexScrollAgentID       string
-	inputRouter              *clientInputRouter
+	input                   textinput.Model
+	prompt                  promptKind
+	confirm                 confirmKind
+	pendingID               string
+	promptSuggestionOpen    bool
+	promptSuggestionIndex   int
+	loadingTickerActive     bool
+	launchWorkspacePrompted bool
+	lastResumeScan          time.Time
+	toastText               string
+	toastID                 int
+	mouseSelection          consoleSelection
+	codexScrollOffset       int
+	codexScrollAgentID      string
+	inputRouter             *clientInputRouter
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
@@ -74,11 +73,8 @@ func RunClient(rt config.Runtime, cfg config.Config) error {
 	options := []tea.ProgramOption{
 		tea.WithInput(inputRouter),
 		tea.WithOutput(os.Stdout),
-	}
-	if os.Getenv("WEFT_HEADLESS") == "1" {
-		options = append(options, tea.WithoutRenderer())
-	} else {
-		options = append(options, tea.WithAltScreen(), tea.WithMouseCellMotion())
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	}
 	_, err := tea.NewProgram(model, options...).Run()
 	return err
@@ -109,11 +105,6 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.request("resize", map[string]string{"width": strconv.Itoa(typed.Width), "height": strconv.Itoa(typed.Height)})
 	case clientResponseMsg:
 		if typed.err != nil {
-			if typed.command == "upgrade_resume" && upgradeResumeUnsupported(typed.response) {
-				m.upgradeResumeUnsupported = true
-				m.message = upgradeResumeUnsupportedMessage()
-				return m, nil
-			}
 			if typed.command == "attach_client" && typed.response.Error == nil {
 				m.message = typed.err.Error()
 				return m, tickClientAttachRetry()
@@ -122,9 +113,6 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.applyResponse(typed.response)
-		if typed.command == "upgrade_resume" {
-			m.upgradeResumeUnsupported = false
-		}
 		nextLoadingTick := m.ensureLoadingTick()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
 			return m, tea.Batch(nextLoadingTick, m.request("client_detached", nil), tea.Quit)
@@ -172,7 +160,7 @@ func (m ClientModel) View() string {
 	options := workspaceRenderOptions{
 		loadingFrame:        loadingFrame,
 		loadingAgents:       loadingAgentSet(m.snapshot.LoadingAgentIDs),
-		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.upgradeResumeUnsupported),
+		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
 		workspaceInfoText:   m.workspaceInfoFooterText(),
 		codexToastText:      m.toastText,
 	}
@@ -345,10 +333,6 @@ func (m *ClientModel) startUpgradeConfirm() {
 	if m.upgrade == nil {
 		return
 	}
-	if m.upgradeResumeUnsupported {
-		m.message = upgradeResumeUnsupportedMessage()
-		return
-	}
 	if !m.canUpgradeResumeNow() {
 		m.message = upgradeResumeWaitingMessage(codexsession.BuildReport(m.snapshot.State))
 		return
@@ -464,18 +448,13 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	if response.Snapshot != nil && strings.TrimSpace(response.Snapshot.Message) != "" {
 		m.message = response.Snapshot.Message
 	}
-	upgrade := clientUpgradeFromResponse(response)
-	if upgrade != nil {
-		m.upgrade = upgrade
-		m.prepareSnapshotUpgradeResume(*upgrade)
-		if m.upgradeResumeUnsupported {
-			m.message = upgradeResumeUnsupportedMessage()
-		} else {
-			m.message = dashboardUpgradeMessage(*upgrade, m.snapshot.State)
-		}
+	if response.Upgrade != nil {
+		upgrade := *response.Upgrade
+		m.upgrade = &upgrade
+		m.prepareSnapshotUpgradeResume(upgrade)
+		m.message = dashboardUpgradeMessage(upgrade, m.snapshot.State)
 	} else {
 		m.upgrade = nil
-		m.upgradeResumeUnsupported = false
 	}
 	m.maybePromptForLaunchWorkspace()
 	m.syncCodexScroll()
@@ -532,14 +511,6 @@ func (m ClientModel) hasLoadingAnimation() bool {
 	return strings.TrimSpace(m.snapshot.LoadingText) != "" || len(m.snapshot.LoadingAgentIDs) > 0
 }
 
-func clientUpgradeFromResponse(response ipc.Response) *ipc.Upgrade {
-	if response.Upgrade != nil {
-		upgrade := *response.Upgrade
-		return &upgrade
-	}
-	return ipc.UpgradeStatus(response, version.Version)
-}
-
 func dashboardUpgradeMessage(upgrade ipc.Upgrade, st state.State) string {
 	if upgrade.AutoRestarted {
 		return upgrade.Message
@@ -564,16 +535,13 @@ func dashboardUpgradeMessage(upgrade ipc.Upgrade, st state.State) string {
 	return fmt.Sprintf("Upgrade ready: %s is idle. Press U to restart it now.", delta)
 }
 
-func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, resumeUnsupported bool) string {
+func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
 	}
 	delta := fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 	if !upgrade.Compatible {
 		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop agents before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
-	}
-	if resumeUnsupported {
-		return fmt.Sprintf("Upgrade blocked: %s.\nRun weft close --kill when ready.", delta)
 	}
 	report := codexsession.BuildReport(st)
 	if len(report.Busy) > 0 {
@@ -604,16 +572,8 @@ func (m ClientModel) canActOnUpgrade() bool {
 	return m.canUpgradePending() && m.canUpgradeResumeNow()
 }
 
-func upgradeResumeUnsupported(response ipc.Response) bool {
-	return response.Error != nil && response.Error.Code == "unknown_command"
-}
-
-func upgradeResumeUnsupportedMessage() string {
-	return "Dashboard upgrade requires a newer supervisor. Run `weft close --kill` when ready to restart it; running Codex terminals will stop, but saved layout and metadata remain."
-}
-
 func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
-	if !upgrade.Compatible || !upgrade.RestartRequired || m.upgradeResumeUnsupported {
+	if !upgrade.Compatible || !upgrade.RestartRequired {
 		return
 	}
 	report := codexsession.BuildReport(m.snapshot.State)

@@ -124,12 +124,11 @@ your terminal. It compares Backspace, Option+Backspace, and Ctrl+Backspace and
 prints the terminal setting needed when Option is being sent as plain
 Backspace. In iTerm2, it can offer to add the needed Option+Backspace key
 fix to the current/default profile after writing a plist backup: Left/Right
-Option Key are set to Esc+, a fallback Option+Backspace mapping is added, and
-obsolete mappings from earlier Weft attempts are removed. If the profile is
-already configured but the current tab still sends plain Backspace, it reports
-that the running iTerm2 session has not picked up the preference yet. For
-custom iTerm2 settings folders, it tells the user to quit and reopen iTerm2
-because new tabs may keep using the in-memory profile.
+Option Key are set to Esc+, and a fallback Option+Backspace mapping is added.
+If the profile is already configured but the current tab still sends plain
+Backspace, it reports that the running iTerm2 session has not picked up the
+preference yet. For custom iTerm2 settings folders, it tells the user to quit
+and reopen iTerm2 because new tabs may keep using the in-memory profile.
 
 ## Agent Titles
 

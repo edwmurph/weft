@@ -54,9 +54,6 @@ func disableTerminalKeyboardReporting() {
 }
 
 func terminalKeyboardReportingDisabled() bool {
-	if os.Getenv("WEFT_HEADLESS") == "1" {
-		return true
-	}
 	info, err := os.Stdout.Stat()
 	return err != nil || info.Mode()&os.ModeCharDevice == 0
 }

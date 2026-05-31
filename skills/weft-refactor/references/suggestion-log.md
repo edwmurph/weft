@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-05-31 - Aggressive compatibility prune
+
+- Request: Remove compatibility-only paths while preserving the current workspace/group/agent supervisor contract, backups, dashboard `U`, supervisor-owned `upgrade_resume`, and Codex session resume.
+- Suggestions: Drop hidden `WEFT_HEADLESS=1` TUI behavior, stop cleaning obsolete iTerm2 Option+Backspace mappings, trust supervisor-sent upgrade state instead of synthesizing client-local upgrade state, and remove the old-supervisor `upgrade_resume` fallback copy/state.
+- Outcome: Implemented in `.worktrees/aggressive-compat-prune`; awaiting review.
+- Evidence: `internal/tui/client.go`, `internal/tui/terminal_keys.go`, `internal/app/doctor_keys.go`, `internal/app/app_test.go`, `internal/tui/model_test.go`, `README.md`, `spec.md`.
+
 ## 2026-05-31 - MVP legacy prune
 
 - Request: Implement a narrow legacy/dead-code prune while preserving supervisor upgrades, dashboard `U`, `upgrade_resume`, Codex session IDs, and Codex resume.

@@ -385,6 +385,17 @@ func TestClientRequestArgsOnlySelectLaunchWorkspaceOnAttach(t *testing.T) {
 	}
 }
 
+func testClientUpgrade(supervisorVersion string, runningAgents int) *ipc.Upgrade {
+	return &ipc.Upgrade{
+		ClientVersion:     weftversion.Version,
+		SupervisorVersion: supervisorVersion,
+		Compatible:        true,
+		RestartRequired:   true,
+		RunningAgents:     runningAgents,
+		Message:           fmt.Sprintf("Upgrade pending: client %s is newer than supervisor %s.", weftversion.Version, supervisorVersion),
+	}
+}
+
 func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithAgent(rt.Workspace)
@@ -398,6 +409,7 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	model.applyResponse(ipc.Response{
 		OK:                true,
 		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
 		ProtocolVersion:   ipc.ProtocolVersion,
 		SupervisorVersion: "3.9.0",
 	})
@@ -451,6 +463,7 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 	model.applyResponse(ipc.Response{
 		OK:                true,
 		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
 		ProtocolVersion:   ipc.ProtocolVersion,
 		SupervisorVersion: "3.9.0",
 	})
@@ -468,56 +481,6 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 	model = updated.(ClientModel)
 	if cmd != nil || model.mode == modeConfirm {
 		t.Fatalf("blocked upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
-	}
-}
-
-func TestClientUpgradeResumeUnsupportedShowsCloseKillGuidance(t *testing.T) {
-	rt := testRuntime(t)
-	st := testStateWithAgent(rt.Workspace)
-	st.Agents[0].CodexTitle = "Fake Codex Ready"
-	st.Agents[0].CodexSessionID = "session-alpha"
-	st.Focus = state.FocusAgents
-	st.NavOpen = true
-	model := NewClientModel(rt, config.DefaultConfig())
-	model.width = 160
-
-	model.applyResponse(ipc.Response{
-		OK:                true,
-		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
-		ProtocolVersion:   ipc.ProtocolVersion,
-		SupervisorVersion: "3.9.0",
-	})
-
-	response := ipc.ErrorResponse("unknown_command", "unknown command: upgrade_resume")
-	updated, cmd := model.Update(clientResponseMsg{
-		command:  "upgrade_resume",
-		response: response,
-		err:      *response.Error,
-	})
-	model = updated.(ClientModel)
-	if cmd != nil {
-		t.Fatalf("unsupported upgrade_resume should not start a local fallback command: %v", cmd)
-	}
-	for _, expected := range []string{"Dashboard upgrade requires a newer supervisor", "weft close --kill", "saved layout and metadata remain"} {
-		if !strings.Contains(model.message, expected) {
-			t.Fatalf("unsupported guidance missing %q: %s", expected, model.message)
-		}
-	}
-
-	model.applyResponse(ipc.Response{
-		OK:                true,
-		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
-		ProtocolVersion:   ipc.ProtocolVersion,
-		SupervisorVersion: "3.9.0",
-	})
-	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "Run weft close --kill when ready") {
-		t.Fatalf("unsupported footer missing close guidance:\n%s", got)
-	}
-	updated, cmd = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
-	model = updated.(ClientModel)
-	if cmd != nil || model.mode == modeConfirm {
-		t.Fatalf("unsupported upgrade_resume should not open confirm, mode=%s cmd=%v", model.mode, cmd)
 	}
 }
 
