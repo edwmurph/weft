@@ -588,8 +588,11 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
 	}
-	if !strings.Contains(got, "WEFT  C-b dashboard") {
+	if !strings.Contains(got, "C-b dashboard") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
+	}
+	if strings.Contains(got, "WEFT") {
+		t.Fatalf("collapsed codex top toolbar should not include WEFT branding:\n%s", got)
 	}
 	if strings.Contains(got, "C-c") {
 		t.Fatalf("collapsed codex top toolbar should not advertise C-c:\n%s", got)
@@ -603,8 +606,39 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	st.Agents[0].Status = state.StatusRunning
 	st.Agents[0].CodexTitle = "Fake Codex Working"
 	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 80, 24, "", 0, 0)
-	if !strings.Contains(got, "WEFT  C-b dashboard") || strings.Contains(got, "C-c") {
+	if !strings.Contains(got, "C-b dashboard") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("working codex toolbar should only advertise dashboard return:\n%s", got)
+	}
+}
+
+func TestAgentConsoleReadyIndicatorCountsOtherGlobalReadyAgents(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	cfg := config.DefaultConfig()
+	now := state.NowISO()
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusCodex
+	st.NavOpen = false
+	st.Agents = append(st.Agents,
+		state.Agent{ID: "b", WorkspaceID: "w", Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		state.Agent{ID: "c", WorkspaceID: "w2", Title: "gamma", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+		state.Agent{ID: "d", WorkspaceID: "w", Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+	)
+
+	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
+	if !strings.Contains(ansi.Strip(got), "2 other agents ready") {
+		t.Fatalf("console should show ready indicator for other global agents:\n%s", got)
+	}
+	if !strings.Contains(got, workspaceCountNeedsAttentionStyle.Render("2 other agents ready")) {
+		t.Fatalf("ready indicator should use needs-attention styling:\n%q", got)
+	}
+
+	st.Agents = st.Agents[:1]
+	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
+	if strings.Contains(ansi.Strip(got), "other agent") {
+		t.Fatalf("console should hide ready indicator when no other agents are ready:\n%s", got)
 	}
 }
 

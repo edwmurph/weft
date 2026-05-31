@@ -322,6 +322,12 @@ When the user presses `Enter` on an agent, navigation slides away left, `Agent C
 
 Codex can only receive input when `Agent Console` is focused and maximized.
 
+When `Agent Console` is focused, the top border shows the configured drawer key
+as `<key> dashboard` without a `WEFT` prefix. If at least one other global
+agent has rendered/live status `ready`, the top-right border shows an amber
+`<n> other agent(s) ready` indicator. The active console agent is excluded from
+that count, and the indicator is hidden when no other agents are ready.
+
 ## Navigation States
 
 Weft has two primary UI states.
@@ -417,7 +423,7 @@ Deletion behavior depends on selected item type and is defined below.
 
 ## Status
 
-Agent status exists in the model. The Workspaces pane summarizes status only as `active` and `needs attention` counts per workspace. A separate top-level global status summary is deferred.
+Agent status exists in the model. The Workspaces pane summarizes status only as `active` and `needs attention` counts per workspace. Beyond the console-only ready indicator, a separate top-level global status summary is deferred.
 
 Status should be available to title templates.
 

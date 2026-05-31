@@ -1832,7 +1832,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "WEFT  C-b dashboard") || strings.Contains(got, "C-c") {
+	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "C-b dashboard") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 

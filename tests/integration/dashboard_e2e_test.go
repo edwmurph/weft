@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	collapsedCodexToolbar = "WEFT  C-b dashboard"
+	collapsedCodexToolbar = "C-b dashboard"
 	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
@@ -1638,8 +1638,22 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.ActiveAgentID == firstAgentID && st.Focus == state.FocusCodex
+			first := findAgent(st, firstAgentID)
+			second := findAgent(st, secondAgentID)
+			return st.ActiveAgentID == firstAgentID &&
+				st.Focus == state.FocusCodex &&
+				first != nil &&
+				second != nil &&
+				strings.Contains(first.CodexTitle, "Ready") &&
+				strings.Contains(second.CodexTitle, "Ready")
 		})
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, collapsedCodexToolbar) &&
+				strings.Contains(capture, "1 other agent ready")
+		})
+		if strings.Contains(capture, "Agent Console  WEFT") {
+			t.Fatalf("Agent Console title should not include WEFT branding:\n%s", capture)
+		}
 	})
 
 	timedStep(t, "refresh and second attach preserve selected running agent", func() {

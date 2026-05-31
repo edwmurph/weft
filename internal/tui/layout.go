@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/pathx"
 	"github.com/edwmurph/weft/internal/state"
@@ -13,7 +14,6 @@ import (
 )
 
 const (
-	appTitle                 = "WEFT"
 	codexLeftPadding         = 1
 	codexPreviewRightPadding = 1
 	navHorizontalPadding     = 1
@@ -810,7 +810,7 @@ func renderCodexFrame(
 	topRightLabel := ""
 	if navCollapsed && active {
 		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg)
-		topRightLabel = toastText
+		topRightLabel = codexConsoleTopRightLabel(st, toastText)
 	} else if navCollapsed {
 		topLabel = "Agent Console"
 	} else if agentActive {
@@ -994,7 +994,49 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 }
 
 func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return appTitle + "  " + cfg.KeyBindings.Drawer + " dashboard"
+	return cfg.KeyBindings.Drawer + " dashboard"
+}
+
+func codexConsoleTopRightLabel(st state.State, toastText string) string {
+	toastText = strings.TrimSpace(toastText)
+	indicator := codexConsoleReadyIndicator(st)
+	switch {
+	case toastText != "" && indicator != "":
+		return toastText + "  " + indicator
+	case toastText != "":
+		return toastText
+	default:
+		return indicator
+	}
+}
+
+func codexConsoleReadyIndicator(st state.State) string {
+	count := otherReadyAgentCount(st)
+	if count == 0 {
+		return ""
+	}
+	noun := "agent"
+	if count != 1 {
+		noun = "agents"
+	}
+	return workspaceCountNeedsAttentionStyle.Render(fmtInt(count) + " other " + noun + " ready")
+}
+
+func otherReadyAgentCount(st state.State) int {
+	active := state.ActiveAgent(st)
+	if active == nil {
+		return 0
+	}
+	count := 0
+	for _, agent := range st.Agents {
+		if agent.ID == active.ID {
+			continue
+		}
+		if titles.CanonicalStatus(agent) == string(state.StatusReady) {
+			count++
+		}
+	}
+	return count
 }
 
 func paletteFor(active bool) framePalette {
@@ -1027,18 +1069,28 @@ func borderTextLine(left string, right string, width int) string {
 	if left != "" {
 		left += " "
 	}
-	left = clip(left, width)
+	left = clipFrameLabel(left, width)
 	remaining := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if remaining < 0 {
-		right = clip(right, max(0, width-lipgloss.Width(left)))
+		right = clipFrameLabel(right, max(0, width-lipgloss.Width(left)))
 		remaining = width - lipgloss.Width(left) - lipgloss.Width(right)
 	}
 	if remaining < 0 {
-		left = clip(left, width)
+		left = clipFrameLabel(left, width)
 		right = ""
 		remaining = width - lipgloss.Width(left)
 	}
 	return left + strings.Repeat(" ", max(0, remaining)) + right
+}
+
+func clipFrameLabel(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	return ansi.Truncate(value, max(0, width-1), "…")
 }
 
 func rowLine(left string, right string, width int) string {
