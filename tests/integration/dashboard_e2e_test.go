@@ -248,11 +248,9 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	}
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	waitState(t, env, bin, func(st state.State) bool {
-		group := groupByPath(st, "shipit")
 		active := state.ActiveAgent(st)
-		return group != nil &&
-			active != nil &&
-			active.GroupID == group.ID &&
+		return active != nil &&
+			active.GroupID == "" &&
 			active.Status == state.StatusRunning
 	})
 	runWeft(t, env, bin, "rename", "Ship Agent")
@@ -263,6 +261,24 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitState(t, env, bin, func(st state.State) bool {
 		return st.Focus == state.FocusAgents && st.NavOpen
+	})
+	directRun(t, env, "send-keys", "-t", pane, "m")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Top-level agent") &&
+			strings.Contains(capture, "Blank makes the agent top-level.")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-u")
+	directRun(t, env, "send-keys", "-l", "-t", pane, "shipit")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "> shipit")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		group := groupByPath(st, "shipit")
+		active := state.ActiveAgent(st)
+		return group != nil &&
+			active != nil &&
+			active.GroupID == group.ID
 	})
 
 	directRun(t, env, "send-keys", "-t", pane, "k")

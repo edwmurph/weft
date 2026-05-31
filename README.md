@@ -179,9 +179,10 @@ command that follows the same stdin/stdout contract. Set
 `WEFT_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
 outside the agent workspace.
 
-The dashboard has `Workspaces`, `Agents`, and `Agent Preview` panes. Workspaces
-and agents live in the left-side navigation panes; the preview stays ready on
-the right as a read-only live cropped lens into the selected agent. Press
+The dashboard has `Workspaces`, `Agents`, and `Agent Live Preview` panes.
+Workspaces and agents live in the left-side navigation panes; the preview stays
+ready on the right as a read-only live lens into the selected agent, with
+cropped lines marked at the right edge. Press
 `Enter` to open the selected thread in the focused `Agent Console`, where Codex
 input is forwarded. Agents can sit directly in a workspace as top-level rows,
 or they can be organized into optional collapsible groups inside the `Agents`

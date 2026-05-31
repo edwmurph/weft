@@ -672,14 +672,14 @@ func renderCodexFrame(
 	innerWidth := max(0, width-2)
 	agentActive := state.ActiveAgent(st) != nil
 	previewMode := !navCollapsed
-	topLabel := "Agent Preview"
+	topLabel := "Agent Live Preview"
 	topRightLabel := ""
 	if navCollapsed && active {
 		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg, st, loadingText)
 	} else if navCollapsed {
 		topLabel = "Agent Console"
 	} else if agentActive {
-		topRightLabel = "live · cropped"
+		topRightLabel = title
 	}
 	lines := []string{
 		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, topRightLabel, max(0, innerWidth-2)), innerWidth)),
@@ -704,7 +704,7 @@ func renderCodexFrame(
 		lines = append(lines, palette.border.Render(borderVertical)+codexLeftPad(innerWidth)+renderedLine+palette.border.Render(borderVertical))
 	}
 	rightLabel := ""
-	if agentActive {
+	if agentActive && navCollapsed {
 		rightLabel = title
 	}
 	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))

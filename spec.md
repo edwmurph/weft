@@ -244,11 +244,11 @@ Group rows should be visually distinct from agent rows. Use the chevron/collapse
 
 When the Agents pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or agent row visible.
 
-## Agent Preview And Console
+## Agent Live Preview And Console
 
 The main agent pane has two modes:
 
-- `Agent Preview` when command center navigation is open
+- `Agent Live Preview` when command center navigation is open
 - `Agent Console` when the selected Codex thread is focused and maximized
 
 The pane shows either:
@@ -256,7 +256,7 @@ The pane shows either:
 - a centered empty message when no agent is open, with a subtle Weft wordmark and version label above it when space allows
 - the selected Codex thread when an agent is open
 
-When navigation is open, the Workspaces and Agents panes push `Agent Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the Codex PTY. When an agent is active, the preview top border shows `live · cropped` and clipped terminal lines use a subtle reserved right-edge marker so the pane reads as a live cropped lens instead of a full interactive terminal.
+When navigation is open, the Workspaces and Agents panes push `Agent Live Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the Codex PTY. When an agent is active, the preview top border shows the selected agent title at the top right; clipped terminal lines use a subtle reserved right-edge marker so the pane reads as a live cropped lens instead of a full interactive terminal.
 
 When the user presses `Enter` on an agent, navigation slides away left, `Agent Console` expands to the full terminal, and focus moves to Codex.
 
@@ -272,7 +272,7 @@ Navigation panes are open.
 
 - Workspaces pane is visible.
 - Agents pane is visible.
-- `Agent Preview` pane is visible but not focused when terminal width allows it.
+- `Agent Live Preview` pane is visible but not focused when terminal width allows it.
 - Codex PTY does not receive normal key input.
 - User can create, delete, rename, move, and select objects.
 
@@ -307,7 +307,7 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
   Shift+Enter and Shift+Tab in supporting terminals, is preserved inside the
   framed pane.
 - Weft does not enable terminal mouse tracking, so native terminal drag
-  selection remains available over `Agent Console` and `Agent Preview` output.
+  selection remains available over `Agent Console` and `Agent Live Preview` output.
 - C-c is forwarded to Codex while the active agent is starting or working, so it
   interrupts Codex like a normal Codex terminal. Once the active agent is ready
   or stopped, C-c quits Weft.
@@ -616,7 +616,7 @@ workspace path
 Rules:
 
 - Starting an agent launches Codex in its workspace.
-- Switching agents changes which PTY is rendered in `Agent Preview` or `Agent Console`.
+- Switching agents changes which PTY is rendered in `Agent Live Preview` or `Agent Console`.
 - Alt-modified keys are forwarded to Codex agent PTYs with an ESC prefix so terminal Meta key bindings keep working in the embedded Codex instance.
 - Forwarded Codex input preserves key order, including rapid typed or pasted text.
 - Moving an agent between groups does not affect its PTY.
@@ -730,9 +730,9 @@ Minimum behavior:
 
 - The Workspaces pane has a fixed 60-column width when it is rendered beside the
   Agents pane.
-- At 116 columns and wider, show Workspaces, Agents, and `Agent Preview` panes together.
-- At medium widths where a fixed Workspaces pane and useful `Agent Preview` cannot
-  both fit, keep Workspaces and Agents visible and hide `Agent Preview`.
+- At 116 columns and wider, show Workspaces, Agents, and `Agent Live Preview` panes together.
+- At medium widths where a fixed Workspaces pane and useful `Agent Live Preview` cannot
+  both fit, keep Workspaces and Agents visible and hide `Agent Live Preview`.
 - If navigation cannot fit, fall back to a single navigation pane that switches between workspaces and agents.
 - Codex Focus State must always give Codex the full available terminal.
 

@@ -45,8 +45,7 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 	for _, expected := range []string{
 		"Workspaces",
 		"Agents",
-		"Agent Preview",
-		"live · cropped",
+		"Agent Live Preview",
 		"▾ inbox (1)",
 		"╭ /tmp/project",
 		"1 total",
@@ -65,6 +64,16 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 		}
 	}
 	stripped := ansi.Strip(got)
+	lines := strings.Split(stripped, "\n")
+	if len(lines) == 0 || !strings.Contains(lines[0], "Agent Live Preview") || !strings.Contains(lines[0], "alpha") {
+		t.Fatalf("preview top border should include pane title and agent title:\n%s", stripped)
+	}
+	if strings.Contains(lines[len(lines)-1], "alpha") {
+		t.Fatalf("preview bottom border should not include agent title:\n%s", stripped)
+	}
+	if strings.Contains(stripped, "● Live") || strings.Contains(stripped, " Live─") {
+		t.Fatalf("preview should not render live indicator text:\n%s", stripped)
+	}
 	if !strings.Contains(stripped, " …│") {
 		t.Fatalf("wide preview should reserve a right-edge crop marker:\n%s", stripped)
 	}
@@ -112,8 +121,8 @@ func TestRenderWorkspaceKeepsFixedWorkspacePaneAtMediumWidth(t *testing.T) {
 			t.Fatalf("medium dashboard missing %q:\n%s", expected, got)
 		}
 	}
-	if strings.Contains(got, "No Codex agent open") || strings.Contains(got, "Agent Preview") {
-		t.Fatalf("medium dashboard should hide Agent Preview before clipping fixed Workspaces:\n%s", got)
+	if strings.Contains(got, "No Codex agent open") || strings.Contains(got, "Agent Live Preview") {
+		t.Fatalf("medium dashboard should hide Agent Live Preview before clipping fixed Workspaces:\n%s", got)
 	}
 }
 
@@ -435,7 +444,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	if !strings.Contains(stripped, weftversion.Label()) {
 		t.Fatalf("empty dashboard missing version label:\n%s", stripped)
 	}
-	if strings.Contains(stripped, "live · cropped") || strings.Contains(stripped, " …│") {
+	if strings.Contains(stripped, "Agent Live Preview") || strings.Contains(stripped, " …│") {
 		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
 	}
 
@@ -509,8 +518,8 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if !strings.Contains(got, "Agent Console") {
 		t.Fatalf("focused codex pane should render Agent Console title:\n%s", got)
 	}
-	if strings.Contains(got, "live · cropped") {
-		t.Fatalf("focused codex pane should not render preview crop label:\n%s", got)
+	if strings.Contains(got, "Agent Live Preview") || strings.Contains(got, "● Live") {
+		t.Fatalf("focused codex pane should not render live preview UI:\n%s", got)
 	}
 	if count := strings.Count(got, "C-c quit"); count != 1 {
 		t.Fatalf("collapsed codex should render shortcuts only once, got %d:\n%s", count, got)
