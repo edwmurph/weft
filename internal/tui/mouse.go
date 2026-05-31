@@ -249,6 +249,35 @@ func selectedCodexContent(lines []string, selection consoleSelection, width int)
 	return strings.Join(rendered, "\n")
 }
 
+func selectedStyledCodexContent(content string, selection consoleSelection, width int) string {
+	if width <= 0 || content == "" {
+		return ""
+	}
+	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	start, end := normalizedSelection(selection)
+	contentWidth := width + selection.colOffset
+	if contentWidth <= 0 {
+		return content
+	}
+	rendered := make([]string, len(lines))
+	for row, line := range lines {
+		if row < start.row || row > end.row {
+			rendered[row] = line
+			continue
+		}
+		left := selection.colOffset
+		right := selection.colOffset + width - 1
+		if row == start.row {
+			left = selection.colOffset + start.col
+		}
+		if row == end.row {
+			right = selection.colOffset + end.col
+		}
+		rendered[row] = highlightedStyledConsoleLine(line, left, right, contentWidth)
+	}
+	return strings.Join(rendered, "\n")
+}
+
 func selectedConsoleText(lines []string, selection consoleSelection, width int) string {
 	if width <= 0 || len(lines) == 0 {
 		return ""
@@ -327,6 +356,22 @@ func highlightedConsoleLine(line string, left int, right int, width int) string 
 	left = min(max(0, left), max(0, width-1))
 	right = min(max(left, right), max(0, width-1))
 	return string(runes[:left]) + ansiReverseStart + string(runes[left:right+1]) + ansiReverseEnd + string(runes[right+1:])
+}
+
+func highlightedStyledConsoleLine(line string, left int, right int, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	screen := NewTerminalScreen(width, 1)
+	screen.Write(line)
+	left = min(max(0, left), max(0, width-1))
+	right = min(max(left, right), max(0, width-1))
+	for col := left; col <= right; col++ {
+		style := screen.cells[0][col].style
+		style.Reverse(true)
+		screen.cells[0][col].style = style
+	}
+	return screen.ANSIString()
 }
 
 func lineAtPlain(lines []string, row int) string {

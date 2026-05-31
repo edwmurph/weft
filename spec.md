@@ -365,7 +365,9 @@ Autocomplete menus open directly under the input, use a bounded visible row coun
   `Agent Console`, wheel events inside the console content are forwarded into
   the active Codex PTY so Codex can scroll its chat history. Left-button drag
   selection starts after Codex's shared visual margin, so the highlighted cells
-  and copied clipboard text match without post-copy text rewriting.
+  and copied clipboard text match without post-copy text rewriting. While the
+  drag highlight is active, it preserves Codex's existing foreground and
+  background colors under the selection overlay.
   The console border shows a short copy-confirmation toast.
   Mouse input outside the focused console remains a Weft dashboard concern and
   is not forwarded to Codex.

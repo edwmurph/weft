@@ -651,7 +651,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		writeClientInput(t, "\x1b[<0;9;2M")
 		writeClientInput(t, "\x1b[<32;12;2M")
 		waitForEscapedCapture(t, env, pane, func(capture string) bool {
-			return strings.Contains(capture, "\x1b[7m")
+			return containsReverseVideo(capture)
 		})
 		writeClientInput(t, "\x1b[<0;12;2m")
 	})
@@ -1861,6 +1861,15 @@ func assertClientEnablesMouseTracking(t *testing.T, capture string) {
 			t.Fatalf("client should enable mouse tracking for Agent Console wheel and drag-copy support; missing %q in raw capture", expected)
 		}
 	}
+}
+
+func containsReverseVideo(capture string) bool {
+	for _, marker := range []string{"\x1b[7m", "\x1b[7;", ";7m", ";7;"} {
+		if strings.Contains(capture, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadingLineIsCentered(capture string) bool {

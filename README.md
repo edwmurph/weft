@@ -242,9 +242,10 @@ also preserves Codex cursor visibility and block/bar/underline cursor shape
 requests. The client also captures mouse input inside `Agent Console`: wheel
 events are forwarded to Codex for chat-history scrolling, and drag selection
 starts after Codex's shared visual margin so the highlighted cells match the
-clipboard text. A short toast in the console border confirms the copy. Press the
-drawer key to return to the dashboard. If Codex exits after receiving its own
-input, Weft returns to the dashboard `Agents` pane and marks the agent as
+clipboard text while preserving Codex's existing colors under the selection
+overlay. A short toast in the console border confirms the copy. Press the drawer
+key to return to the dashboard. If Codex exits after receiving its own input,
+Weft returns to the dashboard `Agents` pane and marks the agent as
 killed.
 
 ## Config And State

@@ -206,7 +206,10 @@ func (m ClientModel) View() string {
 	codexContent := m.snapshot.CodexContent
 	if m.mouseSelection.active {
 		if area, ok := m.codexSelectionAreaForOffset(m.mouseSelection.colOffset); ok {
-			codexContent = selectedCodexContent(m.codexPlainLines(), m.mouseSelection, area.width)
+			codexContent = selectedStyledCodexContent(m.snapshot.CodexContent, m.mouseSelection, area.width)
+			if strings.TrimSpace(codexContent) == "" {
+				codexContent = selectedCodexContent(m.codexPlainLines(), m.mouseSelection, area.width)
+			}
 		}
 	}
 	return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, codexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)

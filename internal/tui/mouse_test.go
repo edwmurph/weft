@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/state"
@@ -140,6 +143,35 @@ func TestSelectedCodexContentHighlightsDraggedCells(t *testing.T) {
 	}
 }
 
+func TestSelectedStyledCodexContentPreservesCodexColors(t *testing.T) {
+	content := "\x1b[38;2;196;42;42mred \x1b[48;2;40;40;49mblue\x1b[0m"
+	selection := consoleSelection{
+		active: true,
+		start:  consolePoint{col: 1, row: 0},
+		end:    consolePoint{col: 6, row: 0},
+	}
+
+	got := selectedStyledCodexContent(content, selection, 8)
+
+	if stripped := ansi.Strip(got); stripped != "red blue" {
+		t.Fatalf("highlighted content should keep visible text, got %q", stripped)
+	}
+	screen := NewTerminalScreen(8, 1)
+	screen.Write(got)
+	assertStyleRGB(t, screen.cells[0][0].style.Fg, color.RGBA{R: 196, G: 42, B: 42, A: 0xff})
+	if screen.cells[0][0].style.Attrs.Contains(cellbuf.ReverseAttr) {
+		t.Fatalf("unselected cell should not be reversed: %#v", screen.cells[0][0].style)
+	}
+	assertStyleRGB(t, screen.cells[0][1].style.Fg, color.RGBA{R: 196, G: 42, B: 42, A: 0xff})
+	if !screen.cells[0][1].style.Attrs.Contains(cellbuf.ReverseAttr) {
+		t.Fatalf("selected foreground-colored cell should be reversed: %#v", screen.cells[0][1].style)
+	}
+	assertStyleRGB(t, screen.cells[0][4].style.Bg, color.RGBA{R: 40, G: 40, B: 49, A: 0xff})
+	if !screen.cells[0][4].style.Attrs.Contains(cellbuf.ReverseAttr) {
+		t.Fatalf("selected background-colored cell should be reversed: %#v", screen.cells[0][4].style)
+	}
+}
+
 func TestCodexMouseInputArgsEncodesWheelForPTYCoordinates(t *testing.T) {
 	args := codexMouseInputArgs(tea.MouseEvent{
 		Button: tea.MouseButtonWheelDown,
@@ -215,5 +247,17 @@ func TestClientMouseDragCopiesConsoleSelection(t *testing.T) {
 	}
 	if model.mouseSelection.active {
 		t.Fatal("selection should clear after copy")
+	}
+}
+
+func assertStyleRGB(t *testing.T, got color.Color, want color.RGBA) {
+	t.Helper()
+	if got == nil {
+		t.Fatalf("color = nil, want %#v", want)
+	}
+	r, g, b, a := got.RGBA()
+	actual := color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
+	if actual != want {
+		t.Fatalf("color = %#v, want %#v", actual, want)
 	}
 }
