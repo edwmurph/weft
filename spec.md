@@ -588,6 +588,8 @@ Move agent:
 
 Close/delete agent:
 
+- Confirmation explains that deleting stops the Codex terminal before removing
+  the agent from Weft.
 - Stops the PTY if running.
 - Removes the agent from state.
 - If the deleted agent is active, select another agent in the same workspace when one exists.

@@ -167,6 +167,34 @@ func TestClientPromptsToAddMissingLaunchWorkspace(t *testing.T) {
 	}
 }
 
+func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Focus = state.FocusAgents
+	model.state.NavOpen = true
+	model.groupCursor = 1
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	model = updated.(Model)
+
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteAgent || model.pendingID != "a" {
+		t.Fatalf("delete confirm state mode=%s confirm=%s pending=%s cmd=%v", model.mode, model.confirm, model.pendingID, cmd)
+	}
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Delete agent",
+		"Agent",
+		"alpha",
+		"Stops the Codex terminal, then removes this agent from Weft.",
+		"Y stop and delete",
+		"N cancel",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("delete agent confirm missing %q:\n%s", expected, got)
+		}
+	}
+}
+
 func TestClientDoesNotPromptForExistingLaunchWorkspace(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithWorkspace(t, rt.Workspace)

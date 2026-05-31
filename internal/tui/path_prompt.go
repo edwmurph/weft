@@ -447,12 +447,18 @@ func confirmTargetLabel(confirm confirmKind) string {
 	if confirm == confirmRestartWhenIdle {
 		return "Upgrade"
 	}
+	if confirm == confirmDeleteAgent {
+		return "Agent"
+	}
 	return "Target"
 }
 
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmRestartWhenIdle {
 		return "Weft waits until no live Codex terminals are running, then restarts the supervisor."
+	}
+	if confirm == confirmDeleteAgent {
+		return "Stops the Codex terminal, then removes this agent from Weft."
 	}
 	return ""
 }
@@ -463,6 +469,9 @@ func renderConfirmActions(confirm confirmKind) string {
 	}
 	if confirm == confirmRestartWhenIdle {
 		return modalKeyStyle.Render("Y") + " restart when idle  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
+	}
+	if confirm == confirmDeleteAgent {
+		return modalKeyStyle.Render("Y") + " stop and delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
 	}
 	return modalKeyStyle.Render("Y") + " delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
 }

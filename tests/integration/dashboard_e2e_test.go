@@ -651,7 +651,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete agent") &&
 				strings.Contains(capture, "Codex ready") &&
-				strings.Contains(capture, "Y delete")
+				strings.Contains(capture, "Stops the Codex terminal, then removes this agent from Weft.") &&
+				strings.Contains(capture, "Y stop and delete")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 1 })
