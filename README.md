@@ -1,7 +1,7 @@
 <h1 align="center"><img src="assets/weft-logo.svg" alt="Weft" width="360"></h1>
 
 <p align="center">
-  <strong>A terminal dashboard for Codex agent threads.</strong>
+  <strong>A terminal dashboard for Codex agent threads, workspaces, and groups.</strong>
 </p>
 
 <p align="center">
@@ -10,13 +10,24 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-Weft treats each Codex session as an agent thread: a long-running line of work
-that may be editing, testing, waiting for review, or blocked while other threads
-keep moving. Parallel agents only improve throughput when the ready or blocked
-work is noticed quickly; that is the same practical lesson behind queueing and
-scheduling systems. Weft keeps those threads visible in one terminal dashboard
-so you can check status, switch context, and keep long-running tasks moving
-instead of letting finished or waiting agents sit idle.
+Weft makes parallel Codex work visible. Codex sessions are long-running lines
+of work: editing, testing, waiting for review, or blocked while other sessions
+keep moving. Weft keeps them in one terminal dashboard so you can organize
+agents by workspace and group, check status quickly, and jump back into the
+right console without losing running PTYs.
+
+## Why Weft
+
+- See every Codex agent in one dashboard instead of hunting through terminal
+  tabs.
+- Organize agents into optional groups inside each workspace, such as
+  `release`, `review`, `bugs`, or `experiments`.
+- Track workspace totals for `active` and `needs attention` agents so finished
+  or waiting work does not sit idle.
+- Detach, upgrade, or reopen the UI while the local supervisor keeps Codex PTYs
+  alive.
+- Keep Codex framed in the terminal: focus one agent for direct input, then
+  return to the dashboard to switch or reorganize.
 
 ## Getting Started
 
@@ -56,19 +67,35 @@ useful for fresh dashboard or doctor-command testing.
 
 ```text
 weft [--clear] [--attach|--no-attach]
-weft refresh
-weft status [--json]
-weft new [title]
-weft group add <name>
-weft workspace add <path>
-weft rename [id] <title>
-weft close [id]
-weft close --kill
-weft sessions
-weft clear
-weft doctor keys
-weft doctor keys --clear
-weft config info
+weft <command> [--clear]
+
+Common commands:
+weft                         Open the dashboard and attach to the supervisor.
+weft --clear                 Clear runtime state, then open a fresh dashboard.
+weft <command> --clear       Clear runtime state, then run the command.
+weft --no-attach             Start or reuse the supervisor without opening the dashboard.
+weft refresh                 Request a fresh dashboard snapshot.
+weft status [--json]         Show supervisor, workspace, group, and agent state.
+weft doctor                  Check local runtime and Codex command health.
+weft doctor keys             Diagnose terminal key encoding.
+
+Agents and organization:
+weft new [title]             Create a Codex agent.
+weft select <id>             Make an agent active.
+weft rename [id] <title>     Rename the selected agent or the given agent.
+weft close [id]              Close the active client or a Codex agent.
+weft group add <name>        Add a group in the current workspace.
+weft workspace add <path>    Add a workspace to the dashboard.
+weft move-left               Move the selected agent out of its group.
+weft move-right              Move the selected agent into the selected group.
+
+Runtime and configuration:
+weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.
+weft clear                   Prompt, then delete Weft runtime state.
+weft sessions                Show the current supervisor session.
+weft config info             Show runtime paths and active config.
+weft config show             Print config.toml.
+weft config init [--force]   Write the default config.
 ```
 
 Run `weft close` without an id to detach the active Weft client while the
@@ -137,18 +164,20 @@ The dashboard has `Workspaces`, `Agents`, and `Agent Preview` panes. Workspaces
 and agents live in the left-side navigation panes; the preview stays ready on
 the right as a read-only live cropped lens into the selected agent. Press
 `Enter` to open the selected thread in the focused `Agent Console`, where Codex
-input is forwarded. Agents can sit directly in a workspace as top-level rows.
-Groups are
-optional collapsible sections inside the `Agents` pane, and `Enter` on a group
-opens or collapses it. Dashboard forms use bordered inputs, compact
-validation/status lines, and state-specific key hints. In the `Workspaces` pane,
-`w` opens an add-workspace path prompt with a scrolling below-input autocomplete
-menu, arrow-key selection, and compact path status. Moving an agent
-autocompletes known group names after a matching prefix. Prompt inputs support
-Option/Alt word movement and deletion when the terminal sends Option as
-Meta/Esc. Alt-modified keys are also preserved when forwarded into Codex agent
-panes. `r` sets an optional card title and blank input clears it back to the
-display path.
+input is forwarded. Agents can sit directly in a workspace as top-level rows,
+or they can be organized into optional collapsible groups inside the `Agents`
+pane. Use groups for whatever makes the work easier to scan: release tasks,
+experiments, review follow-ups, bug fixes, or blocked investigations. `Enter`
+on a group opens or collapses it.
+
+Dashboard forms use bordered inputs, compact validation/status lines, and
+state-specific key hints. In the `Workspaces` pane, `w` opens an add-workspace
+path prompt with a scrolling below-input autocomplete menu, arrow-key selection,
+and compact path status. Moving an agent autocompletes known group names after a
+matching prefix. Prompt inputs support Option/Alt word movement and deletion
+when the terminal sends Option as Meta/Esc. Alt-modified keys are also preserved
+when forwarded into Codex agent panes. `r` sets an optional card title and blank
+input clears it back to the display path.
 
 When the dashboard is open, press `?` for shortcuts. Defaults:
 
