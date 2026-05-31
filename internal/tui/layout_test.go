@@ -34,6 +34,31 @@ func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	}
 }
 
+func TestWeftLogoGraphShape(t *testing.T) {
+	if len(emptyWeftLogo) != 6 {
+		t.Fatalf("logo height = %d, want 6", len(emptyWeftLogo))
+	}
+	joined := strings.Join(emptyWeftLogo, "\n")
+	if got := strings.Count(joined, "●"); got != 3 {
+		t.Fatalf("logo graph input count = %d, want 3:\n%s", got, joined)
+	}
+	if got := strings.Count(joined, "────▶"); got != 1 {
+		t.Fatalf("logo graph output count = %d, want 1:\n%s", got, joined)
+	}
+	for index, wantPrefix := range []string{
+		"●─────╮",
+		"      │",
+		"●─────┼────▶",
+		"      │",
+		"●─────╯",
+		"       ",
+	} {
+		if !strings.HasPrefix(emptyWeftLogo[index], wantPrefix) {
+			t.Fatalf("logo row %d prefix = %q, want %q", index, emptyWeftLogo[index], wantPrefix)
+		}
+	}
+}
+
 func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
