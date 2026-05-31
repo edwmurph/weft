@@ -147,7 +147,7 @@ include template variables:
 - `{title}`: user-configured agent title
 - `{auto}`: generated title from the first submitted message
 - `{codex}`: live Codex terminal title
-- `{status}`: live Codex status with Codex casing, falling back to agent lifecycle status
+- `{status}`: verbatim live Codex status, falling back to agent lifecycle status
 - `{workspace}`: agent workspace path
 - `{group}`: flat group name, when the agent is in a group
 

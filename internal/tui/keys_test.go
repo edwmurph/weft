@@ -168,6 +168,11 @@ func TestRouteCodexInputArgsSendsWorkingCtrlCAsInterruptKey(t *testing.T) {
 		t.Fatalf("routeCodexInputArgs mutated original args, got %q", got)
 	}
 
+	crafting := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}, args)
+	if got := crafting["encoded"]; got != terminalKeyboardInterrupt {
+		t.Fatalf("crafting ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
+	}
+
 	ready := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}, args)
 	if got := ready["encoded"]; got != terminalKeyboardCtrlC {
 		t.Fatalf("ready ctrl+c encoded = %q, want original ctrl+c %q", got, terminalKeyboardCtrlC)

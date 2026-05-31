@@ -48,11 +48,16 @@ func RenderStatus(agent state.Agent) string {
 	case state.StatusStarting, state.StatusStopped, state.StatusKilled, state.StatusError, state.StatusSitting, state.StatusShipping:
 		return string(agent.Status)
 	}
-	if status := CodexActivityStatus(agent.CodexTitle); status != "" {
-		return status
+	titleStatus := CodexActivityStatus(agent.CodexTitle)
+	screenStatus := strings.TrimSpace(agent.CodexStatus)
+	if screenStatus != "" && !CodexTitleIndicatesActivity(agent.CodexTitle) {
+		return screenStatus
 	}
-	if status := strings.TrimSpace(agent.CodexStatus); status != "" {
-		return status
+	if titleStatus != "" {
+		return titleStatus
+	}
+	if screenStatus != "" {
+		return screenStatus
 	}
 	if agent.Status != "" {
 		return string(agent.Status)
@@ -64,17 +69,72 @@ func CanonicalStatus(agent state.Agent) string {
 	return strings.ToLower(RenderStatus(agent))
 }
 
+func StatusIndicatesActivity(agent state.Agent) bool {
+	switch CanonicalStatus(agent) {
+	case string(state.StatusStarting), string(state.StatusRunning), "working", string(state.StatusShipping):
+		return true
+	case string(state.StatusReady), "waiting", "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
+		return false
+	default:
+		return CodexActivityStatus(agent.CodexTitle) != ""
+	}
+}
+
+func CodexTitleIndicatesActivity(title string) bool {
+	switch strings.ToLower(CodexActivityStatus(title)) {
+	case "", string(state.StatusRunning), string(state.StatusReady), "waiting", "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
+		return false
+	default:
+		return true
+	}
+}
+
 func CodexActivityStatus(title string) string {
 	title = NormalizeCodexTitle(title)
-	for _, token := range strings.FieldsFunc(title, func(r rune) bool {
-		return !unicode.IsLetter(r)
-	}) {
+	tokens := codexTitleTokens(title)
+	if len(tokens) == 1 {
+		if strings.EqualFold(tokens[0], "codex") {
+			return ""
+		}
+		if codexStatusCandidate(tokens[0]) {
+			return tokens[0]
+		}
+	}
+	for index, token := range tokens {
+		if !strings.EqualFold(token, "codex") {
+			continue
+		}
+		if index < len(tokens)-1 {
+			candidate := tokens[len(tokens)-1]
+			if codexStatusCandidate(candidate) {
+				return candidate
+			}
+		}
+	}
+	for _, token := range tokens {
 		switch strings.ToLower(token) {
 		case "ready", "waiting", "idle", "working", "shipping", "starting":
 			return token
 		}
 	}
 	return ""
+}
+
+func codexTitleTokens(title string) []string {
+	return strings.FieldsFunc(title, func(r rune) bool {
+		return !unicode.IsLetter(r)
+	})
+}
+
+func codexStatusCandidate(token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" || strings.EqualFold(token, "codex") {
+		return false
+	}
+	for _, r := range token {
+		return unicode.IsUpper(r)
+	}
+	return false
 }
 
 func RenderAgent(agent state.Agent, workspace state.Workspace, group state.Group, template string) string {

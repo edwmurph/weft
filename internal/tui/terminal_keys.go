@@ -114,7 +114,7 @@ func (input enhancedKeyboardInput) codexInputArgs() map[string]string {
 }
 
 func routeCodexInputArgs(agent state.Agent, args map[string]string) map[string]string {
-	if args["input"] != "ctrl+c" || titles.CanonicalStatus(agent) != "working" {
+	if args["input"] != "ctrl+c" || !titles.StatusIndicatesActivity(agent) {
 		return args
 	}
 	routed := make(map[string]string, len(args))

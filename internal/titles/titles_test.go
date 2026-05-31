@@ -69,6 +69,22 @@ func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
 	if got := CanonicalStatus(agent); got != "waiting" {
 		t.Fatalf("canonical status = %q", got)
 	}
+
+	agent.CodexTitle = "Fake Codex Crafting"
+	if got := RenderStatus(agent); got != "Crafting" {
+		t.Fatalf("got %q", got)
+	}
+	if got := CanonicalStatus(agent); got != "crafting" {
+		t.Fatalf("canonical status = %q", got)
+	}
+
+	agent.CodexTitle = "Exploring"
+	if got := RenderStatus(agent); got != "Exploring" {
+		t.Fatalf("got %q", got)
+	}
+	if got := CanonicalStatus(agent); got != "exploring" {
+		t.Fatalf("canonical status = %q", got)
+	}
 }
 
 func TestRenderStatusUsesScreenDerivedCodexStatus(t *testing.T) {
@@ -87,6 +103,30 @@ func TestRenderStatusUsesScreenDerivedCodexStatus(t *testing.T) {
 	}
 }
 
+func TestStatusIndicatesActivityForUnlistedCodexStatus(t *testing.T) {
+	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}
+
+	if !StatusIndicatesActivity(agent) {
+		t.Fatal("unlisted live Codex status should be active")
+	}
+
+	agent.CodexTitle = "Fake Codex Waiting"
+	if StatusIndicatesActivity(agent) {
+		t.Fatal("waiting Codex status should not be active")
+	}
+
+	agent.CodexTitle = "Fake Codex Ready"
+	if StatusIndicatesActivity(agent) {
+		t.Fatal("ready Codex status should not be active")
+	}
+
+	agent.CodexTitle = "Fake Codex Running"
+	agent.CodexStatus = "Ready"
+	if StatusIndicatesActivity(agent) {
+		t.Fatal("screen-derived ready status should not be active")
+	}
+}
+
 func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
 	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusStopped}
 
@@ -101,6 +141,12 @@ func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
 
 	agent.Status = state.StatusReady
 	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusReady) {
+		t.Fatalf("got %q", got)
+	}
+
+	agent.Status = state.StatusRunning
+	agent.CodexTitle = "Codex"
+	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusRunning) {
 		t.Fatalf("got %q", got)
 	}
 }

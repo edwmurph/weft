@@ -1227,12 +1227,12 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 			switch {
 			case screenStatus != "":
 				agent.CodexStatus = screenStatus
-				if titles.CodexActivityStatus(agent.CodexTitle) == "" {
+				if !titles.CodexTitleIndicatesActivity(agent.CodexTitle) {
 					agent.Status = state.StatusReady
 				}
 			case data.Text != "" && agent.CodexStatus != "":
 				agent.CodexStatus = ""
-				if agent.Status == state.StatusReady && titles.CodexActivityStatus(agent.CodexTitle) == "" {
+				if agent.Status == state.StatusReady && !titles.CodexTitleIndicatesActivity(agent.CodexTitle) {
 					agent.Status = state.StatusRunning
 				}
 			}

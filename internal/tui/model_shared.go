@@ -161,12 +161,7 @@ func renderAgentWithTemplate(st state.State, agent state.Agent, template string)
 }
 
 func agentStatusIndicatesActivity(agent state.Agent) bool {
-	switch titles.CanonicalStatus(agent) {
-	case string(state.StatusStarting), string(state.StatusRunning), "working", string(state.StatusShipping):
-		return true
-	default:
-		return false
-	}
+	return titles.StatusIndicatesActivity(agent)
 }
 
 func codexScreenStatus(screen *TerminalScreen) string {
