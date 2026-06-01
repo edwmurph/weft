@@ -49,9 +49,14 @@ func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
 		t.Fatalf("mode = %s, want new task menu", model.mode)
 	}
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"New task", "[codex] Codex", "[shell] Shell", "Enter create", "Up/Down move", "Esc cancel"} {
+	for _, expected := range []string{"New task", "Codex", "Shell", "Enter create", "Up/Down move", "Esc cancel"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("new task menu missing %q:\n%s", expected, got)
+		}
+	}
+	for _, unexpected := range []string{"[codex] Codex", "[shell] Shell"} {
+		if strings.Contains(got, unexpected) {
+			t.Fatalf("new task menu should not render %q:\n%s", unexpected, got)
 		}
 	}
 

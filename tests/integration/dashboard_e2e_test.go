@@ -192,8 +192,10 @@ title_template = "Shell"
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "New task") &&
-			strings.Contains(capture, "[codex] Codex") &&
-			strings.Contains(capture, "[shell] Shell")
+			strings.Contains(capture, "Codex") &&
+			strings.Contains(capture, "Shell") &&
+			!strings.Contains(capture, "[codex] Codex") &&
+			!strings.Contains(capture, "[shell] Shell")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	st := waitState(t, env, bin, func(st state.State) bool {

@@ -93,7 +93,10 @@ func renderNewTaskModal(cfg config.Config, selectedIndex int, width int) string 
 			marker = "> "
 			style = modalKeyStyle
 		}
-		label := taskTypeBadgeCell(cfg, taskType) + " " + taskType.Label
+		label := strings.TrimSpace(taskType.Label)
+		if label == "" {
+			label = strings.TrimSpace(taskType.ID)
+		}
 		lines = append(lines, style.Render(padVisual(clip(marker+label, valueWidth), valueWidth)))
 	}
 	lines = append(lines, "", modalKeyStyle.Render("Enter")+" create  "+modalKeyStyle.Render("Up/Down")+" move  "+modalKeyStyle.Render("Esc")+" cancel")

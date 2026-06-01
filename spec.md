@@ -532,8 +532,9 @@ badge = "[shell]"
 title_template = "Shell"
 ```
 
-The task type menu and Tasks pane reserve a fixed badge column wide enough for
-the configured task type badges so rows do not drift out of alignment.
+The task type menu lists task type labels only, such as `Codex` and `Shell`.
+The Tasks pane reserves a fixed badge column wide enough for the configured
+task type badges so task rows do not drift out of alignment.
 
 The dashboard `n` shortcut opens a task type menu. `Enter` creates a top-level
 task of the selected type. The CLI command `weft new` creates the configured
