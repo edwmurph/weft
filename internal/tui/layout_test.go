@@ -110,6 +110,32 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	}
 }
 
+func TestRenderTaskPreviewRequiresFocusedTaskRow(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TitleTemplate = "{title}"
+	st := layoutState("/tmp/project")
+	output := "selected terminal output"
+
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "Preview Title", output, 140, 24, "", minTwoPaneNavWidth, 0, workspaceRenderOptions{
+		previewHeaderAnimation: "●",
+	}))
+	if !strings.Contains(got, "No task selected") || strings.Contains(got, output) || strings.Contains(got, "Preview Title") {
+		t.Fatalf("group row focus should render an empty preview instead of the active task:\n%s", got)
+	}
+	if lines := strings.Split(got, "\n"); len(lines) == 0 || strings.Contains(lines[0], "Task Live Preview ●") {
+		t.Fatalf("group row focus should not show active preview animation:\n%s", got)
+	}
+
+	st.Focus = state.FocusWorkspaces
+	st.SelectedWorkspaceID = ""
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "Preview Title", output, 140, 24, "", minTwoPaneNavWidth, 1, workspaceRenderOptions{
+		previewHeaderAnimation: "●",
+	}))
+	if !strings.Contains(got, "No task selected") || strings.Contains(got, output) || strings.Contains(got, "Preview Title") {
+		t.Fatalf("no workspace selection should render an empty preview instead of the active task:\n%s", got)
+	}
+}
+
 func TestRenderTaskPreviewHeaderUsesAnimationFrame(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
@@ -171,7 +197,7 @@ func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
 
 	got := renderWorkspace(cfg, st, "Task", "No task open.", minThreePaneWidth, 24, "", workspace)
 
-	for _, expected := range []string{"Workspaces", "Tasks", "No task open", expectedPath} {
+	for _, expected := range []string{"Workspaces", "Tasks", "No task selected", expectedPath} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("wide dashboard missing %q:\n%s", expected, got)
 		}

@@ -300,12 +300,13 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 		height: 8,
 		snapshot: ipc.Snapshot{
 			State: state.State{
-				Focus:           state.FocusAgents,
-				NavOpen:         true,
-				ActiveAgentID:   "a",
-				SelectedAgentID: "a",
-				Workspaces:      []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Agents:          []state.Agent{{ID: "a", WorkspaceID: "w"}},
+				Focus:               state.FocusAgents,
+				NavOpen:             true,
+				ActiveAgentID:       "a",
+				SelectedAgentID:     "a",
+				SelectedWorkspaceID: "w",
+				Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Agents:              []state.Agent{{ID: "a", WorkspaceID: "w"}},
 			},
 			NavWidth:             minTwoPaneNavWidth,
 			CodexTitle:           "Codex",
@@ -349,14 +350,13 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	st := testStateWithAgent(rt.Workspace)
 	st.Focus = state.FocusWorkspaces
 	st.NavOpen = true
-	st.ActiveAgentID = ""
 	model := NewClientModel(rt, cfg)
 	model.width = 120
 	model.height = 16
 	model.snapshot = ipc.Snapshot{
 		State:        st,
-		CodexTitle:   "Codex",
-		CodexContent: "No task open.",
+		CodexTitle:   "alpha",
+		CodexContent: "last task output",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
 	area, ok := model.newWorkspaceCardArea()
@@ -383,8 +383,8 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 		t.Fatalf("new workspace card render state should clear selected workspace, got %q", renderState.SelectedWorkspaceID)
 	}
 	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
-		t.Fatalf("new workspace card selection should empty the Tasks pane:\n%s", got)
+	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "No task selected") || strings.Contains(got, "alpha") || strings.Contains(got, "last task output") {
+		t.Fatalf("new workspace card selection should empty the Tasks pane and preview:\n%s", got)
 	}
 
 	updated, cmd = model.handleNavKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -413,8 +413,8 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 		t.Fatal("escaping the workspace prompt should return to the new workspace card")
 	}
 	got = ansi.Strip(model.View())
-	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
-		t.Fatalf("escaping back to the new workspace card should keep Agents empty:\n%s", got)
+	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "No task selected") || strings.Contains(got, "alpha") || strings.Contains(got, "last task output") {
+		t.Fatalf("escaping back to the new workspace card should keep Tasks and preview empty:\n%s", got)
 	}
 }
 
@@ -424,14 +424,13 @@ func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
 	st := testStateWithAgent(rt.Workspace)
 	st.Focus = state.FocusAgents
 	st.NavOpen = true
-	st.ActiveAgentID = ""
 	model := NewClientModel(rt, cfg)
 	model.width = 120
 	model.height = 16
 	model.snapshot = ipc.Snapshot{
 		State:        st,
-		CodexTitle:   "Codex",
-		CodexContent: "No task open.",
+		CodexTitle:   "alpha",
+		CodexContent: "last task output",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
 	area, ok := model.newWorkspaceCardArea()
@@ -454,8 +453,8 @@ func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
 		t.Fatalf("hover should select the new workspace card, selected=%t focus=%s", model.newWorkspaceCardSelected, model.snapshot.State.Focus)
 	}
 	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
-		t.Fatalf("hovering the new workspace card should empty the Tasks pane:\n%s", got)
+	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "No task selected") || strings.Contains(got, "alpha") || strings.Contains(got, "last task output") {
+		t.Fatalf("hovering the new workspace card should empty the Tasks pane and preview:\n%s", got)
 	}
 
 	updated, cmd = model.handleMouse(tea.MouseMsg{

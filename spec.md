@@ -237,11 +237,12 @@ template card under the last workspace card with a plus-sign title and concise
 copy telling the user to press the configured add-workspace key to create a
 workspace. Hovering or clicking the template card selects it: real workspace
 cards return to their inactive border, and the Tasks pane renders the same
-empty state as no selected workspace. The template card is also selectable by
-moving down from the last workspace card. Pressing `Enter` while the template
-card is selected opens the same add-workspace prompt as the configured
-add-workspace key. If that prompt is canceled, focus returns to the selected
-template card instead of jumping to a real workspace.
+empty state as no selected workspace while Task Live Preview renders `No task
+selected`. The template card is also selectable by moving down from the last
+workspace card. Pressing `Enter` while the template card is selected opens the
+same add-workspace prompt as the configured add-workspace key. If that prompt is
+canceled, focus returns to the selected template card instead of jumping to a
+real workspace.
 
 Stored workspaces remain selectable even when their path is missing, unreadable,
 or no longer a directory. In that bad-state case the card shows a visible warning
@@ -369,7 +370,7 @@ The pane shows either:
 - a centered empty message when no task is open, with a subtle Weft wordmark and version label above it when space allows
 - the selected task terminal when a task is open
 
-When navigation is open, the Workspaces and Tasks panes push `Task Live Preview` to the right. When a task is active, the preview title appends one space and a slowly pulsing dot to indicate the preview can update with live task output. The preview animation is presentation only and does not mean the selected task is busy; it is omitted when there is no selected task to preview. The preview is read-only: keyboard input controls Weft navigation and organization, not the task PTY. Trackpad or wheel scrolling inside the preview frame scrolls Weft's captured scrollback for the task and does not forward mouse packets into the task PTY. When a task is active, the preview top border shows the selected task title at the top right; preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
+When navigation is open, the Workspaces and Tasks panes push `Task Live Preview` to the right. The preview shows live task output only when the current navigation focus is on a task row, or when a real workspace card is focused and a task remains selected in that workspace. Focusing the new-workspace template card, a group row, or any other non-task navigation target renders `No task selected` instead of the last viewed task. When a task row is focused, the preview title appends one space and a slowly pulsing dot to indicate the preview can update with live task output. The preview animation is presentation only and does not mean the selected task is busy; it is omitted when there is no selected task to preview. The preview is read-only: keyboard input controls Weft navigation and organization, not the task PTY. Trackpad or wheel scrolling inside the preview frame scrolls Weft's captured scrollback for the task and does not forward mouse packets into the task PTY. When a task row is focused, the preview top border shows the selected task title at the top right; preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
 
 When the user presses `Enter` on a task, navigation slides away left, `Task Console` expands to the full terminal, and focus moves to the task console.
 

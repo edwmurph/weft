@@ -239,13 +239,15 @@ func renderWorkspaceView(
 		navWidth = width - codexWidth
 	}
 	if navWidth <= 0 {
-		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation), "\n")
+		codexState := codexFrameStateForSelection(st, groupCursor)
+		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation), "\n")
 	}
 	if codexWidth <= 0 {
 		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
 	}
+	codexState := codexFrameStateForSelection(st, groupCursor)
 	nav := renderNavSection(cfg, st, navWidth, height, groupCursor, options)
-	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.previewHeaderAnimation)
+	codex := renderCodexFrame(cfg, codexState, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.previewHeaderAnimation)
 	lines := make([]string, 0, height)
 	for index := 0; index < height; index++ {
 		left := lineAt(nav, index, navWidth)
@@ -253,6 +255,24 @@ func renderWorkspaceView(
 		lines = append(lines, clip(left+right, width))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func codexFrameStateForSelection(st state.State, groupCursor int) state.State {
+	if st.Focus == state.FocusCodex {
+		return st
+	}
+	if st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID != "" {
+		return st
+	}
+	if st.Focus == state.FocusAgents {
+		row := currentGroupRowForState(st, groupCursor)
+		if row.kind == groupRowAgent {
+			st.ActiveAgentID = row.agentID
+			return st
+		}
+	}
+	st.ActiveAgentID = ""
+	return st
 }
 
 func renderNavSection(cfg config.Config, st state.State, width int, height int, groupCursor int, options workspaceRenderOptions) []string {
@@ -967,6 +987,9 @@ func renderCodexFrame(
 	palette := paletteFor(active)
 	innerWidth := max(0, width-2)
 	agentActive := state.ActiveAgent(st) != nil
+	if !agentActive {
+		loadingText = ""
+	}
 	previewMode := !navCollapsed
 	topLabel := "Task Live Preview"
 	topRightLabel := ""
@@ -988,7 +1011,7 @@ func renderCodexFrame(
 	empty := !agentActive
 	contentWidth := codexLineContentWidth(innerWidth, previewMode)
 	messageLines := renderStatusBanner(message, contentWidth, min(3, contentHeight))
-	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText)
+	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText, codexEmptyTitle(previewMode))
 	if len(messageLines) > 0 {
 		contentLines = append(messageLines, contentLines...)
 	}
@@ -1077,7 +1100,14 @@ func wrapPlain(value string, width int, maxLines int) []string {
 	return lines
 }
 
-func renderCodexContent(content string, width int, height int, empty bool, canCreateAgent bool, loadingText string) []string {
+func codexEmptyTitle(previewMode bool) string {
+	if previewMode {
+		return "No task selected"
+	}
+	return "No task open"
+}
+
+func renderCodexContent(content string, width int, height int, empty bool, canCreateAgent bool, loadingText string, emptyTitle string) []string {
 	if height <= 0 {
 		return nil
 	}
@@ -1085,7 +1115,7 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 		return renderCenteredCodexContent([]string{loadingText}, width, height)
 	}
 	if empty {
-		return renderEmptyCodexContent(width, height, canCreateAgent)
+		return renderEmptyCodexContent(width, height, canCreateAgent, emptyTitle)
 	}
 	lines := lastLines(content, height)
 	for len(lines) < height {
@@ -1094,7 +1124,11 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 	return lines
 }
 
-func renderEmptyCodexContent(width int, height int, canCreateAgent bool) []string {
+func renderEmptyCodexContent(width int, height int, canCreateAgent bool, titles ...string) []string {
+	title := "No task open"
+	if len(titles) > 0 && strings.TrimSpace(titles[0]) != "" {
+		title = strings.TrimSpace(titles[0])
+	}
 	hint := "Press n to create one."
 	if !canCreateAgent {
 		hint = "Add a workspace first."
@@ -1108,10 +1142,10 @@ func renderEmptyCodexContent(width int, height int, canCreateAgent bool) []strin
 		content = append(content, "")
 		content = append(content, emptyVersionStyle.Render(centerVisual(version.Label(), logoWidth)))
 		content = append(content, "")
-		content = append(content, centerVisual("No task open", logoWidth), centerVisual(hint, logoWidth))
+		content = append(content, centerVisual(title, logoWidth), centerVisual(hint, logoWidth))
 		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
 	}
-	content = append(content, version.Label(), "No task open", hint)
+	content = append(content, version.Label(), title, hint)
 	return renderCenteredCodexContent(content, width, height)
 }
 
