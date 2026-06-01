@@ -200,10 +200,56 @@ func TestSnapshotMarksActiveAgentsLoadingUntilReady(t *testing.T) {
 		t.Fatalf("ready agent should not be marked loading: %#v", snapshot.LoadingAgentIDs)
 	}
 
+	model.state.Agents[0].CodexTitle = "Fake Codex Waiting"
+	snapshot = model.Snapshot()
+	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
+		t.Fatalf("waiting agent should be marked loading: %#v", snapshot.LoadingAgentIDs)
+	}
+
 	model.state.Agents[0].CodexTitle = "Fake Codex Working"
 	snapshot = model.Snapshot()
 	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
 		t.Fatalf("working agent should be marked loading: %#v", snapshot.LoadingAgentIDs)
+	}
+}
+
+func TestLoadingIndicatorCoversNonIdleTaskStates(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		agent state.Agent
+		want  bool
+	}{
+		{
+			name:  "codex waiting title",
+			agent: state.Agent{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Waiting"},
+			want:  true,
+		},
+		{
+			name:  "terminal waiting status",
+			agent: state.Agent{ID: "a", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.AgentStatus("waiting")},
+			want:  true,
+		},
+		{
+			name:  "ready",
+			agent: state.Agent{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Ready"},
+			want:  false,
+		},
+		{
+			name:  "idle",
+			agent: state.Agent{ID: "a", Title: "Codex", Status: state.AgentStatus("idle")},
+			want:  false,
+		},
+		{
+			name:  "killed",
+			agent: state.Agent{ID: "a", Title: "Codex", Status: state.StatusKilled},
+			want:  false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := agentStatusShowsLoadingIndicator(tt.agent); got != tt.want {
+				t.Fatalf("loading indicator = %t, want %t", got, tt.want)
+			}
+		})
 	}
 }
 

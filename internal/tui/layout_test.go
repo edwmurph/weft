@@ -485,6 +485,8 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		Agents: []state.Agent{
 			{ID: "loading", WorkspaceID: "w", Title: "Booting", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
 			{ID: "working", WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", WorkspaceID: "w", Title: "Approval", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
+			{ID: "terminal-waiting", TypeID: config.DefaultTaskTypeShell, WorkspaceID: "w", Title: "Shell Awaiting", Status: state.AgentStatus("waiting"), CreatedAt: now, UpdatedAt: now},
 			{ID: "ready", WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "failed", WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
 			{ID: "stopped", WorkspaceID: "w", Title: "Paused", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
@@ -492,7 +494,7 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		},
 	}
 
-	got := strings.Join(renderGroupsPaneWithOptions(cfg, st, 42, 12, 99, workspaceRenderOptions{
+	got := strings.Join(renderGroupsPaneWithOptions(cfg, st, 42, 14, 99, workspaceRenderOptions{
 		loadingFrame:  "⠼",
 		loadingAgents: map[string]bool{"loading": true},
 	}), "\n")
@@ -502,6 +504,12 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	}
 	if !strings.Contains(stripped, "⠼ [codex] Review") || strings.Contains(stripped, "· [codex] Review") {
 		t.Fatalf("working row should use the animated marker:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "⠼ [codex] Approval") || strings.Contains(stripped, "· [codex] Approval") {
+		t.Fatalf("waiting Codex row should use the animated marker:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "⠼ [shell] Shell Awaiting") || strings.Contains(stripped, "· [shell] Shell Awaiting") {
+		t.Fatalf("waiting terminal row should use the animated marker:\n%s", stripped)
 	}
 	if !strings.Contains(stripped, "· [codex] Respond") || strings.Contains(stripped, "⠼ [codex] Respond") {
 		t.Fatalf("ready row should use the subtle ready marker instead of the spinner:\n%s", stripped)
@@ -518,6 +526,8 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	for _, expected := range []string{
 		agentRunningStyle.Render("⠼ [codex] Booting"),
 		agentWorkingStyle.Render("⠼ [codex] Review"),
+		agentLoadingStyle.Render("⠼ [codex] Approval"),
+		agentLoadingStyle.Render("⠼ [shell] Shell Awaiting"),
 		agentReadyStyle.Render("· [codex] Respond"),
 		agentErrorStyle.Render("! [codex] Broken"),
 		agentAttentionStyle.Render("◦ [codex] Paused"),

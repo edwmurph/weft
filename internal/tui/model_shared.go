@@ -158,6 +158,15 @@ func agentStatusIndicatesActivity(agent state.Agent) bool {
 	return titles.StatusIndicatesActivity(agent)
 }
 
+func agentStatusShowsLoadingIndicator(agent state.Agent) bool {
+	switch titles.CanonicalStatus(agent) {
+	case string(state.StatusReady), "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
+		return false
+	default:
+		return true
+	}
+}
+
 func codexScreenStatus(screen *TerminalScreen) string {
 	if screen == nil {
 		return ""

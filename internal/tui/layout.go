@@ -852,7 +852,7 @@ func agentMarkerForRender(agent state.Agent, loadingFrame string, loadingAgents 
 }
 
 func agentIsLoadingForRender(agent state.Agent, loadingAgents map[string]bool) bool {
-	return agentStatusIndicatesActivity(agent) || loadingAgents[agent.ID]
+	return agentStatusShowsLoadingIndicator(agent) || loadingAgents[agent.ID]
 }
 
 func loadingFrameForRender(frame string) string {

@@ -1483,8 +1483,7 @@ func (m Model) agentLoading(agentID string) bool {
 		return false
 	}
 	if !agentUsesCodexIntegration(m.cfg, *agent) {
-		return agent.Status == state.StatusStarting && m.ptys[agentID] == nil ||
-			agent.Status == state.StatusRunning
+		return agentStatusShowsLoadingIndicator(*agent)
 	}
 	canonical := titles.CanonicalStatus(*agent)
 	switch canonical {
@@ -1495,15 +1494,13 @@ func (m Model) agentLoading(agentID string) bool {
 	// status first so we don't incorrectly show them as still "running"/loading.
 	// For the active agent, keep the stricter behavior that waits for visible content.
 	if agentID != m.state.ActiveAgentID {
-		switch canonical {
-		case "ready":
-			return false
-		case "working":
-			return true
-		}
+		return agentStatusShowsLoadingIndicator(*agent)
 	}
-	if agentStatusIndicatesActivity(*agent) {
+	if agentStatusShowsLoadingIndicator(*agent) {
 		return true
+	}
+	if canonical == "idle" {
+		return false
 	}
 	screen := m.screens[agentID]
 	return screen == nil || (!screen.HasVisibleContent() && !m.visible[agentID])

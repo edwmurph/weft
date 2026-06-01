@@ -1189,7 +1189,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codex Waiting") && !strings.Contains(capture, "Codex running")
+			return strings.Contains(capture, "Codex Waiting") &&
+				!strings.Contains(capture, "Codex running") &&
+				agentLineHasLoadingFrame(capture, "Codex Waiting")
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
@@ -1202,6 +1204,12 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		readyCapture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Codex Ready")
+		})
+		if agentLineHasLoadingFrame(readyCapture, "Codex Ready") {
+			t.Fatalf("ready Codex row should keep the static marker:\n%s", readyCapture)
+		}
 	})
 
 	timedStep(t, "plan-mode request input renders ready status", func() {
