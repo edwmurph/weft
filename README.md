@@ -23,7 +23,7 @@ quickly, and jump back into the right console without losing running PTYs.
 - Organize tasks into optional groups inside each workspace, such as
   `release`, `review`, `bugs`, or `experiments`.
 - Track workspace totals for `active` and `needs attention` tasks so finished
-  or waiting work does not sit idle.
+  or blocked work does not sit idle.
 - Auto-name Codex tasks from their first chat message, or opted-in shell tasks
   from their first command, with a configurable title hook.
 - Detach, upgrade, or reopen the UI while the local supervisor keeps task PTYs

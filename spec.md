@@ -252,7 +252,7 @@ Each card renders:
 
 - a title in the top border
 - `total`, the number of all tasks in that workspace
-- `active`, the number of tasks whose rendered/live status is `starting`, `running`, `working`, or `shipping`
+- `active`, the number of tasks whose rendered/live status is `starting`, `running`, `waiting`, `working`, or `shipping`
 - `needs attention`, computed as `total - active`
 
 Do not render card-level `parked`, `stopped`, `killed`, `quiet`, or `error` categories. Those task states remain available to title templates and other task-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.

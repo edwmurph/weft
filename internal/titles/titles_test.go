@@ -111,8 +111,8 @@ func TestStatusIndicatesActivityForUnlistedCodexStatus(t *testing.T) {
 	}
 
 	agent.CodexTitle = "Fake Codex Waiting"
-	if StatusIndicatesActivity(agent) {
-		t.Fatal("waiting Codex status should not be active")
+	if !StatusIndicatesActivity(agent) {
+		t.Fatal("waiting Codex status should be active")
 	}
 
 	agent.CodexTitle = "Fake Codex Ready"
@@ -124,6 +124,12 @@ func TestStatusIndicatesActivityForUnlistedCodexStatus(t *testing.T) {
 	agent.CodexStatus = "Ready"
 	if StatusIndicatesActivity(agent) {
 		t.Fatal("screen-derived ready status should not be active")
+	}
+
+	agent.CodexTitle = "Fake Codex Waiting"
+	agent.CodexStatus = "Ready"
+	if StatusIndicatesActivity(agent) {
+		t.Fatal("screen-derived ready status should still override waiting title status")
 	}
 }
 

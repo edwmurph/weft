@@ -787,7 +787,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"  fi\n"+
 			"  if [ \"$line\" = \"waiting status\" ]; then\n"+
 			"    printf '\\033]2;Fake Codex Waiting\\007'\n"+
-			"    printf '\\033[2J\\033[Hwaiting for approval\\n'\n"+
+			"    printf '\\033[2J\\033[Hwaiting on terminal\\n'\n"+
 			"    continue\n"+
 			"  fi\n"+
 			"  if [ \"$line\" = \"crafting status\" ]; then\n"+
@@ -1290,6 +1290,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Waiting") &&
+				strings.Contains(capture, "1 active") &&
+				strings.Contains(capture, "0 needs attention") &&
 				!strings.Contains(capture, "Codex running") &&
 				agentLineHasLoadingFrame(capture, "Codex Waiting")
 		})

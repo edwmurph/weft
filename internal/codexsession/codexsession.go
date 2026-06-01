@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/titles"
@@ -112,15 +111,8 @@ func agentLiveForRestart(agent state.Agent) bool {
 }
 
 func AgentIdleForUpgrade(agent state.Agent) bool {
-	titleStatus := codexTitleStatus(agent.CodexTitle)
-	switch titleStatus {
-	case "ready", "waiting", "idle":
-		return true
-	case "working", "shipping", "starting":
-		return false
-	}
-	switch titles.RenderStatus(agent) {
-	case string(state.StatusReady), string(state.StatusSitting), string(state.StatusStopped), string(state.StatusKilled):
+	switch titles.CanonicalStatus(agent) {
+	case string(state.StatusReady), "idle", string(state.StatusSitting), string(state.StatusStopped), string(state.StatusKilled):
 		return true
 	default:
 		return false
@@ -277,19 +269,6 @@ func parseTime(value string) time.Time {
 	}
 	parsed, _ = time.Parse(time.RFC3339, strings.TrimSpace(value))
 	return parsed
-}
-
-func codexTitleStatus(title string) string {
-	title = strings.ToLower(titles.NormalizeCodexTitle(title))
-	for _, token := range strings.FieldsFunc(title, func(r rune) bool {
-		return !unicode.IsLetter(r)
-	}) {
-		switch token {
-		case "ready", "waiting", "idle", "working", "shipping", "starting":
-			return token
-		}
-	}
-	return ""
 }
 
 func shellQuote(value string) string {

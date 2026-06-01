@@ -281,6 +281,7 @@ func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 		Agents: []state.Agent{
 			{ID: "starting", WorkspaceID: "w", Title: "Starting", Status: state.StatusStarting, CreatedAt: now, UpdatedAt: now},
 			{ID: "running", WorkspaceID: "w", Title: "Running", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", WorkspaceID: "w", Title: "Waiting", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
 			{ID: "working", WorkspaceID: "w", Title: "Working", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
 			{ID: "shipping", WorkspaceID: "w", Title: "Shipping", Status: state.StatusShipping, CreatedAt: now, UpdatedAt: now},
 			{ID: "ready", WorkspaceID: "w", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
@@ -291,14 +292,14 @@ func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 	}
 
 	counts := workspaceCardCountsForWorkspace(st, "w")
-	if counts.total != 8 {
+	if counts.total != 9 || counts.active != 5 || counts.needsAttention != 4 {
 		t.Fatalf("counts = %#v", counts)
 	}
 	if counts.active+counts.needsAttention+counts.silenced != counts.total {
 		t.Fatalf("counts = %#v", counts)
 	}
 	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n")))
-	for _, expected := range []string{"8 total", "0 silenced", "needs attention", "╭ /tmp/project", "│", "╰"} {
+	for _, expected := range []string{"9 total", "5 active", "4 needs attention", "0 silenced", "╭ /tmp/project", "│", "╰"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("workspace card missing %q:\n%s", expected, got)
 		}

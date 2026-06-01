@@ -49,13 +49,15 @@ func TestBuildReportBlocksBusyOrMissingSessions(t *testing.T) {
 		Version: state.Version,
 		Agents: []state.Agent{
 			{ID: "busy", Title: "Busy", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", Title: "Waiting", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
 			{ID: "missing", Title: "Missing", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "ready", Title: "Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexSessionID: "session-ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "prompt-ready", Title: "Prompt Ready", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CodexStatus: "Ready", CodexSessionID: "session-prompt", CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
 	report := BuildReport(st)
-	if report.CanUpgrade() || report.Ready != 1 || len(report.Busy) != 1 || len(report.Missing) != 1 {
+	if report.CanUpgrade() || report.Ready != 2 || len(report.Busy) != 2 || len(report.Missing) != 1 {
 		t.Fatalf("report = %#v", report)
 	}
 }

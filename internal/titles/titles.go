@@ -71,9 +71,9 @@ func CanonicalStatus(agent state.Agent) string {
 
 func StatusIndicatesActivity(agent state.Agent) bool {
 	switch CanonicalStatus(agent) {
-	case string(state.StatusStarting), string(state.StatusRunning), "working", string(state.StatusShipping):
+	case string(state.StatusStarting), string(state.StatusRunning), "waiting", "working", string(state.StatusShipping):
 		return true
-	case string(state.StatusReady), "waiting", "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
+	case string(state.StatusReady), "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
 		return false
 	default:
 		return CodexActivityStatus(agent.CodexTitle) != ""

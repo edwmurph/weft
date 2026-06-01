@@ -838,6 +838,8 @@ func agentLoadingStyleForStatus(status string) lipgloss.Style {
 	switch status {
 	case string(state.StatusRunning):
 		return agentRunningStyle
+	case "waiting":
+		return agentWorkingStyle
 	case "working":
 		return agentWorkingStyle
 	case string(state.StatusShipping):
