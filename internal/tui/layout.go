@@ -72,12 +72,19 @@ var (
 )
 
 type workspaceRenderOptions struct {
-	loadingText         string
-	loadingFrame        string
-	loadingAgents       map[string]bool
-	workspaceFooterText string
-	workspaceInfoText   string
-	codexToastText      string
+	loadingText              string
+	loadingFrame             string
+	loadingAgents            map[string]bool
+	workspaceFooterText      string
+	workspaceInfoText        string
+	newWorkspaceCardSelected bool
+	codexToastText           string
+}
+
+type workspacePaneContent struct {
+	lines              []string
+	newWorkspaceStart  int
+	newWorkspaceHeight int
 }
 
 type framePalette struct {
@@ -268,11 +275,55 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 	return renderGroupsPaneWithOptions(cfg, st, width, height, groupCursor, options)
 }
 
+func workspacesPaneAreaFor(st state.State, width int, height int, navWidth int) (consoleArea, bool) {
+	if width <= 0 || height <= 0 || navWidth <= 0 {
+		return consoleArea{}, false
+	}
+	navWidth = min(max(0, navWidth), width)
+	if navWidth <= 0 {
+		return consoleArea{}, false
+	}
+	if navWidth >= minTwoPaneNavWidth {
+		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, navWidth-minAgentsPaneWidth))
+		if workspaceWidth <= 0 {
+			return consoleArea{}, false
+		}
+		return consoleArea{x: 0, y: 0, width: workspaceWidth, height: height}, true
+	}
+	if st.Focus == state.FocusWorkspaces {
+		return consoleArea{x: 0, y: 0, width: navWidth, height: height}, true
+	}
+	return consoleArea{}, false
+}
+
+func newWorkspaceTemplateCardAreaFor(cfg config.Config, st state.State, width int, height int, navWidth int, options workspaceRenderOptions) (consoleArea, bool) {
+	area, ok := workspacesPaneAreaFor(st, width, height, navWidth)
+	if !ok || area.width <= 2 || area.height <= 2 {
+		return consoleArea{}, false
+	}
+	content := buildWorkspacesPaneContent(cfg, st, area.width, area.height, options)
+	if content.newWorkspaceStart < 0 || content.newWorkspaceHeight <= 0 {
+		return consoleArea{}, false
+	}
+	cardWidth := max(2, area.width-2-(navHorizontalPadding*2))
+	return consoleArea{
+		x:      area.x + 1 + navHorizontalPadding,
+		y:      area.y + 1 + content.newWorkspaceStart,
+		width:  cardWidth,
+		height: content.newWorkspaceHeight,
+	}, true
+}
+
 func renderWorkspacesPane(cfg config.Config, st state.State, width int, height int) []string {
 	return renderWorkspacesPaneWithOptions(cfg, st, width, height, workspaceRenderOptions{})
 }
 
 func renderWorkspacesPaneWithOptions(cfg config.Config, st state.State, width int, height int, options workspaceRenderOptions) []string {
+	content := buildWorkspacesPaneContent(cfg, st, width, height, options)
+	return renderPaneFrame("Workspaces", "", width, height, st.Focus == state.FocusWorkspaces, content.lines)
+}
+
+func buildWorkspacesPaneContent(cfg config.Config, st state.State, width int, height int, options workspaceRenderOptions) workspacePaneContent {
 	cards := []string{}
 	cardWidth := max(2, width-2-(navHorizontalPadding*2))
 	for _, workspace := range st.Workspaces {
@@ -283,22 +334,33 @@ func renderWorkspacesPaneWithOptions(cfg config.Config, st state.State, width in
 		}
 	}
 	hasWorkspaceCards := len(cards) > 0
-	content := cards
+	content := workspacePaneContent{lines: cards, newWorkspaceStart: -1}
 	if !hasWorkspaceCards {
-		content = renderCenteredPaneHelp(width, height, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
+		content.lines = renderCenteredPaneHelp(width, height, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
 	contentHeight := max(0, height-2)
 	if footer := renderWorkspaceFooter(options.workspaceFooterText, width, height, workspaceUpgradeFooterStyle); len(footer) > 0 {
-		content = pinBottomPaneContent(content, footer, contentHeight)
+		if hasWorkspaceCards {
+			content = appendNewWorkspaceTemplateCardIfFits(content, cfg, cardWidth, max(0, contentHeight-len(footer)), options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces)
+		}
+		content.lines = pinBottomPaneContent(content.lines, footer, contentHeight)
 	} else if header := renderWorkspaceInfoHeader(options.workspaceInfoText, width, height); len(header) > 0 &&
 		workspaceInfoHeaderFits(cards, header, contentHeight, hasWorkspaceCards) {
 		if hasWorkspaceCards {
-			content = prependTopPaneContent(cards, workspaceInfoHeaderWithSpacer(header), contentHeight)
+			headerWithSpacer := workspaceInfoHeaderWithSpacer(header)
+			bodyHeight := max(0, contentHeight-len(headerWithSpacer))
+			content = appendNewWorkspaceTemplateCardIfFits(content, cfg, cardWidth, bodyHeight, options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces)
+			content.lines = prependTopPaneContent(content.lines, headerWithSpacer, contentHeight)
+			if content.newWorkspaceStart >= 0 {
+				content.newWorkspaceStart += len(headerWithSpacer)
+			}
 		} else {
-			content = append(header, renderCenteredPaneHelpContent(max(0, width-2), max(0, contentHeight-len(header)), "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")...)
+			content.lines = append(header, renderCenteredPaneHelpContent(max(0, width-2), max(0, contentHeight-len(header)), "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")...)
 		}
+	} else if hasWorkspaceCards {
+		content = appendNewWorkspaceTemplateCardIfFits(content, cfg, cardWidth, contentHeight, options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces)
 	}
-	return renderPaneFrame("Workspaces", "", width, height, st.Focus == state.FocusWorkspaces, content)
+	return content
 }
 
 func renderWorkspaceFooter(message string, width int, height int, style lipgloss.Style) []string {
@@ -458,6 +520,40 @@ func renderWorkspaceCard(cfg config.Config, st state.State, workspace state.Work
 	bottom := borderStyle.Render(workspaceCardBottomLine(width))
 	lines = append(lines, bottom)
 	return lines
+}
+
+func renderNewWorkspaceTemplateCard(cfg config.Config, width int, selected bool, focused bool) []string {
+	if width < 2 {
+		return []string{""}
+	}
+	borderStyle := workspaceCardBorderStyle
+	if selected && focused {
+		borderStyle = workspaceCardSelectedFocusedStyle
+	} else if selected {
+		borderStyle = workspaceCardSelectedStyle
+	}
+	innerWidth := max(0, width-2)
+	title := "+ New workspace"
+	top := borderStyle.Render(workspaceCardTopLine(title, width))
+	hint := " Press " + cfg.KeyBindings.NewWorkspace + " to create "
+	body := borderStyle.Render(borderVertical) + mutedStyle.Render(padVisual(clip(hint, innerWidth), innerWidth)) + borderStyle.Render(borderVertical)
+	bottom := borderStyle.Render(workspaceCardBottomLine(width))
+	return []string{top, body, bottom}
+}
+
+func appendNewWorkspaceTemplateCardIfFits(content workspacePaneContent, cfg config.Config, width int, availableHeight int, selected bool, focused bool) workspacePaneContent {
+	card := renderNewWorkspaceTemplateCard(cfg, width, selected, focused)
+	if len(content.lines) == 0 || len(content.lines)+len(card) > availableHeight {
+		return content
+	}
+	content.newWorkspaceStart = len(content.lines)
+	content.newWorkspaceHeight = len(card)
+	next := append([]string{}, content.lines...)
+	for _, line := range card {
+		next = append(next, strings.Repeat(" ", navHorizontalPadding)+line)
+	}
+	content.lines = next
+	return content
 }
 
 func workspaceCardTopLine(title string, width int) string {

@@ -293,6 +293,168 @@ func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
 	}
 }
 
+func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	st := testStateWithAgent(rt.Workspace)
+	st.Focus = state.FocusWorkspaces
+	st.NavOpen = true
+	st.ActiveAgentID = ""
+	model := NewClientModel(rt, cfg)
+	model.width = 120
+	model.height = 16
+	model.snapshot = ipc.Snapshot{
+		State:        st,
+		CodexTitle:   "Codex",
+		CodexContent: "No Codex agent open.",
+		NavWidth:     workspaceNavFrameWidth(st, model.width),
+	}
+	area, ok := model.newWorkspaceCardArea()
+	if !ok {
+		t.Fatal("expected new workspace card hit area")
+	}
+
+	updated, cmd := model.handleMouse(tea.MouseMsg{
+		X:      area.x + 1,
+		Y:      area.y + 1,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+
+	if cmd == nil {
+		t.Fatal("clicking the new workspace card should focus the Workspaces pane")
+	}
+	if !model.newWorkspaceCardSelected || model.snapshot.State.Focus != state.FocusWorkspaces {
+		t.Fatalf("new workspace card should be selected, selected=%t focus=%s", model.newWorkspaceCardSelected, model.snapshot.State.Focus)
+	}
+	renderState := model.dashboardState()
+	if renderState.SelectedWorkspaceID != "" {
+		t.Fatalf("new workspace card render state should clear selected workspace, got %q", renderState.SelectedWorkspaceID)
+	}
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
+		t.Fatalf("new workspace card selection should empty the Agents pane:\n%s", got)
+	}
+
+	updated, cmd = model.handleNavKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("enter on the new workspace card should open the local prompt")
+	}
+	if model.mode != modeInput || model.prompt != promptWorkspace {
+		t.Fatalf("enter should open workspace prompt, mode=%s prompt=%s", model.mode, model.prompt)
+	}
+	if !model.newWorkspaceCardSelected {
+		t.Fatal("new workspace card selection should persist while its prompt is open")
+	}
+
+	updated, cmd = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("escaping the workspace prompt should not call the supervisor")
+	}
+	if model.mode != modeNormal {
+		t.Fatalf("esc should close workspace prompt, mode=%s", model.mode)
+	}
+	if !model.newWorkspaceCardSelected {
+		t.Fatal("escaping the workspace prompt should return to the new workspace card")
+	}
+	got = ansi.Strip(model.View())
+	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
+		t.Fatalf("escaping back to the new workspace card should keep Agents empty:\n%s", got)
+	}
+}
+
+func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	st := testStateWithAgent(rt.Workspace)
+	st.Focus = state.FocusAgents
+	st.NavOpen = true
+	st.ActiveAgentID = ""
+	model := NewClientModel(rt, cfg)
+	model.width = 120
+	model.height = 16
+	model.snapshot = ipc.Snapshot{
+		State:        st,
+		CodexTitle:   "Codex",
+		CodexContent: "No Codex agent open.",
+		NavWidth:     workspaceNavFrameWidth(st, model.width),
+	}
+	area, ok := model.newWorkspaceCardArea()
+	if !ok {
+		t.Fatal("expected new workspace card hit area")
+	}
+
+	updated, cmd := model.handleMouse(tea.MouseMsg{
+		X:      area.x + 1,
+		Y:      area.y + 1,
+		Button: tea.MouseButtonNone,
+		Action: tea.MouseActionMotion,
+	})
+	model = updated.(ClientModel)
+
+	if cmd == nil {
+		t.Fatal("hovering the new workspace card should focus the Workspaces pane")
+	}
+	if !model.newWorkspaceCardSelected || model.snapshot.State.Focus != state.FocusWorkspaces {
+		t.Fatalf("hover should select the new workspace card, selected=%t focus=%s", model.newWorkspaceCardSelected, model.snapshot.State.Focus)
+	}
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
+		t.Fatalf("hovering the new workspace card should empty the Agents pane:\n%s", got)
+	}
+
+	updated, cmd = model.handleMouse(tea.MouseMsg{
+		X:      area.x,
+		Y:      area.y + area.height + 1,
+		Button: tea.MouseButtonNone,
+		Action: tea.MouseActionMotion,
+	})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("leaving the new workspace card should not call the supervisor")
+	}
+	if model.newWorkspaceCardSelected {
+		t.Fatal("leaving the new workspace card should restore the real workspace selection")
+	}
+	got = ansi.Strip(model.View())
+	if !strings.Contains(got, "alpha") || strings.Contains(got, "No workspace selected") {
+		t.Fatalf("leaving hover should restore the real workspace Agents pane:\n%s", got)
+	}
+}
+
+func TestClientDownFromLastWorkspaceSelectsNewWorkspaceCard(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	st := testStateWithWorkspace(t, rt.Workspace)
+	st.Focus = state.FocusWorkspaces
+	st.NavOpen = true
+	model := NewClientModel(rt, cfg)
+	model.width = 120
+	model.height = 16
+	model.snapshot = ipc.Snapshot{
+		State:        st,
+		CodexTitle:   "Codex",
+		CodexContent: "No Codex agent open.",
+		NavWidth:     workspaceNavFrameWidth(st, model.width),
+	}
+
+	updated, cmd := model.handleNavKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("down from the last workspace should select the local new workspace card")
+	}
+	if !model.newWorkspaceCardSelected {
+		t.Fatal("down from the last workspace should select the new workspace card")
+	}
+}
+
 func assertStyleRGB(t *testing.T, got color.Color, want color.RGBA) {
 	t.Helper()
 	if got == nil {

@@ -47,23 +47,24 @@ type ClientModel struct {
 	loading           int
 	supervisorVersion string
 
-	input                   textinput.Model
-	prompt                  promptKind
-	confirm                 confirmKind
-	pendingID               string
-	promptSuggestionOpen    bool
-	promptSuggestionIndex   int
-	editGroupField          int
-	editGroupSilent         bool
-	loadingTickerActive     bool
-	launchWorkspacePrompted bool
-	lastResumeScan          time.Time
-	toastText               string
-	toastID                 int
-	mouseSelection          consoleSelection
-	codexScrollOffset       int
-	codexScrollAgentID      string
-	inputRouter             *clientInputRouter
+	input                    textinput.Model
+	prompt                   promptKind
+	confirm                  confirmKind
+	pendingID                string
+	promptSuggestionOpen     bool
+	promptSuggestionIndex    int
+	editGroupField           int
+	editGroupSilent          bool
+	loadingTickerActive      bool
+	launchWorkspacePrompted  bool
+	lastResumeScan           time.Time
+	toastText                string
+	toastID                  int
+	mouseSelection           consoleSelection
+	newWorkspaceCardSelected bool
+	codexScrollOffset        int
+	codexScrollAgentID       string
+	inputRouter              *clientInputRouter
 }
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
@@ -76,7 +77,7 @@ func RunClient(rt config.Runtime, cfg config.Config) error {
 		tea.WithInput(inputRouter),
 		tea.WithOutput(os.Stdout),
 		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
+		tea.WithMouseAllMotion(),
 	}
 	_, err := tea.NewProgram(model, options...).Run()
 	return err
@@ -159,17 +160,13 @@ func (m ClientModel) View() string {
 	}
 	loadingText := m.snapshot.LoadingText
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
-	options := workspaceRenderOptions{
-		loadingFrame:        loadingFrame,
-		loadingAgents:       loadingAgentSet(m.snapshot.LoadingAgentIDs),
-		workspaceFooterText: workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
-		workspaceInfoText:   m.workspaceInfoHeaderText(),
-		codexToastText:      m.toastText,
-	}
+	options := m.workspaceRenderOptions()
+	options.loadingFrame = loadingFrame
+	dashboardState := m.dashboardState()
 	if loadingText != "" {
 		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
 		options.loadingText = loadingText
-		return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, "", m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
+		return renderWorkspaceView(m.cfg, dashboardState, m.snapshot.CodexTitle, "", m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 	}
 	codexContent := m.codexVisibleContent()
 	if m.mouseSelection.active {
@@ -180,7 +177,29 @@ func (m ClientModel) View() string {
 			}
 		}
 	}
-	return renderWorkspaceView(m.cfg, m.snapshot.State, m.snapshot.CodexTitle, codexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
+	return renderWorkspaceView(m.cfg, dashboardState, m.snapshot.CodexTitle, codexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
+}
+
+func (m ClientModel) dashboardState() state.State {
+	st := m.snapshot.State
+	if m.newWorkspaceCardSelected {
+		st.Focus = state.FocusWorkspaces
+		st.NavOpen = true
+		st.SelectedWorkspaceID = ""
+		st.SelectedGroupID = ""
+		st.SelectedAgentID = ""
+	}
+	return st
+}
+
+func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
+	return workspaceRenderOptions{
+		loadingAgents:            loadingAgentSet(m.snapshot.LoadingAgentIDs),
+		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
+		workspaceInfoText:        m.workspaceInfoHeaderText(),
+		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
+		codexToastText:           m.toastText,
+	}
 }
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -224,39 +243,78 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.newWorkspaceCardSelected && !m.newWorkspaceCardVisible() {
+		m.newWorkspaceCardSelected = false
+	}
 	switch {
 	case bindingMatches(m.cfg.KeyBindings.FocusLeft, msg):
+		m.newWorkspaceCardSelected = false
 		return m, m.request("focus", map[string]string{"target": "workspaces"})
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
+		m.newWorkspaceCardSelected = false
 		return m, m.request("focus", map[string]string{"target": string(state.FocusAgents)})
 	case msg.Type == tea.KeyShiftUp:
 		return m.reorderSelectedAgent(-1)
 	case msg.Type == tea.KeyShiftDown:
 		return m.reorderSelectedAgent(1)
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
+		if m.newWorkspaceCardSelected {
+			m.newWorkspaceCardSelected = false
+			return m, nil
+		}
 		return m, m.request("nav_move", map[string]string{"delta": "-1"})
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
+		if m.shouldMoveToNewWorkspaceCard() {
+			m.newWorkspaceCardSelected = true
+			return m, nil
+		}
+		if m.newWorkspaceCardSelected {
+			return m, nil
+		}
 		return m, m.request("nav_move", map[string]string{"delta": "1"})
 	case bindingMatches(m.cfg.KeyBindings.NewWorkspace, msg):
+		m.newWorkspaceCardSelected = false
 		m.startPrompt(promptWorkspace, defaultWorkspacePromptValue(m.snapshot.State, m.runtime.Workspace))
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
+		m.newWorkspaceCardSelected = false
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
+		m.newWorkspaceCardSelected = false
 		return m, m.request("new", nil)
 	case m.canActOnUpgrade() && strings.EqualFold(msg.String(), "u"):
+		m.newWorkspaceCardSelected = false
 		m.startUpgradeConfirm()
 	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
+		m.newWorkspaceCardSelected = false
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
 		}
 	case bindingMatches(m.cfg.KeyBindings.Edit, msg):
+		m.newWorkspaceCardSelected = false
 		m.startEditPrompt()
 	case bindingMatches(m.cfg.KeyBindings.Delete, msg):
+		m.newWorkspaceCardSelected = false
 		m.startDeleteConfirm()
 	case bindingMatches(m.cfg.KeyBindings.Open, msg) || msg.Type == tea.KeyEnter:
+		if m.newWorkspaceCardSelected {
+			m.startPrompt(promptWorkspace, defaultWorkspacePromptValue(m.snapshot.State, m.runtime.Workspace))
+			return m, nil
+		}
 		return m, m.request("open", nil)
 	}
 	return m, nil
+}
+
+func (m ClientModel) shouldMoveToNewWorkspaceCard() bool {
+	if m.newWorkspaceCardSelected || m.snapshot.State.Focus != state.FocusWorkspaces || len(m.snapshot.State.Workspaces) == 0 || !m.newWorkspaceCardVisible() {
+		return false
+	}
+	return m.snapshot.State.SelectedWorkspaceID == m.snapshot.State.Workspaces[len(m.snapshot.State.Workspaces)-1].ID
+}
+
+func (m ClientModel) newWorkspaceCardVisible() bool {
+	_, ok := newWorkspaceTemplateCardAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth, m.workspaceRenderOptions())
+	return ok
 }
 
 func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {
@@ -306,6 +364,9 @@ func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		return m, nil
 	case promptInputSubmit:
+		if m.prompt == promptWorkspace {
+			m.newWorkspaceCardSelected = false
+		}
 		cmd := m.applyPrompt(result.value)
 		m.mode = modeNormal
 		return m, cmd

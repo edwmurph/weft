@@ -216,6 +216,17 @@ The left pane lists configured workspaces as vertically stacked bordered cards.
 When there are no configured workspaces, the pane shows centered help text telling
 the user that there are no workspaces and to press the configured add-workspace key.
 
+When at least one workspace exists and there is enough vertical room, render a
+template card under the last workspace card with a plus-sign title and concise
+copy telling the user to press the configured add-workspace key to create a
+workspace. Hovering or clicking the template card selects it: real workspace
+cards return to their inactive border, and the Agents pane renders the same
+empty state as no selected workspace. The template card is also selectable by
+moving down from the last workspace card. Pressing `Enter` while the template
+card is selected opens the same add-workspace prompt as the configured
+add-workspace key. If that prompt is canceled, focus returns to the selected
+template card instead of jumping to a real workspace.
+
 Stored workspaces remain selectable even when their path is missing, unreadable,
 or no longer a directory. In that bad-state case the card shows a visible warning
 line such as `path missing; press d to remove`, using the configured delete key,
@@ -397,7 +408,7 @@ Autocomplete menus open directly under the input whenever the current value has 
 - The framed terminal renderer preserves Codex cursor visibility and cursor
   shape requests, including block, underline, and bar cursor modes used by Vim
   insert/normal state.
-- Weft enables cell-level mouse tracking in the attached client. In focused
+- Weft enables all-motion mouse tracking in the attached client. In focused
   `Agent Console`, trackpad or wheel scrolling anywhere in the console frame
   moves through Weft's captured Codex scrollback instead of forwarding mouse
   packets into the active Codex PTY. Left-button drag selection starts after

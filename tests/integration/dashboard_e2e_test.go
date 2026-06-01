@@ -2108,9 +2108,9 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 
 func assertClientEnablesMouseTracking(t *testing.T, capture string) {
 	t.Helper()
-	for _, expected := range []string{"\x1b[?1002h", "\x1b[?1006h"} {
+	for _, expected := range []string{"\x1b[?1003h", "\x1b[?1006h"} {
 		if !strings.Contains(capture, expected) {
-			t.Fatalf("client should enable mouse tracking for Agent Console scrollback and drag-copy support; missing %q in raw capture", expected)
+			t.Fatalf("client should enable mouse tracking for Workspaces hover, Agent Console scrollback, and drag-copy support; missing %q in raw capture", expected)
 		}
 	}
 }

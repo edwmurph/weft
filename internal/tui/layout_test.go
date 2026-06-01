@@ -164,6 +164,9 @@ func TestRenderWorkspaceCardsUseDefaultPathAndTitleOverride(t *testing.T) {
 	if !strings.Contains(got, "~/code/personal/weft") {
 		t.Fatalf("workspace card should use default display path title:\n%s", got)
 	}
+	if !strings.Contains(strings.ToLower(got), "new workspace") || !strings.Contains(strings.ToLower(got), "press w to create") {
+		t.Fatalf("workspaces pane should include new-workspace template card:\n%s", got)
+	}
 
 	st.Workspaces[0].Title = "Main Weft"
 	got = ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n"))

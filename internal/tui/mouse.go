@@ -43,6 +43,10 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.mode != modeNormal {
 		return m, nil
 	}
+	event := tea.MouseEvent(msg)
+	if next, cmd, handled := m.handleWorkspaceMouse(event); handled {
+		return next, cmd
+	}
 	active := state.ActiveAgent(m.snapshot.State)
 	if m.snapshot.State.Focus != state.FocusCodex || active == nil {
 		m.mouseSelection = consoleSelection{}
@@ -53,7 +57,6 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.mouseSelection = consoleSelection{}
 		return m, nil
 	}
-	event := tea.MouseEvent(msg)
 	switch event.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown, tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
 		frameArea, ok := m.codexFrameArea()
@@ -117,6 +120,36 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	cmd := m.setToast(fmt.Sprintf("Copied %d character%s", len([]rune(text)), plural(len([]rune(text)))))
 	return m, cmd
+}
+
+func (m ClientModel) handleWorkspaceMouse(event tea.MouseEvent) (ClientModel, tea.Cmd, bool) {
+	if event.Action != tea.MouseActionPress && event.Action != tea.MouseActionMotion {
+		return m, nil, false
+	}
+	area, ok := m.newWorkspaceCardArea()
+	if ok && mouseInConsoleArea(event, area) {
+		alreadyFocused := m.snapshot.State.Focus == state.FocusWorkspaces
+		m.mouseSelection = consoleSelection{}
+		m.newWorkspaceCardSelected = true
+		m.snapshot.State.Focus = state.FocusWorkspaces
+		m.snapshot.State.NavOpen = true
+		if event.Action == tea.MouseActionPress || !alreadyFocused {
+			return m, m.request("focus", map[string]string{"target": "workspaces"}), true
+		}
+		return m, nil, true
+	}
+	if event.Action == tea.MouseActionMotion && m.newWorkspaceCardSelected {
+		m.newWorkspaceCardSelected = false
+		return m, nil, true
+	}
+	if event.Action == tea.MouseActionPress {
+		m.newWorkspaceCardSelected = false
+	}
+	return m, nil, false
+}
+
+func (m ClientModel) newWorkspaceCardArea() (consoleArea, bool) {
+	return newWorkspaceTemplateCardAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth, m.workspaceRenderOptions())
 }
 
 func (m ClientModel) codexContentArea() (consoleArea, bool) {
