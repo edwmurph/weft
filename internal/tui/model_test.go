@@ -269,6 +269,35 @@ func TestLaunchWorkspaceConfirmationIgnoresYAndN(t *testing.T) {
 	}
 }
 
+func TestDeleteConfirmationEnterSubmitsAndYNIgnored(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.mode = modeConfirm
+	model.confirm = confirmDeleteAgent
+	model.pendingID = "a"
+
+	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeConfirm || len(model.state.Agents) != 1 {
+		t.Fatalf("y should be ignored for delete confirm, mode=%s cmd=%#v agents=%d", model.mode, cmd, len(model.state.Agents))
+	}
+
+	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeConfirm || len(model.state.Agents) != 1 {
+		t.Fatalf("n should be ignored for delete confirm, mode=%s cmd=%#v agents=%d", model.mode, cmd, len(model.state.Agents))
+	}
+
+	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeNormal {
+		t.Fatalf("enter should submit delete confirm, mode=%s cmd=%#v", model.mode, cmd)
+	}
+	if len(model.state.Agents) != 0 {
+		t.Fatalf("agent should be removed after enter: %#v", model.state.Agents)
+	}
+}
+
 func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
@@ -288,11 +317,16 @@ func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
 		"Agent",
 		"alpha",
 		"Stops the Codex terminal, then removes this agent from Weft.",
-		"Y stop and delete",
-		"N cancel",
+		"Enter stop and delete",
+		"Esc cancel",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("delete agent confirm missing %q:\n%s", expected, got)
+		}
+	}
+	for _, unexpected := range []string{"Y stop and delete", "N cancel"} {
+		if strings.Contains(got, unexpected) {
+			t.Fatalf("delete agent confirm should not include %q:\n%s", unexpected, got)
 		}
 	}
 }
@@ -440,13 +474,18 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	for _, expected := range []string{
 		"Upgrade supervisor and resume agents?",
 		"supervisor 3.9.0 → " + weftversion.Version,
-		"Y upgrade and resume",
+		"Enter upgrade and resume",
 		"agents. Running commands",
 		"unsubmitted text are not preserved, so",
 		"finish important work first",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
+		}
+	}
+	for _, unexpected := range []string{"Y upgrade and resume", "N cancel"} {
+		if strings.Contains(got, unexpected) {
+			t.Fatalf("upgrade confirm should not include %q:\n%s", unexpected, got)
 		}
 	}
 }
@@ -1249,7 +1288,8 @@ func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T
 		"Path",
 		"✓ ",
 		"> current",
-		"Enter choose",
+		"Enter add",
+		"Tab choose",
 		"Up/Down move",
 		"Esc close suggestions",
 	} {
@@ -1339,7 +1379,7 @@ func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	if got, want := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex), withTrailingSeparator(alpha); got != want {
 		t.Fatalf("initial suggestion = %q, want %q", got, want)
 	}
-	for _, expected := range []string{"> alpha-project", "beta-project", "Enter choose", "Up/Down move", "Esc close suggestions"} {
+	for _, expected := range []string{"> alpha-project", "beta-project", "Enter add", "Tab choose", "Up/Down move", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("initial suggestion state missing %q:\n%s", expected, got)
 		}
@@ -1357,10 +1397,10 @@ func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 		t.Fatalf("down arrow should highlight beta:\n%s", got)
 	}
 
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
 	if model.mode != modeInput {
-		t.Fatalf("enter on highlighted suggestion should keep prompt open, mode=%s", model.mode)
+		t.Fatalf("tab on highlighted suggestion should keep prompt open, mode=%s", model.mode)
 	}
 	if want := beta; model.input.Value() != want {
 		t.Fatalf("selected suggestion = %q, want %q", model.input.Value(), want)
@@ -1391,7 +1431,7 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 
 	model.startPrompt(promptMoveAgent, "")
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Move agent", "Top-level agent", "> release", "Enter choose", "Esc close suggestions"} {
+	for _, expected := range []string{"Move agent", "Top-level agent", "> release", "Enter top-level", "Tab choose", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("blank move prompt missing %q:\n%s", expected, got)
 		}

@@ -392,11 +392,11 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	directRun(t, newEnv, "send-keys", "-t", pane, "u")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Upgrade supervisor and resume agents?") &&
-			strings.Contains(capture, "Y upgrade and resume") &&
+			strings.Contains(capture, "Enter upgrade and resume") &&
 			strings.Contains(capture, "unsubmitted text are not preserved, so") &&
 			strings.Contains(capture, "finish important work first")
 	})
-	directRun(t, newEnv, "send-keys", "-t", pane, "y")
+	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
 	if !waitForBool(8*time.Second, func() bool {
 		data, err := os.ReadFile(filepath.Join(runtimeDir, "weftd.pid"))
 		return err == nil && strings.TrimSpace(string(data)) != oldPID

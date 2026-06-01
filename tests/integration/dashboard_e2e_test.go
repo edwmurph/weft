@@ -200,7 +200,7 @@ func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Delete workspace")
 	})
-	directRun(t, env, "send-keys", "-t", pane, "y")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Workspaces) == 1 &&
 			state.WorkspaceByPath(st, staleWorkspace) == nil &&
@@ -1134,17 +1134,17 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return strings.Contains(capture, "Delete agent") &&
 				strings.Contains(capture, "Codex Ready") &&
 				strings.Contains(capture, "Stops the Codex terminal, then removes this agent from Weft.") &&
-				strings.Contains(capture, "Y stop and delete")
+				strings.Contains(capture, "Enter stop and delete")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "n")
+		directRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 1 })
 		directRun(t, env, "send-keys", "-t", pane, "d")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete agent") &&
 				strings.Contains(capture, "Codex Ready") &&
-				strings.Contains(capture, "N cancel")
+				strings.Contains(capture, "Esc cancel")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 0 })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No Codex agent open")
@@ -1156,7 +1156,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, "release") &&
 				strings.Contains(capture, "Esc cancel")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Agents) == 0 && len(st.Groups) == 0 && st.SelectedWorkspaceID != ""
 		})
@@ -1488,18 +1488,10 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, beta)
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "> beta") &&
-				strings.Contains(capture, "Enter choose")
+				strings.Contains(capture, "Enter add") &&
+				strings.Contains(capture, "Tab choose")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Enter add") ||
-				(strings.Contains(capture, "Workspaces") &&
-					strings.Contains(capture, "Agents") &&
-					!strings.Contains(capture, "Add workspace"))
-		})
-		if strings.Contains(capture, "Enter add") {
-			directRun(t, env, "send-keys", "-t", pane, "Enter")
-		}
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Workspaces) == 2 && state.WorkspaceByPath(st, beta) != nil
 		})
@@ -1633,7 +1625,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return strings.Contains(capture, "Delete group") &&
 				strings.Contains(capture, "renamed")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			group := groupByPath(st, "renamed")
 			agent := findAgent(st, firstAgentID)
@@ -1666,7 +1658,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return strings.Contains(capture, "Delete group") &&
 				strings.Contains(capture, "renamed")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Groups) == 0
 		})
@@ -1766,7 +1758,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete workspace")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		if selected.Path == beta {
 			waitState(t, env, bin, func(st state.State) bool {
 				return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, beta) == nil && len(st.Agents) == 2
@@ -1782,7 +1774,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete workspace")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "y")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Workspaces) == 0 && len(st.Groups) == 0 && len(st.Agents) == 0
 		})

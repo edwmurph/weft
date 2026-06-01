@@ -373,10 +373,17 @@ All in-dashboard text-entry forms use the same compact modal treatment:
 
 - rounded, bordered input directly below the field label
 - one compact status or validation line below the input or suggestion menu
-- short state-specific footer actions, such as `Enter save`, `Enter choose`, `Esc close suggestions`, and `Esc cancel`
+- short state-specific footer actions, such as `Enter save`, `Tab choose`, `Esc close suggestions`, and `Esc cancel`
 - `Enter` submits only when the current value is valid for that form; invalid required values keep the form open and show the validation status
+- when autocomplete is open and the current value is not valid yet, `Enter` chooses the highlighted suggestion
 - `Esc` closes an open autocomplete menu first; otherwise it cancels the form
 - prompt inputs support Option/Alt word movement and deletion when the terminal sends Option as Meta/Esc
+
+All in-dashboard confirmation modals use the same keyboard contract:
+
+- `Enter` accepts the affirmative action, such as yes, delete, stop and delete, or upgrade and resume
+- `Esc` cancels or declines the action
+- `Y`/`N` are not part of the dashboard confirmation flow
 
 Autocomplete appears only when it has a useful known set:
 

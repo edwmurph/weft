@@ -208,15 +208,15 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 		result.action = promptInputCancel
 		return result
 	case tea.KeyEnter:
-		if promptHasAutocomplete(ctx.prompt) && result.suggestionOpen {
-			if completePromptSuggestion(&result.input, ctx, result.suggestionIndex) {
-				result.suggestionOpen = false
-				result.suggestionIndex = 0
-				return result
-			}
-		}
 		value := strings.TrimSpace(result.input.Value())
 		if message := promptSubmitBlocker(ctx, value); message != "" {
+			if promptHasAutocomplete(ctx.prompt) && result.suggestionOpen {
+				if completePromptSuggestion(&result.input, ctx, result.suggestionIndex) {
+					result.suggestionOpen = false
+					result.suggestionIndex = 0
+					return result
+				}
+			}
 			result.message = message
 			return result
 		}
@@ -486,12 +486,20 @@ func renderPromptInput(label string, input textinput.Model, width int) []string 
 }
 
 func renderPromptActions(ctx promptContext, input textinput.Model, menuOpen bool) string {
+	submitLabel := promptSubmitActionLabel(ctx, input.Value())
 	if menuOpen {
-		return modalKeyStyle.Render("Enter") + " choose  " + modalKeyStyle.Render("Up/Down") + " move  " + modalKeyStyle.Render("Esc") + " close suggestions"
+		actions := []string{}
+		if submitLabel != "" {
+			actions = append(actions, modalKeyStyle.Render("Enter")+" "+submitLabel, modalKeyStyle.Render("Tab")+" choose")
+		} else {
+			actions = append(actions, modalKeyStyle.Render("Enter")+" choose")
+		}
+		actions = append(actions, modalKeyStyle.Render("Up/Down")+" move", modalKeyStyle.Render("Esc")+" close suggestions")
+		return strings.Join(actions, "  ")
 	}
 	actions := []string{}
-	if label := promptSubmitActionLabel(ctx, input.Value()); label != "" {
-		actions = append(actions, modalKeyStyle.Render("Enter")+" "+label)
+	if submitLabel != "" {
+		actions = append(actions, modalKeyStyle.Render("Enter")+" "+submitLabel)
 	}
 	if promptHasAutocomplete(ctx.prompt) && len(promptMatchedSuggestions(ctx, input.Value())) > 0 {
 		actions = append(actions, modalKeyStyle.Render("Down")+" suggestions")
@@ -678,12 +686,12 @@ func renderConfirmActions(confirm confirmKind) string {
 		return modalKeyStyle.Render("Enter") + " yes  " + modalKeyStyle.Render("Esc") + " no"
 	}
 	if confirm == confirmUpgradeResume {
-		return modalKeyStyle.Render("Y") + " upgrade and resume  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
+		return modalKeyStyle.Render("Enter") + " upgrade and resume  " + modalKeyStyle.Render("Esc") + " cancel"
 	}
 	if confirm == confirmDeleteAgent {
-		return modalKeyStyle.Render("Y") + " stop and delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
+		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("Esc") + " cancel"
 	}
-	return modalKeyStyle.Render("Y") + " delete  " + modalKeyStyle.Render("N") + " cancel  " + modalKeyStyle.Render("Esc") + " cancel"
+	return modalKeyStyle.Render("Enter") + " delete  " + modalKeyStyle.Render("Esc") + " cancel"
 }
 
 func confirmTarget(confirm confirmKind, st state.State, pendingID string, renderAgentTitle func(state.Agent) string) string {
