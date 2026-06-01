@@ -1,7 +1,7 @@
 <h1 align="center"><img src="assets/weft-logo.svg" alt="Weft" width="360"></h1>
 
 <p align="center">
-  <strong>A terminal dashboard for agents, configured commands, workspaces, and groups.</strong>
+  <strong>A terminal dashboard for agents and shells.</strong>
 </p>
 
 <p align="center">
