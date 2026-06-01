@@ -1341,9 +1341,13 @@ type logoRange struct {
 }
 
 const (
-	previewLogoAccentWidth = 2
-	previewLogoAccentHold  = 4
-	previewLogoGraphWidth  = 14
+	previewLogoAccentWidth  = 2
+	previewLogoAccentHold   = 4
+	previewLogoGraphWidth   = 14
+	previewLogoAccentSteps  = previewLogoGraphWidth / previewLogoAccentWidth
+	previewLogoActiveFrames = previewLogoAccentSteps * previewLogoAccentHold
+	previewLogoPauseFrames  = 36
+	previewLogoCycleFrames  = previewLogoActiveFrames + previewLogoPauseFrames
 )
 
 func renderPreviewLogoLine(line string, row int, frame int) string {
@@ -1375,8 +1379,11 @@ func previewLogoAccentRanges(row int, frame int) []logoRange {
 	if frame < 0 {
 		frame = 0
 	}
-	stepCount := previewLogoGraphWidth / previewLogoAccentWidth
-	start := ((frame / previewLogoAccentHold) % stepCount) * previewLogoAccentWidth
+	frame %= previewLogoCycleFrames
+	if frame >= previewLogoActiveFrames {
+		return nil
+	}
+	start := ((frame / previewLogoAccentHold) % previewLogoAccentSteps) * previewLogoAccentWidth
 	end := start + previewLogoAccentWidth
 	switch row {
 	case 0, 4:

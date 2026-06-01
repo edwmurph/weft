@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -222,7 +223,7 @@ func TestRenderTaskPreviewEmptyStateUsesPreviewLogoAndAnimation(t *testing.T) {
 	if strippedLine := ansi.Strip(line); strippedLine != padVisual(previewEmptyWeftLogo[2], maxVisualWidth(previewEmptyWeftLogo)) {
 		t.Fatalf("animated preview logo should preserve text layout:\nwant %q\ngot  %q", padVisual(previewEmptyWeftLogo[2], maxVisualWidth(previewEmptyWeftLogo)), strippedLine)
 	}
-	for frame := 0; frame < 28; frame += previewLogoAccentHold {
+	for frame := 0; frame < previewLogoActiveFrames; frame += previewLogoAccentHold {
 		for row := range previewEmptyWeftLogo {
 			for _, r := range previewLogoAccentRanges(row, frame) {
 				if r.start >= 14 || r.end > 14 {
@@ -233,6 +234,20 @@ func TestRenderTaskPreviewEmptyStateUsesPreviewLogoAndAnimation(t *testing.T) {
 				}
 			}
 		}
+	}
+	pauseDuration := time.Duration(previewLogoPauseFrames) * loadingInterval
+	if pauseDuration < 2*time.Second || pauseDuration > 4*time.Second {
+		t.Fatalf("preview animation pause = %s, want between 2s and 4s", pauseDuration)
+	}
+	for _, frame := range []int{previewLogoActiveFrames, previewLogoActiveFrames + previewLogoPauseFrames/2, previewLogoCycleFrames - 1} {
+		for row := range previewEmptyWeftLogo {
+			if ranges := previewLogoAccentRanges(row, frame); len(ranges) != 0 {
+				t.Fatalf("preview animation should pause between sweeps, frame=%d row=%d ranges=%#v", frame, row, ranges)
+			}
+		}
+	}
+	if ranges := previewLogoAccentRanges(2, previewLogoCycleFrames); len(ranges) != 1 || ranges[0].start != 0 {
+		t.Fatalf("preview animation should restart after pause, ranges=%#v", ranges)
 	}
 	for index, frame := range []int{0, 4, 8, 12, 16, 20, 24} {
 		start := 99
