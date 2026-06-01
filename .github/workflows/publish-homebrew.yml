@@ -16,6 +16,11 @@ on:
           - patch
           - minor
           - major
+      allow_stable_major:
+        description: "Allow a manual major bump from 0.x to 1.0.0"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -52,12 +57,16 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.before }}
           RELEASE_BUMP: ${{ github.event.inputs.bump || 'auto' }}
+          ALLOW_STABLE_MAJOR: ${{ github.event.inputs.allow_stable_major || 'false' }}
         run: |
           set -euo pipefail
 
           args=(next-version --base "${BASE_SHA:-}" --head HEAD --write --github-output "$GITHUB_OUTPUT")
           if [[ "$RELEASE_BUMP" != "auto" ]]; then
             args+=(--bump "$RELEASE_BUMP")
+          fi
+          if [[ "$ALLOW_STABLE_MAJOR" == "true" ]]; then
+            args+=(--allow-stable-major)
           fi
 
           go run ./cmd/weft-release "${args[@]}"
@@ -121,13 +130,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          release_args=(--notes-file "$RELEASE_NOTES")
+          if [[ "$TAG" == v0.* ]]; then
+            release_args+=(--prerelease)
+          fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --notes-file "$RELEASE_NOTES"
+            gh release edit "$TAG" "${release_args[@]}"
           else
             gh release create "$TAG" \
               --verify-tag \
               --title "$TAG" \
-              --notes-file "$RELEASE_NOTES"
+              "${release_args[@]}"
           fi
 
       - name: Checkout Homebrew tap

@@ -31,6 +31,10 @@ type Commit struct {
 	Body    string
 }
 
+type BumpOptions struct {
+	AllowStableMajor bool
+}
+
 func InferBump(messages string, changedFiles []string) string {
 	if match := explicitBumpRE.FindStringSubmatch(messages); len(match) > 1 {
 		return strings.ToLower(match[1])
@@ -53,6 +57,10 @@ func InferBump(messages string, changedFiles []string) string {
 }
 
 func BumpVersion(version string, bump string) (string, error) {
+	return BumpVersionWithOptions(version, bump, BumpOptions{})
+}
+
+func BumpVersionWithOptions(version string, bump string, options BumpOptions) (string, error) {
 	match := semverRE.FindStringSubmatch(version)
 	if len(match) != 4 {
 		return "", fmt.Errorf("unsupported version %q; expected MAJOR.MINOR.PATCH", version)
@@ -62,6 +70,9 @@ func BumpVersion(version string, bump string) (string, error) {
 	patch, _ := strconv.Atoi(match[3])
 	switch bump {
 	case "major":
+		if major == 0 && !options.AllowStableMajor {
+			return fmt.Sprintf("0.%d.0", minor+1), nil
+		}
 		return fmt.Sprintf("%d.0.0", major+1), nil
 	case "minor":
 		return fmt.Sprintf("%d.%d.0", major, minor+1), nil

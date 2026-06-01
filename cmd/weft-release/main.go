@@ -35,6 +35,7 @@ func nextVersion(args []string) error {
 	base := fs.String("base", "", "base commit/ref")
 	head := fs.String("head", "HEAD", "head commit/ref")
 	bumpOverride := fs.String("bump", "", "major, minor, or patch")
+	allowStableMajor := fs.Bool("allow-stable-major", false, "allow a major bump from 0.x to 1.0.0")
 	versionFile := fs.String("version-file", "VERSION", "version file path")
 	goVersionFile := fs.String("go-version-file", "internal/version/version.go", "Go version source path")
 	write := fs.Bool("write", false, "write the next version")
@@ -59,7 +60,9 @@ func nextVersion(args []string) error {
 	if err != nil {
 		return err
 	}
-	next, err := release.BumpVersion(previous, bump)
+	next, err := release.BumpVersionWithOptions(previous, bump, release.BumpOptions{
+		AllowStableMajor: *allowStableMajor,
+	})
 	if err != nil {
 		return err
 	}

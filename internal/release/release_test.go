@@ -24,6 +24,31 @@ func TestInferBumpAndBumpVersion(t *testing.T) {
 	if next != "1.3.0" {
 		t.Fatalf("next = %q", next)
 	}
+	next, err = BumpVersion("0.0.0", "patch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "0.0.1" {
+		t.Fatalf("initial patch release = %q", next)
+	}
+}
+
+func TestBumpVersionKeepsZeroMajorUntilStableRelease(t *testing.T) {
+	next, err := BumpVersion("0.9.1", "major")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "0.10.0" {
+		t.Fatalf("pre-1 major bump = %q", next)
+	}
+
+	next, err = BumpVersionWithOptions("0.9.1", "major", BumpOptions{AllowStableMajor: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != "1.0.0" {
+		t.Fatalf("stable major bump = %q", next)
+	}
 }
 
 func TestRenderReleaseNotesGroupsConventionalCommitSubjects(t *testing.T) {

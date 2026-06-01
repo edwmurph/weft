@@ -74,6 +74,19 @@ working directory, `WEFT_ROOT` or `WEFT_HOME` is set explicitly, or
 `WEFT_ALLOW_MAIN_RUNTIME=1` is set for an intentional one-off. Help, version,
 and `weft doctor keys` remain available without default runtime access.
 
+## Release Version Policy
+
+Weft stays on the `0.x` release line until the maintainer explicitly declares
+the stable `1.0` release. While `VERSION` is `0.y.z`, release automation treats
+major bumps as pre-1.0 compatibility bumps and publishes `0.(y+1).0` instead
+of `1.0.0`. Breaking changes during pre-1.0 are minor releases in the `0.x`
+line. Patch bumps publish `0.y.(z+1)`, and minor bumps publish `0.(y+1).0`.
+GitHub releases for `v0.*` tags are marked as prereleases.
+
+Crossing from `0.x` to `1.0.0` requires a manual `Publish Homebrew` dispatch
+with `bump=major` and `allow_stable_major=true`. Normal pushes to `main` must
+not automatically create a `1.0.0` release.
+
 ## Supervisor
 
 The supervisor is a local background process, referred to internally as `weftd`.
