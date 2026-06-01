@@ -2034,6 +2034,46 @@ func TestGroupCursorSyncRestoresPersistedGroupRow(t *testing.T) {
 	}
 }
 
+func TestSnapshotSyncsGroupCursorToSelectedAgent(t *testing.T) {
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		ActiveAgentID:       "release-agent",
+		SelectedAgentID:     "release-agent",
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "release",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
+			{ID: "release", WorkspaceID: "w", Path: "release queue", CreatedAt: now, UpdatedAt: now},
+		},
+		Agents: []state.Agent{
+			{ID: "ship-agent", WorkspaceID: "w", GroupID: "shipit", Title: "ship", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "release-agent", WorkspaceID: "w", GroupID: "release", Title: "release", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	model := Model{
+		state:             st,
+		screens:           map[string]*TerminalScreen{},
+		ptys:              map[string]*ptyx.Session{},
+		visible:           map[string]bool{},
+		codexInputBuffers: map[string][]rune{},
+		terminalCommands:  map[string]time.Time{},
+		agentInterrupts:   map[string]time.Time{},
+		sessionCaptures:   map[string]time.Time{},
+	}
+	model.groupCursor = 2
+	model.groupCursorPinned = true
+
+	snapshot := model.Snapshot()
+	row := currentGroupRowForState(snapshot.State, snapshot.GroupCursor)
+	if row.kind != groupRowAgent || row.agentID != "release-agent" {
+		t.Fatalf("snapshot cursor row = %#v, cursor=%d", row, snapshot.GroupCursor)
+	}
+}
+
 func TestWorkspacePromptSuggestionMenuScrollsWithSelection(t *testing.T) {
 	parent := t.TempDir()
 	for index := 0; index < 12; index++ {

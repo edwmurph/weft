@@ -193,6 +193,9 @@ func (m *Model) Stop() {
 }
 
 func (m *Model) Snapshot() ipc.Snapshot {
+	if m.state.NavOpen && m.state.Focus == state.FocusAgents {
+		m.syncGroupCursor()
+	}
 	content := m.activeOutput()
 	plainLines := m.activePlainLines()
 	scrollbackContent := m.activeScrollbackOutput()
@@ -998,7 +1001,7 @@ func (m Model) groupCursorMatchesState(rows []groupRow) bool {
 	row := rows[m.groupCursor]
 	switch row.kind {
 	case groupRowGroup:
-		return row.groupID != "" && row.groupID == m.state.SelectedGroupID
+		return m.state.SelectedAgentID == "" && row.groupID != "" && row.groupID == m.state.SelectedGroupID
 	case groupRowAgent:
 		if m.state.SelectedAgentID != "" {
 			return row.agentID == m.state.SelectedAgentID

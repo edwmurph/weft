@@ -136,6 +136,28 @@ func TestRenderTaskPreviewRequiresFocusedTaskRow(t *testing.T) {
 	}
 }
 
+func TestRenderTaskPreviewRejectsMismatchedCursorContent(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TitleTemplate = "{title}"
+	st := layoutState("/tmp/project")
+	st.Agents = append(st.Agents, state.Agent{
+		ID:          "b",
+		WorkspaceID: "w",
+		GroupID:     "f",
+		Title:       "bravo",
+		Status:      state.StatusReady,
+		CreatedAt:   state.NowISO(),
+		UpdatedAt:   state.NowISO(),
+	})
+
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "alpha output", 140, 24, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{
+		previewHeaderAnimation: "●",
+	}))
+	if !strings.Contains(got, "No task selected") || strings.Contains(got, "alpha output") || strings.Contains(got, "Task Live Preview ●") {
+		t.Fatalf("mismatched cursor/content should render an empty preview instead of stale task output:\n%s", got)
+	}
+}
+
 func TestRenderTaskPreviewHeaderUsesAnimationFrame(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")

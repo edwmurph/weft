@@ -267,7 +267,10 @@ func codexFrameStateForSelection(st state.State, groupCursor int) state.State {
 	if st.Focus == state.FocusAgents {
 		row := currentGroupRowForState(st, groupCursor)
 		if row.kind == groupRowAgent {
-			st.ActiveAgentID = row.agentID
+			if st.ActiveAgentID == row.agentID {
+				return st
+			}
+			st.ActiveAgentID = ""
 			return st
 		}
 	}
