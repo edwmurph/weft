@@ -7,7 +7,7 @@ description: Use when Codex is asked to refactor the weft repo, minimize or simp
 
 ## Purpose
 
-Refactor weft with a bias toward less code, clearer boundaries, accurate docs, and repeatable maintenance habits. Preserve the tmux-native CLI behavior unless the user explicitly asks for a behavior change.
+Refactor weft with a bias toward less code, clearer boundaries, accurate docs, and repeatable maintenance habits. Preserve the current supervisor-owned PTY dashboard behavior unless the user explicitly asks for a behavior change.
 
 ## Workflow
 
@@ -20,8 +20,8 @@ Refactor weft with a bias toward less code, clearer boundaries, accurate docs, a
 
 ## Refactor Heuristics
 
-- Minimize code paths around tmux, PTY, rendering, state, and navigation rather than spreading behavior across modules.
-- Keep tmux and child-process boundaries easy to mock; avoid tests that require a live tmux server unless explicitly needed.
+- Minimize code paths around supervisor, PTY, rendering, state, and navigation rather than spreading behavior across modules.
+- Keep supervisor and child-process boundaries easy to mock; avoid slow live-runtime tests unless they cover user-facing behavior that unit tests cannot.
 - Prefer structured parsing and existing helpers over ad hoc string handling when the boundary is already structured.
 - Treat config/state changes as user-facing: update README examples and tests together.
 - Keep dependency additions rare; if a dependency replaces local code, verify it reduces net complexity and is maintained.
@@ -34,7 +34,7 @@ Refactor weft with a bias toward less code, clearer boundaries, accurate docs, a
 
 ## Library Research
 
-- Use current primary sources when evaluating alternatives, especially for tmux, terminal rendering, CLI, config, and test tooling.
+- Use current primary sources when evaluating alternatives, especially for terminal rendering, PTY/process management, CLI, config, and test tooling.
 - Compare fit by API surface, maintenance activity, dependency weight, license, Go version support, and how much weft code it can delete.
 - Recommend integration only when the library materially improves correctness or simplicity; otherwise log the idea as deferred or rejected.
 

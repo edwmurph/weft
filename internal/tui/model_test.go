@@ -2717,41 +2717,36 @@ func TestIPCNewRejectsUnknownTaskType(t *testing.T) {
 	}
 }
 
-func TestIPCNewRejectsUnsupportedTypeIDArgument(t *testing.T) {
+func TestIPCNewRejectsUnsupportedArgument(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.state.Tasks = nil
 	model.state.ActiveTaskID = ""
 
-	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"type_id": config.DefaultTaskTypeShell}})
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"unexpected": config.DefaultTaskTypeShell}})
 	defer killPTYs(model)
 
 	if response.OK || cmd != nil {
 		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
 	}
-	if response.Error == nil || response.Error.Code != "unsupported_arg" || !strings.Contains(response.Message, "type_id") {
-		t.Fatalf("expected unsupported type_id error: %#v", response)
+	if response.Error == nil || response.Error.Code != "unsupported_arg" || !strings.Contains(response.Message, "unexpected") {
+		t.Fatalf("expected unsupported arg error: %#v", response)
 	}
 	if len(model.state.Tasks) != 0 {
 		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
 	}
 }
 
-func TestIPCMoveRejectsUnsupportedStaleGroupArgs(t *testing.T) {
+func TestIPCMoveRejectsUnsupportedArgument(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 
-	for _, args := range []map[string]string{
-		{"group_id": "f"},
-		{"ungrouped": "true"},
-	} {
-		response, cmd := model.handleIPC(ipc.Request{Command: "move", Args: args})
-		if response.OK || cmd != nil {
-			t.Fatalf("move response/cmd = %#v/%v", response, cmd)
-		}
-		if response.Error == nil || response.Error.Code != "unsupported_arg" {
-			t.Fatalf("expected unsupported arg error: %#v", response)
-		}
+	response, cmd := model.handleIPC(ipc.Request{Command: "move", Args: map[string]string{"unexpected": "true"}})
+	if response.OK || cmd != nil {
+		t.Fatalf("move response/cmd = %#v/%v", response, cmd)
+	}
+	if response.Error == nil || response.Error.Code != "unsupported_arg" || !strings.Contains(response.Message, "unexpected") {
+		t.Fatalf("expected unsupported arg error: %#v", response)
 	}
 }
 

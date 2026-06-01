@@ -2,8 +2,6 @@ package state
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -798,6 +796,12 @@ func MoveTask(st State, taskID string, groupID string) (State, error) {
 }
 
 func AddWorkspace(st State, id string, path string, now string) (State, Workspace, error) {
+	if strings.TrimSpace(id) == "" {
+		return st, Workspace{}, fmt.Errorf("workspace id is required")
+	}
+	if strings.TrimSpace(now) == "" {
+		return st, Workspace{}, fmt.Errorf("workspace timestamp is required")
+	}
 	path = NormalizeWorkspacePath(path)
 	info, err := os.Stat(path)
 	if err != nil {
@@ -812,12 +816,6 @@ func AddWorkspace(st State, id string, path string, now string) (State, Workspac
 	if workspace := WorkspaceByPath(st, path); workspace != nil {
 		st = SelectWorkspace(st, workspace.ID)
 		return st, *workspace, nil
-	}
-	if id == "" {
-		id = StableID("workspace", path)
-	}
-	if now == "" {
-		now = NowISO()
 	}
 	workspace := Workspace{ID: id, Path: path, CreatedAt: now, UpdatedAt: now}
 	st.Workspaces = append(st.Workspaces, workspace)
@@ -948,6 +946,12 @@ func SetWorkspaceTitle(st State, workspaceID string, title string) (State, error
 }
 
 func AddGroupWithSilent(st State, id string, workspaceID string, path string, now string, silent bool) (State, Group, error) {
+	if strings.TrimSpace(id) == "" {
+		return st, Group{}, fmt.Errorf("group id is required")
+	}
+	if strings.TrimSpace(now) == "" {
+		return st, Group{}, fmt.Errorf("group timestamp is required")
+	}
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return st, Group{}, fmt.Errorf("group name is required")
@@ -962,12 +966,6 @@ func AddGroupWithSilent(st State, id string, workspaceID string, path string, no
 		if group.Path == path {
 			return st, Group{}, fmt.Errorf("group name already exists")
 		}
-	}
-	if id == "" {
-		id = StableID("group", workspaceID, path)
-	}
-	if now == "" {
-		now = NowISO()
 	}
 	group := Group{ID: id, WorkspaceID: workspaceID, Path: path, Silent: silent, CreatedAt: now, UpdatedAt: now}
 	st.Groups = append(st.Groups, group)
@@ -1048,6 +1046,12 @@ func ToggleGroupCollapsed(st State, groupID string) State {
 }
 
 func AddTaskWithType(st State, id string, workspaceID string, groupID string, typeID string, title string, now string) (State, Task, error) {
+	if strings.TrimSpace(id) == "" {
+		return st, Task{}, fmt.Errorf("task id is required")
+	}
+	if strings.TrimSpace(now) == "" {
+		return st, Task{}, fmt.Errorf("task timestamp is required")
+	}
 	if WorkspaceByID(st, workspaceID) == nil {
 		return st, Task{}, fmt.Errorf("workspace not found")
 	}
@@ -1064,12 +1068,6 @@ func AddTaskWithType(st State, id string, workspaceID string, groupID string, ty
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return st, Task{}, fmt.Errorf("task title is required")
-	}
-	if id == "" {
-		id = StableID("task", workspaceID, groupID, typeID, now, title)
-	}
-	if now == "" {
-		now = NowISO()
 	}
 	task := Task{
 		ID: id, WorkspaceID: workspaceID, GroupID: groupID,
@@ -1101,18 +1099,6 @@ func RenameTask(st State, taskID string, title string) (State, error) {
 		task.Title = title
 		return task
 	}), nil
-}
-
-func groupWorkspace(st State, groupID string) string {
-	if group := GroupByID(st, groupID); group != nil {
-		return group.WorkspaceID
-	}
-	return ""
-}
-
-func StableID(parts ...string) string {
-	sum := sha1.Sum([]byte(strings.Join(parts, "\x00")))
-	return hex.EncodeToString(sum[:])[:12]
 }
 
 func NormalizeWorkspacePath(path string) string {

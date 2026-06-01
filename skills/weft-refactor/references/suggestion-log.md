@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Legacy code prune
+
+- Request: Prune current-main legacy scaffolding and true dead helpers without merging stale cleanup worktrees or weakening dashboard `U`, supervisor-owned `upgrade_resume`, or Codex resume.
+- Suggestions: Make state creation helpers require caller-provided IDs and timestamps, remove the fallback `StableID` generator and dead `groupWorkspace` helper, keep strict IPC validation while testing it with generic unexpected arguments, and refresh stale refactor-skill wording around current supervisor-owned PTY behavior.
+- Outcome: Implemented and verified in `.worktrees/legacy-code-prune`; awaiting review.
+- Evidence: `internal/state`, `internal/tui/model_test.go`, `spec.md`, `skills/weft-refactor/SKILL.md`; `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`, `git diff --check`, isolated dashboard smoke.
+- Deferred: None.
+
 ## 2026-06-01 - Current-state hard cutover
 
 - Request: Remove repair/backfill paths that only make sense for malformed legacy state, while preserving dashboard `U`, supervisor-owned `upgrade_resume`, Codex session capture/resume, backups, typed task launching, and current workspace/group/task UX.

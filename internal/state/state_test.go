@@ -273,22 +273,19 @@ func TestAddTaskWithTypeStoresTaskType(t *testing.T) {
 	st := stateWithWorkspace(t)
 	now := NowISO()
 
-	_, task, err := AddTaskWithType(st, "", st.SelectedWorkspaceID, "", "shell", "Shell", now)
+	_, task, err := AddTaskWithType(st, "shell-task", st.SelectedWorkspaceID, "", "shell", "Shell", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.TypeID != "shell" || task.Title != "Shell" {
+	if task.ID != "shell-task" || task.TypeID != "shell" || task.Title != "Shell" {
 		t.Fatalf("task = %#v", task)
-	}
-	if want := StableID("task", st.SelectedWorkspaceID, "", "shell", now, "Shell"); task.ID != want {
-		t.Fatalf("typed task id = %q, want %q", task.ID, want)
 	}
 }
 
 func TestAddTaskWithTypeRequiresTaskType(t *testing.T) {
 	st := stateWithWorkspace(t)
 
-	_, task, err := AddTaskWithType(st, "", st.SelectedWorkspaceID, "", " ", "Shell", NowISO())
+	_, task, err := AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", " ", "Shell", NowISO())
 	if err == nil {
 		t.Fatal("expected task type error")
 	}
@@ -297,6 +294,46 @@ func TestAddTaskWithTypeRequiresTaskType(t *testing.T) {
 	}
 	if task.ID != "" {
 		t.Fatalf("task should be empty on error: %#v", task)
+	}
+}
+
+func TestAddWorkspaceRequiresExplicitIDAndTimestamp(t *testing.T) {
+	st := Empty()
+	workspace := t.TempDir()
+
+	_, created, err := AddWorkspace(st, "", workspace, NowISO())
+	if err == nil || err.Error() != "workspace id is required" {
+		t.Fatalf("expected workspace id error, got workspace=%#v err=%v", created, err)
+	}
+	_, created, err = AddWorkspace(st, "w", workspace, "")
+	if err == nil || err.Error() != "workspace timestamp is required" {
+		t.Fatalf("expected workspace timestamp error, got workspace=%#v err=%v", created, err)
+	}
+}
+
+func TestAddGroupWithSilentRequiresExplicitIDAndTimestamp(t *testing.T) {
+	st := stateWithWorkspace(t)
+
+	_, group, err := AddGroupWithSilent(st, "", st.SelectedWorkspaceID, "release", NowISO(), false)
+	if err == nil || err.Error() != "group id is required" {
+		t.Fatalf("expected group id error, got group=%#v err=%v", group, err)
+	}
+	_, group, err = AddGroupWithSilent(st, "release", st.SelectedWorkspaceID, "release", "", false)
+	if err == nil || err.Error() != "group timestamp is required" {
+		t.Fatalf("expected group timestamp error, got group=%#v err=%v", group, err)
+	}
+}
+
+func TestAddTaskWithTypeRequiresExplicitIDAndTimestamp(t *testing.T) {
+	st := stateWithWorkspace(t)
+
+	_, task, err := AddTaskWithType(st, "", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", NowISO())
+	if err == nil || err.Error() != "task id is required" {
+		t.Fatalf("expected task id error, got task=%#v err=%v", task, err)
+	}
+	_, task, err = AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", "")
+	if err == nil || err.Error() != "task timestamp is required" {
+		t.Fatalf("expected task timestamp error, got task=%#v err=%v", task, err)
 	}
 }
 

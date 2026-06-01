@@ -99,7 +99,7 @@ Client and supervisor communication should use a small versioned protocol over t
 
 The protocol does not need an external RPC framework. New dependencies should be added only if the standard library becomes clearly insufficient.
 
-Command payload contracts are strict, excluding transport metadata such as `client_id`, `width`, and `height`. `new` accepts only `title` and `type`; stale `type_id` arguments fail. `move` accepts only `id`, `direction`, and the current `group` path argument; stale `group_id` and `ungrouped` arguments fail.
+Command payload contracts are strict, excluding transport metadata such as `client_id`, `width`, and `height`. `new` accepts only `title` and `type`. `move` accepts only `id`, `direction`, and the current `group` path argument. Any other command argument fails with an unsupported-argument error.
 
 ## Process And Upgrade UX
 
