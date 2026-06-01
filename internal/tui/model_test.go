@@ -98,10 +98,13 @@ func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
 		t.Fatalf("mode = %s, want new task menu", model.mode)
 	}
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"New task", "Codex", "Shell", "Enter create", "Up/Down move", "Esc cancel"} {
+	for _, expected := range []string{"New task", "Type", "Codex", "Shell", "Title", "Enter create", "Up/Down type", "Esc cancel"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("new task menu missing %q:\n%s", expected, got)
 		}
+	}
+	if model.input.Value() != "Shell" {
+		t.Fatalf("new task title input = %q, want Shell", model.input.Value())
 	}
 	for _, unexpected := range []string{"[codex] Codex", "[shell] Shell"} {
 		if strings.Contains(got, unexpected) {
@@ -129,6 +132,43 @@ func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
 	}
 	if model.state.Focus != state.FocusConsole || model.state.NavOpen {
 		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
+	}
+}
+
+func TestNewTaskFormCanSetInitialTitle(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	cfg.DefaultTaskType = config.DefaultTaskTypeShell
+	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
+	defer killPTYs(model)
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model = updated.(Model)
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	model = updated.(Model)
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Ops Shell")})
+	model = updated.(Model)
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+
+	if model.input.Value() != "Ops Shell" {
+		t.Fatalf("custom title should survive type changes, got %q", model.input.Value())
+	}
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	defer killPTYs(model)
+	if cmd == nil {
+		t.Fatal("expected PTY start command")
+	}
+	if len(model.state.Tasks) != 1 {
+		t.Fatalf("tasks = %#v", model.state.Tasks)
+	}
+	if model.state.Tasks[0].TypeID != config.DefaultTaskTypeCodex {
+		t.Fatalf("new task type = %q", model.state.Tasks[0].TypeID)
+	}
+	if model.state.Tasks[0].Title != "Ops Shell" {
+		t.Fatalf("new task title = %q", model.state.Tasks[0].Title)
 	}
 }
 

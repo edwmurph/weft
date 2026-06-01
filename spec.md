@@ -199,7 +199,7 @@ Example:
 
 The middle pane shows tasks for the selected workspace. It is always present so the Workspaces pane can stay purely scoped to workspaces.
 
-When no workspace exists or no workspace is selected, the Tasks pane shows centered help text telling the user to add a workspace first. It must not advertise creating a task until a workspace exists. When a workspace is selected, the top of the Tasks pane renders a selectable italic template row with a plus-sign label and concise copy telling the user to press the configured new-task key to create a task. Pressing `Enter` while the template row is selected opens the same task-type menu as the configured new-task key.
+When no workspace exists or no workspace is selected, the Tasks pane shows centered help text telling the user to add a workspace first. It must not advertise creating a task until a workspace exists. When a workspace is selected, the top of the Tasks pane renders a selectable italic template row with a plus-sign label and concise copy telling the user to press the configured new-task key to create a task. Pressing `Enter` while the template row is selected opens the same new-task form as the configured new-task key.
 
 Tasks without a group render as top-level rows above group sections. User-created groups render as collapsible sections inside this pane, with their member tasks indented underneath. Creating a group must not force existing top-level tasks into a visible `Ungrouped`, `General`, or `Inbox` section.
 
@@ -326,13 +326,13 @@ Autocomplete menus open directly under the input whenever the current value has 
 These are product-level defaults and may map to existing config structures during implementation.
 
 ```text
-Enter   Open selected task and maximize its console, or open the task-type menu on the new-task template row
+Enter   Open selected task and maximize its console, or open the new-task form on the new-task template row
 C-b     Toggle dashboard navigation
 Left/Right Move focus between workspaces and tasks panes
 j/k     Move selection within the focused navigation pane
 w       Add workspace
 g       Create group in selected workspace
-n       Open the new-task type menu
+n       Open the new-task form
 m       Move selected task to another group in the same workspace, or clear its group
 Shift+Up/Down Reorder selected workspace, task, or group
 e       Edit selected workspace title, group, or task title
@@ -397,9 +397,9 @@ badge = "[shell]"
 title_template = "Shell"
 ```
 
-The task type menu lists task type labels only, such as `Codex` and `Shell`. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
+The dashboard new-task form lists task type labels only, such as `Codex` and `Shell`, and includes a title input. The title input defaults to the selected task type's `title_template`. Changing the selected task type updates the title input to the newly selected type's default only while the input is blank or still matches the previous type default; once the user edits the title, type changes preserve that custom value. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
 
-The dashboard `n` shortcut opens a task type menu. `Enter` creates a top-level task of the selected type. The CLI command `weft new` creates the configured `default_task_type`, and `weft new --type <id>` creates a specific task type. Tasks always start in the selected workspace and are created top-level with no group.
+The dashboard `n` shortcut opens the new-task form. `Enter` creates a top-level task of the selected type with the entered title. The CLI command `weft new` creates the configured `default_task_type`, and `weft new --type <id>` creates a specific task type. Tasks always start in the selected workspace and are created top-level with no group.
 
 ## Title Templates
 
@@ -624,7 +624,7 @@ Create task:
 - Requires an existing selected workspace.
 - Creates a task in the selected workspace.
 - Always creates a top-level task with no group, even when the cursor is on a group or grouped task.
-- Uses the selected task type from the `n` menu or `weft new --type <id>`.
+- Uses the selected task type from the dashboard new-task form or `weft new --type <id>`.
 - Starts the task type command with the task workspace as the process working directory.
 - Copies the task type title template into the task title unless an explicit title is provided.
 

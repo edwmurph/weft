@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/edwmurph/weft/internal/config"
@@ -84,9 +85,28 @@ func selectedTaskType(cfg config.Config, index int) (config.TaskType, bool) {
 	return taskTypes[index], true
 }
 
-func renderNewTaskModal(cfg config.Config, selectedIndex int, width int) string {
+func configureNewTaskTitleInput(input *textinput.Model, cfg config.Config, selectedIndex int) {
+	input.KeyMap = promptInputKeyMap()
+	input.SetValue(defaultNewTaskTitle(cfg, selectedIndex))
+	input.CursorEnd()
+	input.Focus()
+	input.Placeholder = "Title"
+	input.ShowSuggestions = true
+	input.SetSuggestions(nil)
+	input.ShowSuggestions = false
+}
+
+func defaultNewTaskTitle(cfg config.Config, selectedIndex int) string {
+	taskType, ok := selectedTaskType(cfg, selectedIndex)
+	if !ok {
+		return ""
+	}
+	return taskType.TitleTemplate
+}
+
+func renderNewTaskModal(cfg config.Config, selectedIndex int, input textinput.Model, width int) string {
 	taskTypes := cfg.OrderedTaskTypes()
-	lines := []string{modalTitleStyle.Render("New task"), ""}
+	lines := []string{modalTitleStyle.Render("New task"), "", modalLabelStyle.Render("Type")}
 	valueWidth := max(16, width-2)
 	for index, taskType := range taskTypes {
 		marker := "  "
@@ -101,21 +121,62 @@ func renderNewTaskModal(cfg config.Config, selectedIndex int, width int) string 
 		}
 		lines = append(lines, style.Render(padVisual(clip(marker+label, valueWidth), valueWidth)))
 	}
-	lines = append(lines, "", modalKeyStyle.Render("Enter")+" create  "+modalKeyStyle.Render("Up/Down")+" move  "+modalKeyStyle.Render("Esc")+" cancel")
+	if len(taskTypes) == 0 {
+		lines = append(lines, modalErrorStyle.Render("No task types configured"))
+	}
+	lines = append(lines, "")
+	lines = append(lines, renderPromptInput("Title", input, width)...)
+	if strings.TrimSpace(input.Value()) == "" {
+		lines = append(lines, modalErrorStyle.Render("Title required"))
+	}
+	lines = append(lines, "", modalKeyStyle.Render("Enter")+" create  "+modalKeyStyle.Render("Up/Down")+" type  "+modalKeyStyle.Render("Esc")+" cancel")
 	return strings.Join(lines, "\n")
 }
 
-func handleNewTaskKey(cfg config.Config, index int, msg tea.KeyMsg) (int, bool, bool) {
+type newTaskInputResult struct {
+	index   int
+	input   textinput.Model
+	submit  bool
+	cancel  bool
+	message string
+	cmd     tea.Cmd
+}
+
+func handleNewTaskKey(cfg config.Config, index int, input textinput.Model, msg tea.KeyMsg) newTaskInputResult {
+	result := newTaskInputResult{index: index, input: input}
+	if handlePromptWordKey(&result.input, msg) {
+		return result
+	}
 	switch {
 	case msg.Type == tea.KeyEsc:
-		return index, false, true
+		result.cancel = true
+		return result
 	case msg.Type == tea.KeyEnter:
-		return index, true, false
+		if strings.TrimSpace(result.input.Value()) == "" {
+			result.message = "title is required"
+			return result
+		}
+		result.submit = true
+		return result
 	case msg.Type == tea.KeyUp || bindingMatches(cfg.KeyBindings.SelectPrev, msg):
-		return moveTaskTypeIndex(index, -1, cfg), false, false
+		result.index = newTaskTypeIndexAfterMove(cfg, index, &result.input, -1)
+		return result
 	case msg.Type == tea.KeyDown || bindingMatches(cfg.KeyBindings.SelectNext, msg):
-		return moveTaskTypeIndex(index, 1, cfg), false, false
+		result.index = newTaskTypeIndexAfterMove(cfg, index, &result.input, 1)
+		return result
 	default:
-		return index, false, false
+		result.input, result.cmd = result.input.Update(msg)
+		return result
 	}
+}
+
+func newTaskTypeIndexAfterMove(cfg config.Config, index int, input *textinput.Model, delta int) int {
+	oldDefault := strings.TrimSpace(defaultNewTaskTitle(cfg, index))
+	title := strings.TrimSpace(input.Value())
+	next := moveTaskTypeIndex(index, delta, cfg)
+	if title == "" || title == oldDefault {
+		input.SetValue(defaultNewTaskTitle(cfg, next))
+		input.CursorEnd()
+	}
+	return next
 }

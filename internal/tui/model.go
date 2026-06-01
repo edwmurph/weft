@@ -325,7 +325,7 @@ func (m Model) View() string {
 		return m.modalView(m.renderConfirmModal())
 	}
 	if m.mode == modeNewTask {
-		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, max(36, min(m.width-16, 72))))
+		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, m.input, max(36, min(m.width-16, 72))))
 	}
 	content := m.activeOutput()
 	loadingText := ""
@@ -533,14 +533,18 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	nextIndex, submit, cancel := handleNewTaskKey(m.cfg, m.newTaskIndex, msg)
-	m.newTaskIndex = nextIndex
-	if cancel {
+	result := handleNewTaskKey(m.cfg, m.newTaskIndex, m.input, msg)
+	m.newTaskIndex = result.index
+	m.input = result.input
+	if result.message != "" {
+		m.message = result.message
+	}
+	if result.cancel {
 		m.mode = modeNormal
 		return m, nil
 	}
-	if !submit {
-		return m, nil
+	if !result.submit {
+		return m, result.cmd
 	}
 	taskType, ok := selectedTaskType(m.cfg, m.newTaskIndex)
 	if !ok {
@@ -549,7 +553,7 @@ func (m Model) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeNormal
-	return m, m.newTask("", taskType.ID)
+	return m, m.newTask(m.input.Value(), taskType.ID)
 }
 
 func (m *Model) focusNavPane(focus state.Focus) {
@@ -723,6 +727,7 @@ func (m *Model) startNewTaskMenu() {
 	}
 	m.focusNavPane(state.FocusTasks)
 	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
+	configureNewTaskTitleInput(&m.input, m.cfg, m.newTaskIndex)
 	m.mode = modeNewTask
 }
 

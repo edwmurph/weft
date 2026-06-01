@@ -195,15 +195,22 @@ title_template = "Shell"
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "New task") &&
+			strings.Contains(capture, "Type") &&
+			strings.Contains(capture, "Title") &&
 			strings.Contains(capture, "Codex") &&
 			strings.Contains(capture, "Shell") &&
 			!strings.Contains(capture, "[codex] Codex") &&
 			!strings.Contains(capture, "[shell] Shell")
 	})
+	for range "Shell" {
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
+	}
+	directRun(t, env, "send-keys", "-l", "-t", pane, "Ops Shell")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	st := waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Tasks) == 1 &&
 			st.Tasks[0].TypeID == "shell" &&
+			st.Tasks[0].Title == "Ops Shell" &&
 			st.Tasks[0].Status == state.StatusReady
 	})
 	if st.Tasks[0].CodexSessionID != "" {
@@ -238,7 +245,7 @@ title_template = "Shell"
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Tasks") &&
-			strings.Contains(capture, "[shell] Shell") &&
+			strings.Contains(capture, "[shell] Ops Shell") &&
 			containsTaskLivePreviewAnimation(capture)
 	})
 }
@@ -2118,6 +2125,11 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 				strings.Contains(capture, "Enter create")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Escape")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "+ New task") &&
+				strings.Contains(capture, "Press n to create") &&
+				!strings.Contains(capture, "Enter create")
+		})
 	})
 
 	timedStep(t, "second workspace is added and workspace title can be set and cleared", func() {

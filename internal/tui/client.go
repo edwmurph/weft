@@ -161,7 +161,7 @@ func (m ClientModel) View() string {
 		return m.modalView(m.renderConfirmModal())
 	}
 	if m.mode == modeNewTask {
-		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, max(36, min(m.width-16, 72))))
+		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, m.input, max(36, min(m.width-16, 72))))
 	}
 	loadingText := m.snapshot.LoadingText
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
@@ -381,14 +381,18 @@ func (m ClientModel) isNewTaskRowSelected() bool {
 }
 
 func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	nextIndex, submit, cancel := handleNewTaskKey(m.cfg, m.newTaskIndex, msg)
-	m.newTaskIndex = nextIndex
-	if cancel {
+	result := handleNewTaskKey(m.cfg, m.newTaskIndex, m.input, msg)
+	m.newTaskIndex = result.index
+	m.input = result.input
+	if result.message != "" {
+		m.message = result.message
+	}
+	if result.cancel {
 		m.mode = modeNormal
 		return m, nil
 	}
-	if !submit {
-		return m, nil
+	if !result.submit {
+		return m, result.cmd
 	}
 	taskType, ok := selectedTaskType(m.cfg, m.newTaskIndex)
 	if !ok {
@@ -398,7 +402,7 @@ func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeNormal
 	m.newTaskRowSelected = false
-	return m, m.request("new", map[string]string{"type": taskType.ID})
+	return m, m.request("new", map[string]string{"type": taskType.ID, "title": m.input.Value()})
 }
 
 func (m ClientModel) reorderSelectedRow(delta int) (tea.Model, tea.Cmd) {
@@ -540,6 +544,7 @@ func (m *ClientModel) startNewTaskMenu() {
 		return
 	}
 	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
+	configureNewTaskTitleInput(&m.input, m.cfg, m.newTaskIndex)
 	m.mode = modeNewTask
 }
 
