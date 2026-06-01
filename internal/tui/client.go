@@ -344,10 +344,21 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) shouldMoveToNewWorkspaceCard() bool {
-	if m.newWorkspaceCardSelected || m.snapshot.State.Focus != state.FocusWorkspaces || len(m.snapshot.State.Workspaces) == 0 || !m.newWorkspaceCardVisible() {
+	if m.newWorkspaceCardSelected || m.snapshot.State.Focus != state.FocusWorkspaces || len(m.snapshot.State.Workspaces) == 0 || !m.newWorkspaceCardCanFit() {
 		return false
 	}
 	return m.snapshot.State.SelectedWorkspaceID == m.snapshot.State.Workspaces[len(m.snapshot.State.Workspaces)-1].ID
+}
+
+func (m ClientModel) newWorkspaceCardCanFit() bool {
+	options := m.workspaceRenderOptions()
+	options.newWorkspaceCardSelected = true
+	st := m.snapshot.State
+	st.Focus = state.FocusWorkspaces
+	st.NavOpen = true
+	st.SelectedWorkspaceID = ""
+	_, ok := newWorkspaceTemplateCardAreaFor(m.cfg, st, m.width, m.height, m.snapshot.NavWidth, options)
+	return ok
 }
 
 func (m ClientModel) newWorkspaceCardVisible() bool {

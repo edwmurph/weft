@@ -285,14 +285,17 @@ task, and starts fresh Codex tasks that do not have a session ID. It also warns
 that running commands and unsubmitted terminal input are not preserved, so users
 should finish important work first.
 
-When no upgrade tip is active and there is enough vertical space, the top of the
-Workspaces pane shows compact runtime branding and version details inside a
-small centered box with sharp corners and compact padding. The box uses a small
-emphasized `Weft` mark followed by the current CLI version and running
-supervisor version, with the version values aligned in one column. Workspace
-cards render one blank line below this box. This header is secondary chrome: it
-must not hide workspace cards, and the upgrade tip takes priority when an
-upgrade is pending.
+When there is enough vertical space, the top of the Workspaces pane shows
+compact runtime branding and version details inside a small centered box with
+sharp corners and compact padding. The box uses a small emphasized `Weft` mark
+followed by the current CLI version and running supervisor version, with the
+version values aligned in one column. This header stays visible while an
+upgrade tip is active. The upgrade tip remains pinned to the bottom of the
+Workspaces pane, and the workspace-card body between the header and footer
+scrolls with the selected workspace as keyboard arrows move through the list.
+Workspace cards render one blank line below the version box when vertical space
+allows it. This header is secondary chrome: it must not permanently hide
+workspace cards.
 
 Counts should use subtle colors:
 

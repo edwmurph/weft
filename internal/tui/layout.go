@@ -390,42 +390,77 @@ func renderWorkspacesPaneWithOptions(cfg config.Config, st state.State, width in
 
 func buildWorkspacesPaneContent(cfg config.Config, st state.State, width int, height int, options workspaceRenderOptions) workspacePaneContent {
 	cards := []string{}
+	selectedLine := -1
+	selectedHeight := 1
 	cardWidth := max(2, width-2-(navHorizontalPadding*2))
 	for _, workspace := range st.Workspaces {
 		selected := workspace.ID == st.SelectedWorkspaceID
 		card := renderWorkspaceCard(cfg, st, workspace, cardWidth, selected, st.Focus == state.FocusWorkspaces)
+		if selected {
+			selectedLine = len(cards)
+			selectedHeight = len(card)
+		}
 		for _, line := range card {
 			cards = append(cards, strings.Repeat(" ", navHorizontalPadding)+line)
 		}
 	}
 	hasWorkspaceCards := len(cards) > 0
 	content := workspacePaneContent{lines: cards, newWorkspaceStart: -1}
-	if !hasWorkspaceCards {
-		content.lines = renderCenteredPaneHelp(width, height, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
-	}
 	contentHeight := max(0, height-2)
-	if footer := renderWorkspaceFooter(options.workspaceFooterText, width, height, workspaceUpgradeFooterStyle); len(footer) > 0 {
-		if hasWorkspaceCards {
-			content = appendNewWorkspaceTemplateCardIfFits(content, cfg, cardWidth, max(0, contentHeight-len(footer)), options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces)
-		}
-		content.lines = pinBottomPaneContent(content.lines, footer, contentHeight)
-	} else if header := renderWorkspaceInfoHeader(options.workspaceInfoText, width, height); len(header) > 0 &&
-		workspaceInfoHeaderFits(cards, header, contentHeight, hasWorkspaceCards) {
-		if hasWorkspaceCards {
-			headerWithSpacer := workspaceInfoHeaderWithSpacer(header)
-			bodyHeight := max(0, contentHeight-len(headerWithSpacer))
-			content = appendNewWorkspaceTemplateCardIfFits(content, cfg, cardWidth, bodyHeight, options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces)
-			content.lines = prependTopPaneContent(content.lines, headerWithSpacer, contentHeight)
-			if content.newWorkspaceStart >= 0 {
-				content.newWorkspaceStart += len(headerWithSpacer)
-			}
-		} else {
-			content.lines = append(header, renderCenteredPaneHelpContent(max(0, width-2), max(0, contentHeight-len(header)), "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")...)
-		}
-	} else if hasWorkspaceCards {
-		content = appendNewWorkspaceTemplateCardIfFits(content, cfg, cardWidth, contentHeight, options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces)
+	header := renderWorkspaceInfoHeader(options.workspaceInfoText, width, height)
+	footer := renderWorkspaceFooter(options.workspaceFooterText, width, height, workspaceUpgradeFooterStyle)
+	newWorkspaceCardHeight := len(renderNewWorkspaceTemplateCard(cfg, cardWidth, options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces))
+	minBodyHeight := 1
+	if hasWorkspaceCards {
+		minBodyHeight = newWorkspaceCardHeight
 	}
+	headerBlock := workspaceInfoHeaderBlock(header, contentHeight, len(footer), minBodyHeight)
+	bodyHeight := max(0, contentHeight-len(headerBlock)-len(footer))
+	if hasWorkspaceCards {
+		if bodyHeight >= newWorkspaceCardHeight {
+			content = appendNewWorkspaceTemplateCard(content, cfg, cardWidth, options.newWorkspaceCardSelected, st.Focus == state.FocusWorkspaces)
+			if options.newWorkspaceCardSelected {
+				selectedLine = content.newWorkspaceStart
+				selectedHeight = newWorkspaceCardHeight
+			}
+		}
+		scrollOffset := 0
+		content.lines, scrollOffset = scrollPaneContentToRangeWithOffset(content.lines, selectedLine, selectedHeight, bodyHeight)
+		if content.newWorkspaceStart >= 0 {
+			content.newWorkspaceStart -= scrollOffset
+			if content.newWorkspaceStart < 0 || content.newWorkspaceStart+content.newWorkspaceHeight > bodyHeight {
+				content.newWorkspaceStart = -1
+				content.newWorkspaceHeight = 0
+			}
+		}
+	} else {
+		content.lines = renderCenteredPaneHelpContent(max(0, width-2), bodyHeight, "No workspaces", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
+	}
+	content.lines = fitPaneContent(content.lines, bodyHeight)
+	if content.newWorkspaceStart >= 0 && len(headerBlock) > 0 {
+		content.newWorkspaceStart += len(headerBlock)
+	}
+	content.lines = append(append([]string{}, headerBlock...), content.lines...)
+	content.lines = append(content.lines, footer...)
 	return content
+}
+
+func workspaceInfoHeaderBlock(header []string, contentHeight int, footerHeight int, minBodyHeight int) []string {
+	if len(header) == 0 || len(header)+footerHeight > contentHeight {
+		return nil
+	}
+	bodyHeight := contentHeight - len(header) - footerHeight
+	if bodyHeight <= 0 {
+		return append([]string{}, header...)
+	}
+	block := append([]string{}, header...)
+	if bodyHeight > minBodyHeight {
+		block = append(block, "")
+	}
+	if len(block)+footerHeight > contentHeight {
+		return append([]string{}, header...)
+	}
+	return block
 }
 
 func renderWorkspaceFooter(message string, width int, height int, style lipgloss.Style) []string {
@@ -510,50 +545,18 @@ func renderWorkspaceInfoBox(content []string, rowWidth int) []string {
 	return lines
 }
 
-func workspaceInfoHeaderFits(cards []string, header []string, contentHeight int, hasWorkspaceCards bool) bool {
-	if contentHeight <= 0 || len(header) == 0 || len(header) > contentHeight {
-		return false
-	}
-	if !hasWorkspaceCards {
-		return len(header) < contentHeight
-	}
-	return len(cards)+len(workspaceInfoHeaderWithSpacer(header)) <= contentHeight
-}
-
-func workspaceInfoHeaderWithSpacer(header []string) []string {
-	return append(append([]string{}, header...), "")
-}
-
-func prependTopPaneContent(content []string, header []string, contentHeight int) []string {
-	if contentHeight <= 0 || len(header) == 0 {
-		return content
-	}
-	next := append([]string{}, header...)
-	for _, line := range content {
-		if len(next) >= contentHeight {
-			break
-		}
-		next = append(next, line)
-	}
-	return next
-}
-
-func pinBottomPaneContent(content []string, footer []string, contentHeight int) []string {
-	if contentHeight <= 0 || len(footer) == 0 {
-		return content
-	}
-	if len(footer) >= contentHeight {
-		return footer[len(footer)-contentHeight:]
-	}
-	bodyHeight := contentHeight - len(footer)
-	if len(content) > bodyHeight {
-		content = content[:bodyHeight]
+func fitPaneContent(content []string, height int) []string {
+	if height <= 0 {
+		return nil
 	}
 	next := append([]string{}, content...)
-	for len(next) < bodyHeight {
+	if len(next) > height {
+		next = next[:height]
+	}
+	for len(next) < height {
 		next = append(next, "")
 	}
-	return append(next, footer...)
+	return next
 }
 
 type workspaceCardCounts struct {
@@ -606,9 +609,9 @@ func renderNewWorkspaceTemplateCard(cfg config.Config, width int, selected bool,
 	return []string{top, body, bottom}
 }
 
-func appendNewWorkspaceTemplateCardIfFits(content workspacePaneContent, cfg config.Config, width int, availableHeight int, selected bool, focused bool) workspacePaneContent {
+func appendNewWorkspaceTemplateCard(content workspacePaneContent, cfg config.Config, width int, selected bool, focused bool) workspacePaneContent {
 	card := renderNewWorkspaceTemplateCard(cfg, width, selected, focused)
-	if len(content.lines) == 0 || len(content.lines)+len(card) > availableHeight {
+	if len(content.lines) == 0 || len(card) == 0 {
 		return content
 	}
 	content.newWorkspaceStart = len(content.lines)
@@ -868,15 +871,29 @@ func groupHasLoadingAgent(st state.State, groupID string, loadingAgents map[stri
 }
 
 func scrollPaneContentToLine(content []string, selectedLine int, visibleLines int) []string {
+	scrolled, _ := scrollPaneContentToLineWithOffset(content, selectedLine, visibleLines)
+	return scrolled
+}
+
+func scrollPaneContentToLineWithOffset(content []string, selectedLine int, visibleLines int) ([]string, int) {
+	return scrollPaneContentToRangeWithOffset(content, selectedLine, 1, visibleLines)
+}
+
+func scrollPaneContentToRangeWithOffset(content []string, selectedLine int, selectedHeight int, visibleLines int) ([]string, int) {
 	if visibleLines <= 0 || selectedLine < 0 || len(content) <= visibleLines {
-		return content
+		return content, 0
 	}
+	selectedHeight = max(1, selectedHeight)
+	selectedEnd := selectedLine + selectedHeight - 1
 	start := 0
-	if selectedLine >= visibleLines {
-		start = selectedLine - visibleLines + 1
+	if selectedEnd >= visibleLines {
+		start = selectedEnd - visibleLines + 1
+	}
+	if selectedLine < start {
+		start = selectedLine
 	}
 	start = min(start, len(content)-visibleLines)
-	return content[start:]
+	return content[start:], start
 }
 
 func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width int, nested bool, selected bool, options workspaceRenderOptions) string {

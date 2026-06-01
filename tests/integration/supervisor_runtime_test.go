@@ -387,6 +387,8 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workspaces") &&
+			strings.Contains(capture, "CLI        "+weftversion.Version) &&
+			strings.Contains(capture, "Supervisor 3.9.0") &&
 			strings.Contains(capture, "supervisor 3.9.0 → "+weftversion.Version) &&
 			strings.Contains(capture, "Press U to upgrade and resume 1 idle Codex task")
 	})

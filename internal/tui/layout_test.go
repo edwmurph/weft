@@ -308,6 +308,34 @@ func TestRenderWorkspacesPaneShowsUpgradeFooterAtBottom(t *testing.T) {
 	}
 }
 
+func TestRenderWorkspacesPaneShowsVersionHeaderWithUpgradeFooter(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState(t.TempDir())
+
+	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 60, 12, workspaceRenderOptions{
+		workspaceInfoText:   "Weft\nCLI        7.13.6\nSupervisor 7.13.5",
+		workspaceFooterText: "Upgrade ready: supervisor 7.13.5 → 7.13.6.\nPress U to upgrade and resume 1 idle Codex task.",
+	}), "\n"))
+	for _, expected := range []string{
+		"Weft",
+		"CLI        7.13.6",
+		"Supervisor 7.13.5",
+		"Upgrade ready: supervisor 7.13.5 → 7.13.6.",
+		"Press U to upgrade and resume 1 idle Codex task.",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("workspace pane missing %q:\n%s", expected, got)
+		}
+	}
+	lines := strings.Split(got, "\n")
+	if !strings.Contains(lines[1], "┌") || !strings.Contains(lines[2], "Weft") {
+		t.Fatalf("version header should stay pinned to pane top:\n%s", got)
+	}
+	if !strings.Contains(lines[len(lines)-3], "Upgrade ready") || !strings.Contains(lines[len(lines)-2], "Press U") {
+		t.Fatalf("upgrade footer should stay pinned to pane bottom:\n%s", got)
+	}
+}
+
 func TestRenderWorkspacesPaneShowsVersionHeaderAboveWorkspaceCards(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState(t.TempDir())
@@ -345,24 +373,40 @@ func TestRenderWorkspacesPaneShowsVersionHeaderAboveWorkspaceCards(t *testing.T)
 	}
 }
 
-func TestRenderWorkspacesPaneOmitsVersionHeaderWhenCardsFillPane(t *testing.T) {
+func TestRenderWorkspacesPaneScrollsWorkspaceCardsBelowVersionHeader(t *testing.T) {
 	cfg := config.DefaultConfig()
-	st := layoutState(t.TempDir())
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w3",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+	}
 	now := state.NowISO()
-	for index := 1; index < 4; index++ {
+	for index := 0; index < 4; index++ {
+		path := filepath.Join(t.TempDir(), "workspace")
+		if err := os.Mkdir(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
 		st.Workspaces = append(st.Workspaces, state.Workspace{
-			ID:        fmtInt(index),
-			Path:      t.TempDir(),
+			ID:        "w" + fmtInt(index),
+			Path:      path,
+			Title:     "Workspace " + fmtInt(index),
 			CreatedAt: now,
 			UpdatedAt: now,
 		})
 	}
 
 	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 60, 12, workspaceRenderOptions{
-		workspaceInfoText: "Weft\nCLI        7.13.6\nSupervisor 7.13.6",
+		workspaceInfoText:   "Weft\nCLI        7.13.6\nSupervisor 7.13.5",
+		workspaceFooterText: "Upgrade ready: supervisor 7.13.5 → 7.13.6.\nPress U to upgrade and resume 1 idle Codex task.",
 	}), "\n"))
-	if strings.Contains(got, "CLI        7.13.6") || strings.Contains(got, "Supervisor 7.13.6") {
-		t.Fatalf("version header should not hide workspace cards:\n%s", got)
+	for _, expected := range []string{"Weft", "CLI        7.13.6", "Supervisor 7.13.5", "Workspace 3", "Upgrade ready"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("scrolling workspace pane missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "Workspace 0") {
+		t.Fatalf("workspace card body should scroll instead of hiding the fixed header/footer:\n%s", got)
 	}
 }
 

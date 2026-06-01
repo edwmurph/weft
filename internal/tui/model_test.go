@@ -662,6 +662,9 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	}
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
+		"Weft",
+		"CLI        " + weftversion.Version,
+		"Supervisor 3.9.0",
 		"supervisor 3.9.0 → " + weftversion.Version,
 		"Press U to upgrade and resume 1 idle Codex task",
 	} {
