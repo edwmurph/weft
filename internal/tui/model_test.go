@@ -32,19 +32,39 @@ func TestEmptyDashboardStartsInTasksFocus(t *testing.T) {
 	}
 }
 
-func TestLoadingTickContinuesOnlyWhenLivePreviewHasTask(t *testing.T) {
+func TestLoadingTickContinuesWhileDashboardCanAnimate(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 	model := NewModel(rt, cfg, state.Empty())
+	model.width = 140
+	model.navWidth = model.targetNavWidth()
 
 	updated, cmd := model.Update(loadingTick{})
 	model = updated.(Model)
 
-	if model.loading != 0 {
-		t.Fatalf("empty preview loading frame index = %d, want 0", model.loading)
+	if model.loading != 1 {
+		t.Fatalf("empty preview loading frame index = %d, want 1", model.loading)
+	}
+	if cmd == nil {
+		t.Fatal("empty live preview animation should keep the loading ticker active")
+	}
+
+	model.width = 100
+	model.navWidth = model.targetNavWidth()
+	updated, cmd = model.Update(loadingTick{})
+	model = updated.(Model)
+
+	if model.loading != 1 {
+		t.Fatalf("nav-only dashboard loading frame index = %d, want 1", model.loading)
 	}
 	if cmd != nil {
-		t.Fatal("empty live preview should not keep the loading ticker active")
+		t.Fatal("nav-only dashboard should not keep the loading ticker active")
+	}
+
+	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	model = updated.(Model)
+	if cmd == nil {
+		t.Fatal("widening to show the preview should start the animation ticker")
 	}
 
 	activeState := testStateWithTask(rt.Workspace)

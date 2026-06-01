@@ -168,6 +168,7 @@ func (m ClientModel) View() string {
 	options := m.workspaceRenderOptions()
 	options.loadingFrame = loadingFrame
 	options.previewHeaderAnimation = livePreviewAnimationFrame(m.loading)
+	options.emptyArtFrame = m.loading
 	dashboardState := m.dashboardState()
 	if loadingText != "" {
 		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
@@ -734,7 +735,7 @@ func (m *ClientModel) ensureLoadingTick() tea.Cmd {
 func (m ClientModel) hasLoadingAnimation() bool {
 	return strings.TrimSpace(m.snapshot.LoadingText) != "" ||
 		len(m.snapshot.LoadingTaskIDs) > 0 ||
-		m.mode == modeNormal && m.snapshot.State.NavOpen && state.ActiveTask(m.snapshot.State) != nil
+		m.mode == modeNormal && previewPaneVisible(m.snapshot.State.NavOpen, m.width, m.snapshot.NavWidth)
 }
 
 func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {

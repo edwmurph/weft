@@ -60,6 +60,7 @@ var (
 	workspaceInfoFooterStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	workspaceInfoBoxBorderStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	emptyLogoAccentStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	newWorkspaceCardHintStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
@@ -77,6 +78,7 @@ type workspaceRenderOptions struct {
 	loadingText              string
 	loadingFrame             string
 	previewHeaderAnimation   string
+	emptyArtFrame            int
 	loadingTasks             map[string]bool
 	workspaceFooterText      string
 	workspaceInfoText        string
@@ -109,6 +111,14 @@ var (
 		`●─────╯       ╚███╔███╔╝ ███████╗ ██║         ██║`,
 		`               ╚══╝╚══╝  ╚══════╝ ╚═╝         ╚═╝`,
 	}
+	previewEmptyWeftLogo = []string{
+		`◆━━━━━┓       ██╗    ██╗ ███████╗ ███████╗ █████████╗`,
+		`      ┃       ██║    ██║ ██╔════╝ ██╔════╝ ╚══██╔══╝`,
+		`◆━━━━━╋━━━━━━➤  ██║ █╗ ██║ █████╗   █████╗      ██║`,
+		`      ┃       ██║███╗██║ ██╔══╝   ██╔══╝      ██║`,
+		`◆━━━━━┛       ╚███╔███╔╝ ███████╗ ██║         ██║`,
+		`               ╚══╝╚══╝  ╚══════╝ ╚═╝         ╚═╝`,
+	}
 )
 
 func WeftLogoLines() []string {
@@ -137,6 +147,10 @@ func workspaceNavFrameWidth(st state.State, width int) int {
 	}
 	tasksWidth := min(defaultTasksPaneWidth, width-fixedWorkspacePaneWidth-minCodexPaneWidth)
 	return fixedWorkspacePaneWidth + max(minTasksPaneWidth, tasksWidth)
+}
+
+func previewPaneVisible(navOpen bool, width int, navWidth int) bool {
+	return navOpen && width > 0 && navWidth > 0 && navWidth < width
 }
 
 func renderWorkspace(
@@ -243,14 +257,14 @@ func renderWorkspaceView(
 	}
 	if navWidth <= 0 {
 		codexState := codexFrameStateForSelection(st, groupCursor)
-		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusConsole, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation), "\n")
+		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusConsole, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation, options.emptyArtFrame), "\n")
 	}
 	if codexWidth <= 0 {
 		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
 	}
 	codexState := codexFrameStateForSelection(st, groupCursor)
 	nav := renderNavSection(cfg, st, navWidth, height, groupCursor, options)
-	codex := renderCodexFrame(cfg, codexState, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.previewHeaderAnimation)
+	codex := renderCodexFrame(cfg, codexState, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.previewHeaderAnimation, options.emptyArtFrame)
 	lines := make([]string, 0, height)
 	for index := 0; index < height; index++ {
 		left := lineAt(nav, index, navWidth)
@@ -1072,6 +1086,7 @@ func renderCodexFrame(
 	loadingText string,
 	toastText string,
 	previewHeaderAnimation string,
+	emptyArtFrame int,
 ) []string {
 	if width < 2 || height <= 0 {
 		return nil
@@ -1103,7 +1118,7 @@ func renderCodexFrame(
 	empty := !taskActive
 	contentWidth := codexLineContentWidth(innerWidth, previewMode)
 	messageLines := renderStatusBanner(message, contentWidth, min(3, contentHeight))
-	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText, codexEmptyTitle(previewMode))
+	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText, codexEmptyTitle(previewMode), previewMode && empty, emptyArtFrame)
 	if len(messageLines) > 0 {
 		contentLines = append(messageLines, contentLines...)
 	}
@@ -1207,7 +1222,7 @@ func codexEmptyTitle(previewMode bool) string {
 	return "No task open"
 }
 
-func renderCodexContent(content string, width int, height int, empty bool, canCreateTask bool, loadingText string, emptyTitle string) []string {
+func renderCodexContent(content string, width int, height int, empty bool, canCreateTask bool, loadingText string, emptyTitle string, previewEmpty bool, emptyArtFrame int) []string {
 	if height <= 0 {
 		return nil
 	}
@@ -1215,7 +1230,7 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 		return renderCenteredCodexContent([]string{loadingText}, width, height)
 	}
 	if empty {
-		return renderEmptyCodexContent(width, height, canCreateTask, emptyTitle)
+		return renderEmptyCodexContentWithFrame(width, height, canCreateTask, emptyTitle, previewEmpty, emptyArtFrame)
 	}
 	lines := lastLines(content, height)
 	for len(lines) < height {
@@ -1229,24 +1244,102 @@ func renderEmptyCodexContent(width int, height int, canCreateTask bool, titles .
 	if len(titles) > 0 && strings.TrimSpace(titles[0]) != "" {
 		title = strings.TrimSpace(titles[0])
 	}
+	return renderEmptyCodexContentWithFrame(width, height, canCreateTask, title, false, 0)
+}
+
+func renderEmptyCodexContentWithFrame(width int, height int, canCreateTask bool, title string, previewEmpty bool, emptyArtFrame int) []string {
+	emptyTitle := "No task open"
+	if strings.TrimSpace(title) != "" {
+		emptyTitle = strings.TrimSpace(title)
+	}
 	hint := "Press n to create one."
 	if !canCreateTask {
 		hint = "Add a workspace first."
 	}
 	content := []string{}
-	if logoFits(emptyWeftLogo, width, height) {
-		logoWidth := maxVisualWidth(emptyWeftLogo)
-		for _, line := range emptyWeftLogo {
-			content = append(content, emptyLogoStyle.Render(padVisual(line, logoWidth)))
+	logo := emptyWeftLogo
+	if previewEmpty {
+		logo = previewEmptyWeftLogo
+	}
+	if logoFits(logo, width, height) {
+		logoWidth := maxVisualWidth(logo)
+		for index, line := range logo {
+			content = append(content, renderEmptyLogoLine(line, logoWidth, previewEmpty, emptyArtFrame, index))
 		}
 		content = append(content, "")
 		content = append(content, emptyVersionStyle.Render(centerVisual(version.Label(), logoWidth)))
 		content = append(content, "")
-		content = append(content, centerVisual(title, logoWidth), centerVisual(hint, logoWidth))
+		content = append(content, centerVisual(emptyTitle, logoWidth), centerVisual(hint, logoWidth))
 		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
 	}
-	content = append(content, version.Label(), title, hint)
+	content = append(content, version.Label(), emptyTitle, hint)
 	return renderCenteredCodexContent(content, width, height)
+}
+
+func renderEmptyLogoLine(line string, logoWidth int, animated bool, frame int, row int) string {
+	line = padVisual(line, logoWidth)
+	if !animated {
+		return emptyLogoStyle.Render(line)
+	}
+	return renderPreviewLogoLine(line, row, frame)
+}
+
+type logoRange struct {
+	start int
+	end   int
+}
+
+const (
+	previewLogoAccentWidth = 2
+	previewLogoAccentHold  = 4
+	previewLogoGraphWidth  = 14
+)
+
+func renderPreviewLogoLine(line string, row int, frame int) string {
+	ranges := previewLogoAccentRanges(row, frame)
+	if len(ranges) == 0 {
+		return emptyLogoStyle.Render(line)
+	}
+	runes := []rune(line)
+	var builder strings.Builder
+	cursor := 0
+	for _, r := range ranges {
+		start := min(max(r.start, cursor), len(runes))
+		end := min(max(r.end, start), len(runes))
+		if start > cursor {
+			builder.WriteString(emptyLogoStyle.Render(string(runes[cursor:start])))
+		}
+		if end > start {
+			builder.WriteString(emptyLogoAccentStyle.Render(string(runes[start:end])))
+		}
+		cursor = end
+	}
+	if cursor < len(runes) {
+		builder.WriteString(emptyLogoStyle.Render(string(runes[cursor:])))
+	}
+	return builder.String()
+}
+
+func previewLogoAccentRanges(row int, frame int) []logoRange {
+	if frame < 0 {
+		frame = 0
+	}
+	stepCount := previewLogoGraphWidth / previewLogoAccentWidth
+	start := ((frame / previewLogoAccentHold) % stepCount) * previewLogoAccentWidth
+	end := start + previewLogoAccentWidth
+	switch row {
+	case 0, 4:
+		if start <= 6 {
+			return []logoRange{{start: start, end: end}}
+		}
+	case 1, 3:
+		if start == 6 {
+			return []logoRange{{start: start, end: end}}
+		}
+	case 2:
+		return []logoRange{{start: start, end: end}}
+	}
+	return nil
 }
 
 func logoFits(logo []string, width int, height int) bool {

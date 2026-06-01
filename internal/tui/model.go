@@ -284,6 +284,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.navWidth = m.targetNavWidth()
 		m.resizePTYs()
 		m.resizeScreens()
+		if m.hasLoadingAnimation() {
+			return m, tickLoading()
+		}
 		return m, nil
 	case navAnimationTick:
 		return m, m.stepNavAnimation()
@@ -341,12 +344,14 @@ func (m Model) View() string {
 			loadingText:            loadingText,
 			loadingFrame:           m.loadingFrame(),
 			previewHeaderAnimation: livePreviewAnimationFrame(m.loading),
+			emptyArtFrame:          m.loading,
 			loadingTasks:           m.loadingTaskSet(),
 		})
 	}
 	return renderWorkspaceView(m.cfg, m.state, title, content, m.width, m.height, m.message, m.navWidth, m.groupCursor, workspaceRenderOptions{
 		loadingFrame:           m.loadingFrame(),
 		previewHeaderAnimation: livePreviewAnimationFrame(m.loading),
+		emptyArtFrame:          m.loading,
 		loadingTasks:           m.loadingTaskSet(),
 	})
 }
@@ -1675,7 +1680,7 @@ func (m Model) loadingLabel() string {
 }
 
 func (m Model) hasLoadingAnimation() bool {
-	return m.anyTaskLoading() || m.state.NavOpen && state.ActiveTask(m.state) != nil
+	return m.anyTaskLoading() || previewPaneVisible(m.state.NavOpen, m.width, m.navWidth)
 }
 
 func (m *Model) save() {

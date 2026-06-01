@@ -59,6 +59,34 @@ func TestWeftLogoGraphShape(t *testing.T) {
 	}
 }
 
+func TestPreviewEmptyWeftLogoGraphShape(t *testing.T) {
+	if len(previewEmptyWeftLogo) != 6 {
+		t.Fatalf("preview logo height = %d, want 6", len(previewEmptyWeftLogo))
+	}
+	joined := strings.Join(previewEmptyWeftLogo, "\n")
+	if got := strings.Count(joined, "◆"); got != 3 {
+		t.Fatalf("preview logo graph input count = %d, want 3:\n%s", got, joined)
+	}
+	if got := strings.Count(joined, "➤"); got != 1 {
+		t.Fatalf("preview logo graph output count = %d, want 1:\n%s", got, joined)
+	}
+	if got := lipgloss.Width("➤"); got != 1 {
+		t.Fatalf("preview logo arrowhead width = %d, want 1", got)
+	}
+	for index, wantPrefix := range []string{
+		"◆━━━━━┓",
+		"      ┃",
+		"◆━━━━━╋━━━━━━➤  ",
+		"      ┃",
+		"◆━━━━━┛",
+		"       ",
+	} {
+		if !strings.HasPrefix(previewEmptyWeftLogo[index], wantPrefix) {
+			t.Fatalf("preview logo row %d prefix = %q, want %q", index, previewEmptyWeftLogo[index], wantPrefix)
+		}
+	}
+}
+
 func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
@@ -133,6 +161,66 @@ func TestRenderTaskPreviewRequiresFocusedTaskRow(t *testing.T) {
 	}))
 	if !strings.Contains(got, "No task selected") || strings.Contains(got, output) || strings.Contains(got, "Preview Title") {
 		t.Fatalf("no workspace selection should render an empty preview instead of the active task:\n%s", got)
+	}
+}
+
+func TestRenderTaskPreviewEmptyStateUsesPreviewLogoAndAnimation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	st.ActiveTaskID = ""
+	st.SelectedTaskID = ""
+	st.Tasks = nil
+
+	got := renderWorkspaceView(cfg, st, "Task", "No task open.", 180, 24, "", minTwoPaneNavWidth, 1, workspaceRenderOptions{
+		emptyArtFrame: 30,
+	})
+	stripped := ansi.Strip(got)
+	if !strings.Contains(stripped, "No task selected") || !strings.Contains(stripped, "◆━━━━━╋━━━━━━➤  ") {
+		t.Fatalf("empty preview missing preview logo:\n%s", stripped)
+	}
+	if strings.Contains(stripped, "●─────┼────▶") {
+		t.Fatalf("empty preview should use the centered preview arrow, not the static logo arrow:\n%s", stripped)
+	}
+
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	line := renderEmptyLogoLine(previewEmptyWeftLogo[2], maxVisualWidth(previewEmptyWeftLogo), true, 30, 2)
+	if !strings.Contains(line, "\x1b[") {
+		t.Fatalf("animated preview logo line should contain accent styling, got %q", line)
+	}
+	if strippedLine := ansi.Strip(line); strippedLine != padVisual(previewEmptyWeftLogo[2], maxVisualWidth(previewEmptyWeftLogo)) {
+		t.Fatalf("animated preview logo should preserve text layout:\nwant %q\ngot  %q", padVisual(previewEmptyWeftLogo[2], maxVisualWidth(previewEmptyWeftLogo)), strippedLine)
+	}
+	for frame := 0; frame < 28; frame += previewLogoAccentHold {
+		for row := range previewEmptyWeftLogo {
+			for _, r := range previewLogoAccentRanges(row, frame) {
+				if r.start >= 14 || r.end > 14 {
+					t.Fatalf("preview animation should stay on arrow graph, frame=%d row=%d range=%#v", frame, row, r)
+				}
+				if width := r.end - r.start; width != previewLogoAccentWidth {
+					t.Fatalf("preview animation chunks should be fixed width, frame=%d row=%d range=%#v width=%d", frame, row, r, width)
+				}
+			}
+		}
+	}
+	for index, frame := range []int{0, 4, 8, 12, 16, 20, 24} {
+		start := 99
+		for row := range previewEmptyWeftLogo {
+			for _, r := range previewLogoAccentRanges(row, frame) {
+				start = min(start, r.start)
+			}
+		}
+		if start == 99 {
+			t.Fatalf("preview animation frame %d has no highlighted graph range", frame)
+		}
+		if index > 0 {
+			previousStart := []int{0, 2, 4, 6, 8, 10, 12}[index-1]
+			if start < previousStart {
+				t.Fatalf("preview animation should move left-to-right, frame=%d start=%d previous=%d", frame, start, previousStart)
+			}
+		}
 	}
 }
 
