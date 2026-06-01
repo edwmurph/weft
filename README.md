@@ -10,9 +10,7 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-Weft helps you manage parallel work in one terminal. Run agent sessions and
-project commands, organize them by workspace and group, see which tasks need
-attention, and jump back into the right console when you need it.
+Weft helps you manage parallel work in one terminal. Run agent sessions and project commands, organize them by workspace and group, see which tasks need attention, and jump back into the right console when you need it.
 
 ## Demo
 
@@ -20,17 +18,12 @@ attention, and jump back into the right console when you need it.
 
 ## Why Weft
 
-- See every agent or command task in one dashboard instead of hunting through
-  terminal tabs.
-- Organize tasks into optional groups inside each workspace, such as `release`,
-  `review`, `bugs`, or `experiments`.
-- Track workspace totals for `active` and `needs attention` tasks so finished
-  or blocked work does not sit idle.
-- Auto-name agent tasks from their first message, or configured command tasks
-  from their first command, with an optional title hook.
+- See every agent or command task in one dashboard instead of hunting through terminal tabs.
+- Organize tasks into optional groups inside each workspace, such as `release`, `review`, `bugs`, or `experiments`.
+- Track workspace totals for `active` and `needs attention` tasks so finished or blocked work does not sit idle.
+- Auto-name agent tasks from their first message, or configured command tasks from their first command, with an optional title hook.
 - Detach, upgrade, or reopen the UI while local work keeps running.
-- Focus one task for direct input, then return to the dashboard to switch or
-  reorganize.
+- Focus one task for direct input, then return to the dashboard to switch or reorganize.
 - Use the mouse inside a task: scroll history and drag-copy bounded text.
 
 ## Getting Started
@@ -52,17 +45,11 @@ In the dashboard:
 
 Weft supports Codex today.
 
-Additional agents can be added upon request. Config can also define generic
-shell command tasks, which are useful for tests, dev servers, logs, scripts, or
-any other command you want to keep visible beside agent work.
+Additional agents can be added upon request. Config can also define generic shell command tasks, which are useful for tests, dev servers, logs, scripts, or any other command you want to keep visible beside agent work.
 
 ## Runtime Contract
 
-Config and state are strict current-shape files. Unknown config keys are
-rejected, `key_bindings.delete = "d"` is not valid, and persisted state is
-validated as-is instead of being repaired on load or write. Every persisted task
-`type_id` must be defined by active config before the supervisor starts.
-Unsupported old config or state files fail with reset guidance.
+Config and state are strict current-shape files. Unknown config keys are rejected, `key_bindings.delete = "d"` is not valid, and persisted state is validated as-is instead of being repaired on load or write. Every persisted task `type_id` must be defined by active config before the supervisor starts. Unsupported old config or state files fail with reset guidance.
 
 ## Learn More
 

@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Markdown hard-wrap cleanup
+
+- Request: Remove forced line wrapping from README and other markdown, and persist the instruction in `AGENTS.md`.
+- Suggestions: Unwrap normal prose and list items in tracked markdown while preserving code fences, tables, headings, and HTML blocks; add an agent rule to avoid column-width hard wrapping in markdown.
+- Outcome: Implemented in `.worktrees/markdown-wrap`; awaiting review.
+- Evidence: `README.md`, `CONTRIBUTING.md`, `docs/`, `spec.md`, `AGENTS.md`.
+
 ## 2026-06-01 - Maximum cutover refactor
 
 - Request: Implement the maximum legacy cutover in a fresh `.worktrees/max-cutover-refactor` worktree, preserving dashboard `U`, supervisor-owned `upgrade_resume`, Codex session capture/resume, backups, typed task launching, and current workspace/group/task UX.
