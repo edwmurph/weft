@@ -33,8 +33,8 @@ type KeyBindings struct {
 	Open         string `toml:"open"`
 	NewWorkspace string `toml:"new_workspace"`
 	NewGroup     string `toml:"new_group"`
-	NewAgent     string `toml:"new_agent"`
-	MoveAgent    string `toml:"move_agent"`
+	NewTask      string `toml:"new_task"`
+	MoveTask     string `toml:"move_task"`
 	Edit         string `toml:"edit"`
 	Delete       string `toml:"delete"`
 	Help         string `toml:"help"`
@@ -47,13 +47,12 @@ type TaskType struct {
 	Kind          string `toml:"kind"`
 	Command       string `toml:"command"`
 	Badge         string `toml:"badge"`
-	Icon          string `toml:"icon"`
 	TitleTemplate string `toml:"title_template"`
 }
 
 type Config struct {
-	CodexCommand            string              `toml:"codex_command"`
-	TitleTemplate           string              `toml:"title_template"`
+	CodexCommand            string              `toml:"-"`
+	TitleTemplate           string              `toml:"-"`
 	DefaultTaskType         string              `toml:"default_task_type"`
 	TaskTypes               map[string]TaskType `toml:"task_types"`
 	TitleHookCommand        string              `toml:"title_hook_command"`
@@ -92,8 +91,8 @@ func DefaultKeyBindings() KeyBindings {
 		Open:         "Enter",
 		NewWorkspace: "w",
 		NewGroup:     "g",
-		NewAgent:     "n",
-		MoveAgent:    "m",
+		NewTask:      "n",
+		MoveTask:     "m",
 		Edit:         "e",
 		Delete:       "Backspace",
 		Help:         "?",
@@ -250,8 +249,6 @@ func EnsureConfig(rt Runtime) (Config, error) {
 func LoadConfig(path string) (Config, error) {
 	cfg := DefaultConfig()
 	var raw struct {
-		CodexCommand            string              `toml:"codex_command"`
-		TitleTemplate           string              `toml:"title_template"`
 		DefaultTaskType         string              `toml:"default_task_type"`
 		TaskTypes               map[string]TaskType `toml:"task_types"`
 		TitleHookCommand        string              `toml:"title_hook_command"`
@@ -265,9 +262,7 @@ func LoadConfig(path string) (Config, error) {
 			Open         string `toml:"open"`
 			NewWorkspace string `toml:"new_workspace"`
 			NewGroup     string `toml:"new_group"`
-			NewAgent     string `toml:"new_agent"`
 			NewTask      string `toml:"new_task"`
-			MoveAgent    string `toml:"move_agent"`
 			MoveTask     string `toml:"move_task"`
 			Edit         string `toml:"edit"`
 			Delete       string `toml:"delete"`
@@ -280,30 +275,7 @@ func LoadConfig(path string) (Config, error) {
 		return Config{}, ConfigError{Message: fmt.Sprintf("could not parse %s: %v", path, err)}
 	}
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
-		keys := make([]string, 0, len(undecoded))
-		hasLegacyRename := false
-		for _, key := range undecoded {
-			keys = append(keys, key.String())
-			if key.String() == "key_bindings.rename" {
-				hasLegacyRename = true
-			}
-		}
-		if hasLegacyRename {
-			return Config{}, ConfigError{Message: fmt.Sprintf("unknown config key(s) in %s: key_bindings.rename (dashboard shortcut was renamed; use key_bindings.edit = \"e\" and delete key_bindings.rename)", path)}
-		}
-		return Config{}, ConfigError{Message: fmt.Sprintf("unknown config key(s) in %s: %s", path, strings.Join(keys, ", "))}
-	}
-	if raw.CodexCommand != "" {
-		cfg.CodexCommand = raw.CodexCommand
-		codex := cfg.TaskTypes[DefaultTaskTypeCodex]
-		codex.Command = raw.CodexCommand
-		cfg.TaskTypes[DefaultTaskTypeCodex] = codex
-	}
-	if raw.TitleTemplate != "" {
-		cfg.TitleTemplate = raw.TitleTemplate
-		codex := cfg.TaskTypes[DefaultTaskTypeCodex]
-		codex.TitleTemplate = raw.TitleTemplate
-		cfg.TaskTypes[DefaultTaskTypeCodex] = codex
+		return Config{}, unknownConfigKeyError(path, undecoded)
 	}
 	if raw.DefaultTaskType != "" {
 		cfg.DefaultTaskType = raw.DefaultTaskType
@@ -329,12 +301,6 @@ func LoadConfig(path string) (Config, error) {
 		if strings.TrimSpace(rawTaskType.Badge) != "" {
 			taskType.Badge = rawTaskType.Badge
 		}
-		if strings.TrimSpace(rawTaskType.Icon) != "" {
-			if strings.TrimSpace(rawTaskType.Badge) == "" {
-				taskType.Badge = rawTaskType.Icon
-			}
-			taskType.Icon = rawTaskType.Icon
-		}
 		if strings.TrimSpace(rawTaskType.TitleTemplate) != "" {
 			taskType.TitleTemplate = rawTaskType.TitleTemplate
 		}
@@ -359,14 +325,13 @@ func LoadConfig(path string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.Open, raw.KeyBindings.Open)
 	applyBinding(&cfg.KeyBindings.NewWorkspace, raw.KeyBindings.NewWorkspace)
 	applyBinding(&cfg.KeyBindings.NewGroup, raw.KeyBindings.NewGroup)
-	applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.NewAgent)
-	applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.NewTask)
-	applyBinding(&cfg.KeyBindings.MoveAgent, raw.KeyBindings.MoveAgent)
-	applyBinding(&cfg.KeyBindings.MoveAgent, raw.KeyBindings.MoveTask)
+	applyBinding(&cfg.KeyBindings.NewTask, raw.KeyBindings.NewTask)
+	applyBinding(&cfg.KeyBindings.MoveTask, raw.KeyBindings.MoveTask)
 	applyBinding(&cfg.KeyBindings.Edit, raw.KeyBindings.Edit)
-	if !strings.EqualFold(strings.TrimSpace(raw.KeyBindings.Delete), "d") {
-		applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
+	if strings.EqualFold(strings.TrimSpace(raw.KeyBindings.Delete), "d") {
+		return Config{}, ConfigError{Message: fmt.Sprintf("stale config value in %s: key_bindings.delete = \"d\" (use key_bindings.delete = \"Backspace\" or delete key_bindings.delete)", path)}
 	}
+	applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
 	if codex, ok := cfg.TaskTypes[DefaultTaskTypeCodex]; ok {
@@ -398,13 +363,8 @@ func (c *Config) normalizeTaskTypes() {
 		taskType.Kind = strings.TrimSpace(taskType.Kind)
 		taskType.Command = strings.TrimSpace(taskType.Command)
 		taskType.Badge = strings.TrimSpace(taskType.Badge)
-		taskType.Icon = strings.TrimSpace(taskType.Icon)
 		if taskType.Badge == "" {
-			if taskType.Icon != "" {
-				taskType.Badge = taskType.Icon
-			} else {
-				taskType.Badge = "[" + id + "]"
-			}
+			taskType.Badge = "[" + id + "]"
 		}
 		taskType.TitleTemplate = strings.TrimSpace(taskType.TitleTemplate)
 		next[id] = taskType
@@ -457,8 +417,8 @@ func (c Config) Validate() error {
 	for name, value := range map[string]string{
 		"drawer": c.KeyBindings.Drawer, "focus_left": c.KeyBindings.FocusLeft, "focus_right": c.KeyBindings.FocusRight,
 		"select_prev": c.KeyBindings.SelectPrev, "select_next": c.KeyBindings.SelectNext, "open": c.KeyBindings.Open,
-		"new_workspace": c.KeyBindings.NewWorkspace, "new_group": c.KeyBindings.NewGroup, "new_task": c.KeyBindings.NewAgent,
-		"move_task": c.KeyBindings.MoveAgent, "edit": c.KeyBindings.Edit, "delete": c.KeyBindings.Delete,
+		"new_workspace": c.KeyBindings.NewWorkspace, "new_group": c.KeyBindings.NewGroup, "new_task": c.KeyBindings.NewTask,
+		"move_task": c.KeyBindings.MoveTask, "edit": c.KeyBindings.Edit, "delete": c.KeyBindings.Delete,
 		"help": c.KeyBindings.Help, "quit": c.KeyBindings.Quit,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -479,6 +439,46 @@ func validTaskTypeID(id string) bool {
 		return false
 	}
 	return true
+}
+
+func unknownConfigKeyError(path string, undecoded []toml.Key) ConfigError {
+	keys := make([]string, 0, len(undecoded))
+	advices := make([]string, 0, len(undecoded))
+	seenAdvice := map[string]bool{}
+	for _, key := range undecoded {
+		keyName := key.String()
+		keys = append(keys, keyName)
+		if advice := removedConfigKeyAdvice(keyName); advice != "" && !seenAdvice[advice] {
+			advices = append(advices, advice)
+			seenAdvice[advice] = true
+		}
+	}
+	sort.Strings(keys)
+	sort.Strings(advices)
+	message := fmt.Sprintf("unknown config key(s) in %s: %s", path, strings.Join(keys, ", "))
+	if len(advices) > 0 {
+		message += " (" + strings.Join(advices, "; ") + ")"
+	}
+	return ConfigError{Message: message}
+}
+
+func removedConfigKeyAdvice(key string) string {
+	switch key {
+	case "codex_command":
+		return "codex_command was removed; use task_types.codex.command"
+	case "title_template":
+		return "top-level title_template was removed; use task_types.codex.title_template"
+	case "key_bindings.new_agent":
+		return "key_bindings.new_agent was removed; use key_bindings.new_task"
+	case "key_bindings.move_agent":
+		return "key_bindings.move_agent was removed; use key_bindings.move_task"
+	case "key_bindings.rename":
+		return "dashboard shortcut was renamed; use key_bindings.edit = \"e\" and delete key_bindings.rename"
+	}
+	if strings.HasPrefix(key, "task_types.") && strings.HasSuffix(key, ".icon") {
+		return key + " was removed; use " + strings.TrimSuffix(key, ".icon") + ".badge"
+	}
+	return ""
 }
 
 func (c Config) TaskType(id string) (TaskType, bool) {

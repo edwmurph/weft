@@ -487,9 +487,9 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.focusNavPane(state.FocusAgents)
 		m.startPrompt(promptGroup, "")
-	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
+	case bindingMatches(m.cfg.KeyBindings.NewTask, msg):
 		m.startNewTaskMenu()
-	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
+	case bindingMatches(m.cfg.KeyBindings.MoveTask, msg):
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
 		}
@@ -2477,8 +2477,8 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s open task", cfg.KeyBindings.Open),
 		fmt.Sprintf("%s new workspace", cfg.KeyBindings.NewWorkspace),
 		fmt.Sprintf("%s new group", cfg.KeyBindings.NewGroup),
-		fmt.Sprintf("%s new task", cfg.KeyBindings.NewAgent),
-		fmt.Sprintf("%s move task", cfg.KeyBindings.MoveAgent),
+		fmt.Sprintf("%s new task", cfg.KeyBindings.NewTask),
+		fmt.Sprintf("%s move task", cfg.KeyBindings.MoveTask),
 		"Shift+Up/Down reorder selected task or group",
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),

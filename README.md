@@ -278,7 +278,8 @@ help = "?"
 quit = "C-c"
 ```
 
-Existing generated configs with `delete = "d"` use the current `Backspace` default.
+Legacy generated configs with `delete = "d"` are rejected; remove that override
+or replace it with `delete = "Backspace"`.
 
 In task focus, Weft keeps the `Task Console` framed while forwarding terminal
 input through the active PTY. The configured drawer key, `C-b` by default, is
@@ -331,9 +332,12 @@ replacing config and state, and stops the supervisor first when it is running.
 
 The config keys are stable: `default_task_type`, `task_types`,
 `title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`.
-`codex_command`, `title_template`, `new_agent`, and `move_agent` still load as
-legacy aliases for Codex task configuration and task shortcuts, but new config
-files use `task_types.codex`, `new_task`, and `move_task`. Unknown config keys
+Legacy aliases are rejected instead of mapped silently: use
+`task_types.codex.command` instead of `codex_command`,
+`task_types.codex.title_template` instead of top-level `title_template`,
+`key_bindings.new_task` instead of `key_bindings.new_agent`,
+`key_bindings.move_task` instead of `key_bindings.move_agent`, and
+`task_types.<id>.badge` instead of `task_types.<id>.icon`. Unknown config keys
 are rejected so stale local settings are visible. State is strict v4 with
 workspace/group names and task type IDs on agent rows. Older or unknown state
 shapes fail with guidance to run `weft clear` when a reset is acceptable.

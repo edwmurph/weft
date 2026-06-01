@@ -276,7 +276,7 @@ func TestBackupRestoreCreatesPreRestoreBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalConfig := []byte("codex_command = \"codex\"\ntitle_template = \"{title}\"\n")
+	originalConfig := []byte("[task_types.codex]\ncommand = \"codex\"\ntitle_template = \"{title}\"\n")
 	originalState := []byte("{\"version\":4,\"focus\":\"workspaces\",\"nav_open\":true,\"workspaces\":[],\"groups\":[],\"agents\":[],\"collapsed_group_ids\":[]}\n")
 	if err := os.WriteFile(rt.ConfigPath, originalConfig, 0o600); err != nil {
 		t.Fatal(err)
@@ -288,7 +288,7 @@ func TestBackupRestoreCreatesPreRestoreBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(rt.ConfigPath, []byte("codex_command = \"broken\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(rt.ConfigPath, []byte("[task_types.codex]\ncommand = \"broken\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(rt.StatePath, []byte("broken\n"), 0o600); err != nil {

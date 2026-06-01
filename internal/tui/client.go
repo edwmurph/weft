@@ -286,13 +286,13 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.newWorkspaceCardSelected = false
 		m.startPrompt(promptGroup, "")
-	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
+	case bindingMatches(m.cfg.KeyBindings.NewTask, msg):
 		m.newWorkspaceCardSelected = false
 		m.startNewTaskMenu()
 	case m.canActOnUpgrade() && strings.EqualFold(msg.String(), "u"):
 		m.newWorkspaceCardSelected = false
 		m.startUpgradeConfirm()
-	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
+	case bindingMatches(m.cfg.KeyBindings.MoveTask, msg):
 		m.newWorkspaceCardSelected = false
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")

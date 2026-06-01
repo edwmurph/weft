@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +32,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
-	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	configText := codexTaskConfig(fakeCodex)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +219,7 @@ func TestSourceCheckoutCWDLaunchesIsolatedRuntime(t *testing.T) {
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	configText := codexTaskConfig(fakeCodex)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +572,7 @@ func createRuntime(t *testing.T, tmp string, fakeCodex string) (string, string) 
 	if err := os.Mkdir(workspace, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	configText := codexTaskConfig(fakeCodex)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -551,8 +551,9 @@ task of the selected type. The CLI command `weft new` creates the configured
 Tasks always start in the selected workspace and are created top-level with no
 group.
 
-Legacy `codex_command` and top-level `title_template` config keys are aliases
-for `task_types.codex.command` and `task_types.codex.title_template`.
+Legacy `codex_command` and top-level `title_template` config keys are rejected;
+users must set `task_types.codex.command` and
+`task_types.codex.title_template`.
 
 ## Title Templates
 
@@ -1071,14 +1072,18 @@ help = "?"
 quit = "C-c"
 ```
 
-Existing generated configs with `delete = "d"` use the current `Backspace`
-default so `d` is not a dashboard delete shortcut.
+Legacy generated configs with `delete = "d"` are rejected; users must remove
+that override or set `delete = "Backspace"` so `d` is not a dashboard delete
+shortcut.
 
-Only the current config keys are emitted by default. Legacy `codex_command`,
-top-level `title_template`, `new_agent`, and `move_agent` remain loadable
-aliases. Unknown keys, including retired keys such as `tmux_session`,
-`columns`, `new_workdir`, `new_folder`, `focus_toggle`, `close_weft`, `prev`,
-`previous`, `new`, and `close`, are rejected.
+Only the current config keys are emitted by default. Legacy aliases are
+rejected instead of mapped silently: `codex_command`, top-level
+`title_template`, `key_bindings.new_agent`, `key_bindings.move_agent`, and
+`task_types.<id>.icon` must be replaced with current `task_types.codex.*`,
+`key_bindings.new_task`, `key_bindings.move_task`, and
+`task_types.<id>.badge` keys. Unknown keys, including retired keys such as
+`tmux_session`, `columns`, `new_workdir`, `new_folder`, `focus_toggle`,
+`close_weft`, `prev`, `previous`, `new`, and `close`, are rejected.
 
 ## Testing Requirements
 

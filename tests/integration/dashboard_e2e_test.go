@@ -37,7 +37,7 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
-	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	configText := codexTaskConfig(fakeCodex)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1028,7 +1028,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	titleHookCommand := "TITLE_HOOK_PAYLOAD=" + shellQuote(titleHookPayload) + " " + shellQuote(titleHook)
-	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\ntitle_hook_command = %q\n", fakeCodex, "{codex}", titleHookCommand)
+	configText := codexTaskConfigWithTitleHook(fakeCodex, "{codex}", titleHookCommand)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1644,7 +1644,7 @@ func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	tmp := t.TempDir()
 	fakeCodex := writeExitOnInterruptFakeCodex(t, tmp, "fake-codex-exits-on-int.sh")
 	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
-	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\n", fakeCodex, "{codex}")
+	configText := codexTaskConfigWithTitle(fakeCodex, "{codex}")
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1732,7 +1732,7 @@ func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
 	tmp := t.TempDir()
 	fakeCodex := writeSideModeFakeCodex(t, tmp, "fake-codex-side-mode.sh")
 	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
-	configText := fmt.Sprintf("codex_command = %q\ntitle_template = %q\n", fakeCodex, "{codex}")
+	configText := codexTaskConfigWithTitle(fakeCodex, "{codex}")
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1832,7 +1832,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		}
 	}
 	fakeCodex := writeVisibleFakeCodex(t, tmp, "fake-codex-dashboard.sh")
-	configText := fmt.Sprintf("codex_command = %q\n", fakeCodex)
+	configText := codexTaskConfig(fakeCodex)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}

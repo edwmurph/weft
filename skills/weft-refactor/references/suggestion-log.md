@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Config alias cutover
+
+- Request: Hard-cut remaining config aliases so stale local config fails instead of silently mapping into current task configuration.
+- Suggestions: Reject top-level `codex_command` and `title_template`, reject `key_bindings.new_agent`/`move_agent`, reject `task_types.*.icon`, remove the `delete = "d"` compatibility mapping, and keep generated config on current `task_types.*` plus `new_task`/`move_task`.
+- Outcome: Implemented in `.worktrees/config-alias-cutover`; awaiting review.
+- Evidence: `internal/config/config.go`, `internal/config/config_test.go`, `tests/integration`, `README.md`, `spec.md`.
+
 ## 2026-05-31 - Aggressive compatibility prune
 
 - Request: Remove compatibility-only paths while preserving the current workspace/group/agent supervisor contract, backups, dashboard `U`, supervisor-owned `upgrade_resume`, and Codex session resume.

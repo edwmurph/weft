@@ -27,9 +27,6 @@ func taskTypeBadgeCellForAgent(cfg config.Config, agent state.Agent) string {
 
 func taskTypeBadge(taskType config.TaskType) string {
 	badge := strings.TrimSpace(taskType.Badge)
-	if badge == "" {
-		badge = strings.TrimSpace(taskType.Icon)
-	}
 	if badge == "" && strings.TrimSpace(taskType.ID) != "" {
 		badge = "[" + strings.TrimSpace(taskType.ID) + "]"
 	}

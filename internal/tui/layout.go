@@ -767,7 +767,7 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		if state.ActiveWorkspace(st) == nil {
 			content = renderCenteredPaneHelp(width, height, "No workspace selected", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 		} else {
-			content = renderCenteredPaneHelp(width, height, "No tasks", "Press "+cfg.KeyBindings.NewAgent+" to create one.")
+			content = renderCenteredPaneHelp(width, height, "No tasks", "Press "+cfg.KeyBindings.NewTask+" to create one.")
 		}
 	}
 	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))

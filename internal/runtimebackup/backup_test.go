@@ -15,7 +15,8 @@ func TestCreateListRestoreHandlesMissingState(t *testing.T) {
 	if err := os.MkdirAll(rt.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(rt.ConfigPath, []byte("codex_command = \"codex\"\n"), 0o600); err != nil {
+	currentConfig := "[task_types.codex]\ncommand = \"codex\"\n"
+	if err := os.WriteFile(rt.ConfigPath, []byte(currentConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +68,7 @@ func TestCreateListRestoreHandlesMissingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "codex_command = \"codex\"\n" {
+	if string(data) != currentConfig {
 		t.Fatalf("config not restored:\n%s", data)
 	}
 }

@@ -60,11 +60,11 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.KeyBindings.FocusLeft != "Left" || cfg.KeyBindings.FocusRight != "Right" {
 		t.Fatalf("focus bindings = %q/%q", cfg.KeyBindings.FocusLeft, cfg.KeyBindings.FocusRight)
 	}
-	if cfg.KeyBindings.NewWorkspace != "w" || cfg.KeyBindings.NewGroup != "g" || cfg.KeyBindings.NewAgent != "n" {
+	if cfg.KeyBindings.NewWorkspace != "w" || cfg.KeyBindings.NewGroup != "g" || cfg.KeyBindings.NewTask != "n" {
 		t.Fatalf("new bindings = %#v", cfg.KeyBindings)
 	}
-	if cfg.KeyBindings.MoveAgent != "m" {
-		t.Fatalf("MoveAgent = %q", cfg.KeyBindings.MoveAgent)
+	if cfg.KeyBindings.MoveTask != "m" {
+		t.Fatalf("MoveTask = %q", cfg.KeyBindings.MoveTask)
 	}
 	if cfg.KeyBindings.Edit != "e" {
 		t.Fatalf("Edit = %q", cfg.KeyBindings.Edit)
@@ -173,93 +173,13 @@ quit = "Q"
 		cfg.KeyBindings.Open != "Space" ||
 		cfg.KeyBindings.NewWorkspace != "W" ||
 		cfg.KeyBindings.NewGroup != "G" ||
-		cfg.KeyBindings.NewAgent != "A" ||
-		cfg.KeyBindings.MoveAgent != "M" ||
+		cfg.KeyBindings.NewTask != "A" ||
+		cfg.KeyBindings.MoveTask != "M" ||
 		cfg.KeyBindings.Edit != "E" ||
 		cfg.KeyBindings.Delete != "X" ||
 		cfg.KeyBindings.Help != "H" ||
 		cfg.KeyBindings.Quit != "Q" {
 		t.Fatalf("key bindings = %#v", cfg.KeyBindings)
-	}
-}
-
-func TestLoadConfigTreatsLegacyDefaultDeleteAsBackspace(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	err := os.WriteFile(path, []byte(`
-codex_command = "codex"
-title_template = "{status} {auto}"
-title_hook_timeout_seconds = 10
-
-[key_bindings]
-delete = "d"
-`), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if cfg.KeyBindings.Delete != "Backspace" {
-		t.Fatalf("Delete = %q", cfg.KeyBindings.Delete)
-	}
-}
-
-func TestLoadConfigAcceptsLegacyTaskIconAsBadge(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	err := os.WriteFile(path, []byte(`
-[task_types.codex]
-icon = "[legacy-codex]"
-
-[task_types.shell]
-icon = "[legacy-shell]"
-`), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := cfg.TaskTypes["codex"]; got.Badge != "[legacy-codex]" {
-		t.Fatalf("codex badge = %#v", got)
-	}
-	if got := cfg.TaskTypes["shell"]; got.Badge != "[legacy-shell]" {
-		t.Fatalf("shell badge = %#v", got)
-	}
-}
-
-func TestLoadConfigAppliesLegacyCodexKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	err := os.WriteFile(path, []byte(`
-codex_command = "codex --model gpt-5"
-title_template = "{title}"
-
-[key_bindings]
-new_agent = "A"
-move_agent = "M"
-`), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if cfg.CodexCommand != "codex --model gpt-5" || cfg.TitleTemplate != "{title}" {
-		t.Fatalf("legacy codex values = %#v", cfg)
-	}
-	if got := cfg.TaskTypes[DefaultTaskTypeCodex]; got.Command != "codex --model gpt-5" || got.TitleTemplate != "{title}" {
-		t.Fatalf("legacy codex task type = %#v", got)
-	}
-	if cfg.KeyBindings.NewAgent != "A" || cfg.KeyBindings.MoveAgent != "M" {
-		t.Fatalf("legacy task bindings = %#v", cfg.KeyBindings)
 	}
 }
 
@@ -325,6 +245,61 @@ rename = "r"
 			}
 			if !strings.Contains(err.Error(), "unknown config key") {
 				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadConfigRejectsRemovedConfigAliases(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body     string
+		expected []string
+	}{
+		"top level codex command": {
+			body:     `codex_command = "codex --model gpt-5"`,
+			expected: []string{"unknown config key", "codex_command", "task_types.codex.command"},
+		},
+		"top level title template": {
+			body:     `title_template = "{title}"`,
+			expected: []string{"unknown config key", "title_template", "task_types.codex.title_template"},
+		},
+		"task key bindings": {
+			body: `
+[key_bindings]
+new_agent = "A"
+move_agent = "M"
+`,
+			expected: []string{"unknown config key", "key_bindings.move_agent", "key_bindings.new_agent", "key_bindings.new_task", "key_bindings.move_task"},
+		},
+		"task type icon": {
+			body: `
+[task_types.codex]
+icon = "[legacy-codex]"
+`,
+			expected: []string{"unknown config key", "task_types.codex.icon", "task_types.codex.badge"},
+		},
+		"generated delete d default": {
+			body: `
+[key_bindings]
+delete = "d"
+`,
+			expected: []string{"stale config value", `key_bindings.delete = "d"`, `key_bindings.delete = "Backspace"`},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(tc.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := LoadConfig(path)
+			if err == nil {
+				t.Fatal("expected config error")
+			}
+			for _, expected := range tc.expected {
+				if !strings.Contains(err.Error(), expected) {
+					t.Fatalf("error missing %q:\n%v", expected, err)
+				}
 			}
 		})
 	}
