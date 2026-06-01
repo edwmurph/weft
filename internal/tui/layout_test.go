@@ -39,18 +39,21 @@ func TestWeftLogoGraphShape(t *testing.T) {
 		t.Fatalf("logo height = %d, want 6", len(emptyWeftLogo))
 	}
 	joined := strings.Join(emptyWeftLogo, "\n")
-	if got := strings.Count(joined, "●"); got != 3 {
+	if got := strings.Count(joined, "◆"); got != 3 {
 		t.Fatalf("logo graph input count = %d, want 3:\n%s", got, joined)
 	}
-	if got := strings.Count(joined, "────▶"); got != 1 {
+	if got := strings.Count(joined, "➤"); got != 1 {
 		t.Fatalf("logo graph output count = %d, want 1:\n%s", got, joined)
 	}
+	if got := lipgloss.Width("➤"); got != 1 {
+		t.Fatalf("logo arrowhead width = %d, want 1", got)
+	}
 	for index, wantPrefix := range []string{
-		"●─────╮",
-		"      │",
-		"●─────┼────▶",
-		"      │",
-		"●─────╯",
+		"◆━━━━━┓",
+		"      ┃",
+		"◆━━━━━╋━━━━━➤ ",
+		"      ┃",
+		"◆━━━━━┛",
 		"       ",
 	} {
 		if !strings.HasPrefix(emptyWeftLogo[index], wantPrefix) {
@@ -76,7 +79,7 @@ func TestPreviewEmptyWeftLogoGraphShape(t *testing.T) {
 	for index, wantPrefix := range []string{
 		"◆━━━━━┓",
 		"      ┃",
-		"◆━━━━━╋━━━━━━➤  ",
+		"◆━━━━━╋━━━━━➤ ",
 		"      ┃",
 		"◆━━━━━┛",
 		"       ",
@@ -175,11 +178,11 @@ func TestRenderTaskPreviewEmptyStateUsesPreviewLogoAndAnimation(t *testing.T) {
 		emptyArtFrame: 30,
 	})
 	stripped := ansi.Strip(got)
-	if !strings.Contains(stripped, "No task selected") || !strings.Contains(stripped, "◆━━━━━╋━━━━━━➤  ") {
+	if !strings.Contains(stripped, "No task selected") || !strings.Contains(stripped, "◆━━━━━╋━━━━━➤ ") {
 		t.Fatalf("empty preview missing preview logo:\n%s", stripped)
 	}
 	if strings.Contains(stripped, "●─────┼────▶") {
-		t.Fatalf("empty preview should use the centered preview arrow, not the static logo arrow:\n%s", stripped)
+		t.Fatalf("empty preview should use the shared diamond graph, not the old static logo arrow:\n%s", stripped)
 	}
 
 	previous := lipgloss.ColorProfile()
@@ -896,7 +899,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 
 	got = renderWorkspaceWithNavWidth(cfg, st, "Task", "No task open.", 100, 24, "", 0, 0)
 	stripped := ansi.Strip(got)
-	logoIndex := strings.Index(stripped, `●─────┼────▶  ██║ █╗ ██║ █████╗   █████╗      ██║`)
+	logoIndex := strings.Index(stripped, `◆━━━━━╋━━━━━➤ ██║ █╗ ██║ █████╗   █████╗      ██║`)
 	hintIndex := strings.Index(stripped, "No task open")
 	if logoIndex < 0 {
 		t.Fatalf("empty dashboard missing Weft wordmark:\n%s", stripped)
