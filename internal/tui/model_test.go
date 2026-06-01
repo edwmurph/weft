@@ -1439,7 +1439,8 @@ func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
 func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.cfg.TitleHookCommand = "printf 'bad config' >&2; exit 2"
+	detail := "curl: (56) HTTP/2 stream 1 was reset while reading the OpenAI response after the request was accepted; retryable receive failure with request id req-title-transport-56 and status text requested URL returned incomplete body"
+	model.cfg.TitleHookCommand = "printf '%s\\n' " + shellQuote(detail) + " >&2; exit 56"
 
 	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
 	cmd := model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyEnter})
@@ -1453,10 +1454,10 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 	model.applyTitleHook(msg)
 
 	task := state.TaskByID(model.state, "a")
-	if task == nil || !strings.Contains(task.AutoTitleError, "bad config") {
+	if task == nil || !strings.Contains(task.AutoTitleError, detail) || strings.Contains(task.AutoTitleError, "...") {
 		t.Fatalf("task auto title error = %#v", task)
 	}
-	if !strings.Contains(model.message, "auto title hook failed") {
+	if !strings.Contains(model.message, "auto title hook failed") || !strings.Contains(model.message, "returned incomplete body") {
 		t.Fatalf("message = %q", model.message)
 	}
 
@@ -1469,7 +1470,10 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 	model.input.SetValue("{auto}")
 
 	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "Auto title error") || !strings.Contains(got, "bad config") {
+	if !strings.Contains(got, "Auto title error") ||
+		!strings.Contains(got, "curl: (56)") ||
+		!strings.Contains(got, "retryable receive failure") ||
+		!strings.Contains(got, "returned incomplete body") {
 		t.Fatalf("edit pane missing hook error:\n%s", got)
 	}
 }

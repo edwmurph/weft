@@ -63,6 +63,23 @@ func TestAutoTitleMaxColumnsAccountsForTaskTypeBadges(t *testing.T) {
 	}
 }
 
+func TestWrapPlainSplitsLongWordsWithoutEllipsis(t *testing.T) {
+	got := wrapPlain("error abcdefghijklmnopqrstuvwxyz done", 10, 10)
+	joined := strings.Join(got, "")
+
+	if strings.Contains(joined, "…") || strings.Contains(joined, "...") {
+		t.Fatalf("wrapped text should not use ellipsis: %#v", got)
+	}
+	if !strings.Contains(joined, "abcdefghijklmnopqrstuvwxyz") {
+		t.Fatalf("wrapped text dropped long word: %#v", got)
+	}
+	for _, line := range got {
+		if lipgloss.Width(line) > 10 {
+			t.Fatalf("line width = %d, want <= 10: %#v", lipgloss.Width(line), got)
+		}
+	}
+}
+
 func TestWeftLogoGraphShape(t *testing.T) {
 	if len(emptyWeftLogo) != 6 {
 		t.Fatalf("logo height = %d, want 6", len(emptyWeftLogo))

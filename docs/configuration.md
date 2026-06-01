@@ -88,7 +88,7 @@ When configured, Weft runs the hook from the task workspace and sends JSON on st
 
 Codex agent tasks use the first submitted chat message. Configured command tasks opt in by including `{auto}` in `title_template`, then use the first typed command.
 
-The checked-in `hooks/auto-title-openai.sh` script is one example hook. It reads `OPENAI_API_KEY` from the environment or a local ignored `.env` file and calls the OpenAI Responses API. Its prompt tells the model to stay within `auto_title_columns` so generated titles fit task rows without ellipsis truncation. You can replace it with any command that follows the same stdin/stdout contract.
+The checked-in `hooks/auto-title-openai.sh` script is one example hook. It reads `OPENAI_API_KEY` from the environment or a local ignored `.env` file and calls the OpenAI Responses API. Its prompt tells the model to stay within `auto_title_columns` so generated titles fit task rows without ellipsis truncation. The script retries transient curl failures twice by default; set `OPENAI_TITLE_CURL_RETRIES` and `OPENAI_TITLE_CURL_RETRY_DELAY_SECONDS` to tune that behavior. You can replace it with any command that follows the same stdin/stdout contract.
 
 ## Runtime Paths
 

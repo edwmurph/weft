@@ -24,6 +24,8 @@ fi
 
 payload="$(cat)"
 model="${OPENAI_TITLE_MODEL:-gpt-5.4-nano}"
+curl_retries="${OPENAI_TITLE_CURL_RETRIES:-2}"
+curl_retry_delay_seconds="${OPENAI_TITLE_CURL_RETRY_DELAY_SECONDS:-1}"
 
 first_message="$(jq -r '.first_message // ""' <<<"$payload")"
 auto_title_columns="$(jq -r '(.auto_title_columns // .title_columns // 32) | tostring' <<<"$payload")"
@@ -58,8 +60,13 @@ request="$(
     }'
 )"
 
+curl_args=(-fsS --retry "$curl_retries" --retry-delay "$curl_retry_delay_seconds")
+if curl --help all 2>/dev/null | grep -q -- "--retry-all-errors"; then
+  curl_args+=(--retry-all-errors)
+fi
+
 response="$(
-  curl -fsS https://api.openai.com/v1/responses \
+  curl "${curl_args[@]}" https://api.openai.com/v1/responses \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${OPENAI_API_KEY}" \
     -d "$request"

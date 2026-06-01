@@ -252,6 +252,90 @@ title_template = "Shell"
 	})
 }
 
+func TestDashboardEditTaskWrapsFullAutoTitleErrorE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	titleHook := filepath.Join(tmp, "title-hook-fail.sh")
+	titleError := "curl: (56) HTTP/2 stream 1 was reset while reading the OpenAI response after the request was accepted; retryable receive failure with request id req-title-transport-56 and status text requested URL returned incomplete body final visible detail"
+	if err := os.WriteFile(titleHook, []byte(
+		"#!/bin/sh\n"+
+			"cat >/dev/null\n"+
+			"printf '%s\\n' "+shellQuote(titleError)+" >&2\n"+
+			"exit 56\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configText := codexTaskConfigWithTitleHook(fakeCodex, "{codex}", shellQuote(titleHook))
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "direct-client-auto-title-error"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Tasks") && strings.Contains(capture, "No task selected")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "New task") && strings.Contains(capture, "Title")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Tasks) == 1 && st.Tasks[0].Status != state.StatusStarting
+	})
+	firstID := st.Tasks[0].ID
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar)
+	})
+
+	directRun(t, env, "send-keys", "-l", "-t", pane, "first title failure")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		task := findTask(st, firstID)
+		return task != nil && strings.Contains(task.AutoTitleError, "final visible detail")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Tasks")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "e")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Edit task") && strings.Contains(capture, "Variables")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-u")
+	directRun(t, env, "send-keys", "-l", "-t", pane, "{auto}")
+	capture := waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Auto title error") &&
+			screenContainsWrappedText(capture, "returned incomplete body final visible detail")
+	})
+	assertDashboardNotCorrupt(t, capture, false)
+}
+
 func TestDashboardIdleTerminalCtrlCMarksShellTaskKilledE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")

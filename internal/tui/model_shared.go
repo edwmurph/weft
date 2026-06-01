@@ -47,12 +47,21 @@ func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptK
 		}
 		lines = append(lines, modalValueStyle.Render(clip(renderTaskBaseTitleForState(st, draft), width)))
 		if notice := autoTitleNotice(cfg, *selectedTask, draft.Title); notice != "" {
-			lines = append(lines, mutedStyle.Render(clip(notice, width)))
+			lines = append(lines, renderWrappedPromptNotice(notice, width)...)
 		}
 	}
 	lines = append(lines, "", modalLabelStyle.Render("Variables"))
 	for _, variable := range titles.TemplateVariables() {
 		lines = append(lines, mutedStyle.Render(clip(fmt.Sprintf("- %s: %s", variable.Name, variable.Description), width)))
+	}
+	return lines
+}
+
+func renderWrappedPromptNotice(notice string, width int) []string {
+	wrapped := wrapPlain(notice, width, max(1, len([]rune(notice))))
+	lines := make([]string, 0, len(wrapped))
+	for _, line := range wrapped {
+		lines = append(lines, mutedStyle.Render(line))
 	}
 	return lines
 }

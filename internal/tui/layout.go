@@ -1250,11 +1250,20 @@ func wrapPlain(value string, width int, maxLines int) []string {
 			lines = append(lines, current)
 			current = word
 		} else {
-			lines = append(lines, clipPlain(word, width))
-			current = ""
+			var segment string
+			segment, current = splitPlainAtWidth(word, width)
+			lines = append(lines, segment)
 		}
 		if len(lines) == maxLines {
 			return lines
+		}
+		for current != "" && lipgloss.Width(current) > width {
+			var segment string
+			segment, current = splitPlainAtWidth(current, width)
+			lines = append(lines, segment)
+			if len(lines) == maxLines {
+				return lines
+			}
 		}
 	}
 	if current != "" && len(lines) < maxLines {
@@ -1264,6 +1273,21 @@ func wrapPlain(value string, width int, maxLines int) []string {
 		return lines[:maxLines]
 	}
 	return lines
+}
+
+func splitPlainAtWidth(value string, width int) (string, string) {
+	if width <= 0 || value == "" {
+		return "", value
+	}
+	runes := []rune(value)
+	end := 0
+	for end < len(runes) && lipgloss.Width(string(runes[:end+1])) <= width {
+		end++
+	}
+	if end == 0 {
+		end = 1
+	}
+	return string(runes[:end]), string(runes[end:])
 }
 
 func codexEmptyTitle(previewMode bool) string {

@@ -1273,11 +1273,7 @@ func (m *Model) recordAutoTitleError(taskID string, message string, attempted bo
 }
 
 func hookErrorText(err error) string {
-	text := strings.Join(strings.Fields(err.Error()), " ")
-	if len(text) > 140 {
-		return text[:137] + "..."
-	}
-	return text
+	return strings.Join(strings.Fields(err.Error()), " ")
 }
 
 func (m Model) autoTitleRenameMessage(task state.Task) string {
