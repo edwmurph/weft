@@ -384,6 +384,11 @@ func (m Model) renderConfirmModal() string {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if bindingMatches(m.cfg.KeyBindings.Repaint, msg) {
+		m.refreshTerminalTaskActivity()
+		m.message = "refreshed"
+		return m, tea.ClearScreen
+	}
 	if m.mode == modeInput {
 		return m.handleInputKey(msg)
 	}
@@ -2712,6 +2717,7 @@ func renderHelp(cfg config.Config) string {
 		"Shift+Up/Down reorder selected workspace, task, or group",
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
+		fmt.Sprintf("%s repaint", cfg.KeyBindings.Repaint),
 		"U upgrade supervisor and resume idle Codex tasks",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),

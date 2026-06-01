@@ -25,22 +25,26 @@ type clientInputRouter struct {
 	clientID           string
 	drawer             []byte
 	drawerSequences    [][]byte
+	repaintSequences   [][]byte
 	interruptSequences [][]byte
 	send               func(command string, args map[string]string) error
+	repaint            func()
 
 	inputMode            atomic.Int32
 	pending              []byte
 	hold                 []byte
+	deferred             []byte
 	bracketedPasteActive bool
 }
 
-func newClientInputRouter(input io.Reader, rt config.Runtime, clientID string, drawerBinding string) *clientInputRouter {
+func newClientInputRouter(input io.Reader, rt config.Runtime, clientID string, drawerBinding string, repaintBinding string) *clientInputRouter {
 	router := &clientInputRouter{
 		input:              input,
 		rt:                 rt,
 		clientID:           clientID,
 		drawer:             bindingRawSequence(drawerBinding),
 		drawerSequences:    bindingTerminalSequences(drawerBinding),
+		repaintSequences:   bindingTerminalSequences(repaintBinding),
 		interruptSequences: terminalInterruptSequences(),
 	}
 	router.send = router.sendIPC
@@ -76,6 +80,22 @@ func (r *clientInputRouter) Read(p []byte) (int, error) {
 	for {
 		if len(r.pending) > 0 {
 			return r.readPending(p), nil
+		}
+		if len(r.deferred) > 0 {
+			data := append([]byte(nil), r.deferred...)
+			r.deferred = nil
+			switch r.TaskInputMode() {
+			case taskInputCodex:
+				r.routeCodexInput(data)
+			case taskInputTerminal:
+				r.routeTerminalInput(data)
+			default:
+				r.pending = append(r.pending, data...)
+				return r.readPending(p), nil
+			}
+			if len(r.pending) > 0 {
+				return r.readPending(p), nil
+			}
 		}
 		n, err := r.input.Read(buf[:])
 		if n > 0 {
@@ -131,7 +151,7 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 		data = next
 		r.hold = nil
 	}
-	if len(r.drawerSequences) == 0 && len(r.interruptSequences) == 0 {
+	if len(r.drawerSequences) == 0 && len(r.repaintSequences) == 0 && len(r.interruptSequences) == 0 {
 		r.sendCodexBytes(data)
 		return
 	}
@@ -149,6 +169,10 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 				r.SetTaskInputMode(taskInputNone)
 				r.pending = append(r.pending, data[index+width:]...)
 				return
+			case codexControlRepaint:
+				r.triggerRepaint()
+				r.deferred = append(r.deferred, data[index+width:]...)
+				return
 			case codexControlInterrupt:
 				r.sendCodexInterrupt(data[index : index+width])
 				data = data[index+width:]
@@ -159,7 +183,7 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 				continue
 			}
 		}
-		keep := max(drawerPrefixSuffix(data, r.drawer), sgrMousePrefixSuffix(data, r.bracketedPasteActive))
+		keep := max(drawerPrefixSuffix(data, r.drawer), sgrMousePrefixSuffix(data, r.bracketedPasteActive), csiKeyboardPrefixSuffix(data))
 		if sendLen := len(data) - keep; sendLen > 0 {
 			r.sendCodexBytes(data[:sendLen])
 		}
@@ -192,6 +216,10 @@ func (r *clientInputRouter) routeTerminalInput(data []byte) {
 				r.SetTaskInputMode(taskInputNone)
 				r.pending = append(r.pending, data[index+width:]...)
 				return
+			case codexControlRepaint:
+				r.triggerRepaint()
+				r.deferred = append(r.deferred, data[index+width:]...)
+				return
 			case codexControlMouse:
 				r.pending = append(r.pending, data[index:index+width]...)
 			case terminalControlInterrupt:
@@ -217,6 +245,7 @@ type codexControlKind string
 
 const (
 	codexControlDrawer       codexControlKind = "drawer"
+	codexControlRepaint      codexControlKind = "repaint"
 	codexControlInterrupt    codexControlKind = "interrupt"
 	codexControlMouse        codexControlKind = "mouse"
 	terminalControlInterrupt codexControlKind = "terminal_interrupt"
@@ -248,6 +277,9 @@ func (r *clientInputRouter) findCodexControl(data []byte) (codexControlKind, int
 		if width := matchingTerminalSequenceWidth(data[index:], r.drawerSequences); width > 0 {
 			return codexControlDrawer, index, width
 		}
+		if width := matchingTerminalSequenceWidth(data[index:], r.repaintSequences); width > 0 {
+			return codexControlRepaint, index, width
+		}
 		if width := matchingTerminalSequenceWidth(data[index:], r.interruptSequences); width > 0 {
 			return codexControlInterrupt, index, width
 		}
@@ -274,6 +306,9 @@ func (r *clientInputRouter) findTerminalControl(data []byte) (codexControlKind, 
 		}
 		if width := matchingTerminalSequenceWidth(data[index:], r.drawerSequences); width > 0 {
 			return codexControlDrawer, index, width
+		}
+		if width := matchingTerminalSequenceWidth(data[index:], r.repaintSequences); width > 0 {
+			return codexControlRepaint, index, width
 		}
 		if width := matchingTerminalSequenceWidth(data[index:], r.interruptSequences); width > 0 {
 			return terminalControlInterrupt, index, width
@@ -415,6 +450,12 @@ func (r *clientInputRouter) sendIPC(command string, args map[string]string) erro
 	args = clientRequestArgs(r.rt, r.clientID, command, args)
 	_, err := ipc.Call(r.rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 	return err
+}
+
+func (r *clientInputRouter) triggerRepaint() {
+	if r.repaint != nil {
+		r.repaint()
+	}
 }
 
 func drawerPrefixSuffix(data []byte, drawer []byte) int {

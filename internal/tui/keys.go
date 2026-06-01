@@ -83,6 +83,13 @@ func bindingTerminalSequences(binding string) [][]byte {
 			)
 		}
 	}
+	if value == "ctrl+]" {
+		sequences = append(sequences,
+			[]byte("\x1b[93;5u"),
+			[]byte("\x1b[93;5:1u"),
+			[]byte("\x1b[27;5;93~"),
+		)
+	}
 	return sequences
 }
 

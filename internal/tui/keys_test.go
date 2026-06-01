@@ -20,8 +20,27 @@ func TestBindingMatchesWeftConfigSpelling(t *testing.T) {
 	if !bindingMatches("C-c", tea.KeyMsg{Type: tea.KeyCtrlC}) {
 		t.Fatal("C-c should match ctrl+c")
 	}
+	if !bindingMatches("C-]", tea.KeyMsg{Type: tea.KeyCtrlCloseBracket}) {
+		t.Fatal("C-] should match ctrl+]")
+	}
 	if !bindingMatches("S-Left", tea.KeyMsg{Type: tea.KeyShiftLeft}) {
 		t.Fatal("S-Left should match shift+left")
+	}
+}
+
+func TestBindingTerminalSequencesIncludesCtrlCloseBracketCSIU(t *testing.T) {
+	sequences := bindingTerminalSequences("C-]")
+	for _, expected := range []string{"\x1d", "\x1b[93;5u", "\x1b[93;5:1u", "\x1b[27;5;93~"} {
+		found := false
+		for _, sequence := range sequences {
+			if string(sequence) == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing terminal sequence %q in %#v", expected, sequences)
+		}
 	}
 }
 

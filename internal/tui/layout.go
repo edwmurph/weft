@@ -1478,7 +1478,7 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 }
 
 func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return cfg.KeyBindings.Drawer + " dashboard"
+	return cfg.KeyBindings.Drawer + " dashboard  " + cfg.KeyBindings.Repaint + " repaint"
 }
 
 func codexConsoleTopRightLabel(st state.State, toastText string) string {

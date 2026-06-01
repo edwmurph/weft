@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	collapsedCodexToolbar = "C-b dashboard"
+	collapsedCodexToolbar = "C-b dashboard  C-] repaint"
 	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
@@ -2119,6 +2119,16 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 			strings.Contains(active.CodexTitle, "Ready")
 	})
 	secondTaskID := st.ActiveTaskID
+	rawBeforeRepaint := capturePaneEscaped(t, env, pane)
+	directRun(t, env, "send-keys", "-l", "-t", pane, "\x1d")
+	waitForEscapedCapture(t, env, pane, func(capture string) bool {
+		return strings.Contains(strings.TrimPrefix(capture, rawBeforeRepaint), "\x1b[2J\x1b[H")
+	})
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.ActiveTaskID == secondTaskID &&
+			st.Focus == state.FocusConsole &&
+			!st.NavOpen
+	})
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitState(t, env, bin, func(st state.State) bool {
 		return st.ActiveTaskID == secondTaskID &&

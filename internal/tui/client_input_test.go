@@ -135,6 +135,84 @@ func TestClientInputRouterHandlesEnhancedDrawerSequence(t *testing.T) {
 	}
 }
 
+func TestClientInputRouterTriggersRepaintShortcutInCodexFocus(t *testing.T) {
+	router := &clientInputRouter{
+		input:              bytes.NewBufferString("ihello\x1dj"),
+		drawer:             []byte{0x02},
+		drawerSequences:    bindingTerminalSequences("C-b"),
+		repaintSequences:   bindingTerminalSequences("C-]"),
+		interruptSequences: terminalInterruptSequences(),
+	}
+	router.SetCodexActive(true)
+	repaints := 0
+	router.repaint = func() { repaints++ }
+	var sent []struct {
+		command string
+		args    map[string]string
+	}
+	router.send = func(command string, args map[string]string) error {
+		sent = append(sent, struct {
+			command string
+			args    map[string]string
+		}{command: command, args: args})
+		return nil
+	}
+
+	buf := make([]byte, 8)
+	n, err := router.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+	if n != 0 || err != io.EOF {
+		t.Fatalf("read = %d, %v; want EOF after consuming repaint shortcut", n, err)
+	}
+	if repaints != 1 {
+		t.Fatalf("repaint callback count = %d, want 1", repaints)
+	}
+	if len(sent) != 2 || sent[0].args["encoded"] != "ihello" || sent[1].args["encoded"] != "j" {
+		t.Fatalf("prefix and suffix should stay ordered Codex input: %#v", sent)
+	}
+}
+
+func TestClientInputRouterTriggersEnhancedRepaintShortcutInTerminalFocus(t *testing.T) {
+	router := &clientInputRouter{
+		input:              bytes.NewBufferString("typed\x1b[93;5uafter"),
+		drawer:             []byte{0x02},
+		drawerSequences:    bindingTerminalSequences("C-b"),
+		repaintSequences:   bindingTerminalSequences("C-]"),
+		interruptSequences: terminalInterruptSequences(),
+	}
+	router.SetTaskInputMode(taskInputTerminal)
+	repaints := 0
+	router.repaint = func() { repaints++ }
+	var sent []struct {
+		command string
+		args    map[string]string
+	}
+	router.send = func(command string, args map[string]string) error {
+		sent = append(sent, struct {
+			command string
+			args    map[string]string
+		}{command: command, args: args})
+		return nil
+	}
+
+	buf := make([]byte, 16)
+	n, err := router.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+	if n != 0 || err != io.EOF {
+		t.Fatalf("read = %d, %v; want EOF after consuming enhanced repaint shortcut", n, err)
+	}
+	if repaints != 1 {
+		t.Fatalf("repaint callback count = %d, want 1", repaints)
+	}
+	if len(sent) != 2 || sent[0].args["encoded"] != "typed" || sent[1].args["encoded"] != "after" {
+		t.Fatalf("prefix and suffix should stay ordered terminal input: %#v", sent)
+	}
+}
+
 func TestClientInputRouterMapsEnhancedCtrlCToCodexInterrupt(t *testing.T) {
 	router := &clientInputRouter{
 		input:              bytes.NewBufferString("work\x1b[27;5;99~after\x02j"),

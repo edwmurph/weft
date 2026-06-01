@@ -127,7 +127,7 @@ func (input enhancedKeyboardInput) shouldHandleAsKey(cfg config.Config, focus st
 		return false
 	}
 	if focus == state.FocusConsole && active != nil && len(input.encoded) > 0 {
-		return bindingMatches(cfg.KeyBindings.Drawer, input.key)
+		return bindingMatches(cfg.KeyBindings.Drawer, input.key) || bindingMatches(cfg.KeyBindings.Repaint, input.key)
 	}
 	return true
 }

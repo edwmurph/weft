@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -550,6 +551,34 @@ func TestClientLaunchWorkspaceConfirmationEnterSubmits(t *testing.T) {
 	}
 	if model.mode != modeNormal {
 		t.Fatalf("mode = %s, want normal", model.mode)
+	}
+}
+
+func TestClientRepaintShortcutWorksFromHelp(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.mode = modeHelp
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	model = updated.(ClientModel)
+
+	if model.mode != modeHelp {
+		t.Fatalf("repaint shortcut should not close help, mode=%s", model.mode)
+	}
+	if cmd == nil {
+		t.Fatal("repaint shortcut should force clear-screen and refresh")
+	}
+	msg := cmd()
+	if got := fmt.Sprintf("%T", msg); got != "tea.sequenceMsg" {
+		t.Fatalf("repaint shortcut command = %T, want tea.sequenceMsg", msg)
+	}
+	sequence := reflect.ValueOf(msg)
+	if sequence.Len() != 2 {
+		t.Fatalf("repaint shortcut scheduled %d commands, want clear-screen and refresh", sequence.Len())
+	}
+	first := sequence.Index(0).Interface().(tea.Cmd)
+	if got := fmt.Sprintf("%T", first()); got != "tea.clearScreenMsg" {
+		t.Fatalf("first repaint shortcut command = %s, want tea.clearScreenMsg", got)
 	}
 }
 
@@ -3003,7 +3032,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	for model.navWidth != 0 {
 		model.stepNavAnimation()
 	}
-	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "C-b dashboard") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
+	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] repaint") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
 	}
 

@@ -66,6 +66,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.KeyBindings.Delete != "Backspace" {
 		t.Fatalf("Delete = %q", cfg.KeyBindings.Delete)
 	}
+	if cfg.KeyBindings.Repaint != "C-]" {
+		t.Fatalf("Repaint = %q", cfg.KeyBindings.Repaint)
+	}
 	if cfg.KeyBindings.Quit != "C-c" {
 		t.Fatalf("Quit = %q", cfg.KeyBindings.Quit)
 	}
@@ -80,6 +83,7 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 		"\n[task_types.shell]",
 		"\nnew_task = \"n\"",
 		"\nmove_task = \"m\"",
+		"\nrepaint = \"C-]\"",
 	} {
 		if !strings.Contains(defaultText, expected) {
 			t.Fatalf("default config missing %q:\n%s", expected, data)
@@ -124,6 +128,7 @@ new_task = "A"
 move_task = "M"
 edit = "E"
 delete = "X"
+repaint = "C-^"
 help = "H"
 quit = "Q"
 `), 0o600)
@@ -163,6 +168,7 @@ quit = "Q"
 		cfg.KeyBindings.MoveTask != "M" ||
 		cfg.KeyBindings.Edit != "E" ||
 		cfg.KeyBindings.Delete != "X" ||
+		cfg.KeyBindings.Repaint != "C-^" ||
 		cfg.KeyBindings.Help != "H" ||
 		cfg.KeyBindings.Quit != "Q" {
 		t.Fatalf("key bindings = %#v", cfg.KeyBindings)

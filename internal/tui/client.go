@@ -28,6 +28,8 @@ type clientResponseMsg struct {
 
 type clientSnapshotTick struct{}
 
+type clientRepaintMsg struct{}
+
 type clientAttachRetryTick struct{}
 
 type clientToastTick struct {
@@ -71,7 +73,7 @@ type ClientModel struct {
 
 func RunClient(rt config.Runtime, cfg config.Config) error {
 	model := NewClientModel(rt, cfg)
-	inputRouter := newClientInputRouter(os.Stdin, rt, model.clientID, cfg.KeyBindings.Drawer)
+	inputRouter := newClientInputRouter(os.Stdin, rt, model.clientID, cfg.KeyBindings.Drawer, cfg.KeyBindings.Repaint)
 	model.inputRouter = inputRouter
 	enableTerminalKeyboardReporting()
 	defer disableTerminalKeyboardReporting()
@@ -81,7 +83,11 @@ func RunClient(rt config.Runtime, cfg config.Config) error {
 		tea.WithAltScreen(),
 		tea.WithMouseAllMotion(),
 	}
-	_, err := tea.NewProgram(model, options...).Run()
+	program := tea.NewProgram(model, options...)
+	inputRouter.repaint = func() {
+		program.Send(clientRepaintMsg{})
+	}
+	_, err := program.Run()
 	return err
 }
 
@@ -125,6 +131,8 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nextLoadingTick
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
+	case clientRepaintMsg:
+		return m, m.repaintClient()
 	case clientAttachRetryTick:
 		return m, m.request("attach_client", nil)
 	case clientToastTick:
@@ -215,6 +223,9 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 }
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if bindingMatches(m.cfg.KeyBindings.Repaint, msg) {
+		return m, m.repaintClient()
+	}
 	if m.mode == modeInput {
 		return m.handleInputKey(msg)
 	}
@@ -889,6 +900,10 @@ func tickClientAttachRetry() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
 		return clientAttachRetryTick{}
 	})
+}
+
+func (m ClientModel) repaintClient() tea.Cmd {
+	return tea.Sequence(tea.ClearScreen, m.request("refresh", nil))
 }
 
 func (m *ClientModel) setToast(text string) tea.Cmd {

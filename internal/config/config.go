@@ -37,6 +37,7 @@ type KeyBindings struct {
 	MoveTask     string `toml:"move_task"`
 	Edit         string `toml:"edit"`
 	Delete       string `toml:"delete"`
+	Repaint      string `toml:"repaint"`
 	Help         string `toml:"help"`
 	Quit         string `toml:"quit"`
 }
@@ -93,6 +94,7 @@ func DefaultKeyBindings() KeyBindings {
 		MoveTask:     "m",
 		Edit:         "e",
 		Delete:       "Backspace",
+		Repaint:      "C-]",
 		Help:         "?",
 		Quit:         "C-c",
 	}
@@ -262,6 +264,7 @@ func LoadConfig(path string) (Config, error) {
 			MoveTask     string `toml:"move_task"`
 			Edit         string `toml:"edit"`
 			Delete       string `toml:"delete"`
+			Repaint      string `toml:"repaint"`
 			Help         string `toml:"help"`
 			Quit         string `toml:"quit"`
 		} `toml:"key_bindings"`
@@ -328,6 +331,7 @@ func LoadConfig(path string) (Config, error) {
 		return Config{}, ConfigError{Message: fmt.Sprintf("unsupported config value in %s: key_bindings.delete cannot be \"d\"", path)}
 	}
 	applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
+	applyBinding(&cfg.KeyBindings.Repaint, raw.KeyBindings.Repaint)
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
 	cfg.normalizeTaskTypes()
@@ -407,7 +411,7 @@ func (c Config) Validate() error {
 		"select_prev": c.KeyBindings.SelectPrev, "select_next": c.KeyBindings.SelectNext, "open": c.KeyBindings.Open,
 		"new_workspace": c.KeyBindings.NewWorkspace, "new_group": c.KeyBindings.NewGroup, "new_task": c.KeyBindings.NewTask,
 		"move_task": c.KeyBindings.MoveTask, "edit": c.KeyBindings.Edit, "delete": c.KeyBindings.Delete,
-		"help": c.KeyBindings.Help, "quit": c.KeyBindings.Quit,
+		"repaint": c.KeyBindings.Repaint, "help": c.KeyBindings.Help, "quit": c.KeyBindings.Quit,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return ConfigError{Message: fmt.Sprintf("key binding %q must be a non-empty string", name)}
@@ -499,6 +503,7 @@ new_task = "n"
 move_task = "m"
 edit = "e"
 delete = "Backspace"
+repaint = "C-]"
 help = "?"
 quit = "C-c"
 `

@@ -269,7 +269,7 @@ When the user presses `Enter` on a task, navigation slides away left, `Task Cons
 
 Task PTYs can only receive input when `Task Console` is focused and maximized.
 
-When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` without a `WEFT` prefix. If at least one other global task has rendered/live status `ready`, the top-right border shows an amber `<n> other task(s) ready` indicator. The active console task is excluded from that count, and the indicator is hidden when no other tasks are ready.
+When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured repaint key as `<key> repaint` without a `WEFT` prefix. If at least one other global task has rendered/live status `ready`, the top-right border shows an amber `<n> other task(s) ready` indicator. The active console task is excluded from that count, and the indicator is hidden when no other tasks are ready.
 
 ## Navigation States
 
@@ -319,7 +319,7 @@ Autocomplete menus open directly under the input whenever the current value has 
 - Workspaces and Tasks panes are hidden offscreen to the left.
 - `Task Console` fills the terminal.
 - Weft keeps the framed `Task Console` pane visible while a task is focused.
-- The attached client forwards raw terminal input bytes into the active task PTY without key-name reconstruction. The configured drawer key, `C-b` by default, is the only dashboard key sequence owned by Weft.
+- The attached client forwards raw terminal input bytes into the active task PTY without key-name reconstruction. The configured drawer key, `C-b` by default, and the configured repaint key, `C-]` by default, are owned by Weft.
 - Terminal-generated C-c belongs to the task whenever `Task Console` is focused and an active task exists. For configured terminal tasks with an active foreground command, Weft forwards C-c as the normal terminal interrupt byte. For configured terminal tasks at an idle prompt, Weft kills the task PTY, returns to the dashboard `Tasks` pane, and reports the task as killed. For Codex agent tasks, while Codex reports active work, Weft delivers C-c through Codex's interrupt path so running side-thread work is interrupted without returning from or closing the side thread. Weft does not use C-c to quit from `Task Console`, and the toolbar must not advertise C-c.
 - Terminal-owned behavior, including Vim mode, Esc timing, bracketed paste, Alt/Meta prefixes, and modified-key shortcuts such as Shift+Enter and Shift+Tab in supporting terminals, is preserved inside the framed pane.
 - The framed terminal renderer preserves cursor visibility and cursor shape requests, including block, underline, and bar cursor modes used by Vim insert/normal state.
@@ -334,6 +334,7 @@ These are product-level defaults and may map to existing config structures durin
 ```text
 Enter   Open selected task and maximize its console, or open the new-task form on the new-task template row
 C-b     Toggle dashboard navigation
+C-]     Repaint the attached client and refresh the dashboard snapshot
 Left/Right Move focus between workspaces and tasks panes
 j/k     Move selection within the focused navigation pane
 w       Add workspace
@@ -868,6 +869,7 @@ new_task = "n"
 move_task = "m"
 edit = "e"
 delete = "Backspace"
+repaint = "C-]"
 help = "?"
 quit = "C-c"
 ```
