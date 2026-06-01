@@ -91,11 +91,6 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 			t.Fatalf("default config missing %q:\n%s", expected, data)
 		}
 	}
-	for _, forbidden := range []string{"tmux_session", "columns", "new_workdir", "new_folder", "focus_toggle", "close_weft", "prev", "previous", "new", "close", "new_agent", "move_agent"} {
-		if strings.Contains(defaultText, "\n"+forbidden+" ") {
-			t.Fatalf("default config should not include %q:\n%s", forbidden, data)
-		}
-	}
 }
 
 func TestLoadConfigAppliesCurrentTaskKeys(t *testing.T) {
@@ -210,27 +205,15 @@ title_template = "Claude"
 func TestLoadConfigRejectsUnknownKeys(t *testing.T) {
 	for name, body := range map[string]string{
 		"top level": `
-tmux_session = "custom"
-columns = ["Backlog", "Active"]
-title_hook_timeout_seconds = 3
+surprise = true
 `,
 		"key bindings": `
-title_hook_timeout_seconds = 3
-
 [key_bindings]
-focus_toggle = "C-g"
-previous = "Left"
-prev = "Left"
-next = "Right"
-new = "a"
-new_workdir = "z"
-new_folder = "x"
-close = "x"
-close_weft = "C-q"
+launch = "L"
 `,
-		"legacy rename binding": `
-[key_bindings]
-rename = "r"
+		"task type": `
+[task_types.codex]
+surprise = "x"
 `,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -250,58 +233,23 @@ rename = "r"
 	}
 }
 
-func TestLoadConfigRejectsRemovedConfigAliases(t *testing.T) {
-	for name, tc := range map[string]struct {
-		body     string
-		expected []string
-	}{
-		"top level codex command": {
-			body:     `codex_command = "codex --model gpt-5"`,
-			expected: []string{"unknown config key", "codex_command", "task_types.codex.command"},
-		},
-		"top level title template": {
-			body:     `title_template = "{title}"`,
-			expected: []string{"unknown config key", "title_template", "task_types.codex.title_template"},
-		},
-		"agent key binding aliases": {
-			body: `
-[key_bindings]
-new_agent = "A"
-move_agent = "M"
-`,
-			expected: []string{"unknown config key", "key_bindings.move_agent", "key_bindings.new_agent", "key_bindings.new_task", "key_bindings.move_task"},
-		},
-		"task type icon": {
-			body: `
-[task_types.codex]
-icon = "[legacy-codex]"
-`,
-			expected: []string{"unknown config key", "task_types.codex.icon", "task_types.codex.badge"},
-		},
-		"generated delete d default": {
-			body: `
+func TestLoadConfigRejectsDeleteBindingD(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
 [key_bindings]
 delete = "d"
-`,
-			expected: []string{"stale config value", `key_bindings.delete = "d"`, `key_bindings.delete = "Backspace"`},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
-			if err := os.WriteFile(path, []byte(tc.body), 0o600); err != nil {
-				t.Fatal(err)
-			}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
-			_, err := LoadConfig(path)
-			if err == nil {
-				t.Fatal("expected config error")
-			}
-			for _, expected := range tc.expected {
-				if !strings.Contains(err.Error(), expected) {
-					t.Fatalf("error missing %q:\n%v", expected, err)
-				}
-			}
-		})
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected config error")
+	}
+	for _, expected := range []string{"unsupported config value", `key_bindings.delete cannot be "d"`, "Backspace"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error missing %q:\n%v", expected, err)
+		}
 	}
 }
 

@@ -564,10 +564,6 @@ task of the selected type. The CLI command `weft new` creates the configured
 Tasks always start in the selected workspace and are created top-level with no
 group.
 
-Legacy `codex_command` and top-level `title_template` config keys are rejected;
-users must set `task_types.codex.command` and
-`task_types.codex.title_template`.
-
 ## Title Templates
 
 Task rows render each task's stored title template. A task type's
@@ -635,9 +631,9 @@ should be saved on the task and shown in the footer and edit pane.
 
 ## Data Model
 
-The state model uses global workspaces, flat groups, and task rows persisted as
-`tasks` in strict v5 state. Weft rejects v4 `agents` state and other legacy
-shapes with reset guidance instead of migrating them.
+The state model uses global workspaces, flat groups, and typed task rows
+persisted as `tasks` in strict v5 state. Unsupported old state shapes fail with
+reset guidance instead of being migrated, archived, or repaired.
 
 Current persisted shape:
 
@@ -677,7 +673,7 @@ type Task struct {
     ID                  string     `json:"id"`
     WorkspaceID         string     `json:"workspace_id"`
     GroupID             string     `json:"group_id"`
-    TypeID              string     `json:"type_id,omitempty"`
+    TypeID              string     `json:"type_id"`
     Title               string     `json:"title"`
     AutoTitle           string     `json:"auto_title,omitempty"`
     AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
@@ -694,8 +690,9 @@ type Task struct {
 
 Runtime-only details such as PID, PTY handles, socket clients, terminal size,
 and screen cache must not be persisted in `state.json`. They belong to the
-supervisor process and can be reconstructed from state and live PTYs. Missing
-`type_id` on an existing row is repaired to `codex`.
+supervisor process and can be reconstructed from state and live PTYs. Every
+persisted task row must include a non-empty `type_id`; a missing task type is a
+state load error with reset guidance.
 
 Task type defaults belong in config and are copied into new tasks:
 
@@ -1044,11 +1041,10 @@ Visual style:
 
 ## Migration
 
-Legacy state shapes are not migrated or archived. If `state.json` is not strict
-v4, or if it still uses old tab, column, workdir, folder, or tmux-pane fields,
-Weft returns a clear error that tells the user to run `weft clear` to reset.
-Valid v4 state is still repaired for missing IDs, selections, timestamps, and
-defaults inside the current schema.
+Unsupported old state shapes are not migrated or archived. If `state.json` is
+not strict v5 current shape, including a task row without `type_id`, Weft
+returns a clear error that tells the user to run `weft clear` when a reset is
+acceptable.
 
 ## Configuration
 
@@ -1090,25 +1086,19 @@ help = "?"
 quit = "C-c"
 ```
 
-Legacy generated configs with `delete = "d"` are rejected; users must remove
-that override or set `delete = "Backspace"` so `d` is not a dashboard delete
-shortcut.
+Configs with `delete = "d"` are rejected; users must remove that override or
+set `delete = "Backspace"` so `d` is not a dashboard delete shortcut.
 
-Only the current config keys are emitted by default. Legacy aliases are
-rejected instead of mapped silently: `codex_command`, top-level
-`title_template`, `key_bindings.new_agent`, `key_bindings.move_agent`, and
-`task_types.<id>.icon` must be replaced with current `task_types.codex.*`,
-`key_bindings.new_task`, `key_bindings.move_task`, and
-`task_types.<id>.badge` keys. Unknown keys, including retired keys such as
-`tmux_session`, `columns`, `new_workdir`, `new_folder`, `focus_toggle`,
-`close_weft`, `prev`, `previous`, `new`, and `close`, are rejected.
+Only the current config keys are emitted by default. Unknown config keys are
+rejected generically instead of being mapped silently or returning
+alias-specific repair advice.
 
 ## Testing Requirements
 
 Unit tests:
 
 - minute variations and pure logic details that do not require a live dashboard
-- state reset guidance for old tabs/columns, workdir/folder, tmux-pane, and unknown v4 shapes
+- strict state parse rejection and reset guidance for unsupported state shapes
 - supervisor startup, singleton locking, and shutdown decisions
 - protocol field parsing and structured error formatting
 - validation branches for workspace, group, task, task type, and config inputs

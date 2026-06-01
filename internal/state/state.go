@@ -63,7 +63,7 @@ type Task struct {
 	ID                  string     `json:"id"`
 	WorkspaceID         string     `json:"workspace_id"`
 	GroupID             string     `json:"group_id"`
-	TypeID              string     `json:"type_id,omitempty"`
+	TypeID              string     `json:"type_id"`
 	Title               string     `json:"title"`
 	AutoTitle           string     `json:"auto_title,omitempty"`
 	AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
@@ -196,6 +196,9 @@ func parseState(raw []byte, fallbackWorkspace string) (State, error) {
 	if !validFocus(st.Focus) {
 		return State{}, unsupportedStateError(fmt.Sprintf("unsupported focus value %q", st.Focus))
 	}
+	if err := validateCurrentShape(st); err != nil {
+		return State{}, unsupportedStateError(err.Error())
+	}
 	return Repair(st, fallbackWorkspace), nil
 }
 
@@ -205,11 +208,20 @@ func unsupportedStateError(reason string) error {
 
 func validFocus(focus Focus) bool {
 	switch focus {
-	case "", FocusWorkspaces, FocusTasks, FocusConsole:
+	case FocusWorkspaces, FocusTasks, FocusConsole:
 		return true
 	default:
 		return false
 	}
+}
+
+func validateCurrentShape(st State) error {
+	for index, task := range st.Tasks {
+		if strings.TrimSpace(task.TypeID) == "" {
+			return fmt.Errorf("tasks[%d].type_id is required", index)
+		}
+	}
+	return nil
 }
 
 func Repair(st State, fallbackWorkspace string) State {
@@ -284,9 +296,6 @@ func Repair(st State, fallbackWorkspace string) State {
 		}
 		if strings.TrimSpace(task.Title) == "" {
 			task.Title = DefaultTaskTitle
-		}
-		if strings.TrimSpace(task.TypeID) == "" {
-			task.TypeID = DefaultTaskTypeID
 		}
 		task.CodexStatus = strings.TrimSpace(task.CodexStatus)
 		if task.Status == "" {
@@ -1028,10 +1037,7 @@ func AddTaskWithType(st State, id string, workspaceID string, groupID string, ty
 }
 
 func TaskTypeID(task Task) string {
-	if id := strings.TrimSpace(task.TypeID); id != "" {
-		return id
-	}
-	return DefaultTaskTypeID
+	return strings.TrimSpace(task.TypeID)
 }
 
 func RenameTask(st State, taskID string, title string) (State, error) {

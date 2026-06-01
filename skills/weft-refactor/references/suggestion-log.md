@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Maximum legacy prune
+
+- Request: Make persisted state and config strictly current-shape only, without legacy alias advice, state repair, migration, archival, or regression scaffolding for retired surfaces.
+- Suggestions: Reject v5 task rows missing `type_id`, keep only generic unknown config key errors plus the current `delete = "d"` guard, remove tests that enumerate old commands/aliases/fields, and rewrite docs around the accepted current config/state contract.
+- Outcome: Implemented in `.worktrees/max-legacy-prune`; awaiting review.
+- Evidence: `internal/state`, `internal/config`, `internal/app`, `internal/titlehook`, `internal/titles`, `tests/integration`, `README.md`, `spec.md`.
+
 ## 2026-06-01 - Task schema cutover
 
 - Request: Hard-cut persisted/internal `agent` schema names to `task` names without compatibility aliases, while preserving dashboard `U`, supervisor-owned `upgrade_resume`, and Codex session resume.

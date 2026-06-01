@@ -7,51 +7,6 @@ import (
 	"testing"
 )
 
-func TestStoreRejectsLegacyStateWithoutArchiving(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-	workspace := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workspace, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{
-  "version": 2,
-  "active_tab_id": "abc",
-  "focus": "codex",
-  "tabs": [{
-    "id": "abc",
-    "title": "{codex}",
-    "column": "inbox",
-    "tmux_window_id": "@1",
-    "tmux_pane_id": "%1",
-    "created_at": "2026-01-01T00:00:00Z",
-    "updated_at": "2026-01-01T00:00:00Z"
-  }]
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := NewStore(path, workspace).Ensure()
-	if err == nil {
-		t.Fatal("expected legacy state error")
-	}
-	for _, expected := range []string{"strict v5 state", "run `weft clear` to reset"} {
-		if !strings.Contains(err.Error(), expected) {
-			t.Fatalf("error missing %q: %v", expected, err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); !os.IsNotExist(err) {
-		t.Fatalf("state.legacy.json should not be written, err=%v", err)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), `"active_tab_id"`) {
-		t.Fatalf("legacy state file should be left intact:\n%s", raw)
-	}
-}
-
 func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -63,10 +18,11 @@ func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
   "version": 5,
   "focus": "tasks",
   "nav_open": true,
-  "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "workspaces": [],
   "groups": [],
-  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "tmux_pane_id": "%1", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
-  "tabs": []
+  "tasks": [],
+  "collapsed_group_ids": [],
+  "unexpected": true
 }`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +31,7 @@ func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unknown field error")
 	}
-	for _, expected := range []string{`unknown field`, "run `weft clear` to reset"} {
+	for _, expected := range []string{`unknown field "unexpected"`, "run `weft clear` to reset"} {
 		if !strings.Contains(err.Error(), expected) {
 			t.Fatalf("error missing %q: %v", expected, err)
 		}
@@ -83,9 +39,16 @@ func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); !os.IsNotExist(err) {
 		t.Fatalf("state.legacy.json should not be written, err=%v", err)
 	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"unexpected"`) {
+		t.Fatalf("unsupported state file should be left intact:\n%s", raw)
+	}
 }
 
-func TestStoreRejectsV4TaskStateWithoutMigration(t *testing.T) {
+func TestStoreRejectsUnsupportedStateVersion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	workspace := filepath.Join(dir, "workspace")
@@ -96,9 +59,9 @@ func TestStoreRejectsV4TaskStateWithoutMigration(t *testing.T) {
   "version": 4,
   "focus": "tasks",
   "nav_open": true,
-  "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "workspaces": [],
   "groups": [],
-  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "tasks": [],
   "collapsed_group_ids": []
 }`), 0o600); err != nil {
 		t.Fatal(err)
@@ -115,7 +78,7 @@ func TestStoreRejectsV4TaskStateWithoutMigration(t *testing.T) {
 	}
 }
 
-func TestStoreRejectsLegacyFocusValues(t *testing.T) {
+func TestStoreRejectsUnknownFocusValues(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	workspace := filepath.Join(dir, "workspace")
@@ -124,7 +87,7 @@ func TestStoreRejectsLegacyFocusValues(t *testing.T) {
 	}
 	if err := os.WriteFile(path, []byte(`{
   "version": 5,
-  "focus": "agents",
+  "focus": "sideways",
   "nav_open": true,
   "workspaces": [],
   "groups": [],
@@ -138,7 +101,37 @@ func TestStoreRejectsLegacyFocusValues(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected focus error")
 	}
-	for _, expected := range []string{`unsupported focus value "agents"`, "run `weft clear` to reset"} {
+	for _, expected := range []string{`unsupported focus value "sideways"`, "run `weft clear` to reset"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error missing %q: %v", expected, err)
+		}
+	}
+}
+
+func TestStoreRejectsTaskMissingTypeID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	workspace := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{
+  "version": 5,
+  "focus": "tasks",
+  "nav_open": true,
+  "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "groups": [],
+  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "collapsed_group_ids": []
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewStore(path, workspace).Ensure()
+	if err == nil {
+		t.Fatal("expected task type error")
+	}
+	for _, expected := range []string{`tasks[0].type_id is required`, "run `weft clear` to reset"} {
 		if !strings.Contains(err.Error(), expected) {
 			t.Fatalf("error missing %q: %v", expected, err)
 		}
@@ -161,7 +154,7 @@ func TestStoreReadsStrictV5TaskState(t *testing.T) {
   "nav_open": false,
   "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
   "groups": [],
-  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "type_id": "codex", "title": "Alpha", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
   "collapsed_group_ids": []
 }`), 0o600); err != nil {
 		t.Fatal(err)
@@ -178,10 +171,8 @@ func TestStoreReadsStrictV5TaskState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"active_agent_id", "selected_agent_id", `"agents"`} {
-		if strings.Contains(string(raw), forbidden) {
-			t.Fatalf("strict v5 state should not write legacy %s:\n%s", forbidden, raw)
-		}
+	if !strings.Contains(string(raw), `"type_id": "codex"`) {
+		t.Fatalf("strict v5 state should preserve task type:\n%s", raw)
 	}
 }
 
@@ -207,8 +198,8 @@ func TestCloseLastTaskInWorkspaceStaysInCurrentWorkspace(t *testing.T) {
 	st.Workspaces = append(st.Workspaces, otherWorkspace)
 	st.Groups = append(st.Groups, otherGroup)
 	st.Tasks = []Task{
-		{ID: "only", WorkspaceID: "w", GroupID: "f", Title: "Only", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
-		{ID: "other", WorkspaceID: "w2", GroupID: "g2", Title: "Other", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
+		{ID: "only", WorkspaceID: "w", GroupID: "f", TypeID: DefaultTaskTypeID, Title: "Only", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
+		{ID: "other", WorkspaceID: "w2", GroupID: "g2", TypeID: DefaultTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
 	}
 	st.ActiveTaskID = "only"
 
@@ -289,20 +280,6 @@ func TestAddTaskWithTypeStoresTaskType(t *testing.T) {
 	}
 	if want := StableID("task", st.SelectedWorkspaceID, "", "shell", now, "Shell"); task.ID != want {
 		t.Fatalf("typed task id = %q, want %q", task.ID, want)
-	}
-}
-
-func TestRepairDefaultsLegacyTasksToCodexType(t *testing.T) {
-	st := testState(t)
-	st.Tasks[0].TypeID = ""
-
-	repaired := Repair(st, t.TempDir())
-
-	if got := repaired.Tasks[0].TypeID; got != DefaultTaskTypeID {
-		t.Fatalf("repaired type = %q", got)
-	}
-	if got := TaskTypeID(Task{ID: "legacy"}); got != DefaultTaskTypeID {
-		t.Fatalf("legacy helper type = %q", got)
 	}
 }
 
@@ -544,11 +521,11 @@ func reorderTaskTestState(t *testing.T) State {
 		{ID: "review", WorkspaceID: "w", Path: "review", CreatedAt: now, UpdatedAt: now},
 	}
 	st.Tasks = []Task{
-		{ID: "top-a", WorkspaceID: "w", GroupID: "", Title: "Top A", Status: StatusRunning, CreatedAt: "2026-01-01T00:03:00Z", UpdatedAt: now},
-		{ID: "release-a", WorkspaceID: "w", GroupID: "release", Title: "Release A", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z", UpdatedAt: now},
-		{ID: "review-a", WorkspaceID: "w", GroupID: "review", Title: "Review A", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
-		{ID: "release-b", WorkspaceID: "w", GroupID: "release", Title: "Release B", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
-		{ID: "top-b", WorkspaceID: "w", GroupID: "", Title: "Top B", Status: StatusRunning, CreatedAt: "2026-01-01T00:04:00Z", UpdatedAt: now},
+		{ID: "top-a", WorkspaceID: "w", GroupID: "", TypeID: DefaultTaskTypeID, Title: "Top A", Status: StatusRunning, CreatedAt: "2026-01-01T00:03:00Z", UpdatedAt: now},
+		{ID: "release-a", WorkspaceID: "w", GroupID: "release", TypeID: DefaultTaskTypeID, Title: "Release A", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z", UpdatedAt: now},
+		{ID: "review-a", WorkspaceID: "w", GroupID: "review", TypeID: DefaultTaskTypeID, Title: "Review A", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
+		{ID: "release-b", WorkspaceID: "w", GroupID: "release", TypeID: DefaultTaskTypeID, Title: "Release B", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
+		{ID: "top-b", WorkspaceID: "w", GroupID: "", TypeID: DefaultTaskTypeID, Title: "Top B", Status: StatusRunning, CreatedAt: "2026-01-01T00:04:00Z", UpdatedAt: now},
 	}
 	return st
 }
@@ -569,8 +546,8 @@ func TestReorderGroupStaysWithinWorkspaceAndPreservesSelection(t *testing.T) {
 		{ID: "qa", WorkspaceID: "w", Path: "qa", CreatedAt: now, UpdatedAt: now},
 	}
 	st.Tasks = []Task{
-		{ID: "active", WorkspaceID: "w", GroupID: "review", Title: "Active", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
-		{ID: "other", WorkspaceID: "w2", GroupID: "other-a", Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
+		{ID: "active", WorkspaceID: "w", GroupID: "review", TypeID: DefaultTaskTypeID, Title: "Active", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
+		{ID: "other", WorkspaceID: "w2", GroupID: "other-a", TypeID: DefaultTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
 	}
 
 	next, moved, err := ReorderGroup(st, "review", -1)
@@ -640,9 +617,9 @@ func testState(t *testing.T) State {
 		Workspaces:          []Workspace{{ID: workspaceID, Path: dir, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []Group{{ID: groupID, WorkspaceID: workspaceID, Path: "inbox", CreatedAt: now, UpdatedAt: now}},
 		Tasks: []Task{
-			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
-			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
-			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
+			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, TypeID: DefaultTaskTypeID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
+			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, TypeID: DefaultTaskTypeID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
+			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, TypeID: DefaultTaskTypeID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
 		},
 	}
 }

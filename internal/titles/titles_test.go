@@ -34,16 +34,6 @@ func TestRenderTaskUsesWorkspaceVariable(t *testing.T) {
 	}
 }
 
-func TestRenderTaskDoesNotSupportLegacyWorkspaceVariable(t *testing.T) {
-	task := state.Task{ID: "abc", Title: "Codex", Status: state.StatusRunning}
-
-	got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workdir} {folder}")
-
-	if got != "{workdir} {folder}" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 func TestRenderTaskRendersVariablesInsideBaseTitle(t *testing.T) {
 	task := state.Task{ID: "abc", Title: "Codex {status}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 

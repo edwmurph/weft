@@ -102,14 +102,9 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		return len(st.Tasks) == 2 && st.ActiveTaskID == firstID
 	})
 	statusJSON := runWeft(t, env, bin, "status", "--json")
-	for _, expected := range []string{`"version":5`, `"active_task_id":"` + firstID + `"`, `"selected_task_id":`, `"tasks":[`} {
+	for _, expected := range []string{`"version":5`, `"active_task_id":"` + firstID + `"`, `"selected_task_id":`, `"tasks":[`, `"type_id":"codex"`} {
 		if !strings.Contains(statusJSON, expected) {
 			t.Fatalf("status json missing %q:\n%s", expected, statusJSON)
-		}
-	}
-	for _, forbidden := range []string{"active_agent_id", "selected_agent_id", `"agents"`} {
-		if strings.Contains(statusJSON, forbidden) {
-			t.Fatalf("status json should not contain legacy %s:\n%s", forbidden, statusJSON)
 		}
 	}
 	foundRenamed := false

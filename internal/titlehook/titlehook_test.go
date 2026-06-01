@@ -2,7 +2,6 @@ package titlehook
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +12,7 @@ import (
 )
 
 func TestBuildPayloadUsesTaskContext(t *testing.T) {
-	task := state.Task{ID: "a", Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
+	task := state.Task{ID: "a", TypeID: state.DefaultTaskTypeID, Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
 	payload := BuildPayload(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login")
 
@@ -23,17 +22,8 @@ func TestBuildPayloadUsesTaskContext(t *testing.T) {
 	if payload.TaskID != "a" || payload.Workspace != "/tmp/project" || payload.Group != "ship" {
 		t.Fatalf("payload context = %#v", payload)
 	}
-	if payload.Status != "Ready" || payload.FirstMessage != "fix login" {
+	if payload.TypeID != state.DefaultTaskTypeID || payload.Status != "Ready" || payload.FirstMessage != "fix login" {
 		t.Fatalf("payload values = %#v", payload)
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"workdir", "agent_id"} {
-		if strings.Contains(string(raw), forbidden) {
-			t.Fatalf("payload should not include legacy %s field: %s", forbidden, raw)
-		}
 	}
 }
 

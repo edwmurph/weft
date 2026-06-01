@@ -48,12 +48,6 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"weft start",
-		"weft sessions",
-		"weft workdir",
-		"weft folder",
-		"weft quit",
-		"weft delete-session",
 		"Title templates:",
 		"Weft uses one global runtime",
 		"unless you use close --kill or clear",
@@ -335,17 +329,6 @@ func TestBackupRestoreCreatesPreRestoreBackup(t *testing.T) {
 	}
 	if !foundPreRestore {
 		t.Fatalf("pre-restore backup not found: %#v", backups)
-	}
-}
-
-func TestLegacyCLICommandsAreUnknown(t *testing.T) {
-	for _, command := range []string{"start", "tui", "sessions", "workdir", "folder", "quit", "delete-session"} {
-		t.Run(command, func(t *testing.T) {
-			err := Run([]string{command})
-			if err == nil || !strings.Contains(err.Error(), `unknown command "`+command+`"`) {
-				t.Fatalf("Run(%q) error = %v", command, err)
-			}
-		})
 	}
 }
 

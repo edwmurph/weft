@@ -329,7 +329,7 @@ func LoadConfig(path string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.MoveTask, raw.KeyBindings.MoveTask)
 	applyBinding(&cfg.KeyBindings.Edit, raw.KeyBindings.Edit)
 	if strings.EqualFold(strings.TrimSpace(raw.KeyBindings.Delete), "d") {
-		return Config{}, ConfigError{Message: fmt.Sprintf("stale config value in %s: key_bindings.delete = \"d\" (use key_bindings.delete = \"Backspace\" or delete key_bindings.delete)", path)}
+		return Config{}, ConfigError{Message: fmt.Sprintf("unsupported config value in %s: key_bindings.delete cannot be \"d\"; use \"Backspace\" or delete key_bindings.delete", path)}
 	}
 	applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
@@ -443,42 +443,11 @@ func validTaskTypeID(id string) bool {
 
 func unknownConfigKeyError(path string, undecoded []toml.Key) ConfigError {
 	keys := make([]string, 0, len(undecoded))
-	advices := make([]string, 0, len(undecoded))
-	seenAdvice := map[string]bool{}
 	for _, key := range undecoded {
-		keyName := key.String()
-		keys = append(keys, keyName)
-		if advice := removedConfigKeyAdvice(keyName); advice != "" && !seenAdvice[advice] {
-			advices = append(advices, advice)
-			seenAdvice[advice] = true
-		}
+		keys = append(keys, key.String())
 	}
 	sort.Strings(keys)
-	sort.Strings(advices)
-	message := fmt.Sprintf("unknown config key(s) in %s: %s", path, strings.Join(keys, ", "))
-	if len(advices) > 0 {
-		message += " (" + strings.Join(advices, "; ") + ")"
-	}
-	return ConfigError{Message: message}
-}
-
-func removedConfigKeyAdvice(key string) string {
-	switch key {
-	case "codex_command":
-		return "codex_command was removed; use task_types.codex.command"
-	case "title_template":
-		return "top-level title_template was removed; use task_types.codex.title_template"
-	case "key_bindings.new_agent":
-		return "key_bindings.new_agent was removed; use key_bindings.new_task"
-	case "key_bindings.move_agent":
-		return "key_bindings.move_agent was removed; use key_bindings.move_task"
-	case "key_bindings.rename":
-		return "dashboard shortcut was renamed; use key_bindings.edit = \"e\" and delete key_bindings.rename"
-	}
-	if strings.HasPrefix(key, "task_types.") && strings.HasSuffix(key, ".icon") {
-		return key + " was removed; use " + strings.TrimSuffix(key, ".icon") + ".badge"
-	}
-	return ""
+	return ConfigError{Message: fmt.Sprintf("unknown config key(s) in %s: %s", path, strings.Join(keys, ", "))}
 }
 
 func (c Config) TaskType(id string) (TaskType, bool) {

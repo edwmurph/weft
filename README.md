@@ -278,8 +278,9 @@ help = "?"
 quit = "C-c"
 ```
 
-Legacy generated configs with `delete = "d"` are rejected; remove that override
-or replace it with `delete = "Backspace"`.
+Configs with `delete = "d"` are rejected so typing `d` cannot also delete the
+selected dashboard item. Remove that override or replace it with
+`delete = "Backspace"`.
 
 In task focus, Weft keeps the `Task Console` framed while forwarding terminal
 input through the active PTY. The configured drawer key, `C-b` by default, is
@@ -330,17 +331,12 @@ copy of `config.toml`, `state.json`, metadata, and logs when present. `weft
 backup restore <id-or-path> [--yes]` creates a pre-restore backup before
 replacing config and state, and stops the supervisor first when it is running.
 
-The config keys are stable: `default_task_type`, `task_types`,
+The config keys are strict: `default_task_type`, `task_types`,
 `title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`.
-Legacy aliases are rejected instead of mapped silently: use
-`task_types.codex.command` instead of `codex_command`,
-`task_types.codex.title_template` instead of top-level `title_template`,
-`key_bindings.new_task` instead of `key_bindings.new_agent`,
-`key_bindings.move_task` instead of `key_bindings.move_agent`, and
-`task_types.<id>.badge` instead of `task_types.<id>.icon`. Unknown config keys
-are rejected so stale local settings are visible. State is strict v5 with
-`tasks`, `active_task_id`, `selected_task_id`, and focus values of
-`workspaces`, `tasks`, or `console`. Older or unknown state shapes fail with
+Unknown config keys are rejected generically so stale local settings are
+visible. State is strict v5 with `tasks`, `active_task_id`,
+`selected_task_id`, task `type_id`, and focus values of `workspaces`, `tasks`,
+or `console`. Unsupported old config or state files fail; state errors include
 guidance to run `weft clear` when a reset is acceptable.
 
 ## Development
