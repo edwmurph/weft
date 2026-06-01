@@ -603,6 +603,35 @@ func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 	}
 }
 
+func TestRenderTasksPaneUsesSingleGapBetweenNewTaskRowAndFirstGroup(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TitleTemplate = "{title}"
+	st := layoutState("/tmp/project")
+	st.Tasks = nil
+	st.ActiveTaskID = ""
+	st.SelectedTaskID = ""
+
+	got := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n"))
+	lines := strings.Split(got, "\n")
+	newTaskLine := -1
+	groupLine := -1
+	for index, line := range lines {
+		if strings.Contains(line, "+ New task") {
+			newTaskLine = index
+		}
+		if strings.Contains(line, "▾ inbox (0)") {
+			groupLine = index
+		}
+	}
+
+	if newTaskLine == -1 || groupLine == -1 {
+		t.Fatalf("tasks pane missing new task row or first group:\n%s", got)
+	}
+	if gap := groupLine - newTaskLine; gap != 2 {
+		t.Fatalf("new task row should leave exactly one blank line before first group, line gap=%d:\n%s", gap, got)
+	}
+}
+
 func TestRenderTasksPaneScrollsSelectedBottomGroupTaskIntoView(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"

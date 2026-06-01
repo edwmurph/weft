@@ -348,7 +348,7 @@ Task rows may use subtle row color and marker shape to make derived state easier
 
 Task type badges render as plain bracketed text such as `[codex]` or `[shell]`, usually from the task type ID, in a fixed-width badge column so task rows align across terminal fonts. Avoid emoji and wide symbols because terminal width and fallback-font behavior is inconsistent.
 
-Group rows should be visually distinct from task rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Task rows should use a lighter marker and indentation when nested under a group.
+Group rows should be visually distinct from task rows. Use the chevron/collapse marker, count, stronger color or weight, and one blank line before group sections. When there are no top-level tasks, the first group must reuse the new-task template row's existing separator instead of adding a second blank line. Task rows should use a lighter marker and indentation when nested under a group.
 
 Groups render in the persisted manual order stored in state for that workspace. They are not sorted alphabetically.
 

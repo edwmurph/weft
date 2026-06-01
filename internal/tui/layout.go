@@ -801,7 +801,7 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		rowIndex++
 	}
 	for _, group := range state.GroupsForWorkspace(st, st.SelectedWorkspaceID) {
-		if rowIndex > 0 {
+		if rowIndex > 0 && (len(content) == 0 || content[len(content)-1] != "") {
 			content = append(content, "")
 		}
 		collapsed := state.IsGroupCollapsed(st, group.ID)
