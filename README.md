@@ -16,7 +16,7 @@ attention, and jump back into the right console when you need it.
 
 ## Demo
 
-Demo video coming soon.
+<video src="assets/weft-demo.mp4" controls muted playsinline width="100%"></video>
 
 ## Why Weft
 
