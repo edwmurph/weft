@@ -63,6 +63,7 @@ type ClientModel struct {
 	toastID                  int
 	mouseSelection           consoleSelection
 	newWorkspaceCardSelected bool
+	newTaskRowSelected       bool
 	codexScrollOffset        int
 	codexScrollAgentID       string
 	inputRouter              *clientInputRouter
@@ -194,6 +195,10 @@ func (m ClientModel) dashboardState() state.State {
 		st.SelectedGroupID = ""
 		st.SelectedAgentID = ""
 	}
+	if m.newTaskRowSelected {
+		st.Focus = state.FocusAgents
+		st.NavOpen = true
+	}
 	return st
 }
 
@@ -203,6 +208,7 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
 		workspaceInfoText:        m.workspaceInfoHeaderText(),
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
+		newTaskRowSelected:       m.newTaskRowSelected,
 		codexToastText:           m.toastText,
 	}
 }
@@ -254,12 +260,17 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.newWorkspaceCardSelected && !m.newWorkspaceCardVisible() {
 		m.newWorkspaceCardSelected = false
 	}
+	if m.newTaskRowSelected && !m.newTaskRowVisible() {
+		m.newTaskRowSelected = false
+	}
 	switch {
 	case bindingMatches(m.cfg.KeyBindings.FocusLeft, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		return m, m.request("focus", map[string]string{"target": "workspaces"})
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		return m, m.request("focus", map[string]string{"target": string(state.FocusAgents)})
 	case msg.Type == tea.KeyShiftUp:
 		return m.reorderSelectedRow(-1)
@@ -270,42 +281,61 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.newWorkspaceCardSelected = false
 			return m, nil
 		}
+		if m.newTaskRowSelected {
+			return m, nil
+		}
 		return m, m.request("nav_move", map[string]string{"delta": "-1"})
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
 		if m.shouldMoveToNewWorkspaceCard() {
 			m.newWorkspaceCardSelected = true
+			m.newTaskRowSelected = false
 			return m, nil
 		}
 		if m.newWorkspaceCardSelected {
 			return m, nil
 		}
+		if m.newTaskRowSelected {
+			m.newTaskRowSelected = false
+			return m, m.request("nav_move", map[string]string{"delta": "1"})
+		}
 		return m, m.request("nav_move", map[string]string{"delta": "1"})
 	case bindingMatches(m.cfg.KeyBindings.NewWorkspace, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		m.startPrompt(promptWorkspace, defaultWorkspacePromptValue(m.snapshot.State, m.runtime.Workspace))
 	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewTask, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		m.startNewTaskMenu()
 	case m.canActOnUpgrade() && strings.EqualFold(msg.String(), "u"):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		m.startUpgradeConfirm()
 	case bindingMatches(m.cfg.KeyBindings.MoveTask, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
 		}
 	case bindingMatches(m.cfg.KeyBindings.Edit, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		m.startEditPrompt()
 	case bindingMatches(m.cfg.KeyBindings.Delete, msg):
 		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = false
 		m.startDeleteConfirm()
 	case bindingMatches(m.cfg.KeyBindings.Open, msg) || msg.Type == tea.KeyEnter:
 		if m.newWorkspaceCardSelected {
 			m.startPrompt(promptWorkspace, defaultWorkspacePromptValue(m.snapshot.State, m.runtime.Workspace))
+			return m, nil
+		}
+		if m.isNewTaskRowSelected() {
+			m.startNewTaskMenu()
 			return m, nil
 		}
 		return m, m.request("open", nil)
@@ -325,6 +355,19 @@ func (m ClientModel) newWorkspaceCardVisible() bool {
 	return ok
 }
 
+func (m ClientModel) newTaskRowVisible() bool {
+	_, ok := newTaskTemplateRowAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth)
+	return ok
+}
+
+func (m ClientModel) isNewTaskRowSelected() bool {
+	if m.newTaskRowSelected && m.newTaskRowVisible() {
+		return true
+	}
+	return m.snapshot.State.Focus == state.FocusAgents &&
+		currentGroupRowForState(m.snapshot.State, m.snapshot.GroupCursor).kind == groupRowNewTask
+}
+
 func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	nextIndex, submit, cancel := handleNewTaskKey(m.cfg, m.newTaskIndex, msg)
 	m.newTaskIndex = nextIndex
@@ -342,6 +385,7 @@ func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.mode = modeNormal
+	m.newTaskRowSelected = false
 	return m, m.request("new", map[string]string{"type": taskType.ID})
 }
 

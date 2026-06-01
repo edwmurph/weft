@@ -65,7 +65,7 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	st := layoutState("/tmp/project")
 	output := "output from a selected agent that is intentionally long enough to be cropped by the preview lens"
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", output, 140, 24, "", minTwoPaneNavWidth, 1)
+	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", output, 140, 24, "", minTwoPaneNavWidth, 2)
 
 	for _, expected := range []string{
 		"Workspaces",
@@ -150,7 +150,7 @@ func TestRenderTaskPreviewRejectsMismatchedCursorContent(t *testing.T) {
 		UpdatedAt:   state.NowISO(),
 	})
 
-	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "alpha output", 140, 24, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "alpha output", 140, 24, "", minTwoPaneNavWidth, 3, workspaceRenderOptions{
 		previewHeaderAnimation: "●",
 	}))
 	if !strings.Contains(got, "No task selected") || strings.Contains(got, "alpha output") || strings.Contains(got, "Task Live Preview ●") {
@@ -162,7 +162,7 @@ func TestRenderTaskPreviewHeaderUsesAnimationFrame(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 
-	got := renderWorkspaceView(cfg, st, "alpha", "output", 140, 24, "", minTwoPaneNavWidth, 1, workspaceRenderOptions{
+	got := renderWorkspaceView(cfg, st, "alpha", "output", 140, 24, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{
 		previewHeaderAnimation: "●",
 	})
 	stripped := ansi.Strip(got)
@@ -536,20 +536,25 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	st.Agents[0].GroupID = ""
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 0)
-	if !strings.Contains(got, "Tasks") || !strings.Contains(got, "· [codex] alpha") || strings.Contains(got, "▾") {
+	stripped := ansi.Strip(got)
+	if !strings.Contains(stripped, "Tasks") || !strings.Contains(stripped, "+ New task") || !strings.Contains(stripped, "· [codex] alpha") || strings.Contains(stripped, "▾") {
 		t.Fatalf("top-level agent rendering mismatch:\n%s", got)
+	}
+	if strings.Index(stripped, "+ New task") > strings.Index(stripped, "· [codex] alpha") {
+		t.Fatalf("new task row should render above task rows:\n%s", stripped)
 	}
 
 	st.Agents = nil
 	st.ActiveAgentID = ""
 	got = renderWorkspaceWithNavWidth(cfg, st, "Task", "", 100, 18, "", 60, 0)
-	if !strings.Contains(got, "No tasks") || !strings.Contains(got, "Press n to create one.") {
-		t.Fatalf("empty agents pane missing empty state:\n%s", got)
+	stripped = ansi.Strip(got)
+	if !strings.Contains(stripped, "+ New task") || !strings.Contains(stripped, "Press n to create") || strings.Contains(stripped, "No tasks") {
+		t.Fatalf("empty agents pane missing new task row:\n%s", got)
 	}
 
 	st = state.Repair(state.Empty(), "/tmp/project")
 	got = strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n")
-	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create one.") {
+	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create") {
 		t.Fatalf("no-workspace agents pane should explain workspace requirement:\n%s", got)
 	}
 }
@@ -576,12 +581,12 @@ func TestRenderAgentsPaneScrollsSelectedBottomGroupAgentIntoView(t *testing.T) {
 		Agents: []state.Agent{{ID: "ship", WorkspaceID: "w", GroupID: "shipit", Title: "Ship Agent", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
 	}
 
-	groupSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 4), "\n"))
+	groupSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 5), "\n"))
 	if !strings.Contains(groupSelected, "shipit") || strings.Contains(groupSelected, "Ship Agent") {
 		t.Fatalf("shipit group should sit at the bottom before moving into its hidden child:\n%s", groupSelected)
 	}
 
-	agentSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 5), "\n"))
+	agentSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 6), "\n"))
 	if !strings.Contains(agentSelected, "shipit") || !strings.Contains(agentSelected, "Ship Agent") {
 		t.Fatalf("selected bottom group agent should scroll into view:\n%s", agentSelected)
 	}
@@ -695,7 +700,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	st.Focus = state.FocusAgents
 	st.NavOpen = true
 	got = renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
-	if !strings.Contains(got, "Press n to create one.") {
+	if !strings.Contains(got, "Press n to create") {
 		t.Fatalf("workspace missing agent creation hint:\n%s", got)
 	}
 	lines := strings.Split(got, "\n")
@@ -867,7 +872,7 @@ func TestFocusedCodexAndNavUseSeparateFocusColors(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 1)
+	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 2)
 
 	rawLines := strings.Split(got, "\n")
 	strippedLines := strings.Split(ansi.Strip(got), "\n")

@@ -255,6 +255,7 @@ func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
 			CodexPlainLines:      []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
 			CodexScrollback:      strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
 			CodexScrollbackLines: []string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+			GroupCursor:          1,
 		},
 	}
 	area, ok := model.codexFrameArea()
@@ -314,6 +315,7 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 			CodexPlainLines:      []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
 			CodexScrollback:      strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
 			CodexScrollbackLines: []string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+			GroupCursor:          1,
 		},
 	}
 	area, ok := model.codexFrameArea()
@@ -501,6 +503,56 @@ func TestClientDownFromLastWorkspaceSelectsNewWorkspaceCard(t *testing.T) {
 	}
 	if !model.newWorkspaceCardSelected {
 		t.Fatal("down from the last workspace should select the new workspace card")
+	}
+}
+
+func TestClientHoverSelectsNewTaskRowAndEnterOpensMenu(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	st := testStateWithWorkspace(t, rt.Workspace)
+	st.Focus = state.FocusAgents
+	st.NavOpen = true
+	model := NewClientModel(rt, cfg)
+	model.width = 120
+	model.height = 16
+	model.snapshot = ipc.Snapshot{
+		State:        st,
+		CodexTitle:   "Task",
+		CodexContent: "No task open.",
+		NavWidth:     workspaceNavFrameWidth(st, model.width),
+	}
+	area, ok := model.newTaskRowArea()
+	if !ok {
+		t.Fatal("expected new task row hit area")
+	}
+
+	updated, cmd := model.handleMouse(tea.MouseMsg{
+		X:      area.x + 1,
+		Y:      area.y,
+		Button: tea.MouseButtonNone,
+		Action: tea.MouseActionMotion,
+	})
+	model = updated.(ClientModel)
+
+	if cmd == nil {
+		t.Fatal("hovering the new task row should select it through the supervisor")
+	}
+	if !model.newTaskRowSelected || model.snapshot.State.Focus != state.FocusAgents || model.snapshot.GroupCursor != 0 {
+		t.Fatalf("new task row should be selected, selected=%t focus=%s cursor=%d", model.newTaskRowSelected, model.snapshot.State.Focus, model.snapshot.GroupCursor)
+	}
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "+ New task") || !strings.Contains(got, "Press n to create") {
+		t.Fatalf("new task row should be visible and actionable:\n%s", got)
+	}
+
+	updated, cmd = model.handleNavKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("enter on the new task row should open the local task menu")
+	}
+	if model.mode != modeNewTask {
+		t.Fatalf("enter should open new task menu, mode=%s", model.mode)
 	}
 }
 

@@ -61,6 +61,7 @@ var (
 	workspaceInfoBoxBorderStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	agentReadyStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 	agentRunningStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
@@ -79,6 +80,7 @@ type workspaceRenderOptions struct {
 	workspaceFooterText      string
 	workspaceInfoText        string
 	newWorkspaceCardSelected bool
+	newTaskRowSelected       bool
 	codexToastText           string
 }
 
@@ -335,6 +337,45 @@ func newWorkspaceTemplateCardAreaFor(cfg config.Config, st state.State, width in
 		y:      area.y + 1 + content.newWorkspaceStart,
 		width:  cardWidth,
 		height: content.newWorkspaceHeight,
+	}, true
+}
+
+func tasksPaneAreaFor(st state.State, width int, height int, navWidth int) (consoleArea, bool) {
+	if width <= 0 || height <= 0 || navWidth <= 0 {
+		return consoleArea{}, false
+	}
+	navWidth = min(max(0, navWidth), width)
+	if navWidth <= 0 {
+		return consoleArea{}, false
+	}
+	if navWidth >= minTwoPaneNavWidth {
+		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, navWidth-minAgentsPaneWidth))
+		groupWidth := navWidth - workspaceWidth
+		if groupWidth <= 0 {
+			return consoleArea{}, false
+		}
+		return consoleArea{x: workspaceWidth, y: 0, width: groupWidth, height: height}, true
+	}
+	if st.Focus != state.FocusWorkspaces {
+		return consoleArea{x: 0, y: 0, width: navWidth, height: height}, true
+	}
+	return consoleArea{}, false
+}
+
+func newTaskTemplateRowAreaFor(cfg config.Config, st state.State, width int, height int, navWidth int) (consoleArea, bool) {
+	area, ok := tasksPaneAreaFor(st, width, height, navWidth)
+	if !ok || state.ActiveWorkspace(st) == nil || area.width <= 2 || area.height <= 2 {
+		return consoleArea{}, false
+	}
+	rowWidth := max(2, area.width-2-(navHorizontalPadding*2))
+	if rowWidth <= 0 || area.height <= 2 {
+		return consoleArea{}, false
+	}
+	return consoleArea{
+		x:      area.x + 1 + navHorizontalPadding,
+		y:      area.y + 1,
+		width:  rowWidth,
+		height: 1,
 	}, true
 }
 
@@ -738,6 +779,16 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 	rowIndex := 0
 	selectedLine := -1
 	rowWidth := max(0, width-2-(navHorizontalPadding*2))
+	if state.ActiveWorkspace(st) != nil {
+		selected := (rowIndex == groupCursor && st.Focus == state.FocusAgents) || options.newTaskRowSelected
+		taskRow := renderNewTaskTemplateRow(cfg, rowWidth, selected, st.Focus == state.FocusAgents)
+		if rowIndex == groupCursor {
+			selectedLine = len(content)
+		}
+		content = append(content, strings.Repeat(" ", navHorizontalPadding)+taskRow)
+		content = append(content, "")
+		rowIndex++
+	}
 	for _, agent := range state.UngroupedAgentsForWorkspace(st, st.SelectedWorkspaceID) {
 		agentRow := renderAgentRow(cfg, st, agent, rowWidth, false, rowIndex == groupCursor && st.Focus == state.FocusAgents, options)
 		if rowIndex == groupCursor {
@@ -786,15 +837,25 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 			rowIndex++
 		}
 	}
-	if len(content) == 0 {
-		if state.ActiveWorkspace(st) == nil {
-			content = renderCenteredPaneHelp(width, height, "No workspace selected", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
-		} else {
-			content = renderCenteredPaneHelp(width, height, "No tasks", "Press "+cfg.KeyBindings.NewTask+" to create one.")
-		}
+	if len(content) == 0 && state.ActiveWorkspace(st) == nil {
+		content = renderCenteredPaneHelp(width, height, "No workspace selected", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
 	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))
 	return renderPaneFrame("Tasks", "", width, height, st.Focus == state.FocusAgents, content)
+}
+
+func renderNewTaskTemplateRow(cfg config.Config, width int, selected bool, focused bool) string {
+	if width <= 0 {
+		return ""
+	}
+	row := "+ New task  Press " + cfg.KeyBindings.NewTask + " to create"
+	if selected && focused {
+		return activeAgentStyle.Italic(true).Render(padVisual(clip(row, width), width))
+	}
+	if selected {
+		return activePaneStyle.Italic(true).Render(padVisual(clip(row, width), width))
+	}
+	return newTaskRowStyle.Render(padVisual(clip(row, width), width))
 }
 
 func groupHasLoadingAgent(st state.State, groupID string, loadingAgents map[string]bool) bool {

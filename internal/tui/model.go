@@ -82,8 +82,9 @@ var loadingFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 type groupRowKind string
 
 const (
-	groupRowGroup groupRowKind = "group"
-	groupRowAgent groupRowKind = "agent"
+	groupRowNewTask groupRowKind = "new-task"
+	groupRowGroup   groupRowKind = "group"
+	groupRowAgent   groupRowKind = "agent"
 )
 
 type groupRow struct {
@@ -506,6 +507,10 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		row := m.currentGroupRow()
+		if row.kind == groupRowNewTask {
+			m.startNewTaskMenu()
+			return m, nil
+		}
 		if row.kind == groupRowGroup {
 			m.toggleSelectedGroup(row.groupID)
 			return m, nil
@@ -588,6 +593,9 @@ func (m *Model) moveSelection(delta int) {
 
 func (m *Model) applyGroupCursor(row groupRow) {
 	switch row.kind {
+	case groupRowNewTask:
+		m.state.SelectedAgentID = ""
+		m.state.SelectedGroupID = ""
 	case groupRowGroup:
 		m.state.SelectedAgentID = ""
 		m.state.SelectedGroupID = row.groupID
@@ -1000,6 +1008,8 @@ func (m Model) groupCursorMatchesState(rows []groupRow) bool {
 	}
 	row := rows[m.groupCursor]
 	switch row.kind {
+	case groupRowNewTask:
+		return state.ActiveWorkspace(m.state) != nil && m.state.SelectedAgentID == "" && m.state.SelectedGroupID == ""
 	case groupRowGroup:
 		return m.state.SelectedAgentID == "" && row.groupID != "" && row.groupID == m.state.SelectedGroupID
 	case groupRowAgent:
@@ -1797,6 +1807,15 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		m.moveSelection(delta)
 		return m.ipcResponse("selection updated"), nil
+	case "select_new_task":
+		if state.ActiveWorkspace(m.state) == nil {
+			return ipc.ErrorResponse("workspace_required", "add a workspace first"), nil
+		}
+		m.focusNavPane(state.FocusAgents)
+		m.groupCursor = 0
+		m.applyGroupCursor(m.currentGroupRow())
+		m.snapNavWidthToTarget()
+		return m.ipcResponse("selection updated"), m.startNavAnimation()
 	case "reorder_agent":
 		delta, err := strconv.Atoi(request.Args["delta"])
 		if err != nil || delta == 0 {
@@ -2069,6 +2088,9 @@ func (m *Model) openSelection() tea.Cmd {
 		return nil
 	}
 	row := m.currentGroupRow()
+	if row.kind == groupRowNewTask {
+		return nil
+	}
 	if row.kind == groupRowGroup {
 		m.toggleSelectedGroup(row.groupID)
 		return nil

@@ -112,6 +112,27 @@ func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
 	}
 }
 
+func TestEnterOnNewTaskPlaceholderOpensTypeMenu(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
+	defer killPTYs(model)
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+
+	if cmd != nil {
+		t.Fatalf("new task placeholder should open the menu locally, got %#v", cmd)
+	}
+	if model.mode != modeNewTask {
+		t.Fatalf("mode = %s, want new task menu", model.mode)
+	}
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "New task") || !strings.Contains(got, "Enter create") {
+		t.Fatalf("new task menu missing after Enter on placeholder:\n%s", got)
+	}
+}
+
 func TestTaskTypeBadgeCellUsesConfiguredColumnWidth(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TaskTypes["logs"] = config.TaskType{
@@ -432,7 +453,7 @@ func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
 	model = updated.(Model)
@@ -494,7 +515,7 @@ func TestDefaultDeleteShortcutNoLongerUsesD(t *testing.T) {
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	model = updated.(Model)
@@ -509,7 +530,7 @@ func TestBackspaceDeleteShortcutAcceptsCtrlHSequence(t *testing.T) {
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlH})
 	model = updated.(Model)
@@ -1237,7 +1258,7 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 	model.prompt = promptEditAgent
 	model.mode = modeInput
 	model.pendingID = "a"
@@ -1293,7 +1314,7 @@ func TestEditAgentPromptPreviewsEditedTitle(t *testing.T) {
 	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 	model.prompt = promptEditAgent
 	model.mode = modeInput
 	model.pendingID = "a"
@@ -1323,7 +1344,7 @@ func TestEditAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
 	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	model = updated.(Model)
@@ -1387,7 +1408,7 @@ func TestDashboardEditShortcutIgnoresLegacyRenameKey(t *testing.T) {
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	model = updated.(Model)
@@ -1415,7 +1436,7 @@ func TestEditGroupPromptTogglesSilentAndSaves(t *testing.T) {
 	}
 	model := NewModel(rt, cfg, st)
 	defer killPTYs(model)
-	model.groupCursor = 0
+	model.groupCursor = 1
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	model = updated.(Model)
@@ -1653,7 +1674,7 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.state.Agents[0].GroupID = ""
-	model.groupCursor = 0
+	model.groupCursor = 1
 	now := state.NowISO()
 	model.state.Groups = append(model.state.Groups, state.Group{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
 
@@ -1715,7 +1736,7 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 		t.Fatalf("agent was not moved to release: %#v", agent)
 	}
 
-	model.groupCursor = 2
+	model.groupCursor = 3
 	model.startPrompt(promptMoveAgent, "missing")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
@@ -1729,7 +1750,7 @@ func TestMoveAgentPromptAutocompletesGroupSubstring(t *testing.T) {
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.groupCursor = 2
 	now := state.NowISO()
 	model.state.Groups = append(model.state.Groups,
 		state.Group{ID: "feature", WorkspaceID: "w", Path: "release-feature", CreatedAt: now, UpdatedAt: now},
@@ -1774,14 +1795,14 @@ func TestShiftUpDownReordersSelectedAgentInAgentsPane(t *testing.T) {
 			{ID: "b", WorkspaceID: "w", Title: "Beta", Status: state.StatusReady, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
 		},
 	})
-	model.groupCursor = 1
+	model.groupCursor = 2
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
 	model = updated.(Model)
 	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"b", "a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("shift up order = %#v, want %#v", got, want)
 	}
-	if model.groupCursor != 0 || model.state.ActiveAgentID != "b" {
+	if model.groupCursor != 1 || model.state.ActiveAgentID != "b" {
 		t.Fatalf("selection should follow reordered agent: cursor=%d active=%q", model.groupCursor, model.state.ActiveAgentID)
 	}
 
@@ -1790,7 +1811,7 @@ func TestShiftUpDownReordersSelectedAgentInAgentsPane(t *testing.T) {
 	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"a", "b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("shift down order = %#v, want %#v", got, want)
 	}
-	if model.groupCursor != 1 || model.state.ActiveAgentID != "b" {
+	if model.groupCursor != 2 || model.state.ActiveAgentID != "b" {
 		t.Fatalf("selection should follow reordered agent: cursor=%d active=%q", model.groupCursor, model.state.ActiveAgentID)
 	}
 }
@@ -1816,7 +1837,7 @@ func TestShiftUpDownMovesSelectedAgentAcrossAdjacentGroups(t *testing.T) {
 			{ID: "review-a", WorkspaceID: "w", GroupID: "review", Title: "Review A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 		},
 	})
-	model.groupCursor = 1
+	model.groupCursor = 2
 	model.groupCursorPinned = true
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
@@ -1860,7 +1881,7 @@ func TestShiftUpDownReordersSelectedGroupInAgentsPane(t *testing.T) {
 			{ID: "gamma", WorkspaceID: "w", Path: "gamma", CreatedAt: now, UpdatedAt: now},
 		},
 	})
-	model.groupCursor = 1
+	model.groupCursor = 2
 	model.groupCursorPinned = true
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
@@ -1903,7 +1924,7 @@ func TestClientShiftUpOnSelectedGroupRequestsReorderGroup(t *testing.T) {
 	requests := make(chan ipc.Request, 1)
 	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
 		requests <- request
-		snapshot := ipc.Snapshot{State: st, GroupCursor: 1}
+		snapshot := ipc.Snapshot{State: st, GroupCursor: 2}
 		return ipc.Response{OK: true, Snapshot: &snapshot}
 	})
 	if err != nil {
@@ -1912,7 +1933,7 @@ func TestClientShiftUpOnSelectedGroupRequestsReorderGroup(t *testing.T) {
 	defer stop()
 
 	model := NewClientModel(rt, config.DefaultConfig())
-	model.snapshot = ipc.Snapshot{State: st, GroupCursor: 1}
+	model.snapshot = ipc.Snapshot{State: st, GroupCursor: 2}
 	_, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
 	if cmd == nil {
 		t.Fatal("expected client reorder command")
@@ -2472,14 +2493,14 @@ func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 0
+	model.groupCursor = 1
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if !state.IsGroupCollapsed(model.state, "f") {
 		t.Fatalf("group should collapse: %#v", model.state.CollapsedGroupIDs)
 	}
-	if rows := model.groupRows(); len(rows) != 1 {
+	if rows := model.groupRows(); len(rows) != 2 {
 		t.Fatalf("collapsed group should hide agents, rows=%#v", rows)
 	}
 
@@ -2496,7 +2517,7 @@ func TestNewAgentAlwaysCreatesTopLevelWhenGroupSelected(t *testing.T) {
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
 	model.state.ActiveAgentID = ""
-	model.groupCursor = 0
+	model.groupCursor = 1
 
 	cmd := model.newAgent("Grouped")
 	defer killPTYs(model)

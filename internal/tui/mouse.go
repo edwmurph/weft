@@ -45,6 +45,12 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	event := tea.MouseEvent(msg)
 	if next, cmd, handled := m.handleWorkspaceMouse(event); handled {
+		if cmd != nil || next.newWorkspaceCardSelected || event.Action == tea.MouseActionPress {
+			return next, cmd
+		}
+		m = next
+	}
+	if next, cmd, handled := m.handleTaskMouse(event); handled {
 		return next, cmd
 	}
 	active := state.ActiveAgent(m.snapshot.State)
@@ -156,6 +162,38 @@ func (m ClientModel) handleWorkspaceMouse(event tea.MouseEvent) (ClientModel, te
 
 func (m ClientModel) newWorkspaceCardArea() (consoleArea, bool) {
 	return newWorkspaceTemplateCardAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth, m.workspaceRenderOptions())
+}
+
+func (m ClientModel) handleTaskMouse(event tea.MouseEvent) (ClientModel, tea.Cmd, bool) {
+	if event.Action != tea.MouseActionPress && event.Action != tea.MouseActionMotion {
+		return m, nil, false
+	}
+	area, ok := m.newTaskRowArea()
+	if ok && mouseInConsoleArea(event, area) {
+		alreadySelected := m.newTaskRowSelected && m.snapshot.State.Focus == state.FocusAgents
+		m.mouseSelection = consoleSelection{}
+		m.newWorkspaceCardSelected = false
+		m.newTaskRowSelected = true
+		m.snapshot.State.Focus = state.FocusAgents
+		m.snapshot.State.NavOpen = true
+		m.snapshot.GroupCursor = 0
+		if event.Action == tea.MouseActionPress || !alreadySelected {
+			return m, m.request("select_new_task", nil), true
+		}
+		return m, nil, true
+	}
+	if event.Action == tea.MouseActionMotion && m.newTaskRowSelected {
+		m.newTaskRowSelected = false
+		return m, nil, true
+	}
+	if event.Action == tea.MouseActionPress {
+		m.newTaskRowSelected = false
+	}
+	return m, nil, false
+}
+
+func (m ClientModel) newTaskRowArea() (consoleArea, bool) {
+	return newTaskTemplateRowAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth)
 }
 
 func (m ClientModel) codexContentArea() (consoleArea, bool) {

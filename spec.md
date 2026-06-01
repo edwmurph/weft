@@ -312,7 +312,7 @@ Example:
 
 The middle pane shows tasks for the selected workspace. It is always present so the Workspaces pane can stay purely scoped to workspaces.
 
-When no workspace exists or no workspace is selected, the Tasks pane shows centered help text telling the user to add a workspace first. It must not advertise creating a task until a workspace exists. When a workspace is selected but has no tasks or groups, the Tasks pane shows centered help text saying there are no tasks and to press the configured new-task key.
+When no workspace exists or no workspace is selected, the Tasks pane shows centered help text telling the user to add a workspace first. It must not advertise creating a task until a workspace exists. When a workspace is selected, the top of the Tasks pane renders a selectable italic template row with a plus-sign label and concise copy telling the user to press the configured new-task key to create a task. Pressing `Enter` while the template row is selected opens the same task-type menu as the configured new-task key.
 
 Tasks without a group render as top-level rows above group sections. User-created groups render as collapsible sections inside this pane, with their member tasks indented underneath. Creating a group must not force existing top-level tasks into a visible `Ungrouped`, `General`, or `Inbox` section.
 
@@ -474,7 +474,7 @@ Autocomplete menus open directly under the input whenever the current value has 
 These are product-level defaults and may map to existing config structures during implementation.
 
 ```text
-Enter   Open selected task and maximize its console
+Enter   Open selected task and maximize its console, or open the task-type menu on the new-task template row
 C-b     Toggle dashboard navigation
 Left/Right Move focus between workspaces and tasks panes
 j/k     Move selection within the focused navigation pane

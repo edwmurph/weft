@@ -1605,7 +1605,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return len(st.Agents) == 0 && len(st.Groups) == 0 && st.SelectedWorkspaceID != ""
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "No tasks")
+			return strings.Contains(capture, "+ New task") &&
+				strings.Contains(capture, "Press n to create")
 		})
 	})
 
@@ -1922,9 +1923,17 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return len(st.Workspaces) == 1 && workspace != nil && st.SelectedWorkspaceID == workspace.ID
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "No tasks") &&
-				strings.Contains(capture, "Press n to create one.")
+			return strings.Contains(capture, "+ New task") &&
+				strings.Contains(capture, "Press n to create")
 		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "New task") &&
+				strings.Contains(capture, "Codex") &&
+				strings.Contains(capture, "Shell") &&
+				strings.Contains(capture, "Enter create")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Escape")
 	})
 
 	timedStep(t, "second workspace is added and workspace title can be set and cleared", func() {

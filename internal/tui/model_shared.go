@@ -119,6 +119,9 @@ func currentGroupRowForState(st state.State, groupCursor int) groupRow {
 
 func groupRowsForState(st state.State) []groupRow {
 	var rows []groupRow
+	if state.ActiveWorkspace(st) != nil {
+		rows = append(rows, groupRow{kind: groupRowNewTask})
+	}
 	for _, agent := range state.UngroupedAgentsForWorkspace(st, st.SelectedWorkspaceID) {
 		rows = append(rows, groupRow{kind: groupRowAgent, agentID: agent.ID})
 	}
