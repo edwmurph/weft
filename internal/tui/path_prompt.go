@@ -686,12 +686,12 @@ func renderConfirmActions(confirm confirmKind) string {
 		return modalKeyStyle.Render("Enter") + " yes  " + modalKeyStyle.Render("Esc") + " no"
 	}
 	if confirm == confirmUpgradeResume {
-		return modalKeyStyle.Render("Enter") + " upgrade and resume  " + modalKeyStyle.Render("Esc") + " cancel"
+		return modalKeyStyle.Render("Enter") + " upgrade and resume  " + modalKeyStyle.Render("Esc")
 	}
 	if confirm == confirmDeleteAgent {
-		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("Esc") + " cancel"
+		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("N") + " " + modalKeyStyle.Render("Esc")
 	}
-	return modalKeyStyle.Render("Enter") + " delete  " + modalKeyStyle.Render("Esc") + " cancel"
+	return modalKeyStyle.Render("Enter") + " delete  " + modalKeyStyle.Render("Esc")
 }
 
 func confirmTarget(confirm confirmKind, st state.State, pendingID string, renderAgentTitle func(state.Agent) string) string {

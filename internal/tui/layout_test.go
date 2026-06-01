@@ -188,7 +188,7 @@ func TestRenderWorkspaceCardFlagsMissingPath(t *testing.T) {
 	}
 
 	got := ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 9), "\n"))
-	if !strings.Contains(got, "path missing; press d to remove") {
+	if !strings.Contains(got, "path missing; press Backspace to remove") {
 		t.Fatalf("missing workspace path should be visible and actionable:\n%s", got)
 	}
 }

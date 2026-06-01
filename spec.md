@@ -142,8 +142,9 @@ because that can stop live Codex terminals.
 The in-dashboard upgrade action must be safe by default. While Codex agents are
 busy or missing saved session IDs, the dashboard shows pending copy and does not
 offer `U`. Once every remaining agent is idle and resumable, `U` opens a
-confirmation, creates a pre-upgrade backup, closes the idle Codex terminals,
-restarts the supervisor, and resumes agents with `codex resume <session-id>`.
+confirmation where `Enter` proceeds and `Esc` cancels. The confirmed action
+creates a pre-upgrade backup, closes the idle Codex terminals, restarts the
+supervisor, and resumes agents with `codex resume <session-id>`.
 The client must not run duplicate local restart/resume logic or synthesize
 upgrade state that was not sent by the supervisor.
 
@@ -229,7 +230,7 @@ template card instead of jumping to a real workspace.
 
 Stored workspaces remain selectable even when their path is missing, unreadable,
 or no longer a directory. In that bad-state case the card shows a visible warning
-line such as `path missing; press d to remove`, using the configured delete key,
+line such as `path missing; press Backspace to remove`, using the configured delete key,
 so the user can navigate to the entry and remove it without resetting all state.
 
 Each card renders:
@@ -446,7 +447,7 @@ n       Create a top-level agent with no group
 m       Move selected agent to another group in the same workspace, or clear its group
 Shift+Up/Down Reorder selected agent within its group or top-level area
 r       Rename selected workspace title, group, or agent title
-d       Delete/remove selected item
+Backspace Delete/remove selected item
 ?       Help
 C-c     Quit Weft from dashboard focus
 ```
@@ -654,6 +655,7 @@ Remove workspace:
 - Remove associated groups and agents from state.
 - Do not delete filesystem contents.
 - Confirm before removal if any agent is running, ready, or shipping.
+- Dashboard delete confirmations use `Enter` to remove and `Esc` to cancel.
 
 Rename workspace title:
 
@@ -683,6 +685,7 @@ Delete group:
 - Allowed only when empty.
 - If non-empty, prompt the user to move agents first.
 - Deleting the last group in a workspace is allowed.
+- Dashboard confirmation uses `Enter` to delete and `Esc` to cancel.
 
 ## Agent CRUD
 
@@ -719,6 +722,7 @@ Close/delete agent:
 
 - Confirmation explains that deleting stops the Codex terminal before removing
   the agent from Weft.
+- Dashboard confirmation uses `Enter` to delete and `N` or `Esc` to cancel.
 - Stops the PTY if running.
 - Removes the agent from state.
 - If the deleted agent is active, select another agent in the same workspace when one exists.
@@ -919,10 +923,13 @@ new_group = "g"
 new_agent = "n"
 move_agent = "m"
 edit = "e"
-delete = "d"
+delete = "Backspace"
 help = "?"
 quit = "C-c"
 ```
+
+Existing generated configs with `delete = "d"` use the current `Backspace`
+default so `d` is not a dashboard delete shortcut.
 
 Only the current config keys are loaded. Unknown keys, including legacy keys
 such as `tmux_session`,

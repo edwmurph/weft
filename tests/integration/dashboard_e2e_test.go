@@ -177,7 +177,7 @@ func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 		return selected != nil && selected.Path == workspace
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "path missing; press d to remove")
+		return strings.Contains(capture, "path missing; press Backspace to remove")
 	})
 
 	directRun(t, env, "send-keys", "-t", pane, "Left")
@@ -196,7 +196,7 @@ func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 		t.Fatalf("stale workspace selection bounced back: %#v", st)
 	}
 
-	directRun(t, env, "send-keys", "-t", pane, "d")
+	directRun(t, env, "send-keys", "-t", pane, "Backspace")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Delete workspace")
 	})
@@ -302,7 +302,7 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	waitState(t, env, bin, func(st state.State) bool {
 		return groupByPath(st, "shipit-later") != nil
 	})
-	directRun(t, env, "send-keys", "-t", pane, "d")
+	directRun(t, env, "send-keys", "-t", pane, "Backspace")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Delete group") &&
 			strings.Contains(capture, "shipit-later")
@@ -1120,7 +1120,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	timedStep(t, "help modal closes", func() {
 		directRun(t, env, "send-keys", "-t", pane, "?")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Weft shortcuts")
+			return strings.Contains(capture, "Weft shortcuts") &&
+				strings.Contains(capture, "Backspace delete")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -1129,20 +1130,24 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	timedStep(t, "close confirmation cancels then closes", func() {
-		directRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete agent") &&
 				strings.Contains(capture, "Codex Ready") &&
 				strings.Contains(capture, "Stops the Codex terminal, then removes this agent from Weft.") &&
-				strings.Contains(capture, "Enter stop and delete")
+				strings.Contains(capture, "Enter stop and delete") &&
+				strings.Contains(capture, "N Esc") &&
+				!strings.Contains(capture, "Y stop and delete") &&
+				!strings.Contains(capture, "Esc cancel")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "Escape")
+		directRun(t, env, "send-keys", "-t", pane, "n")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 1 })
-		directRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete agent") &&
 				strings.Contains(capture, "Codex Ready") &&
-				strings.Contains(capture, "Esc cancel")
+				strings.Contains(capture, "N Esc") &&
+				!strings.Contains(capture, "N cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 0 })
@@ -1150,11 +1155,14 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return strings.Contains(capture, "No Codex agent open")
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), true)
-		directRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete group") &&
 				strings.Contains(capture, "release") &&
-				strings.Contains(capture, "Esc cancel")
+				strings.Contains(capture, "Enter delete") &&
+				strings.Contains(capture, "Esc") &&
+				!strings.Contains(capture, "N cancel") &&
+				!strings.Contains(capture, "Esc cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
@@ -1620,7 +1628,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "k")
 		time.Sleep(250 * time.Millisecond)
-		directRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete group") &&
 				strings.Contains(capture, "renamed")
@@ -1653,7 +1661,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 
 		directRun(t, env, "send-keys", "-t", pane, "j")
 		time.Sleep(250 * time.Millisecond)
-		directRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete group") &&
 				strings.Contains(capture, "renamed")
@@ -1754,7 +1762,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			t.Fatalf("no selected workspace before deletion: %#v", st.Workspaces)
 		}
 
-		directRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete workspace")
 		})
@@ -1770,7 +1778,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		}
 		time.Sleep(250 * time.Millisecond)
 
-		directRun(t, env, "send-keys", "-t", pane, "d")
+		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete workspace")
 		})
@@ -2019,6 +2027,8 @@ func directRun(t *testing.T, env []string, args ...string) {
 		writeClientInput(t, "\x1b")
 	case "Tab":
 		writeClientInput(t, "\t")
+	case "Backspace":
+		writeClientInput(t, "\x7f")
 	case "Up":
 		writeClientInput(t, "\x1b[A")
 	case "Down":

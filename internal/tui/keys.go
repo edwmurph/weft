@@ -8,7 +8,11 @@ import (
 )
 
 func bindingMatches(binding string, msg tea.KeyMsg) bool {
-	return normalizeBinding(binding) == strings.ToLower(msg.String())
+	normalized := normalizeBinding(binding)
+	if normalized == "backspace" && (msg.Type == tea.KeyBackspace || msg.Type == tea.KeyCtrlH) {
+		return true
+	}
+	return normalized == strings.ToLower(msg.String())
 }
 
 func isCtrlCKey(msg tea.KeyMsg) bool {

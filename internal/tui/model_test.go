@@ -269,7 +269,7 @@ func TestLaunchWorkspaceConfirmationIgnoresYAndN(t *testing.T) {
 	}
 }
 
-func TestDeleteConfirmationEnterSubmitsAndYNIgnored(t *testing.T) {
+func TestDeleteAgentConfirmationEnterSubmitsYIgnoredAndNCancels(t *testing.T) {
 	model := testModelWithAgent(t)
 	defer killPTYs(model)
 	model.mode = modeConfirm
@@ -284,10 +284,13 @@ func TestDeleteConfirmationEnterSubmitsAndYNIgnored(t *testing.T) {
 
 	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	model = updated.(Model)
-	if cmd != nil || model.mode != modeConfirm || len(model.state.Agents) != 1 {
-		t.Fatalf("n should be ignored for delete confirm, mode=%s cmd=%#v agents=%d", model.mode, cmd, len(model.state.Agents))
+	if cmd != nil || model.mode != modeNormal || len(model.state.Agents) != 1 {
+		t.Fatalf("n should cancel delete confirm, mode=%s cmd=%#v agents=%d", model.mode, cmd, len(model.state.Agents))
 	}
 
+	model.mode = modeConfirm
+	model.confirm = confirmDeleteAgent
+	model.pendingID = "a"
 	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeNormal {
@@ -305,7 +308,7 @@ func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
 	model.state.NavOpen = true
 	model.groupCursor = 1
 
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
 	model = updated.(Model)
 
 	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteAgent || model.pendingID != "a" {
@@ -318,16 +321,75 @@ func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
 		"alpha",
 		"Stops the Codex terminal, then removes this agent from Weft.",
 		"Enter stop and delete",
-		"Esc cancel",
+		"N Esc",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("delete agent confirm missing %q:\n%s", expected, got)
 		}
 	}
-	for _, unexpected := range []string{"Y stop and delete", "N cancel"} {
+	for _, unexpected := range []string{"Y stop and delete", "N cancel", "Esc cancel"} {
 		if strings.Contains(got, unexpected) {
-			t.Fatalf("delete agent confirm should not include %q:\n%s", unexpected, got)
+			t.Fatalf("delete agent confirm should not show %q:\n%s", unexpected, got)
 		}
+	}
+}
+
+func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {
+	for _, confirm := range []confirmKind{confirmAddLaunchWorkspace, confirmDeleteWorkspace, confirmDeleteGroup, confirmUpgradeResume} {
+		if !confirmKeySubmits(confirm, tea.KeyMsg{Type: tea.KeyEnter}) {
+			t.Fatalf("%s should submit with enter", confirm)
+		}
+		if confirmKeySubmits(confirm, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}) {
+			t.Fatalf("%s should not submit with y", confirm)
+		}
+		if !confirmKeyCancels(confirm, tea.KeyMsg{Type: tea.KeyEsc}) {
+			t.Fatalf("%s should cancel with esc", confirm)
+		}
+		if confirmKeyCancels(confirm, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}) {
+			t.Fatalf("%s should not cancel with n", confirm)
+		}
+	}
+	if !confirmKeySubmits(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyEnter}) {
+		t.Fatal("delete agent should submit with enter")
+	}
+	if confirmKeySubmits(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}) {
+		t.Fatal("delete agent should not submit with y")
+	}
+	if !confirmKeyCancels(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyEsc}) {
+		t.Fatal("delete agent should cancel with esc")
+	}
+	if !confirmKeyCancels(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}) {
+		t.Fatal("delete agent should cancel with n")
+	}
+}
+
+func TestDefaultDeleteShortcutNoLongerUsesD(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Focus = state.FocusAgents
+	model.state.NavOpen = true
+	model.groupCursor = 1
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	model = updated.(Model)
+
+	if cmd != nil || model.mode == modeConfirm || model.confirm == confirmDeleteAgent {
+		t.Fatalf("d should not start delete confirmation mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	}
+}
+
+func TestBackspaceDeleteShortcutAcceptsCtrlHSequence(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Focus = state.FocusAgents
+	model.state.NavOpen = true
+	model.groupCursor = 1
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlH})
+	model = updated.(Model)
+
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteAgent || model.pendingID != "a" {
+		t.Fatalf("ctrl+h backspace confirm state mode=%s confirm=%s pending=%s cmd=%v", model.mode, model.confirm, model.pendingID, cmd)
 	}
 }
 
@@ -483,9 +545,9 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
 		}
 	}
-	for _, unexpected := range []string{"Y upgrade and resume", "N cancel"} {
+	for _, unexpected := range []string{"Y upgrade and resume", "N cancel", "Esc cancel"} {
 		if strings.Contains(got, unexpected) {
-			t.Fatalf("upgrade confirm should not include %q:\n%s", unexpected, got)
+			t.Fatalf("upgrade confirm should not show %q:\n%s", unexpected, got)
 		}
 	}
 }

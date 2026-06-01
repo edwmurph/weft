@@ -224,10 +224,12 @@ new_group = "g"
 new_agent = "n"
 move_agent = "m"
 edit = "e"
-delete = "d"
+delete = "Backspace"
 help = "?"
 quit = "C-c"
 ```
+
+Existing generated configs with `delete = "d"` use the current `Backspace` default.
 
 In CODEX focus, Weft keeps the `Agent Console` framed while forwarding raw
 terminal input bytes through the active PTY. The configured drawer key, `C-b` by

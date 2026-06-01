@@ -49,6 +49,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.KeyBindings.Edit != "e" {
 		t.Fatalf("Edit = %q", cfg.KeyBindings.Edit)
 	}
+	if cfg.KeyBindings.Delete != "Backspace" {
+		t.Fatalf("Delete = %q", cfg.KeyBindings.Delete)
+	}
 	if cfg.KeyBindings.Quit != "C-c" {
 		t.Fatalf("Quit = %q", cfg.KeyBindings.Quit)
 	}
@@ -84,7 +87,7 @@ new_group = "G"
 new_agent = "A"
 move_agent = "M"
 edit = "E"
-delete = "D"
+delete = "X"
 help = "H"
 quit = "Q"
 `), 0o600)
@@ -114,10 +117,34 @@ quit = "Q"
 		cfg.KeyBindings.NewAgent != "A" ||
 		cfg.KeyBindings.MoveAgent != "M" ||
 		cfg.KeyBindings.Edit != "E" ||
-		cfg.KeyBindings.Delete != "D" ||
+		cfg.KeyBindings.Delete != "X" ||
 		cfg.KeyBindings.Help != "H" ||
 		cfg.KeyBindings.Quit != "Q" {
 		t.Fatalf("key bindings = %#v", cfg.KeyBindings)
+	}
+}
+
+func TestLoadConfigTreatsLegacyDefaultDeleteAsBackspace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	err := os.WriteFile(path, []byte(`
+codex_command = "codex"
+title_template = "{status} {auto}"
+title_hook_timeout_seconds = 10
+
+[key_bindings]
+delete = "d"
+`), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.KeyBindings.Delete != "Backspace" {
+		t.Fatalf("Delete = %q", cfg.KeyBindings.Delete)
 	}
 }
 

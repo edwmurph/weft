@@ -78,7 +78,7 @@ func DefaultKeyBindings() KeyBindings {
 		NewAgent:     "n",
 		MoveAgent:    "m",
 		Edit:         "e",
-		Delete:       "d",
+		Delete:       "Backspace",
 		Help:         "?",
 		Quit:         "C-c",
 	}
@@ -276,7 +276,9 @@ func LoadConfig(path string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.NewAgent)
 	applyBinding(&cfg.KeyBindings.MoveAgent, raw.KeyBindings.MoveAgent)
 	applyBinding(&cfg.KeyBindings.Edit, raw.KeyBindings.Edit)
-	applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
+	if !strings.EqualFold(strings.TrimSpace(raw.KeyBindings.Delete), "d") {
+		applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
+	}
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
 	if err := cfg.Validate(); err != nil {
@@ -338,7 +340,7 @@ new_group = "g"
 new_agent = "n"
 move_agent = "m"
 edit = "e"
-delete = "d"
+delete = "Backspace"
 help = "?"
 quit = "C-c"
 `

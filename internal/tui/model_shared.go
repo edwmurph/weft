@@ -20,12 +20,18 @@ func promptContextFor(prompt promptKind, pendingID string, st state.State, selec
 	}
 }
 
-func confirmKeySubmits(_ confirmKind, msg tea.KeyMsg) bool {
+func confirmKeySubmits(confirm confirmKind, msg tea.KeyMsg) bool {
 	return msg.Type == tea.KeyEnter
 }
 
-func confirmKeyCancels(_ confirmKind, msg tea.KeyMsg) bool {
-	return msg.Type == tea.KeyEsc || strings.EqualFold(msg.String(), "esc")
+func confirmKeyCancels(confirm confirmKind, msg tea.KeyMsg) bool {
+	if msg.Type == tea.KeyEsc || strings.EqualFold(msg.String(), "esc") {
+		return true
+	}
+	if confirm == confirmDeleteAgent {
+		return strings.EqualFold(msg.String(), "n")
+	}
+	return false
 }
 
 func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptKind, selectedAgent *state.Agent, input textinput.Model, width int) []string {
