@@ -1447,7 +1447,7 @@ func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T
 		"Path",
 		"✓ ",
 		"> current",
-		"Enter add",
+		"Enter choose",
 		"Tab choose",
 		"Up/Down move",
 		"Esc close suggestions",
@@ -1538,7 +1538,7 @@ func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	if got, want := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex), withTrailingSeparator(alpha); got != want {
 		t.Fatalf("initial suggestion = %q, want %q", got, want)
 	}
-	for _, expected := range []string{"> alpha-project", "beta-project", "Enter add", "Tab choose", "Up/Down move", "Esc close suggestions"} {
+	for _, expected := range []string{"> alpha-project", "beta-project", "Enter choose", "Tab choose", "Up/Down move", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("initial suggestion state missing %q:\n%s", expected, got)
 		}
@@ -1556,10 +1556,10 @@ func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 		t.Fatalf("down arrow should highlight beta:\n%s", got)
 	}
 
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeInput {
-		t.Fatalf("tab on highlighted suggestion should keep prompt open, mode=%s", model.mode)
+		t.Fatalf("enter on highlighted suggestion should keep prompt open, mode=%s", model.mode)
 	}
 	if want := beta; model.input.Value() != want {
 		t.Fatalf("selected suggestion = %q, want %q", model.input.Value(), want)
@@ -1584,16 +1584,34 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	defer killPTYs(model)
 	model.state.Focus = state.FocusAgents
 	model.state.NavOpen = true
-	model.groupCursor = 1
+	model.state.Agents[0].GroupID = ""
+	model.groupCursor = 0
 	now := state.NowISO()
 	model.state.Groups = append(model.state.Groups, state.Group{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
 
 	model.startPrompt(promptMoveAgent, "")
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Move task", "Top-level task", "> release", "Enter top-level", "Tab choose", "Esc close suggestions"} {
+	highlighted := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex)
+	for _, expected := range []string{"Move task", "Top-level task", "> " + highlighted, "Enter choose", "Tab choose", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("blank move prompt missing %q:\n%s", expected, got)
 		}
+	}
+
+	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.mode != modeInput || model.promptSuggestionOpen {
+		t.Fatalf("choosing from blank move prompt should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
+	}
+	if got := model.input.Value(); got != highlighted {
+		t.Fatalf("blank move prompt enter chose %q, want %q", got, highlighted)
+	}
+	if agent := state.AgentByID(model.state, "a"); agent == nil || agent.GroupID != "" {
+		t.Fatalf("choosing a suggestion should not submit the move: %#v", agent)
+	}
+	got = ansi.Strip(model.View())
+	if !strings.Contains(got, "Enter move") || strings.Contains(got, "Esc close suggestions") {
+		t.Fatalf("chosen blank suggestion should close suggestions and advertise submit:\n%s", got)
 	}
 
 	model.startPrompt(promptMoveAgent, "rel")
@@ -1601,13 +1619,13 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 		t.Fatalf("matched groups = %#v, want %#v", got, want)
 	}
 	got = ansi.Strip(model.View())
-	for _, expected := range []string{"> release", "Enter choose", "Esc close suggestions"} {
+	for _, expected := range []string{"> release", "Enter choose", "Tab choose", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("group suggestion menu missing %q:\n%s", expected, got)
 		}
 	}
 
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeInput || model.promptSuggestionOpen {
 		t.Fatalf("choosing a group should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
@@ -1655,7 +1673,7 @@ func TestMoveAgentPromptAutocompletesGroupSubstring(t *testing.T) {
 		t.Fatalf("substring matched groups = %#v, want %#v", got, want)
 	}
 	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "> release-rollout") || !strings.Contains(got, "Enter choose") {
+	if !strings.Contains(got, "> release-rollout") || !strings.Contains(got, "Enter choose") || !strings.Contains(got, "Tab choose") {
 		t.Fatalf("substring group suggestion menu missing match:\n%s", got)
 	}
 

@@ -205,15 +205,15 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 		result.action = promptInputCancel
 		return result
 	case tea.KeyEnter:
+		if promptHasAutocomplete(ctx.prompt) && result.suggestionOpen {
+			if completePromptSuggestion(&result.input, ctx, result.suggestionIndex) {
+				result.suggestionOpen = false
+				result.suggestionIndex = 0
+				return result
+			}
+		}
 		value := strings.TrimSpace(result.input.Value())
 		if message := promptSubmitBlocker(ctx, value); message != "" {
-			if promptHasAutocomplete(ctx.prompt) && result.suggestionOpen {
-				if completePromptSuggestion(&result.input, ctx, result.suggestionIndex) {
-					result.suggestionOpen = false
-					result.suggestionIndex = 0
-					return result
-				}
-			}
 			result.message = message
 			return result
 		}
@@ -488,12 +488,7 @@ func renderPromptInput(label string, input textinput.Model, width int) []string 
 func renderPromptActions(ctx promptContext, input textinput.Model, menuOpen bool) string {
 	submitLabel := promptSubmitActionLabel(ctx, input.Value())
 	if menuOpen {
-		actions := []string{}
-		if submitLabel != "" {
-			actions = append(actions, modalKeyStyle.Render("Enter")+" "+submitLabel, modalKeyStyle.Render("Tab")+" choose")
-		} else {
-			actions = append(actions, modalKeyStyle.Render("Enter")+" choose")
-		}
+		actions := []string{modalKeyStyle.Render("Enter") + " choose", modalKeyStyle.Render("Tab") + " choose"}
 		actions = append(actions, modalKeyStyle.Render("Up/Down")+" move", modalKeyStyle.Render("Esc")+" close suggestions")
 		return strings.Join(actions, "  ")
 	}

@@ -1712,22 +1712,18 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return strings.Contains(capture, "Add workspace")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-u")
-		directRun(t, env, "send-keys", "-l", "-t", pane, beta)
+		directRun(t, env, "send-keys", "-l", "-t", pane, filepath.Join(projectRoot, "bet"))
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "> beta") &&
-				strings.Contains(capture, "Enter add") &&
+				strings.Contains(capture, "Enter choose") &&
 				strings.Contains(capture, "Tab choose")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		capture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Enter add") ||
-				(strings.Contains(capture, "Workspaces") &&
-					strings.Contains(capture, "Tasks") &&
-					!strings.Contains(capture, "Add workspace"))
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Enter add") &&
+				!strings.Contains(capture, "> beta")
 		})
-		if strings.Contains(capture, "Enter add") {
-			directRun(t, env, "send-keys", "-t", pane, "Enter")
-		}
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Workspaces) == 2 && state.WorkspaceByPath(st, beta) != nil
 		})
@@ -1871,6 +1867,23 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 
 		directRun(t, env, "send-keys", "-t", pane, "j")
 		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "m")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Move task") &&
+				strings.Contains(capture, "Top-level task") &&
+				strings.Contains(capture, "Esc close suggestions")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Move task") &&
+				strings.Contains(capture, "Enter move") &&
+				strings.Contains(capture, "Down suggestions") &&
+				!strings.Contains(capture, "Esc close suggestions")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Escape")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return !strings.Contains(capture, "Move task")
+		})
 		directRun(t, env, "send-keys", "-t", pane, "m")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Move task") &&

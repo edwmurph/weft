@@ -396,7 +396,7 @@ All in-dashboard text-entry forms use the same compact modal treatment:
 - one compact status or validation line below the input or suggestion menu
 - short state-specific footer actions, such as `Enter save`, `Tab choose`, `Esc close suggestions`, and `Esc cancel`
 - `Enter` submits only when the current value is valid for that form; invalid required values keep the form open and show the validation status
-- when autocomplete is open and the current value is not valid yet, `Enter` chooses the highlighted suggestion
+- when autocomplete is open, `Enter` chooses the highlighted suggestion; form submission is available only after autocomplete is closed
 - `Esc` closes an open autocomplete menu first; otherwise it cancels the form
 - prompt inputs support Option/Alt word movement and deletion when the terminal sends Option as Meta/Esc
 
@@ -413,7 +413,7 @@ Autocomplete appears only when it has a useful known set:
 
 Autocomplete matches case-insensitive substrings in the relevant path segment or group name, not only prefixes from the beginning of the value.
 
-Autocomplete menus open directly under the input whenever the current value has suggestions, including on prompt initialization. The visible options update as the user types, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option closes the menu and leaves the form in a normal submit state.
+Autocomplete menus open directly under the input whenever the current value has suggestions, including on prompt initialization. The visible options update as the user types, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option with `Enter` or `Tab` closes the menu and leaves the form in a normal submit state.
 
 ## Task Focus State
 
@@ -801,7 +801,7 @@ Move task:
 
 - Moves the task to another group in the same workspace.
 - Can also clear the group, moving the task back to a top-level row.
-- Dashboard prompt autocompletes existing group names in that workspace after the user types any matching substring.
+- Dashboard prompt autocompletes existing group names in that workspace, including on blank prompt initialization and after the user types any matching substring.
 - Does not restart the PTY.
 - Cross-workspace moves are out of scope for the first implementation.
 
