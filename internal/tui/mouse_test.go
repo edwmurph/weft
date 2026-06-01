@@ -90,8 +90,8 @@ func TestSelectedCodexContentHighlightsShiftedSelectionArea(t *testing.T) {
 
 	got := selectedCodexContent(lines, selection, 38)
 
-	if !strings.Contains(got, "  "+ansiReverseStart+"The dashboard frames a living") ||
-		!strings.Contains(got, "\n  "+ansiReverseStart+"A task, a timer, in-between.") {
+	if !strings.Contains(got, "  "+consoleSelectionANSIStart+"The dashboard frames a living") ||
+		!strings.Contains(got, "\n  "+consoleSelectionANSIStart+"A task, a timer, in-between.") {
 		t.Fatalf("highlighted content should leave margin unhighlighted:\n%q", got)
 	}
 }
@@ -138,12 +138,12 @@ func TestSelectedCodexContentHighlightsDraggedCells(t *testing.T) {
 
 	got := selectedCodexContent([]string{"abcdef"}, selection, 6)
 
-	if !strings.Contains(got, "a"+ansiReverseStart+"bcd"+ansiReverseEnd+"ef") {
+	if !strings.Contains(got, "a"+consoleSelectionANSIStart+"bcd"+consoleSelectionANSIEnd+"ef") {
 		t.Fatalf("highlighted content = %q", got)
 	}
 }
 
-func TestSelectedStyledCodexContentPreservesCodexColors(t *testing.T) {
+func TestSelectedStyledCodexContentAppliesConsistentSelectionColors(t *testing.T) {
 	content := "\x1b[38;2;196;42;42mred \x1b[48;2;40;40;49mblue\x1b[0m"
 	selection := consoleSelection{
 		active: true,
@@ -162,13 +162,15 @@ func TestSelectedStyledCodexContentPreservesCodexColors(t *testing.T) {
 	if screen.cells[0][0].style.Attrs.Contains(cellbuf.ReverseAttr) {
 		t.Fatalf("unselected cell should not be reversed: %#v", screen.cells[0][0].style)
 	}
-	assertStyleRGB(t, screen.cells[0][1].style.Fg, color.RGBA{R: 196, G: 42, B: 42, A: 0xff})
-	if !screen.cells[0][1].style.Attrs.Contains(cellbuf.ReverseAttr) {
-		t.Fatalf("selected foreground-colored cell should be reversed: %#v", screen.cells[0][1].style)
+	assertStyleRGB(t, screen.cells[0][1].style.Fg, consoleSelectionForeground)
+	assertStyleRGB(t, screen.cells[0][1].style.Bg, consoleSelectionBackground)
+	if screen.cells[0][1].style.Attrs.Contains(cellbuf.ReverseAttr) {
+		t.Fatalf("selected foreground-colored cell should not be reversed: %#v", screen.cells[0][1].style)
 	}
-	assertStyleRGB(t, screen.cells[0][4].style.Bg, color.RGBA{R: 40, G: 40, B: 49, A: 0xff})
-	if !screen.cells[0][4].style.Attrs.Contains(cellbuf.ReverseAttr) {
-		t.Fatalf("selected background-colored cell should be reversed: %#v", screen.cells[0][4].style)
+	assertStyleRGB(t, screen.cells[0][4].style.Fg, consoleSelectionForeground)
+	assertStyleRGB(t, screen.cells[0][4].style.Bg, consoleSelectionBackground)
+	if screen.cells[0][4].style.Attrs.Contains(cellbuf.ReverseAttr) {
+		t.Fatalf("selected background-colored cell should not be reversed: %#v", screen.cells[0][4].style)
 	}
 }
 
@@ -235,6 +237,91 @@ func TestClientMouseDragCopiesConsoleSelection(t *testing.T) {
 	}
 	if model.mouseSelection.active {
 		t.Fatal("selection should clear after copy")
+	}
+}
+
+func TestClientMouseDragCopiesTaskPreviewSelection(t *testing.T) {
+	oldWriteClipboard := writeClipboard
+	var copied string
+	writeClipboard = func(value string) error {
+		copied = value
+		return nil
+	}
+	defer func() { writeClipboard = oldWriteClipboard }()
+
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  140,
+		height: 8,
+		snapshot: ipc.Snapshot{
+			State: state.State{
+				Focus:               state.FocusAgents,
+				NavOpen:             true,
+				ActiveAgentID:       "a",
+				SelectedAgentID:     "a",
+				SelectedWorkspaceID: "w",
+				Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Agents:              []state.Agent{{ID: "a", WorkspaceID: "w"}},
+			},
+			NavWidth:        minTwoPaneNavWidth,
+			CodexTitle:      "Codex",
+			CodexContent:    "alpha beta",
+			CodexPlainLines: []string{"alpha beta"},
+			CodexScrollback: "alpha beta",
+			LoadingAgentIDs: nil,
+			CodexScrollbackLines: []string{
+				"alpha beta",
+			},
+			GroupCursor: 1,
+		},
+	}
+	area, ok := model.codexContentArea()
+	if !ok {
+		t.Fatal("expected task preview content area")
+	}
+
+	updated, cmd := model.handleMouse(tea.MouseMsg{
+		X:      area.x + 6,
+		Y:      area.y,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+	if cmd != nil {
+		t.Fatal("preview selection should not send a focus request")
+	}
+	updated, _ = model.handleMouse(tea.MouseMsg{
+		X:      area.x + 9,
+		Y:      area.y,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	model = updated.(ClientModel)
+	if !model.mouseSelection.active {
+		t.Fatal("preview drag should keep a visible selection active before release")
+	}
+	if !strings.Contains(model.View(), consoleSelectionANSIStart) {
+		t.Fatalf("preview drag should render the selection highlight:\n%s", model.View())
+	}
+	updated, _ = model.handleMouse(tea.MouseMsg{
+		X:      area.x + 9,
+		Y:      area.y,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionRelease,
+	})
+	model = updated.(ClientModel)
+
+	if copied != "beta" {
+		t.Fatalf("copied = %q", copied)
+	}
+	if model.snapshot.State.Focus != state.FocusAgents || !model.snapshot.State.NavOpen {
+		t.Fatalf("preview copy should keep dashboard focus/nav, got %s/%t", model.snapshot.State.Focus, model.snapshot.State.NavOpen)
+	}
+	if model.toastText != "Copied 4 characters" {
+		t.Fatalf("toast = %q", model.toastText)
+	}
+	if !strings.Contains(model.View(), "Copied 4 characters") {
+		t.Fatalf("preview copy toast did not render:\n%s", model.View())
 	}
 }
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	"github.com/atotto/clipboard"
@@ -11,10 +12,15 @@ import (
 )
 
 const (
-	ansiReverseStart = "\x1b[7m"
-	ansiReverseEnd   = "\x1b[27m"
+	consoleSelectionANSIStart = "\x1b[38;2;0;0;0;48;2;135;215;255m"
+	consoleSelectionANSIEnd   = "\x1b[0m"
 
 	maxConsoleSelectionMargin = 8
+)
+
+var (
+	consoleSelectionForeground = color.RGBA{R: 0, G: 0, B: 0, A: 0xff}
+	consoleSelectionBackground = color.RGBA{R: 135, G: 215, B: 255, A: 0xff}
 )
 
 var writeClipboard = clipboard.WriteAll
@@ -69,7 +75,7 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.scrollCodexHistory(event), nil
 	}
-	if m.snapshot.State.Focus != state.FocusCodex {
+	if !m.canSelectCodexContent() {
 		m.mouseSelection = consoleSelection{}
 		return m, nil
 	}
@@ -221,6 +227,14 @@ func (m ClientModel) codexSelectionAreaForOffset(offset int) (consoleArea, bool)
 		return consoleArea{}, false
 	}
 	return area, true
+}
+
+func (m ClientModel) canSelectCodexContent() bool {
+	st := codexFrameStateForSelection(m.dashboardState(), m.snapshot.GroupCursor)
+	if state.ActiveAgent(st) == nil {
+		return false
+	}
+	return st.Focus == state.FocusCodex || st.NavOpen
 }
 
 func (m ClientModel) codexPlainLines() []string {
@@ -497,7 +511,7 @@ func highlightedConsoleLine(line string, left int, right int, width int) string 
 	runes := paddedRunes(line, width)
 	left = min(max(0, left), max(0, width-1))
 	right = min(max(left, right), max(0, width-1))
-	return string(runes[:left]) + ansiReverseStart + string(runes[left:right+1]) + ansiReverseEnd + string(runes[right+1:])
+	return string(runes[:left]) + consoleSelectionANSIStart + string(runes[left:right+1]) + consoleSelectionANSIEnd + string(runes[right+1:])
 }
 
 func highlightedStyledConsoleLine(line string, left int, right int, width int) string {
@@ -510,7 +524,9 @@ func highlightedStyledConsoleLine(line string, left int, right int, width int) s
 	right = min(max(left, right), max(0, width-1))
 	for col := left; col <= right; col++ {
 		style := screen.cells[0][col].style
-		style.Reverse(true)
+		style.Fg = consoleSelectionForeground
+		style.Bg = consoleSelectionBackground
+		style.Reverse(false)
 		screen.cells[0][col].style = style
 	}
 	return screen.ANSIString()

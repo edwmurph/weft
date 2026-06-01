@@ -1237,7 +1237,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		writeClientInput(t, "\x1b[<0;9;2M")
 		writeClientInput(t, "\x1b[<32;12;2M")
 		waitForEscapedCapture(t, env, pane, func(capture string) bool {
-			return containsReverseVideo(capture)
+			return containsSelectionHighlight(capture)
 		})
 		writeClientInput(t, "\x1b[<0;12;2m")
 	})
@@ -2595,13 +2595,13 @@ func assertClientEnablesMouseTracking(t *testing.T, capture string) {
 	t.Helper()
 	for _, expected := range []string{"\x1b[?1003h", "\x1b[?1006h"} {
 		if !strings.Contains(capture, expected) {
-			t.Fatalf("client should enable mouse tracking for Workspaces hover, Task Console scrollback, and drag-copy support; missing %q in raw capture", expected)
+			t.Fatalf("client should enable mouse tracking for Workspaces hover, task scrollback, and drag-copy support; missing %q in raw capture", expected)
 		}
 	}
 }
 
-func containsReverseVideo(capture string) bool {
-	for _, marker := range []string{"\x1b[7m", "\x1b[7;", ";7m", ";7;"} {
+func containsSelectionHighlight(capture string) bool {
+	for _, marker := range []string{"\x1b[38;2;0;0;0;48;2;135;215;255m", "38;2;0;0;0;48;2;135;215;255"} {
 		if strings.Contains(capture, marker) {
 			return true
 		}

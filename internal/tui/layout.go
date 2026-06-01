@@ -1066,7 +1066,7 @@ func renderCodexFrame(
 	} else if navCollapsed {
 		topLabel = "Task Console"
 	} else if agentActive {
-		topRightLabel = title
+		topRightLabel = previewTopRightLabel(title, toastText)
 	}
 	lines := []string{
 		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, topRightLabel, max(0, innerWidth-2)), innerWidth)),
@@ -1106,6 +1106,14 @@ func previewTopLabel(animation string) string {
 		animation = livePreviewAnimationFrame(0)
 	}
 	return "Task Live Preview " + animation
+}
+
+func previewTopRightLabel(title string, toastText string) string {
+	toastText = strings.TrimSpace(toastText)
+	if toastText != "" {
+		return toastText
+	}
+	return title
 }
 
 func renderStatusBanner(message string, width int, maxLines int) []string {
