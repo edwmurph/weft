@@ -332,6 +332,12 @@ func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.prompt == promptWorkspace && m.newWorkspaceCardSelected && msg.Type == tea.KeyEsc {
+		m.mode = modeNormal
+		m.promptSuggestionOpen = false
+		m.promptSuggestionIndex = 0
+		return m, nil
+	}
 	if m.prompt == promptGroup || m.prompt == promptEditGroup {
 		result := handleEditGroupPromptInputKey(m.input, m.promptContext(), m.editGroupField, m.editGroupSilent, msg)
 		m.input = result.input

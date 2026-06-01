@@ -152,16 +152,17 @@ func TestRenderWorkspaceKeepsFixedWorkspacePaneAtMediumWidth(t *testing.T) {
 }
 
 func TestRenderWorkspaceCardsUseDefaultPathAndTitleOverride(t *testing.T) {
-	home, err := os.UserHomeDir()
+	workspace, err := os.MkdirTemp("/tmp", "weft-layout-")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(workspace) })
 	cfg := config.DefaultConfig()
-	st := layoutState(filepath.Join(home, "code", "personal", "weft"))
+	st := layoutState(workspace)
 	st.Focus = state.FocusWorkspaces
 
 	got := ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n"))
-	if !strings.Contains(got, "~/code/personal/weft") {
+	if !strings.Contains(got, workspace) {
 		t.Fatalf("workspace card should use default display path title:\n%s", got)
 	}
 	if !strings.Contains(strings.ToLower(got), "new workspace") || !strings.Contains(strings.ToLower(got), "press w to create") {
@@ -170,7 +171,7 @@ func TestRenderWorkspaceCardsUseDefaultPathAndTitleOverride(t *testing.T) {
 
 	st.Workspaces[0].Title = "Main Weft"
 	got = ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n"))
-	if !strings.Contains(got, "Main Weft") || strings.Contains(got, "~/code/personal/weft") {
+	if !strings.Contains(got, "Main Weft") || strings.Contains(got, workspace) {
 		t.Fatalf("workspace card should use manual title override:\n%s", got)
 	}
 }
