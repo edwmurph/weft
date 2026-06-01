@@ -1,7 +1,8 @@
 # Contributing
 
 Weft is a Go project built around a local supervisor, Bubble Tea, Lip Gloss,
-Bubbles, and supervisor-owned task PTYs.
+Bubbles, integrated agent tasks, configured command tasks, and
+supervisor-owned task PTYs.
 
 ## Local Setup
 
@@ -26,7 +27,7 @@ go build ./cmd/weft
 
 Live integration tests are opt-in because they start real supervisor and PTY
 processes. Each test uses temporary `WEFT_HOME`, temporary `WEFT_WORKSPACE`, and
-a fake Codex task command.
+a fake Codex agent task command.
 
 ## Homebrew Publishing
 
@@ -57,3 +58,4 @@ installed command to own the default `~/.weft` runtime.
 ## Agent Guidance
 
 Codex-agent workflow and maintenance instructions live in `AGENTS.md`.
+Product and runtime details live in `spec.md` and `docs/`.

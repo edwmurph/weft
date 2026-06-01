@@ -4,10 +4,11 @@ This is the living product and technical specification for Weft. Keep this file 
 
 ## Product Definition
 
-Weft is one global terminal dashboard for managing typed tasks across multiple
-workspaces. A task is a long-running PTY-backed process. Today Weft ships one
-checked-in integrated task type, `codex`, and one generic configured terminal
-type, `shell`.
+Weft is one global terminal dashboard for managing agents and configured shell
+commands across multiple workspaces. A task is a long-running PTY-backed
+process. Integrated agent support is checked into Weft; configured command task
+types are loaded from config. Today Weft ships one supported agent, `codex`, and
+one default configured command task type, `shell`.
 
 Weft is no longer one instance per workspace. One local Weft supervisor owns the
 global navigation state, the task registry, and task PTYs. Terminal UI clients
@@ -33,8 +34,8 @@ The core workflow is:
 - Group names are flat strings.
 - Groups are optional; tasks can live directly in a workspace without a group.
 - Task rows render configured text only; no fixed status pills beside each row.
-- Integrated task support is checked into Weft. Config can define generic
-  terminal task types, but config alone cannot create a new tailored
+- Integrated agent support is checked into Weft. Config can define generic
+  command task types, but config alone cannot create a new tailored agent
   integration such as Claude.
 - The terminal UI should stay dense, minimal, and close to the current iTerm-style Weft look.
 - Supervisor-owned sessions: task PTYs must outlive any single TUI client.
@@ -49,18 +50,30 @@ Current Weft behavior is the workspace, group, and typed task model backed by
 one local supervisor. Persisted state is the strict v5 task schema, with
 `tasks`, `active_task_id`, `selected_task_id`, and focus values of
 `workspaces`, `tasks`, or `console`. The supervisor owns all task PTYs, saves
-current state, captures Codex session IDs for Codex tasks, and performs the
-dashboard `U` upgrade/resume flow through the
-supervisor-owned `upgrade_resume` IPC command. Resuming Codex tasks with
+current state, captures Codex session IDs for Codex agent tasks, and performs
+the dashboard `U` upgrade/resume flow through the
+supervisor-owned `upgrade_resume` IPC command. Resuming Codex agent tasks with
 `codex resume <session-id>` after an explicit dashboard upgrade is part of the
-current product contract, not legacy compatibility. Generic terminal tasks are
-not resumable by the Codex session integration.
+current product contract, not legacy compatibility. Configured command tasks
+are not resumable by the Codex session integration.
 
 Legacy behavior is unsupported unless this specification explicitly brings it
 back. Legacy includes tmux pane state, tab/column state, workdir/folder naming,
 hidden old commands, old config keys, state/config migration paths, and alias
 support for retired command or state shapes. Legacy files should be rejected
 with reset guidance rather than migrated by hidden compatibility code.
+
+## Supported Agents
+
+Weft supports Codex today.
+
+Codex support is the checked-in `kind = "codex"` integration. It includes
+Codex-specific title/status capture, session ID capture, interrupt routing, and
+dashboard upgrade/resume behavior.
+
+Additional agents can be added upon request. New agent support requires a
+checked-in integration; config alone can define generic shell command tasks but
+cannot add agent-specific behavior.
 
 ## Runtime Architecture
 
@@ -167,16 +180,16 @@ finish the upgrade after creating a runtime backup. When any task PTY is
 running, Weft must not restart the supervisor without explicit confirmation
 because that can stop live terminal work.
 
-The in-dashboard upgrade action must be safe by default. While Codex tasks are
+The in-dashboard upgrade action must be safe by default. While Codex agent tasks are
 busy, missing saved session IDs after user input has been submitted, or while
-any non-resumable terminal task is running, the dashboard shows pending copy and
-does not offer `U`. A live Codex task that has not submitted input yet and has
+any non-resumable configured command task is running, the dashboard shows pending copy and
+does not offer `U`. A live Codex agent task that has not submitted input yet and has
 no session ID is safe to recreate as a fresh Codex session after restart. Once
-every remaining live task is either an idle resumable Codex task or a fresh
-unsubmitted Codex task, `U` opens a confirmation where `Enter` proceeds and
+every remaining live task is either an idle resumable Codex agent task or a fresh
+unsubmitted Codex agent task, `U` opens a confirmation where `Enter` proceeds and
 `Esc` cancels. The confirmed action creates a pre-upgrade backup, closes the
-idle Codex terminals, restarts the supervisor, resumes Codex tasks with
-`codex resume <session-id>`, and starts fresh Codex tasks without a resume ID.
+idle Codex terminals, restarts the supervisor, resumes Codex agent tasks with
+`codex resume <session-id>`, and starts fresh Codex agent tasks without a resume ID.
 The client must not run duplicate local restart/resume logic or synthesize
 upgrade state that was not sent by the supervisor.
 
@@ -282,22 +295,22 @@ The default card title is the display path, for example `~/code/personal/weft`. 
 Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workspaces pane has focus. Use a subtler blue border when the selected workspace is active but focus is in the Tasks pane.
 
 When a newly installed client is attached to an older compatible supervisor, the
-bottom of the Workspaces pane shows a concise upgrade tip. While any Codex task
-is still active, the tip waits for idle/resumable Codex tasks, for example
+bottom of the Workspaces pane shows a concise upgrade tip. While any Codex agent task
+is still active, the tip waits for idle/resumable Codex agent tasks, for example
 `Upgrade pending: client 7.5.5, supervisor 7.4.0. Wait for 1 Codex task(s) to become idle.`
-When all remaining Codex tasks are idle and have saved Codex session IDs, or are
-fresh Codex tasks with no submitted input, and no non-resumable terminal tasks
+When all remaining Codex agent tasks are idle and have saved Codex session IDs, or are
+fresh Codex agent tasks with no submitted input, and no non-resumable configured command tasks
 are live, the tip
 shows the action, for example
 `Upgrade ready: client 7.5.5, supervisor 7.4.0. Press U to upgrade and resume 2 idle Codex task(s).`
-For fresh unsubmitted Codex tasks without a session ID, the ready copy says Weft
-will start fresh Codex task(s) after restart instead of resuming them. The tip
+For fresh unsubmitted Codex agent tasks without a session ID, the ready copy says Weft
+will start fresh Codex agent task(s) after restart instead of resuming them. The tip
 must not imply that reopening the dashboard is enough to finish the upgrade, and
 it must not suggest destructive reset commands while live tasks can be resumed.
-The Codex/Task pane should not duplicate this pending/ready copy during an
+The Tasks pane should not duplicate this pending/ready copy during an
 upgrade. The confirmation modal explains that Weft closes idle Codex terminals,
 restarts the supervisor, runs `codex resume <session-id>` for each saved Codex
-task, and starts fresh Codex tasks that do not have a session ID. It also warns
+agent task, and starts fresh Codex agent tasks that do not have a session ID. It also warns
 that running commands and unsubmitted terminal input are not preserved, so users
 should finish important work first.
 
@@ -359,7 +372,7 @@ Each task row renders:
 
 Task rows must not render fixed status tags. Status can appear only if the task title template includes a status variable.
 
-Task rows may use subtle row color and marker shape to make derived state easier to scan. Rows for active non-ready/non-idle task states (`starting`, `running`, `waiting`, `working`, `shipping`, or newer live task states) replace the static marker with the shared high-resolution Braille loading spinner frame. Rows whose PTY has not produced visible content may also use the spinner until the task is ready. Terminal task rows also use the same spinner while a submitted foreground command is in progress, returning to the ready marker when the shell regains the PTY foreground process group. Ready or idle rows use the subtle `·` marker; stopped rows use `◦`; errors use `!` and the error marker/color. These visuals are presentation only and must not add status text.
+Task rows may use subtle row color and marker shape to make derived state easier to scan. Rows for active non-ready/non-idle task states (`starting`, `running`, `waiting`, `working`, `shipping`, or newer live task states) replace the static marker with the shared high-resolution Braille loading spinner frame. Rows whose PTY has not produced visible content may also use the spinner until the task is ready. Configured command task rows also use the same spinner while a submitted foreground command is in progress, returning to the ready marker when the shell regains the PTY foreground process group. Ready or idle rows use the subtle `·` marker; stopped rows use `◦`; errors use `!` and the error marker/color. These visuals are presentation only and must not add status text.
 
 Task type badges render as plain bracketed text such as `[codex]` or `[shell]`, usually from the task type ID, in a fixed-width badge column so task rows align across terminal fonts. Avoid emoji and wide symbols because terminal width and fallback-font behavior is inconsistent.
 
@@ -462,7 +475,7 @@ Autocomplete menus open directly under the input whenever the current value has 
   PTY without key-name reconstruction. The configured drawer key, `C-b` by
   default, is the only dashboard key sequence owned by Weft.
 - Terminal-generated C-c belongs to the task whenever `Task Console` is focused
-  and an active task exists. For Codex tasks, while Codex reports active work,
+  and an active task exists. For Codex agent tasks, while Codex reports active work,
   Weft delivers C-c through Codex's interrupt path so running side-thread work
   is interrupted without returning from or closing the side thread. Weft does
   not use C-c to quit from `Task Console`, and the toolbar must not advertise
@@ -530,25 +543,27 @@ killed
 error
 ```
 
-The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex terminal title, Weft passes through the live Codex status word verbatim and preserves its casing, including newer labels such as `Exploring` or `Crafting`; fallback lifecycle statuses remain the lowercase model values above. When the Codex screen is stopped on a request-user-input prompt, such as Plan mode waiting for a user answer, Weft derives `Ready` for `{status}` even if the terminal title has not changed from a running-like title.
+The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex agent title, Weft passes through the live Codex status word verbatim and preserves its casing, including newer labels such as `Exploring` or `Crafting`; fallback lifecycle statuses remain the lowercase model values above. When the Codex screen is stopped on a request-user-input prompt, such as Plan mode waiting for a user answer, Weft derives `Ready` for `{status}` even if the terminal title has not changed from a running-like title.
 
 ## Task Types
 
-Task types are loaded from config. Each task type has:
+Task types are loaded from config. Each task type represents either an agent or
+a configured shell command. Each task type has:
 
 - `id`: map key, such as `codex`, `shell`, or `logs`
 - `label`: human-readable display label
-- `kind`: either a checked-in integrated kind or `terminal`
+- `kind`: either a checked-in agent kind or `terminal`
 - `command`: shell command used to start the PTY
 - `badge`: bracketed type badge rendered before the task title; when omitted, it defaults to `[<id>]`
 - `title_template`: default title copied into newly created tasks of this type
 
-Checked-in integrated kinds can add tailored behavior. `codex` is currently the
-only supported integrated kind. Generic configured task types must use
-`kind = "terminal"` and do not get Codex-specific title capture, session ID
-capture, interrupt routing, or upgrade resume. Unsupported integrated kinds,
-including `kind = "claude"` before Claude support is checked in, must be
-rejected at config load with guidance to use `terminal` for generic commands.
+Checked-in agent kinds can add tailored behavior. `codex` is currently the only
+supported agent kind. Additional agents can be added upon request. Generic
+configured command task types must use `kind = "terminal"` and do not get
+Codex-specific title capture, session ID capture, interrupt routing, or upgrade
+resume. Unsupported agent kinds, including `kind = "claude"` before Claude
+support is checked in, must be rejected at config load with guidance to use
+`terminal` for generic commands.
 
 Default task types:
 
@@ -588,7 +603,7 @@ Task rows render each task's stored title template. A task type's
 A task title can include template variables. Renaming a task edits that task's
 stored template and does not change the task type default.
 
-Default Codex task template:
+Default Codex agent task template:
 
 ```text
 {status} {auto}
@@ -599,7 +614,7 @@ Supported variables:
 ```text
 {title}    user-configured task title
 {auto}     generated title from the first submitted message
-{codex}    live Codex title
+{codex}    live Codex agent title
 {status}   verbatim live Codex status, falling back to lifecycle status
 {workspace}  display workspace path
 {group}   flat group name
@@ -626,10 +641,10 @@ If a variable is unavailable, render a stable fallback rather than an empty brok
 ```
 
 Generated titles are computed when `title_hook_command` is configured and a
-task opts into `{auto}` titles. Codex tasks capture the first non-empty message
-submitted to the Codex PTY. Terminal tasks capture the first typed command after
-their task type title template includes `{auto}`. The hook runs from the task
-workspace, sends JSON on stdin, and stores the first non-empty stdout line as
+task opts into `{auto}` titles. Codex agent tasks capture the first non-empty
+message submitted to Codex. Configured command tasks capture the first typed
+command after their task type title template includes `{auto}`. The hook runs
+from the task workspace, sends JSON on stdin, and stores the first non-empty stdout line as
 the task's generated title. The hook payload includes `version`, `event`,
 `task_id`, `workspace`, `group`, `status`, `title`, the task `type_id`, task
 `title_template`, `codex_title` when available, and `first_message`.
@@ -894,18 +909,18 @@ Rules:
 - Starting a task launches its configured command in its workspace.
 - Switching tasks changes which PTY is rendered in `Task Live Preview` or `Task Console`.
 - Task-focus input is forwarded to task PTYs as raw bytes, except for the
-  configured drawer key that returns to the dashboard. For Codex tasks,
+  configured drawer key that returns to the dashboard. For Codex agent tasks,
   terminal-generated C-c while Codex reports active work is routed through
   Codex's interrupt path.
-- Terminal task command progress is derived from submitted input and the PTY
+- Configured command task progress is derived from submitted input and the PTY
   foreground process group, without injecting shell prompt hooks.
-- Terminal task input must behave like the same shell outside Weft. Enhanced
+- Configured command task input must behave like the same shell outside Weft. Enhanced
   keyboard protocol sequences for ordinary typing and readline controls are
   decoded before forwarding, so keys such as `C-u` clear the current shell line
   instead of printing CSI-u bytes.
 - Modifier-only enhanced keyboard events, such as bare Shift or Ctrl press
   reports, are ignored and must never be forwarded as literal CSI-u text.
-- Command-K in a terminal task clears Weft's captured terminal screen and asks
+- Command-K in a configured command task clears Weft's captured terminal screen and asks
   the shell to redraw at the top of the console.
 - Forwarded task input preserves key order, including Esc, Alt/Meta prefixes,
   rapid typed text, and bracketed paste.
@@ -916,7 +931,7 @@ Rules:
 - The active task PTY width matches the visible terminal content width inside the
   frame and the current pane padding, so terminal wrapping aligns with what the
   user sees.
-- Terminal task screen buffers are top-aligned when the console grows so a newly
+- Configured command task screen buffers are top-aligned when the console grows so a newly
   opened shell prompt stays at the top instead of being pushed down by blank
   rows.
 - The active task PTY height matches the visible content rows inside the frame.
@@ -1142,7 +1157,7 @@ Integration tests:
 - start supervisor with `weft --no-attach`
 - attach, detach, and reattach while a task keeps running
 - add workspace, group, task
-- create Codex and configured shell task types
+- create Codex agent and configured shell command task types
 - open task with `Enter`
 - collapse or open a group with `Enter`
 - verify nav panes collapse and the active task receives input
@@ -1152,7 +1167,7 @@ Integration tests:
 - delete every group and task from a workspace and keep an empty Tasks pane
 - persist and reload selected workspace/group/task state
 - upgrade with no running tasks restarts the supervisor automatically
-- upgrade with running Codex tasks preserves the old supervisor until tasks are
+- upgrade with running Codex agent tasks preserves the old supervisor until tasks are
   idle/resumable and the user confirms `U`
 - source/dev binary without `WEFT_ROOT` or `WEFT_HOME` fails before creating default runtime files
 - automatic backups are created before `--clear`, `close --kill`, and idle
@@ -1164,7 +1179,7 @@ Integration tests:
   `WEFT_ROOT`
 
 Integration tests should use temporary `WEFT_ROOT`, or temporary `WEFT_HOME`
-and `WEFT_WORKSPACE` when distinct paths are required, plus a fake Codex task
+and `WEFT_WORKSPACE` when distinct paths are required, plus a fake Codex agent task
 command. They should not require tmux.
 
 Verification workflow:
@@ -1175,18 +1190,3 @@ go test ./...
 WEFT_RUN_INTEGRATION=1 go test ./...
 go build ./cmd/weft
 ```
-
-## Out Of Scope For First Implementation
-
-- Top-level global status summary
-- Nested group names
-- Per-group title templates
-- Per-task title templates beyond stored row templates
-- CLI command for workspace title overrides
-- Cross-workspace task moves
-- Emoji picker
-- Automatic group classification
-- Multi-select batch operations
-- PTY handoff across supervisor binary exec
-- Multiple simultaneous interactive TUI clients
-- Remote network access to a Weft supervisor
