@@ -85,7 +85,7 @@ func promptInputKeyMap() textinput.KeyMap {
 	return keyMap
 }
 
-func handlePromptWordKey(input *textinput.Model, prompt promptKind, msg tea.KeyMsg) bool {
+func handlePromptWordKey(input *textinput.Model, msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "alt+left", "alt+b", "ctrl+left":
 		input.SetCursor(previousPromptTokenBoundary(input.Value(), input.Position()))
@@ -100,7 +100,7 @@ func handlePromptWordKey(input *textinput.Model, prompt promptKind, msg tea.KeyM
 		deletePreviousPromptToken(input)
 		return true
 	}
-	if msg.Type == tea.KeyRunes && promptRuneDeletesPreviousToken(prompt, msg) {
+	if msg.Type == tea.KeyRunes && promptRuneDeletesPreviousToken(msg) {
 		deletePreviousPromptToken(input)
 		return true
 	}
@@ -121,7 +121,7 @@ func handlePromptWordKey(input *textinput.Model, prompt promptKind, msg tea.KeyM
 	return false
 }
 
-func promptRuneDeletesPreviousToken(prompt promptKind, msg tea.KeyMsg) bool {
+func promptRuneDeletesPreviousToken(msg tea.KeyMsg) bool {
 	if len(msg.Runes) != 1 {
 		return false
 	}
@@ -131,10 +131,7 @@ func promptRuneDeletesPreviousToken(prompt promptKind, msg tea.KeyMsg) bool {
 	}
 	// Some macOS terminal configurations send Option-Backspace as a printable
 	// erase/left-arrow glyph instead of preserving the Alt modifier.
-	if r == '⌫' || r == '⌦' || r == '␈' || r == '␡' || r == '←' || r == '⇤' {
-		return true
-	}
-	return prompt == promptWorkspace && isOptionBackspaceGlyph(r)
+	return isOptionBackspaceGlyph(r)
 }
 
 func previousPromptTokenBoundary(value string, position int) int {
@@ -189,7 +186,7 @@ func isOptionBackspaceGlyph(r rune) bool {
 
 func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOpen bool, suggestionIndex int, msg tea.KeyMsg) promptInputResult {
 	result := promptInputResult{input: input, suggestionOpen: suggestionOpen, suggestionIndex: suggestionIndex}
-	if handlePromptWordKey(&result.input, ctx.prompt, msg) {
+	if handlePromptWordKey(&result.input, msg) {
 		refreshPromptInput(&result.input, ctx)
 		if promptHasAutocomplete(ctx.prompt) {
 			suggestions := promptMatchedSuggestions(ctx, result.input.Value())
@@ -326,6 +323,9 @@ func handleEditGroupPromptInputKey(input textinput.Model, ctx promptContext, fie
 			result.silent = !result.silent
 			return result
 		}
+		return result
+	}
+	if handlePromptWordKey(&result.input, msg) {
 		return result
 	}
 	result.input, result.cmd = result.input.Update(msg)

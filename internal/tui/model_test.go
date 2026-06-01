@@ -1949,11 +1949,13 @@ func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
 		t.Fatalf("ctrl-h value = %q, want %q", got, want)
 	}
 
-	model.startPrompt(promptWorkspace, "/alpha-beta/gamma_delta")
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'➜'}})
-	model = updated.(Model)
-	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-		t.Fatalf("option-backspace arrow glyph value = %q, want %q", got, want)
+	for _, prompt := range []promptKind{promptWorkspace, promptGroup, promptWorkspaceTitle, promptEditGroup, promptEditAgent, promptMoveAgent} {
+		model.startPrompt(prompt, "/alpha-beta/gamma_delta")
+		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'➜'}})
+		model = updated.(Model)
+		if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
+			t.Fatalf("%s option-backspace arrow glyph value = %q, want %q", prompt, got, want)
+		}
 	}
 
 	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
