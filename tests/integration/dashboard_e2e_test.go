@@ -1137,6 +1137,28 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			"    printf '\\nEnter to submit answer\\n'\n"+
 			"    continue\n"+
 			"  fi\n"+
+			"  if [ \"$line\" = \"tool permission\" ]; then\n"+
+			"    printf '\\033]2;Fake Codex Running\\007'\n"+
+			"    printf '\\033[2J\\033[HField 1/1\\n'\n"+
+			"    printf 'Allow Codex to use ChatGPT Atlas?\\n'\n"+
+			"    printf '› 1. Allow         Allow this request and continue.\\n'\n"+
+			"    printf '  2. Always allow  Allow this request and remember this choice for future requests.\\n'\n"+
+			"    printf '  3. Deny          Decline this request and continue.\\n'\n"+
+			"    printf '  4. Cancel        Cancel this request\\n'\n"+
+			"    printf 'enter to submit | esc to cancel\\n'\n"+
+			"    continue\n"+
+			"  fi\n"+
+			"  if [ \"$line\" = \"command approval\" ]; then\n"+
+			"    printf '\\033]2;Fake Codex Running\\007'\n"+
+			"    printf '\\033[2J\\033[HWould you like to run the following command?\\n\\n'\n"+
+			"    printf 'Reason: Do you want to remove temporary generated QA frames and the unused package lock\\n'\n"+
+			"    printf 'from the demo video project?\\n\\n'\n"+
+			"    printf '$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\\n\\n'\n"+
+			"    printf '1. Yes, proceed (y)\\n'\n"+
+			"    printf '2. Yes, and don'\"'\"'t ask again for commands that start with `rm -f` (p)\\n'\n"+
+			"    printf '3. No, and tell Codex what to do differently (esc)\\n'\n"+
+			"    continue\n"+
+			"  fi\n"+
 			"  printf '\\033]2;Fake Codex Working\\007'\n"+
 			"  printf '\\033[2J\\033[H'\n"+
 			"  printf '╭──────────────────────────────────────────────────────────╮\\n'\n"+
@@ -1662,6 +1684,56 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, "1 needs attention") &&
 				!strings.Contains(capture, "Codex running")
 		})
+	})
+
+	timedStep(t, "tool permission prompt renders ready status without loading", func() {
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
+		directRun(t, env, "send-keys", "-l", "-t", pane, "tool permission")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Allow Codex to use ChatGPT Atlas?")
+		})
+		waitState(t, env, bin, func(st state.State) bool {
+			task := findTask(st, firstID)
+			return task != nil && task.Status == state.StatusReady && task.CodexStatus == "Ready" && strings.Contains(task.CodexTitle, "Running")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Codex Ready") &&
+				strings.Contains(capture, "0 active") &&
+				strings.Contains(capture, "1 needs attention") &&
+				!strings.Contains(capture, "Codex running")
+		})
+		if taskLineHasLoadingFrame(capture, "Codex Ready") {
+			t.Fatalf("permission-prompt Codex row should keep the static ready marker:\n%s", capture)
+		}
+	})
+
+	timedStep(t, "command approval prompt renders ready status without loading", func() {
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
+		directRun(t, env, "send-keys", "-l", "-t", pane, "command approval")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Would you like to run the following command?")
+		})
+		waitState(t, env, bin, func(st state.State) bool {
+			task := findTask(st, firstID)
+			return task != nil && task.Status == state.StatusReady && task.CodexStatus == "Ready" && strings.Contains(task.CodexTitle, "Running")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Codex Ready") &&
+				strings.Contains(capture, "0 active") &&
+				strings.Contains(capture, "1 needs attention") &&
+				!strings.Contains(capture, "Codex running")
+		})
+		if taskLineHasLoadingFrame(capture, "Codex Ready") {
+			t.Fatalf("command-approval Codex row should keep the static ready marker:\n%s", capture)
+		}
 	})
 
 	timedStep(t, "help modal closes", func() {

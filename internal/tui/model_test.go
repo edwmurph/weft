@@ -244,6 +244,44 @@ func TestApplyPTYDataMarksRequestUserInputScreenReady(t *testing.T) {
 	}
 }
 
+func TestApplyPTYDataMarksToolPermissionScreenReady(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HField 1/1\nAllow Codex to use ChatGPT Atlas?\n› 1. Allow         Allow this request and continue.\n  2. Always allow  Allow this request and remember this choice for future requests.\n  3. Deny          Decline this request and continue.\n  4. Cancel        Cancel this request\nenter to submit | esc to cancel\n"})
+
+	task := state.TaskByID(model.state, "a")
+	if task == nil {
+		t.Fatal("task missing")
+	}
+	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
+		t.Fatalf("permission prompt status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+	}
+	if model.taskLoading("a") {
+		t.Fatalf("permission prompt should not show as loading")
+	}
+}
+
+func TestApplyPTYDataMarksCommandApprovalScreenReady(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HWould you like to run the following command?\n\nReason: Do you want to remove temporary generated QA frames and the unused package lock\nfrom the demo video project?\n\n$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\n\n1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `rm -f` (p)\n3. No, and tell Codex what to do differently (esc)\n"})
+
+	task := state.TaskByID(model.state, "a")
+	if task == nil {
+		t.Fatal("task missing")
+	}
+	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
+		t.Fatalf("command approval status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+	}
+	if model.taskLoading("a") {
+		t.Fatalf("command approval should not show as loading")
+	}
+}
+
 func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 	st := testStateWithTask(t.TempDir())
 	model := Model{

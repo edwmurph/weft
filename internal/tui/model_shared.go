@@ -183,6 +183,19 @@ func codexScreenStatus(screen *TerminalScreen) string {
 	if hasSubmitAction && hasQuestionPrompt {
 		return "Ready"
 	}
+	hasPermissionPrompt := strings.Contains(content, "allow codex to ") &&
+		strings.Contains(content, "allow this request") &&
+		strings.Contains(content, "deny") &&
+		strings.Contains(content, "enter to submit")
+	if hasPermissionPrompt {
+		return "Ready"
+	}
+	hasCommandApprovalPrompt := strings.Contains(content, "would you like to run the following command?") &&
+		strings.Contains(content, "yes, proceed") &&
+		strings.Contains(content, "no, and tell codex")
+	if hasCommandApprovalPrompt {
+		return "Ready"
+	}
 	return ""
 }
 
