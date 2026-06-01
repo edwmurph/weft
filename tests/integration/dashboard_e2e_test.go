@@ -817,7 +817,7 @@ func TestAgentConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	runWeft(t, env, bin, "workspace", "add", workspace)
 
 	pane := "mouse-wheel-client"
-	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 100, 32)
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 140, 32)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Tasks")
 	})
@@ -846,6 +846,29 @@ func TestAgentConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	})
 	for range 16 {
 		writeClientInput(t, "\x1b[<65;7;7M")
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "history line 80")
+	})
+	assertDashboardNotCorrupt(t, clientOutput(), false)
+
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusAgents && st.NavOpen
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Live Preview") &&
+			strings.Contains(capture, "history line 80")
+	})
+	for range 14 {
+		writeClientInput(t, "\x1b[<64;120;7M")
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "history line 20") &&
+			!strings.Contains(capture, "history line 80")
+	})
+	for range 16 {
+		writeClientInput(t, "\x1b[<65;120;7M")
 	}
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "history line 80")

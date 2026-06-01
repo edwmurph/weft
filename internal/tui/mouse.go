@@ -48,12 +48,7 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	active := state.ActiveAgent(m.snapshot.State)
-	if m.snapshot.State.Focus != state.FocusCodex || active == nil {
-		m.mouseSelection = consoleSelection{}
-		return m, nil
-	}
-	_, ok := m.codexContentArea()
-	if !ok {
+	if active == nil {
 		m.mouseSelection = consoleSelection{}
 		return m, nil
 	}
@@ -67,6 +62,17 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.scrollCodexHistory(event), nil
+	}
+	if m.snapshot.State.Focus != state.FocusCodex {
+		m.mouseSelection = consoleSelection{}
+		return m, nil
+	}
+	_, ok := m.codexContentArea()
+	if !ok {
+		m.mouseSelection = consoleSelection{}
+		return m, nil
+	}
+	switch event.Button {
 	case tea.MouseButtonLeft:
 		switch event.Action {
 		case tea.MouseActionPress:
