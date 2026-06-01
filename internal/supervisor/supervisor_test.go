@@ -346,7 +346,7 @@ func testRuntime(t *testing.T) (config.Runtime, config.Config, *state.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := state.NewStore(rt.StatePath, rt.Workspace)
+	store := state.NewStore(rt.StatePath)
 	return rt, cfg, store
 }
 

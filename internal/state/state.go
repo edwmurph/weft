@@ -88,17 +88,12 @@ type State struct {
 }
 
 type Store struct {
-	Path      string
-	LockPath  string
-	Workspace string
+	Path     string
+	LockPath string
 }
 
-func NewStore(path string, workspace ...string) *Store {
-	current := ""
-	if len(workspace) > 0 {
-		current = workspace[0]
-	}
-	return &Store{Path: path, LockPath: path + ".lock", Workspace: current}
+func NewStore(path string) *Store {
+	return &Store{Path: path, LockPath: path + ".lock"}
 }
 
 func Empty() State {
@@ -126,7 +121,7 @@ func (s *Store) Ensure() (State, error) {
 		if err != nil {
 			return err
 		}
-		loaded, err = parseState(raw, s.Workspace)
+		loaded, err = parseState(raw)
 		if err != nil {
 			return err
 		}
@@ -153,7 +148,7 @@ func (s *Store) Read() (State, error) {
 			return err
 		}
 		var parseErr error
-		loaded, parseErr = parseState(raw, s.Workspace)
+		loaded, parseErr = parseState(raw)
 		return parseErr
 	})
 	return loaded, err
@@ -174,7 +169,7 @@ func (s *Store) Write(next State) error {
 	})
 }
 
-func parseState(raw []byte, fallbackWorkspace string) (State, error) {
+func parseState(raw []byte) (State, error) {
 	var st State
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -379,139 +374,6 @@ func ValidateTaskTypes(st State, hasTaskType func(string) bool) error {
 		}
 	}
 	return nil
-}
-
-func Repair(st State, fallbackWorkspace string) State {
-	st.Version = Version
-	if st.Workspaces == nil {
-		st.Workspaces = []Workspace{}
-	}
-	if st.Groups == nil {
-		st.Groups = []Group{}
-	}
-	if st.Tasks == nil {
-		st.Tasks = []Task{}
-	}
-	if st.CollapsedGroupIDs == nil {
-		st.CollapsedGroupIDs = []string{}
-	}
-	workspaces := map[string]bool{}
-	for index := range st.Workspaces {
-		if strings.TrimSpace(st.Workspaces[index].ID) == "" {
-			st.Workspaces[index].ID = StableID("workspace", st.Workspaces[index].Path)
-		}
-		st.Workspaces[index].Path = absolutePath(st.Workspaces[index].Path)
-		st.Workspaces[index].Title = strings.TrimSpace(st.Workspaces[index].Title)
-		if st.Workspaces[index].CreatedAt == "" {
-			st.Workspaces[index].CreatedAt = NowISO()
-		}
-		if st.Workspaces[index].UpdatedAt == "" {
-			st.Workspaces[index].UpdatedAt = st.Workspaces[index].CreatedAt
-		}
-		workspaces[st.Workspaces[index].ID] = true
-	}
-
-	for index := range st.Groups {
-		if !workspaces[st.Groups[index].WorkspaceID] && len(st.Workspaces) > 0 {
-			st.Groups[index].WorkspaceID = st.Workspaces[0].ID
-		}
-		if strings.TrimSpace(st.Groups[index].ID) == "" {
-			st.Groups[index].ID = StableID("group", st.Groups[index].WorkspaceID, st.Groups[index].Path)
-		}
-		if st.Groups[index].CreatedAt == "" {
-			st.Groups[index].CreatedAt = NowISO()
-		}
-		if st.Groups[index].UpdatedAt == "" {
-			st.Groups[index].UpdatedAt = st.Groups[index].CreatedAt
-		}
-	}
-
-	groupIDs := map[string]Group{}
-	for _, group := range st.Groups {
-		groupIDs[group.ID] = group
-	}
-	st.CollapsedGroupIDs = validCollapsedGroupIDs(st.CollapsedGroupIDs, groupIDs)
-	for index := range st.Tasks {
-		task := &st.Tasks[index]
-		if strings.TrimSpace(task.ID) == "" {
-			task.ID = StableID("task", task.WorkspaceID, task.GroupID, task.CreatedAt, task.Title)
-		}
-		if task.GroupID != "" {
-			if _, ok := groupIDs[task.GroupID]; !ok {
-				task.GroupID = ""
-			}
-		}
-		if group, ok := groupIDs[task.GroupID]; ok {
-			task.WorkspaceID = group.WorkspaceID
-		}
-		if !workspaces[task.WorkspaceID] && len(st.Workspaces) > 0 {
-			task.WorkspaceID = st.Workspaces[0].ID
-			task.GroupID = ""
-		}
-		task.CodexStatus = strings.TrimSpace(task.CodexStatus)
-		if task.Status == "" {
-			task.Status = StatusStopped
-		}
-		if task.CreatedAt == "" {
-			task.CreatedAt = NowISO()
-		}
-		if task.UpdatedAt == "" {
-			task.UpdatedAt = task.CreatedAt
-		}
-	}
-
-	if st.ActiveTaskID != "" && TaskByID(st, st.ActiveTaskID) == nil {
-		st.ActiveTaskID = ""
-	}
-	if st.SelectedTaskID != "" && TaskByID(st, st.SelectedTaskID) == nil {
-		st.SelectedTaskID = ""
-	}
-	if st.SelectedWorkspaceID == "" || WorkspaceByID(st, st.SelectedWorkspaceID) == nil {
-		if len(st.Workspaces) > 0 {
-			st.SelectedWorkspaceID = st.Workspaces[0].ID
-		} else {
-			st.SelectedWorkspaceID = ""
-		}
-	}
-	if st.SelectedGroupID != "" && (GroupByID(st, st.SelectedGroupID) == nil || groupWorkspace(st, st.SelectedGroupID) != st.SelectedWorkspaceID) {
-		st.SelectedGroupID = ""
-	}
-	if selected := TaskByID(st, st.SelectedTaskID); selected != nil {
-		if selected.WorkspaceID != st.SelectedWorkspaceID {
-			st.SelectedTaskID = ""
-		} else {
-			st.SelectedGroupID = selected.GroupID
-		}
-	}
-
-	if st.NavOpen {
-		if st.Focus != FocusWorkspaces && st.Focus != FocusTasks {
-			st.Focus = FocusTasks
-		}
-	} else {
-		st.Focus = FocusConsole
-	}
-	if st.ActiveTaskID == "" {
-		st.NavOpen = true
-		if st.Focus == FocusConsole {
-			st.Focus = FocusTasks
-		}
-	}
-	if st.Focus == "" {
-		if st.NavOpen {
-			st.Focus = FocusTasks
-		} else {
-			st.Focus = FocusConsole
-		}
-	}
-	if st.SelectedTaskID == "" && st.ActiveTaskID != "" {
-		active := TaskByID(st, st.ActiveTaskID)
-		if active != nil && active.WorkspaceID == st.SelectedWorkspaceID && (st.Focus == FocusConsole || !st.NavOpen || st.SelectedGroupID == "") {
-			st.SelectedTaskID = active.ID
-			st.SelectedGroupID = active.GroupID
-		}
-	}
-	return st
 }
 
 func ensureLockFile(path string) error {
@@ -1026,7 +888,7 @@ func RemoveWorkspace(st State, workspaceID string) (State, []Task, error) {
 		return st, nil, fmt.Errorf("workspace not found")
 	}
 	var removed []Task
-	var tasks []Task
+	tasks := make([]Task, 0, len(st.Tasks))
 	for _, task := range st.Tasks {
 		if task.WorkspaceID == workspaceID {
 			removed = append(removed, task)
@@ -1034,9 +896,16 @@ func RemoveWorkspace(st State, workspaceID string) (State, []Task, error) {
 		}
 		tasks = append(tasks, task)
 	}
+	removedGroupIDs := map[string]bool{}
+	for _, group := range st.Groups {
+		if group.WorkspaceID == workspaceID {
+			removedGroupIDs[group.ID] = true
+		}
+	}
 	st.Tasks = tasks
 	st.Groups = filterGroups(st.Groups, func(group Group) bool { return group.WorkspaceID != workspaceID })
 	st.Workspaces = filterWorkspaces(st.Workspaces, func(workspace Workspace) bool { return workspace.ID != workspaceID })
+	st.CollapsedGroupIDs = filterCollapsedGroupIDs(st.CollapsedGroupIDs, removedGroupIDs)
 	if st.ActiveTaskID != "" {
 		if TaskByID(st, st.ActiveTaskID) == nil {
 			st.ActiveTaskID = ""
@@ -1045,11 +914,22 @@ func RemoveWorkspace(st State, workspaceID string) (State, []Task, error) {
 	if st.SelectedTaskID != "" && TaskByID(st, st.SelectedTaskID) == nil {
 		st.SelectedTaskID = ""
 	}
-	st.SelectedWorkspaceID = ""
+	if len(st.Workspaces) > 0 {
+		st.SelectedWorkspaceID = st.Workspaces[0].ID
+	} else {
+		st.SelectedWorkspaceID = ""
+	}
 	st.SelectedGroupID = ""
+	if selected := TaskByID(st, st.SelectedTaskID); selected != nil {
+		if selected.WorkspaceID != st.SelectedWorkspaceID {
+			st.SelectedTaskID = ""
+		} else {
+			st.SelectedGroupID = selected.GroupID
+		}
+	}
 	st.NavOpen = true
 	st.Focus = FocusWorkspaces
-	return Repair(st, ""), removed, nil
+	return st, removed, nil
 }
 
 func SetWorkspaceTitle(st State, workspaceID string, title string) (State, error) {
@@ -1140,8 +1020,10 @@ func DeleteGroup(st State, groupID string) (State, error) {
 	}
 	if selected := TaskByID(st, st.SelectedTaskID); selected != nil && selected.GroupID == groupID {
 		st.SelectedTaskID = ""
+	} else if selected != nil && selected.WorkspaceID == st.SelectedWorkspaceID {
+		st.SelectedGroupID = selected.GroupID
 	}
-	return Repair(st, ""), nil
+	return st, nil
 }
 
 func IsGroupCollapsed(st State, groupID string) bool {
@@ -1260,17 +1142,12 @@ func absolutePath(path string) string {
 	return path
 }
 
-func validCollapsedGroupIDs(ids []string, groups map[string]Group) []string {
-	seen := map[string]bool{}
+func filterCollapsedGroupIDs(ids []string, removed map[string]bool) []string {
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
-		if id == "" || seen[id] {
+		if removed[id] {
 			continue
 		}
-		if _, ok := groups[id]; !ok {
-			continue
-		}
-		seen[id] = true
 		out = append(out, id)
 	}
 	return out

@@ -709,7 +709,7 @@ func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 		t.Fatalf("empty tasks pane missing new task row:\n%s", got)
 	}
 
-	st = state.Repair(state.Empty(), "/tmp/project")
+	st = state.Empty()
 	got = strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n")
 	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create") {
 		t.Fatalf("no-workspace tasks pane should explain workspace requirement:\n%s", got)
@@ -762,7 +762,7 @@ func TestRenderTasksPaneScrollsSelectedBottomGroupTaskIntoView(t *testing.T) {
 			{ID: "delta", WorkspaceID: "w", Path: "delta", CreatedAt: now, UpdatedAt: now},
 			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
 		},
-		Tasks: []state.Task{{ID: "ship", WorkspaceID: "w", GroupID: "shipit", Title: "Ship Task", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
+		Tasks: []state.Task{{ID: "ship", WorkspaceID: "w", GroupID: "shipit", TypeID: config.DefaultTaskTypeCodex, Title: "Ship Task", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
 	}
 
 	groupSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 5), "\n"))
@@ -853,7 +853,7 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 
 func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	cfg := config.DefaultConfig()
-	st := state.Repair(state.Empty(), "/tmp/project")
+	st := state.Empty()
 
 	got := strings.Join(renderWorkspacesPane(cfg, st, fixedWorkspacePaneWidth, 12), "\n")
 
@@ -894,7 +894,7 @@ func TestRenderNewWorkspaceTemplateCardUsesItalicTitleAndHint(t *testing.T) {
 
 func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	cfg := config.DefaultConfig()
-	st := state.Repair(state.Empty(), "/tmp/project")
+	st := state.Empty()
 
 	got := renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
 
@@ -1031,9 +1031,9 @@ func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 	st.Focus = state.FocusConsole
 	st.NavOpen = false
 	st.Tasks = append(st.Tasks,
-		state.Task{ID: "b", WorkspaceID: "w", Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-		state.Task{ID: "c", WorkspaceID: "w2", Title: "gamma", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
-		state.Task{ID: "d", WorkspaceID: "w", Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "b", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "c", WorkspaceID: "w2", TypeID: config.DefaultTaskTypeCodex, Title: "gamma", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "d", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
 	)
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)

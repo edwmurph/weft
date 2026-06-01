@@ -180,6 +180,18 @@ func TestTaskTypeBadgeCellUsesConfiguredColumnWidth(t *testing.T) {
 	}
 }
 
+func TestTaskTypeBadgeDoesNotSynthesizeMissingTypes(t *testing.T) {
+	cfg := config.DefaultConfig()
+	task := state.Task{ID: "a", TypeID: "missing"}
+
+	if got := taskTypeBadgeForTask(cfg, task); got != "" {
+		t.Fatalf("missing task type badge = %q, want empty configured badge", got)
+	}
+	if got := taskTypeBadgeColumnWidth(config.Config{TaskTypes: map[string]config.TaskType{}}); got != 0 {
+		t.Fatalf("empty configured task type badge width = %d, want 0", got)
+	}
+}
+
 func TestNewTaskRequiresWorkspace(t *testing.T) {
 	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
 
@@ -268,7 +280,7 @@ func TestApplyPTYDataMarksCommandApprovalScreenReady(t *testing.T) {
 	defer killPTYs(model)
 
 	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
-	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HWould you like to run the following command?\n\nReason: Do you want to remove temporary generated QA frames and the unused package lock\nfrom the demo video project?\n\n$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\n\n1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `rm -f` (p)\n3. No, and tell Codex what to do differently (esc)\n"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HWould you like to run the following comman\nd?\n\nReason: Do you want to remove temporary generated QA frames and the unused package lock\nfrom the demo video project?\n\n$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\n\n1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `rm -f` (p)\n3. No, and tell Codex what to do different\nly (esc)\n"})
 
 	task := state.TaskByID(model.state, "a")
 	if task == nil {

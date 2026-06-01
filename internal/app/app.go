@@ -801,7 +801,7 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
-	store := state.NewStore(rt.StatePath, rt.Workspace)
+	store := state.NewStore(rt.StatePath)
 	return rt, cfg, store, nil
 }
 

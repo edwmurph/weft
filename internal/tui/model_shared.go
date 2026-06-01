@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -175,6 +176,7 @@ func codexScreenStatus(screen *TerminalScreen) string {
 		return ""
 	}
 	content := strings.ToLower(screen.String())
+	contentKey := screenStatusKey(content)
 	hasSubmitAction := strings.Contains(content, "to submit answer") ||
 		strings.Contains(content, "to submit all")
 	hasQuestionPrompt := strings.Contains(content, "question ") ||
@@ -190,13 +192,22 @@ func codexScreenStatus(screen *TerminalScreen) string {
 	if hasPermissionPrompt {
 		return "Ready"
 	}
-	hasCommandApprovalPrompt := strings.Contains(content, "would you like to run the following command?") &&
-		strings.Contains(content, "yes, proceed") &&
-		strings.Contains(content, "no, and tell codex")
+	hasCommandApprovalPrompt := strings.Contains(contentKey, "wouldyouliketorunthefollowingcommand?") &&
+		strings.Contains(contentKey, "yes,proceed") &&
+		strings.Contains(contentKey, "no,andtellcodex")
 	if hasCommandApprovalPrompt {
 		return "Ready"
 	}
 	return ""
+}
+
+func screenStatusKey(content string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || strings.ContainsRune("╭╮╰╯─│", r) {
+			return -1
+		}
+		return r
+	}, content)
 }
 
 func autoTitleNotice(cfg config.Config, task state.Task, draftTitle string) string {

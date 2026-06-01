@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/creack/pty"
 	"github.com/edwmurph/weft/internal/state"
@@ -1717,7 +1718,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "command approval")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Would you like to run the following command?")
+			return screenContainsWrappedText(capture, "Would you like to run the following command?")
 		})
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
@@ -2595,6 +2596,19 @@ func waitForOutput(t *testing.T, output func() string, accept func(string) bool)
 	}
 	t.Fatalf("timed out waiting for dashboard output:\n%s", capture)
 	return capture
+}
+
+func screenContainsWrappedText(capture string, text string) bool {
+	return strings.Contains(withoutWhitespace(capture), withoutWhitespace(text))
+}
+
+func withoutWhitespace(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || strings.ContainsRune("╭╮╰╯─│", r) {
+			return -1
+		}
+		return r
+	}, value)
 }
 
 type directClientHarness struct {

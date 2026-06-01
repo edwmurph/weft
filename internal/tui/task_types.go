@@ -14,13 +14,7 @@ func taskTypeForTask(cfg config.Config, task state.Task) config.TaskType {
 	if ok {
 		return taskType
 	}
-	return config.TaskType{
-		ID:            state.TaskTypeID(task),
-		Label:         state.TaskTypeID(task),
-		Kind:          config.TaskKindTerminal,
-		Badge:         "[?]",
-		TitleTemplate: "{title}",
-	}
+	return config.TaskType{}
 }
 
 func taskUsesCodexIntegration(cfg config.Config, task state.Task) bool {
@@ -36,14 +30,7 @@ func taskTypeBadgeCellForTask(cfg config.Config, task state.Task) string {
 }
 
 func taskTypeBadge(taskType config.TaskType) string {
-	badge := strings.TrimSpace(taskType.Badge)
-	if badge == "" && strings.TrimSpace(taskType.ID) != "" {
-		badge = "[" + strings.TrimSpace(taskType.ID) + "]"
-	}
-	if badge == "" {
-		return "[?]"
-	}
-	return badge
+	return strings.TrimSpace(taskType.Badge)
 }
 
 func taskTypeBadgeColumnWidth(cfg config.Config) int {
@@ -51,7 +38,7 @@ func taskTypeBadgeColumnWidth(cfg config.Config) int {
 	for _, taskType := range cfg.OrderedTaskTypes() {
 		width = max(width, lipgloss.Width(taskTypeBadge(taskType)))
 	}
-	return max(width, lipgloss.Width("[?]"))
+	return width
 }
 
 func taskTypeBadgeCell(cfg config.Config, taskType config.TaskType) string {

@@ -136,7 +136,6 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	input.Prompt = "> "
 	input.CharLimit = 240
 	input.Width = 60
-	st = state.Repair(st, rt.Workspace)
 	if state.ActiveTask(st) == nil {
 		st.ActiveTaskID = ""
 		if len(st.Workspaces) == 0 {
@@ -151,7 +150,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		lastNav = state.FocusTasks
 	}
 	model := Model{
-		cfg: cfg, runtime: rt, store: state.NewStore(rt.StatePath, rt.Workspace), state: st,
+		cfg: cfg, runtime: rt, store: state.NewStore(rt.StatePath), state: st,
 		width: 100, height: 32, screens: map[string]*TerminalScreen{}, ptys: map[string]*ptyx.Session{},
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
@@ -845,7 +844,7 @@ func (m *Model) applyConfirm() tea.Cmd {
 		for _, task := range tasks {
 			m.killTaskPTY(task.ID)
 		}
-		m.state = state.Repair(next, m.runtime.Workspace)
+		m.state = next
 		m.message = "removed workspace"
 		m.syncGroupCursor()
 		m.save()
@@ -2031,7 +2030,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		for _, task := range tasks {
 			m.killTaskPTY(task.ID)
 		}
-		m.state = state.Repair(next, m.runtime.Workspace)
+		m.state = next
 		m.syncGroupCursor()
 		m.save()
 		m.snapNavWidthToTarget()

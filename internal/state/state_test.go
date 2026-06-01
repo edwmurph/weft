@@ -29,7 +29,7 @@ func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := NewStore(path, workspace).Ensure()
+	_, err := NewStore(path).Ensure()
 	if err == nil {
 		t.Fatal("expected unknown field error")
 	}
@@ -69,7 +69,7 @@ func TestStoreRejectsUnsupportedStateVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := NewStore(path, workspace).Ensure()
+	_, err := NewStore(path).Ensure()
 	if err == nil {
 		t.Fatal("expected version error")
 	}
@@ -99,7 +99,7 @@ func TestStoreRejectsUnknownFocusValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := NewStore(path, workspace).Ensure()
+	_, err := NewStore(path).Ensure()
 	if err == nil {
 		t.Fatal("expected focus error")
 	}
@@ -129,7 +129,7 @@ func TestStoreRejectsTaskMissingTypeID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := NewStore(path, workspace).Ensure()
+	_, err := NewStore(path).Ensure()
 	if err == nil {
 		t.Fatal("expected task type error")
 	}
@@ -162,7 +162,7 @@ func TestStoreReadsStrictV5TaskState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st, err := NewStore(path, workspace).Ensure()
+	st, err := NewStore(path).Ensure()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,11 +300,14 @@ func TestAddTaskWithTypeRequiresTaskType(t *testing.T) {
 	}
 }
 
-func TestRepairAllowsEmptyWorkspaces(t *testing.T) {
-	st := Repair(Empty(), t.TempDir())
+func TestEmptyStateIsStrictCurrentState(t *testing.T) {
+	st := Empty()
 
 	if len(st.Workspaces) != 0 || st.SelectedWorkspaceID != "" || st.Focus != FocusWorkspaces || !st.NavOpen {
-		t.Fatalf("empty repaired state = %#v", st)
+		t.Fatalf("empty state = %#v", st)
+	}
+	if err := ValidateCurrent(st); err != nil {
+		t.Fatalf("empty state should be strict current state: %v", err)
 	}
 }
 
@@ -321,6 +324,45 @@ func TestRemoveLastWorkspaceLeavesEmptyState(t *testing.T) {
 	}
 	if len(next.Workspaces) != 0 || next.SelectedWorkspaceID != "" || next.Focus != FocusWorkspaces || !next.NavOpen {
 		t.Fatalf("state should allow no workspaces: %#v", next)
+	}
+	if err := ValidateCurrent(next); err != nil {
+		t.Fatalf("removed last workspace state should be strict current state: %v", err)
+	}
+}
+
+func TestRemoveWorkspaceMaintainsStrictCurrentState(t *testing.T) {
+	st := testState(t)
+	now := NowISO()
+	otherWorkspace := Workspace{ID: "w2", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now}
+	otherGroup := Group{ID: "g2", WorkspaceID: otherWorkspace.ID, Path: "review", CreatedAt: now, UpdatedAt: now}
+	otherTask := Task{ID: "other", WorkspaceID: otherWorkspace.ID, GroupID: otherGroup.ID, TypeID: codexTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now}
+	st.Workspaces = append(st.Workspaces, otherWorkspace)
+	st.Groups = append(st.Groups, otherGroup)
+	st.Tasks = append(st.Tasks, otherTask)
+	st.ActiveTaskID = otherTask.ID
+	st.SelectedWorkspaceID = otherWorkspace.ID
+	st.SelectedGroupID = otherGroup.ID
+	st.SelectedTaskID = otherTask.ID
+	st.CollapsedGroupIDs = []string{"f", otherGroup.ID}
+
+	next, removed, err := RemoveWorkspace(st, otherWorkspace.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := taskIDs(removed), []string{otherTask.ID}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("removed tasks = %#v, want %#v", got, want)
+	}
+	if WorkspaceByID(next, otherWorkspace.ID) != nil || GroupByID(next, otherGroup.ID) != nil || TaskByID(next, otherTask.ID) != nil {
+		t.Fatalf("removed workspace contents remain: %#v", next)
+	}
+	if next.ActiveTaskID != "" || next.SelectedTaskID != "" || next.SelectedWorkspaceID != "w" || next.SelectedGroupID != "" {
+		t.Fatalf("selection after workspace removal = %#v", next)
+	}
+	if IsGroupCollapsed(next, otherGroup.ID) || !IsGroupCollapsed(next, "f") {
+		t.Fatalf("collapsed groups not pruned correctly: %#v", next.CollapsedGroupIDs)
+	}
+	if err := ValidateCurrent(next); err != nil {
+		t.Fatalf("removed workspace state should be strict current state: %v", err)
 	}
 }
 
@@ -359,6 +401,9 @@ func TestGroupValidationAndMoveTask(t *testing.T) {
 	if len(next.Groups) != 1 {
 		t.Fatalf("group should be deleted: %#v", next.Groups)
 	}
+	if err := ValidateCurrent(next); err != nil {
+		t.Fatalf("deleted group state should be strict current state: %v", err)
+	}
 }
 
 func TestEditGroupPersistsSilentAndPath(t *testing.T) {
@@ -391,23 +436,6 @@ func TestEditGroupPersistsSilentAndPath(t *testing.T) {
 	group = GroupByID(next, "g")
 	if group == nil || group.Silent {
 		t.Fatalf("edit should store explicit silent value: %#v", group)
-	}
-}
-
-func TestRepairDefaultsGroupSilentFalse(t *testing.T) {
-	now := NowISO()
-	st := State{
-		Version:    Version,
-		Focus:      FocusTasks,
-		NavOpen:    true,
-		Workspaces: []Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
-		Groups:     []Group{{ID: "g", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now}},
-		Tasks:      []Task{},
-	}
-	repaired := Repair(st, "/tmp/project")
-	group := GroupByID(repaired, "g")
-	if group == nil || group.Silent {
-		t.Fatalf("silent should default false: %#v", group)
 	}
 }
 
@@ -556,7 +584,7 @@ func TestReorderWorkspacePreservesSelectionAndContents(t *testing.T) {
 		Workspace{ID: "w3", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
 	)
 	st.Groups = append(st.Groups, Group{ID: "other-group", WorkspaceID: "w2", Path: "other", CreatedAt: now, UpdatedAt: now})
-	st.Tasks = append(st.Tasks, Task{ID: "other-task", WorkspaceID: "w2", GroupID: "other-group", Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now})
+	st.Tasks = append(st.Tasks, Task{ID: "other-task", WorkspaceID: "w2", GroupID: "other-group", TypeID: codexTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now})
 	st.SelectedWorkspaceID = "w2"
 	st.SelectedGroupID = "other-group"
 	st.SelectedTaskID = "other-task"
@@ -690,9 +718,9 @@ func testState(t *testing.T) State {
 		Workspaces:          []Workspace{{ID: workspaceID, Path: dir, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []Group{{ID: groupID, WorkspaceID: workspaceID, Path: "inbox", CreatedAt: now, UpdatedAt: now}},
 		Tasks: []Task{
-			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
-			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
-			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
+			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
+			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
+			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z", UpdatedAt: now},
 		},
 	}
 }

@@ -90,7 +90,7 @@ func NewClientModel(rt config.Runtime, cfg config.Config) ClientModel {
 	input.Prompt = "> "
 	input.CharLimit = 240
 	input.Width = 60
-	st := state.Repair(state.Empty(), rt.Workspace)
+	st := state.Empty()
 	return ClientModel{
 		cfg: cfg, runtime: rt, clientID: shortID(), width: 100, height: 32,
 		snapshot: ipc.Snapshot{State: st, CodexTitle: "Task", CodexContent: "No task open.", NavWidth: workspaceNavFrameWidth(st, 100)},
