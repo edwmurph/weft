@@ -33,6 +33,8 @@ brew install edwmurph/tap/weft
 weft
 ```
 
+Tip: If keyboard input feels wrong in Weft, such as Option/Alt word movement not working or Option+Backspace acting like plain Backspace, run `weft doctor keys`. It diagnoses how your terminal sends editing keys and suggests the terminal setting to fix.
+
 In the dashboard:
 
 - Press `n` to create a task.
