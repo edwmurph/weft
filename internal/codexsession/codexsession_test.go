@@ -26,8 +26,8 @@ func TestPrepareResumeStateAssignsMatchingSessionIDs(t *testing.T) {
 		SelectedWorkspaceID: "w",
 		Workspaces:          []state.Workspace{{ID: "w", Path: workspace, CreatedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)}},
 		Agents: []state.Agent{
-			{ID: "a", WorkspaceID: "w", Title: "Alpha", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now.Add(-30 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
-			{ID: "b", WorkspaceID: "w", Title: "Beta", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now.Add(-20 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
+			{ID: "a", WorkspaceID: "w", Title: "Alpha", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexInputSubmitted: true, CreatedAt: now.Add(-30 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
+			{ID: "b", WorkspaceID: "w", Title: "Beta", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexInputSubmitted: true, CreatedAt: now.Add(-20 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
 		},
 	}
 
@@ -48,16 +48,32 @@ func TestBuildReportBlocksBusyOrMissingSessions(t *testing.T) {
 	st := state.State{
 		Version: state.Version,
 		Agents: []state.Agent{
-			{ID: "busy", Title: "Busy", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
-			{ID: "waiting", Title: "Waiting", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
-			{ID: "missing", Title: "Missing", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "busy", Title: "Busy", Status: state.StatusRunning, CodexTitle: "Codex Working", CodexInputSubmitted: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", Title: "Waiting", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CodexInputSubmitted: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "missing", Title: "Missing", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexInputSubmitted: true, CreatedAt: now, UpdatedAt: now},
 			{ID: "ready", Title: "Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexSessionID: "session-ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "prompt-ready", Title: "Prompt Ready", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CodexStatus: "Ready", CodexSessionID: "session-prompt", CreatedAt: now, UpdatedAt: now},
+			{ID: "fresh", Title: "Fresh", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
 	report := BuildReport(st)
-	if report.CanUpgrade() || report.Ready != 2 || len(report.Busy) != 2 || len(report.Missing) != 1 {
+	if report.CanUpgrade() || report.Ready != 2 || report.Fresh != 1 || len(report.Busy) != 2 || len(report.Missing) != 1 {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestBuildReportAllowsFreshUnsubmittedCodexWithoutSession(t *testing.T) {
+	now := state.NowISO()
+	st := state.State{
+		Version: state.Version,
+		Agents: []state.Agent{
+			{ID: "fresh", Title: "Fresh", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+		},
+	}
+
+	report := BuildReport(st)
+	if !report.CanUpgrade() || report.Fresh != 1 || report.Ready != 0 || len(report.Busy) != 0 || len(report.Missing) != 0 {
 		t.Fatalf("report = %#v", report)
 	}
 }

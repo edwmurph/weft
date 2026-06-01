@@ -647,7 +647,7 @@ func confirmTitle(confirm confirmKind) string {
 	case confirmDeleteAgent:
 		return "Delete task"
 	case confirmUpgradeResume:
-		return "Upgrade supervisor and resume Codex tasks?"
+		return "Upgrade supervisor?"
 	default:
 		return "Delete item"
 	}
@@ -668,7 +668,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
-		return "Closes idle Codex terminals, restarts the supervisor, then resumes those tasks. Running commands and unsubmitted text are not preserved, so finish important work first."
+		return "Closes idle Codex terminals, restarts the supervisor, then resumes tasks with saved session IDs and starts fresh tasks without one. Running commands and unsubmitted text are not preserved, so finish important work first."
 	}
 	if confirm == confirmDeleteAgent {
 		return "Stops the terminal, then removes this task from Weft."
@@ -681,7 +681,7 @@ func renderConfirmActions(confirm confirmKind) string {
 		return modalKeyStyle.Render("Enter") + " yes  " + modalKeyStyle.Render("Esc") + " no"
 	}
 	if confirm == confirmUpgradeResume {
-		return modalKeyStyle.Render("Enter") + " upgrade and resume  " + modalKeyStyle.Render("Esc")
+		return modalKeyStyle.Render("Enter") + " upgrade  " + modalKeyStyle.Render("Esc")
 	}
 	if confirm == confirmDeleteAgent {
 		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("N") + " " + modalKeyStyle.Render("Esc")

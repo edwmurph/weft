@@ -641,16 +641,15 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	}
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Upgrade: ready",
-		"can restart",
-		"1 idle Codex task",
-		"Press U",
 		"supervisor 3.9.0 → " + weftversion.Version,
 		"Press U to upgrade and resume 1 idle Codex task",
 	} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("upgrade banner missing %q:\n%s", expected, got)
+			t.Fatalf("upgrade footer missing %q:\n%s", expected, got)
 		}
+	}
+	if strings.Contains(got, "Upgrade: ready") {
+		t.Fatalf("task console should not duplicate upgrade status banner:\n%s", got)
 	}
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
@@ -660,18 +659,20 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	}
 	got = ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Upgrade supervisor and resume Codex tasks?",
+		"Upgrade supervisor?",
 		"supervisor 3.9.0 → " + weftversion.Version,
-		"Enter upgrade and resume",
-		"tasks. Running commands",
+		"Enter upgrade",
+		"saved session IDs",
+		"fresh tasks without one",
+		"commands and unsubmitted",
 		"unsubmitted text are not preserved, so",
-		"finish important work first",
+		"work first",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
 		}
 	}
-	for _, unexpected := range []string{"Y upgrade and resume", "N cancel", "Esc cancel"} {
+	for _, unexpected := range []string{"Y upgrade", "N cancel", "Esc cancel"} {
 		if strings.Contains(got, unexpected) {
 			t.Fatalf("upgrade confirm should not show %q:\n%s", unexpected, got)
 		}
@@ -682,6 +683,7 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithAgent(rt.Workspace)
 	st.Agents[0].CodexTitle = "Fake Codex Working"
+	st.Agents[0].CodexInputSubmitted = true
 	st.Focus = state.FocusAgents
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
@@ -708,6 +710,43 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 	model = updated.(ClientModel)
 	if cmd != nil || model.mode == modeConfirm {
 		t.Fatalf("blocked upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	}
+}
+
+func TestClientUpgradeAllowsFreshCodexWithoutSession(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithAgent(rt.Workspace)
+	st.Agents[0].CodexTitle = "Fake Codex Ready"
+	st.Focus = state.FocusAgents
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Upgrade ready",
+		"supervisor 3.9.0 → " + weftversion.Version,
+		"Press U to upgrade and start 1 fresh Codex task",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("fresh upgrade footer missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "Upgrade: ready") {
+		t.Fatalf("task console should not duplicate upgrade status banner:\n%s", got)
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmUpgradeResume {
+		t.Fatalf("fresh upgrade confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
 	}
 }
 
@@ -912,8 +951,8 @@ func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
-	if agent := state.AgentByID(model.state, "a"); agent == nil || !agent.AutoTitleAttempted {
-		t.Fatalf("agent should be marked attempted: %#v", agent)
+	if agent := state.AgentByID(model.state, "a"); agent == nil || !agent.AutoTitleAttempted || !agent.CodexInputSubmitted {
+		t.Fatalf("agent should be marked attempted and submitted: %#v", agent)
 	}
 
 	msg := titleHookMessageFromCmd(t, cmd)

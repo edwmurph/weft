@@ -1083,6 +1083,10 @@ func (m *Model) captureCodexInput(agent state.Agent, msg tea.KeyMsg) tea.Cmd {
 		if firstMessage == "" {
 			return nil
 		}
+		m.markCodexInputSubmitted(agent.ID)
+		if updated := state.AgentByID(m.state, agent.ID); updated != nil {
+			agent = *updated
+		}
 		if agent.AutoTitleAttempted {
 			return nil
 		}
@@ -1119,6 +1123,14 @@ func (m *Model) captureCodexInput(agent state.Agent, msg tea.KeyMsg) tea.Cmd {
 
 func (m Model) agentUsesAutoTitle(agent state.Agent) bool {
 	return strings.Contains(agent.Title, titles.AutoTemplate)
+}
+
+func (m *Model) markCodexInputSubmitted(agentID string) {
+	m.state = state.WithUpdatedAgent(m.state, agentID, func(agent state.Agent) state.Agent {
+		agent.CodexInputSubmitted = true
+		return agent
+	})
+	m.save()
 }
 
 func (m Model) titleHookCmd(agent state.Agent, firstMessage string) tea.Cmd {
@@ -2152,7 +2164,14 @@ func (m *Model) captureCodexInputArgs(agent state.Agent, args map[string]string)
 func (m *Model) submitCodexInputBuffer(agent state.Agent) tea.Cmd {
 	firstMessage := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
 	delete(m.codexInputBuffers, agent.ID)
-	if firstMessage == "" || agent.AutoTitleAttempted {
+	if firstMessage == "" {
+		return nil
+	}
+	m.markCodexInputSubmitted(agent.ID)
+	if updated := state.AgentByID(m.state, agent.ID); updated != nil {
+		agent = *updated
+	}
+	if agent.AutoTitleAttempted {
 		return nil
 	}
 	if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {

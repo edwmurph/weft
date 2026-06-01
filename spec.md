@@ -154,14 +154,17 @@ running, Weft must not restart the supervisor without explicit confirmation
 because that can stop live terminal work.
 
 The in-dashboard upgrade action must be safe by default. While Codex tasks are
-busy or missing saved session IDs, or while any non-resumable terminal task is
-running, the dashboard shows pending copy and does not offer `U`. Once every
-remaining live task is an idle resumable Codex task, `U` opens a confirmation
-where `Enter` proceeds and `Esc` cancels. The confirmed action creates a
-pre-upgrade backup, closes the idle Codex terminals, restarts the supervisor,
-and resumes Codex tasks with `codex resume <session-id>`. The client must not
-run duplicate local restart/resume logic or synthesize upgrade state that was
-not sent by the supervisor.
+busy, missing saved session IDs after user input has been submitted, or while
+any non-resumable terminal task is running, the dashboard shows pending copy and
+does not offer `U`. A live Codex task that has not submitted input yet and has
+no session ID is safe to recreate as a fresh Codex session after restart. Once
+every remaining live task is either an idle resumable Codex task or a fresh
+unsubmitted Codex task, `U` opens a confirmation where `Enter` proceeds and
+`Esc` cancels. The confirmed action creates a pre-upgrade backup, closes the
+idle Codex terminals, restarts the supervisor, resumes Codex tasks with
+`codex resume <session-id>`, and starts fresh Codex tasks without a resume ID.
+The client must not run duplicate local restart/resume logic or synthesize
+upgrade state that was not sent by the supervisor.
 
 If the supervisor protocol is incompatible with the client, the client should
 explain the situation and offer the least destructive recovery path:
@@ -266,16 +269,21 @@ When a newly installed client is attached to an older compatible supervisor, the
 bottom of the Workspaces pane shows a concise upgrade tip. While any Codex task
 is still active, the tip waits for idle/resumable Codex tasks, for example
 `Upgrade pending: client 7.5.5, supervisor 7.4.0. Wait for 1 Codex task(s) to become idle.`
-When all remaining Codex tasks are idle and have saved Codex session IDs, and
-no non-resumable terminal tasks are live, the tip
+When all remaining Codex tasks are idle and have saved Codex session IDs, or are
+fresh Codex tasks with no submitted input, and no non-resumable terminal tasks
+are live, the tip
 shows the action, for example
 `Upgrade ready: client 7.5.5, supervisor 7.4.0. Press U to upgrade and resume 2 idle Codex task(s).`
-The tip must not imply that reopening the dashboard is enough to finish the
-upgrade, and it must not suggest destructive reset commands while live tasks
-can be resumed. The confirmation modal explains that Weft closes idle Codex
-terminals, restarts the supervisor, and runs `codex resume <session-id>` for
-each saved Codex task. It also warns that running commands and unsubmitted terminal
-input are not preserved, so users should finish important work first.
+For fresh unsubmitted Codex tasks without a session ID, the ready copy says Weft
+will start fresh Codex task(s) after restart instead of resuming them. The tip
+must not imply that reopening the dashboard is enough to finish the upgrade, and
+it must not suggest destructive reset commands while live tasks can be resumed.
+The Codex/Task pane should not duplicate this pending/ready copy during an
+upgrade. The confirmation modal explains that Weft closes idle Codex terminals,
+restarts the supervisor, runs `codex resume <session-id>` for each saved Codex
+task, and starts fresh Codex tasks that do not have a session ID. It also warns
+that running commands and unsubmitted terminal input are not preserved, so users
+should finish important work first.
 
 When no upgrade tip is active and there is enough vertical space, the top of the
 Workspaces pane shows compact runtime branding and version details inside a
@@ -410,7 +418,7 @@ All in-dashboard text-entry forms use the same compact modal treatment:
 
 All in-dashboard confirmation modals use the same keyboard contract:
 
-- `Enter` accepts the affirmative action, such as yes, delete, stop and delete, or upgrade and resume
+- `Enter` accepts the affirmative action, such as yes, delete, stop and delete, or upgrade
 - `Esc` cancels or declines the action
 - `Y`/`N` are not part of the dashboard confirmation flow
 
@@ -671,6 +679,7 @@ type Agent struct {
     CodexTitle string      `json:"codex_title,omitempty"`
     CodexStatus string     `json:"codex_status,omitempty"`
     CodexSessionID string  `json:"codex_session_id,omitempty"`
+    CodexInputSubmitted bool `json:"codex_input_submitted,omitempty"`
     Status     AgentStatus `json:"status"`
     CreatedAt  string      `json:"created_at"`
     UpdatedAt  string      `json:"updated_at"`

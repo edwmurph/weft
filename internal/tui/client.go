@@ -605,7 +605,6 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 		upgrade := *response.Upgrade
 		m.upgrade = &upgrade
 		m.prepareSnapshotUpgradeResume(upgrade)
-		m.message = dashboardUpgradeMessage(upgrade, m.snapshot.State)
 	} else {
 		m.upgrade = nil
 	}
@@ -674,33 +673,6 @@ func (m ClientModel) hasLoadingAnimation() bool {
 		m.mode == modeNormal && m.snapshot.State.NavOpen && state.ActiveAgent(m.snapshot.State) != nil
 }
 
-func dashboardUpgradeMessage(upgrade ipc.Upgrade, st state.State) string {
-	if upgrade.AutoRestarted {
-		return upgrade.Message
-	}
-	if !upgrade.Compatible {
-		return upgrade.Message
-	}
-	if !upgrade.RestartRequired {
-		return upgrade.Message
-	}
-	delta := fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
-	report := codexsession.BuildReport(st)
-	if blocked := codexsession.LiveNonCodexTaskCount(st); blocked > 0 {
-		return fmt.Sprintf("Upgrade pending: %s must restart. Stop %d non-resumable task(s) first; reopening alone is not enough.", delta, blocked)
-	}
-	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade pending: %s must restart. Wait for %d Codex task(s) to become idle; reopening alone is not enough.", delta, len(report.Busy))
-	}
-	if len(report.Missing) > 0 {
-		return fmt.Sprintf("Upgrade pending: %s must restart. Waiting for %d Codex session id(s); reopening alone is not enough.", delta, len(report.Missing))
-	}
-	if report.Total > 0 {
-		return fmt.Sprintf("Upgrade ready: %s can restart and resume %d idle Codex task(s). Press U to continue.", delta, report.Total)
-	}
-	return fmt.Sprintf("Upgrade ready: %s is idle. Press U to restart it now.", delta)
-}
-
 func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
@@ -719,10 +691,21 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {
 	if len(report.Missing) > 0 {
 		return fmt.Sprintf("Upgrade pending: %s.\nWaiting for %d Codex session id(s).", delta, len(report.Missing))
 	}
-	if report.Total > 0 {
-		return fmt.Sprintf("Upgrade ready: %s.\nPress U to upgrade and resume %d idle Codex task(s).", delta, report.Total)
+	if action := upgradeReadyActionText(report); action != "" {
+		return fmt.Sprintf("Upgrade ready: %s.\nPress U to upgrade and %s.", delta, action)
 	}
 	return fmt.Sprintf("Upgrade ready: %s.\nPress U to restart now.", delta)
+}
+
+func upgradeReadyActionText(report codexsession.Report) string {
+	actions := []string{}
+	if report.Ready > 0 {
+		actions = append(actions, fmt.Sprintf("resume %d idle Codex task(s)", report.Ready))
+	}
+	if report.Fresh > 0 {
+		actions = append(actions, fmt.Sprintf("start %d fresh Codex task(s)", report.Fresh))
+	}
+	return strings.Join(actions, " and ")
 }
 
 func upgradeTarget(upgrade ipc.Upgrade) string {

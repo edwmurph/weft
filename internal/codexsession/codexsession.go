@@ -25,6 +25,7 @@ type Session struct {
 type Report struct {
 	Total    int
 	Ready    int
+	Fresh    int
 	Assigned int
 	Busy     []state.Agent
 	Missing  []state.Agent
@@ -35,13 +36,17 @@ func (r Report) CanUpgrade() bool {
 }
 
 func PrepareResumeState(st state.State, fallbackWorkspace string) (state.State, Report) {
-	next, assigned := AssignMissingSessionIDs(st, fallbackWorkspace)
+	next, assigned := assignMissingSessionIDs(st, fallbackWorkspace, true)
 	report := BuildReport(next)
 	report.Assigned = assigned
 	return next, report
 }
 
 func AssignMissingSessionIDs(st state.State, fallbackWorkspace string) (state.State, int) {
+	return assignMissingSessionIDs(st, fallbackWorkspace, false)
+}
+
+func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh bool) (state.State, int) {
 	earliest := earliestAgentCreatedAt(st)
 	sessions := recentSessions(earliest.Add(-assignmentLookback))
 	used := usedSessionIDs(st)
@@ -52,6 +57,9 @@ func AssignMissingSessionIDs(st state.State, fallbackWorkspace string) (state.St
 			continue
 		}
 		if strings.TrimSpace(agent.CodexSessionID) != "" {
+			continue
+		}
+		if skipFresh && AgentFreshForUpgrade(*agent) {
 			continue
 		}
 		workspace := workspaceForAgent(st, *agent, fallbackWorkspace)
@@ -75,6 +83,10 @@ func BuildReport(st state.State) Report {
 			continue
 		}
 		report.Total++
+		if AgentFreshForUpgrade(agent) {
+			report.Fresh++
+			continue
+		}
 		if !AgentIdleForUpgrade(agent) {
 			report.Busy = append(report.Busy, agent)
 			continue
@@ -117,6 +129,19 @@ func AgentIdleForUpgrade(agent state.Agent) bool {
 	default:
 		return false
 	}
+}
+
+func AgentFreshForUpgrade(agent state.Agent) bool {
+	if strings.TrimSpace(agent.CodexSessionID) != "" {
+		return false
+	}
+	if agent.CodexInputSubmitted || agent.AutoTitleAttempted {
+		return false
+	}
+	if strings.TrimSpace(agent.AutoTitle) != "" || strings.TrimSpace(agent.AutoTitleError) != "" {
+		return false
+	}
+	return true
 }
 
 func ResumeCommand(codexCommand string, sessionID string) string {

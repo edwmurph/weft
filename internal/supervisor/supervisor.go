@@ -44,6 +44,7 @@ type restartRequest struct {
 	clientVersion string
 	backupID      string
 	runningAgents int
+	freshAgents   int
 	message       string
 }
 
@@ -383,7 +384,8 @@ func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorCont
 		return ipc.ErrorResponse("upgrade_resume_blocked", upgradeResumeBlockedMessage(report))
 	}
 	restart := restartRequestFromRequest(request)
-	restart.runningAgents = report.Total
+	restart.runningAgents = report.Ready
+	restart.freshAgents = report.Fresh
 	return triggerResumeUpgrade(rt, engine, control, restart, cancel)
 }
 
@@ -393,7 +395,7 @@ func triggerResumeUpgrade(rt config.Runtime, engine *tui.Model, control *supervi
 		return supervisorSnapshotResponse(engine, fmt.Sprintf("Upgrade canceled: could not create pre-upgrade backup: %v", err))
 	}
 	restart.backupID = backup.ID
-	restart.message = upgradeResumeRestartMessage(restart.runningAgents, backup.ID)
+	restart.message = upgradeResumeRestartMessage(restart.runningAgents, restart.freshAgents, backup.ID)
 	control.restartNow = &restart
 	go cancel()
 	return supervisorSnapshotResponse(engine, restart.message)
@@ -431,17 +433,29 @@ func restartNowMessage(restart restartRequest) string {
 	return "Restarting idle supervisor to finish the upgrade. Backup: " + restart.backupID + "."
 }
 
-func upgradeResumeRestartMessage(agents int, backupID string) string {
-	if agents <= 0 {
+func upgradeResumeRestartMessage(resumeAgents int, freshAgents int, backupID string) string {
+	if resumeAgents <= 0 && freshAgents <= 0 {
 		if backupID == "" {
 			return "Restarting supervisor to finish the upgrade."
 		}
 		return "Restarting supervisor to finish the upgrade. Backup: " + backupID + "."
 	}
+	action := upgradeResumeRestartAction(resumeAgents, freshAgents)
 	if backupID == "" {
-		return fmt.Sprintf("Closing and resuming %d idle Codex task(s) to finish the supervisor upgrade.", agents)
+		return action + " to finish the supervisor upgrade."
 	}
-	return fmt.Sprintf("Closing and resuming %d idle Codex task(s) to finish the supervisor upgrade. Backup: %s.", agents, backupID)
+	return fmt.Sprintf("%s to finish the supervisor upgrade. Backup: %s.", action, backupID)
+}
+
+func upgradeResumeRestartAction(resumeAgents int, freshAgents int) string {
+	actions := []string{}
+	if resumeAgents > 0 {
+		actions = append(actions, fmt.Sprintf("resuming %d idle Codex task(s)", resumeAgents))
+	}
+	if freshAgents > 0 {
+		actions = append(actions, fmt.Sprintf("starting %d fresh Codex task(s)", freshAgents))
+	}
+	return "Closing and " + strings.Join(actions, " and ")
 }
 
 func upgradeResumeBlockedMessage(report codexsession.Report) string {

@@ -373,9 +373,11 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	pane := "upgrade-resume"
 	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade: ready") &&
-			strings.Contains(capture, "Press U")
+		return strings.Contains(capture, "Task Console")
 	})
+	if capture := clientOutput(); strings.Contains(capture, "Upgrade:") {
+		t.Fatalf("task console should not duplicate upgrade banner:\n%s", capture)
+	}
 	if pid := readPID(t, runtimeDir); pid != oldPID {
 		t.Fatalf("dashboard attach should preserve old supervisor, pid %q -> %q", oldPID, pid)
 	}
@@ -390,13 +392,15 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "u")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade supervisor and resume Codex tasks?") &&
-			strings.Contains(capture, "Enter upgrade and resume") &&
-			!strings.Contains(capture, "Y upgrade and resume") &&
+		return strings.Contains(capture, "Upgrade supervisor?") &&
+			strings.Contains(capture, "Enter upgrade") &&
+			!strings.Contains(capture, "Y upgrade") &&
 			!strings.Contains(capture, "N cancel") &&
 			!strings.Contains(capture, "Esc cancel") &&
+			strings.Contains(capture, "saved session IDs") &&
+			strings.Contains(capture, "fresh tasks without one") &&
 			strings.Contains(capture, "unsubmitted text are not preserved, so") &&
-			strings.Contains(capture, "finish important work first")
+			strings.Contains(capture, "work first")
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
 	if !waitForBool(8*time.Second, func() bool {
@@ -425,6 +429,87 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	status := runWeft(t, newEnv, bin, "status")
 	if !strings.Contains(status, "upgrade: current") {
 		t.Fatalf("status should be current after upgrade resume:\n%s", status)
+	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade resume restart")
+}
+
+func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex, codexLog := writeFreshFakeCodex(t, tmp, "fake-codex-fresh.sh")
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	codexEnv := []string{"FAKE_CODEX_LOG=" + codexLog}
+	oldEnv := appendUniqueEnv(upgradeEnv(runtimeDir, workspace, bin, "3.9.0"), codexEnv...)
+	newEnv := appendUniqueEnv(baseIntegrationEnv(runtimeDir, workspace, bin), codexEnv...)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = newEnv
+		_ = cmd.Run()
+	})
+
+	runWeft(t, oldEnv, bin, "--no-attach")
+	oldPID := readPID(t, runtimeDir)
+	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
+	runWeft(t, oldEnv, bin, "new", "Fresh")
+	st := waitState(t, oldEnv, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.Agents[0].Status == state.StatusRunning &&
+			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+	})
+	agentID := st.Agents[0].ID
+	if st.Agents[0].CodexSessionID != "" {
+		t.Fatalf("fresh agent should not have a Codex session id: %#v", st.Agents[0])
+	}
+
+	pane := "upgrade-fresh"
+	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Console")
+	})
+	if capture := clientOutput(); strings.Contains(capture, "Upgrade:") {
+		t.Fatalf("task console should not duplicate upgrade banner:\n%s", capture)
+	}
+	directRun(t, newEnv, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") &&
+			strings.Contains(capture, "Press U to upgrade and start 1 fresh Codex task")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "u")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Upgrade supervisor?") &&
+			strings.Contains(capture, "fresh tasks without one")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
+	if !waitForBool(8*time.Second, func() bool {
+		data, err := os.ReadFile(filepath.Join(runtimeDir, "weftd.pid"))
+		return err == nil && strings.TrimSpace(string(data)) != oldPID
+	}) {
+		t.Fatalf("supervisor did not restart after fresh upgrade confirmation; pid still %q\nscreen:\n%s", oldPID, clientOutput())
+	}
+	st = waitState(t, newEnv, bin, func(st state.State) bool {
+		agent := state.AgentByID(st, agentID)
+		return agent != nil &&
+			agent.Status == state.StatusRunning &&
+			agent.CodexSessionID == "" &&
+			strings.Contains(agent.CodexTitle, "Ready")
+	})
+	if len(st.Agents) != 1 {
+		t.Fatalf("fresh upgrade should preserve task rows: %#v", st.Agents)
+	}
+	data, err := os.ReadFile(codexLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := string(data)
+	if strings.Contains(logText, "resume:") {
+		t.Fatalf("fresh Codex task should not resume a missing session:\n%s", logText)
+	}
+	if strings.Count(logText, "start:") < 2 {
+		t.Fatalf("fresh Codex task should start before and after restart:\n%s", logText)
 	}
 	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade resume restart")
 }
@@ -627,6 +712,31 @@ func writeResumeFakeCodex(t *testing.T, dir string, name string) (string, string
 		t.Fatal(err)
 	}
 	return fakeCodex, codexHome, resumeLog
+}
+
+func writeFreshFakeCodex(t *testing.T, dir string, name string) (string, string) {
+	t.Helper()
+	codexLog := filepath.Join(dir, "fake-codex-fresh.log")
+	fakeCodex := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeCodex, []byte(
+		"#!/bin/sh\n"+
+			"if [ \"$1\" = \"resume\" ]; then\n"+
+			"  printf 'resume:%s\\n' \"$2\" >> \"$FAKE_CODEX_LOG\"\n"+
+			"else\n"+
+			"  printf 'start:%s\\n' \"$$\" >> \"$FAKE_CODEX_LOG\"\n"+
+			"fi\n"+
+			"printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"trap 'exit 0' HUP INT TERM\n"+
+			"while IFS= read -r line; do\n"+
+			"  printf '\\033]2;Fake Codex Working\\007'\n"+
+			"  printf 'echo:%s\\n' \"$line\"\n"+
+			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
+			"done\n"+
+			"while :; do sleep 1; done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeCodex, codexLog
 }
 
 func baseIntegrationEnv(runtimeDir string, workspace string, bin string) []string {

@@ -60,20 +60,21 @@ type Group struct {
 }
 
 type Agent struct {
-	ID                 string      `json:"id"`
-	WorkspaceID        string      `json:"workspace_id"`
-	GroupID            string      `json:"group_id"`
-	TypeID             string      `json:"type_id,omitempty"`
-	Title              string      `json:"title"`
-	AutoTitle          string      `json:"auto_title,omitempty"`
-	AutoTitleAttempted bool        `json:"auto_title_attempted,omitempty"`
-	AutoTitleError     string      `json:"auto_title_error,omitempty"`
-	CodexTitle         string      `json:"codex_title,omitempty"`
-	CodexStatus        string      `json:"codex_status,omitempty"`
-	CodexSessionID     string      `json:"codex_session_id,omitempty"`
-	Status             AgentStatus `json:"status"`
-	CreatedAt          string      `json:"created_at"`
-	UpdatedAt          string      `json:"updated_at"`
+	ID                  string      `json:"id"`
+	WorkspaceID         string      `json:"workspace_id"`
+	GroupID             string      `json:"group_id"`
+	TypeID              string      `json:"type_id,omitempty"`
+	Title               string      `json:"title"`
+	AutoTitle           string      `json:"auto_title,omitempty"`
+	AutoTitleAttempted  bool        `json:"auto_title_attempted,omitempty"`
+	AutoTitleError      string      `json:"auto_title_error,omitempty"`
+	CodexTitle          string      `json:"codex_title,omitempty"`
+	CodexStatus         string      `json:"codex_status,omitempty"`
+	CodexSessionID      string      `json:"codex_session_id,omitempty"`
+	CodexInputSubmitted bool        `json:"codex_input_submitted,omitempty"`
+	Status              AgentStatus `json:"status"`
+	CreatedAt           string      `json:"created_at"`
+	UpdatedAt           string      `json:"updated_at"`
 }
 
 type State struct {
