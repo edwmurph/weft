@@ -56,6 +56,14 @@ Additional agents can be added upon request. Config can also define generic
 shell command tasks, which are useful for tests, dev servers, logs, scripts, or
 any other command you want to keep visible beside agent work.
 
+## Runtime Contract
+
+Config and state are strict current-shape files. Unknown config keys are
+rejected, `key_bindings.delete = "d"` is not valid, and persisted state is
+validated as-is instead of being repaired on load or write. Every persisted task
+`type_id` must be defined by active config before the supervisor starts.
+Unsupported old config or state files fail with reset guidance.
+
 ## Learn More
 
 - [Usage](docs/usage.md): dashboard controls, common commands, upgrades, and key diagnostics.

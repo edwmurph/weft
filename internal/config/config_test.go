@@ -25,12 +25,6 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.CodexCommand != "codex" {
-		t.Fatalf("CodexCommand = %q", cfg.CodexCommand)
-	}
-	if cfg.TitleTemplate != "{status} {auto}" {
-		t.Fatalf("TitleTemplate = %q", cfg.TitleTemplate)
-	}
 	if cfg.DefaultTaskType != DefaultTaskTypeCodex {
 		t.Fatalf("DefaultTaskType = %q", cfg.DefaultTaskType)
 	}
@@ -145,9 +139,6 @@ quit = "Q"
 	if cfg.DefaultTaskType != "shell" {
 		t.Fatalf("DefaultTaskType = %q", cfg.DefaultTaskType)
 	}
-	if cfg.CodexCommand != "codex --model gpt-5" || cfg.TitleTemplate != "{title}" {
-		t.Fatalf("config values = %#v", cfg)
-	}
 	if got := cfg.TaskTypes["codex"]; got.Command != "codex --model gpt-5" || got.Badge != "[codex-custom]" || got.TitleTemplate != "{title}" {
 		t.Fatalf("codex task type = %#v", got)
 	}
@@ -246,7 +237,7 @@ delete = "d"
 	if err == nil {
 		t.Fatal("expected config error")
 	}
-	for _, expected := range []string{"unsupported config value", `key_bindings.delete cannot be "d"`, "Backspace"} {
+	for _, expected := range []string{"unsupported config value", `key_bindings.delete cannot be "d"`} {
 		if !strings.Contains(err.Error(), expected) {
 			t.Fatalf("error missing %q:\n%v", expected, err)
 		}

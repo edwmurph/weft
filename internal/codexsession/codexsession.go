@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/titles"
 )
@@ -53,7 +54,7 @@ func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh
 	assigned := 0
 	for index := range st.Tasks {
 		task := &st.Tasks[index]
-		if state.TaskTypeID(*task) != state.DefaultTaskTypeID {
+		if state.TaskTypeID(*task) != config.DefaultTaskTypeCodex {
 			continue
 		}
 		if strings.TrimSpace(task.CodexSessionID) != "" {
@@ -79,7 +80,7 @@ func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh
 func BuildReport(st state.State) Report {
 	report := Report{}
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) != state.DefaultTaskTypeID {
+		if state.TaskTypeID(task) != config.DefaultTaskTypeCodex {
 			continue
 		}
 		report.Total++
@@ -103,7 +104,7 @@ func BuildReport(st state.State) Report {
 func LiveNonCodexTaskCount(st state.State) int {
 	count := 0
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) == state.DefaultTaskTypeID {
+		if state.TaskTypeID(task) == config.DefaultTaskTypeCodex {
 			continue
 		}
 		if taskLiveForRestart(task) {
@@ -250,7 +251,7 @@ func canonicalWorkspace(path string) string {
 func earliestTaskCreatedAt(st state.State) time.Time {
 	var earliest time.Time
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) != state.DefaultTaskTypeID {
+		if state.TaskTypeID(task) != config.DefaultTaskTypeCodex {
 			continue
 		}
 		created := parseTime(task.CreatedAt)
@@ -270,7 +271,7 @@ func earliestTaskCreatedAt(st state.State) time.Time {
 func usedSessionIDs(st state.State) map[string]bool {
 	used := map[string]bool{}
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) != state.DefaultTaskTypeID {
+		if state.TaskTypeID(task) != config.DefaultTaskTypeCodex {
 			continue
 		}
 		if id := strings.TrimSpace(task.CodexSessionID); id != "" {

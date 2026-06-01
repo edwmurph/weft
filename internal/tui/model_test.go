@@ -1068,8 +1068,10 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
-	model.cfg.TitleTemplate = "{status} {auto}"
-	model.state.Tasks[0].Title = model.cfg.TitleTemplate
+	codexType := model.cfg.TaskTypes[config.DefaultTaskTypeCodex]
+	codexType.TitleTemplate = "{status} {auto}"
+	model.cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType
+	model.state.Tasks[0].Title = codexType.TitleTemplate
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
 	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "text", "text": "fix"})
@@ -1105,8 +1107,10 @@ func TestTitleHookCapturesRawKeyboardProtocolInput(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
-	model.cfg.TitleTemplate = "{status} {auto}"
-	model.state.Tasks[0].Title = model.cfg.TitleTemplate
+	codexType := model.cfg.TaskTypes[config.DefaultTaskTypeCodex]
+	codexType.TitleTemplate = "{status} {auto}"
+	model.cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType
+	model.state.Tasks[0].Title = codexType.TitleTemplate
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
 	sendRaw := func(raw string) tea.Cmd {
@@ -1358,7 +1362,9 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 func TestEditTaskPromptPreviewsEditedTitle(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.cfg.TitleTemplate = "{auto}"
+	codexType := model.cfg.TaskTypes[config.DefaultTaskTypeCodex]
+	codexType.TitleTemplate = "{auto}"
+	model.cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType
 	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
 	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
@@ -1451,7 +1457,7 @@ func TestWorkspaceRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 	}
 }
 
-func TestDashboardEditShortcutIgnoresLegacyRenameKey(t *testing.T) {
+func TestDashboardEditShortcutRequiresConfiguredEditKey(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.state.Focus = state.FocusTasks
@@ -1461,7 +1467,7 @@ func TestDashboardEditShortcutIgnoresLegacyRenameKey(t *testing.T) {
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
 	model = updated.(Model)
 	if cmd != nil {
-		t.Fatalf("r should not start command, got %#v", cmd)
+		t.Fatalf("unconfigured edit key should not start command, got %#v", cmd)
 	}
 	if model.mode != modeNormal {
 		t.Fatalf("mode = %s, want normal", model.mode)
@@ -2483,7 +2489,6 @@ func TestWorkspacePromptShowsInvalidPathStatus(t *testing.T) {
 func TestIPCNewCopiesConfiguredTitleTemplate(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.cfg.TitleTemplate = "{status} {auto}"
 	model.state.Tasks = nil
 	model.state.ActiveTaskID = ""
 
@@ -2519,7 +2524,48 @@ func TestIPCNewCreatesRequestedTaskType(t *testing.T) {
 	}
 }
 
-func TestIPCNewIgnoresLegacyTypeID(t *testing.T) {
+func TestIPCNewAllowsTransportMetadata(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Tasks = nil
+	model.state.ActiveTaskID = ""
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{
+		"client_id": "dashboard-1",
+		"width":     "120",
+		"height":    "40",
+	}})
+	defer killPTYs(model)
+
+	if !response.OK || cmd == nil {
+		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+	}
+	if len(model.state.Tasks) != 1 || model.state.Tasks[0].TypeID != config.DefaultTaskTypeCodex {
+		t.Fatalf("tasks = %#v", model.state.Tasks)
+	}
+}
+
+func TestIPCNewRejectsUnknownTaskType(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Tasks = nil
+	model.state.ActiveTaskID = ""
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"type": "ghost"}})
+	defer killPTYs(model)
+
+	if response.OK || cmd != nil {
+		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+	}
+	if response.Error == nil || response.Error.Code != "task_type_not_found" || !strings.Contains(response.Message, "ghost") {
+		t.Fatalf("expected unknown task type error: %#v", response)
+	}
+	if len(model.state.Tasks) != 0 {
+		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
+	}
+}
+
+func TestIPCNewRejectsUnsupportedTypeIDArgument(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.state.Tasks = nil
@@ -2528,15 +2574,48 @@ func TestIPCNewIgnoresLegacyTypeID(t *testing.T) {
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"type_id": config.DefaultTaskTypeShell}})
 	defer killPTYs(model)
 
-	if !response.OK || cmd == nil {
+	if response.OK || cmd != nil {
 		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
 	}
-	if len(model.state.Tasks) != 1 {
-		t.Fatalf("tasks = %#v", model.state.Tasks)
+	if response.Error == nil || response.Error.Code != "unsupported_arg" || !strings.Contains(response.Message, "type_id") {
+		t.Fatalf("expected unsupported type_id error: %#v", response)
 	}
-	task := model.state.Tasks[0]
-	if task.TypeID != config.DefaultTaskTypeCodex || task.Title != model.cfg.TaskTypes[config.DefaultTaskTypeCodex].TitleTemplate {
-		t.Fatalf("legacy type_id should not select shell: %#v", task)
+	if len(model.state.Tasks) != 0 {
+		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
+	}
+}
+
+func TestIPCMoveRejectsUnsupportedStaleGroupArgs(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	for _, args := range []map[string]string{
+		{"group_id": "f"},
+		{"ungrouped": "true"},
+	} {
+		response, cmd := model.handleIPC(ipc.Request{Command: "move", Args: args})
+		if response.OK || cmd != nil {
+			t.Fatalf("move response/cmd = %#v/%v", response, cmd)
+		}
+		if response.Error == nil || response.Error.Code != "unsupported_arg" {
+			t.Fatalf("expected unsupported arg error: %#v", response)
+		}
+	}
+}
+
+func TestIPCMoveAcceptsCurrentGroupPathArg(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	now := state.NowISO()
+	model.state.Groups = append(model.state.Groups, state.Group{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "move", Args: map[string]string{"group": "release"}})
+
+	if !response.OK || cmd != nil {
+		t.Fatalf("move response/cmd = %#v/%v", response, cmd)
+	}
+	if task := state.TaskByID(model.state, "a"); task == nil || task.GroupID != "release" {
+		t.Fatalf("task not moved to release: %#v", task)
 	}
 }
 
@@ -2791,7 +2870,6 @@ func testModelWithTask(t *testing.T) Model {
 	t.Helper()
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
-	cfg.CodexCommand = "cat"
 	codexType := cfg.TaskTypes[config.DefaultTaskTypeCodex]
 	codexType.Command = "cat"
 	cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType

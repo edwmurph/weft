@@ -61,7 +61,8 @@ Legacy behavior is unsupported unless this specification explicitly brings it
 back. Legacy includes tmux pane state, tab/column state, workdir/folder naming,
 hidden old commands, old config keys, state/config migration paths, and alias
 support for retired command or state shapes. Legacy files should be rejected
-with reset guidance rather than migrated by hidden compatibility code.
+with reset guidance rather than migrated, defaulted, repaired, or silently
+ignored by hidden compatibility code.
 
 ## Supported Agents
 
@@ -110,7 +111,7 @@ most one active supervisor per runtime directory.
 The supervisor owns:
 
 - config loading
-- state loading, repair, mutation, and persistence
+- state loading, validation, mutation, and persistence
 - the task registry
 - task PTY processes
 - terminal screen state for each task
@@ -157,9 +158,16 @@ the local Unix socket. The protocol should support:
 The protocol does not need an external RPC framework. New dependencies should
 be added only if the standard library becomes clearly insufficient.
 
+Command payload contracts are strict, excluding transport metadata such as
+`client_id`, `width`, and `height`. `new` accepts only `title` and `type`;
+stale `type_id` arguments fail. `move` accepts only `id`, `direction`, and the
+current `group` path argument; stale `group_id` and `ungrouped` arguments fail.
+
 ## Process And Upgrade UX
 
-Users should not need `weft clear` after upgrades.
+Users should not need `weft clear` after upgrades that preserve the current
+state/config contract. Unsupported stale state, config, or IPC shapes fail
+loudly and may require `weft clear` or config restoration.
 
 When a newly installed `weft` client finds an older compatible supervisor:
 
@@ -728,8 +736,11 @@ type Task struct {
 Runtime-only details such as PID, PTY handles, socket clients, terminal size,
 and screen cache must not be persisted in `state.json`. They belong to the
 supervisor process and can be reconstructed from state and live PTYs. Every
-persisted task row must include a non-empty `type_id`; a missing task type is a
-state load error with reset guidance.
+persisted task row must include a non-empty `type_id`, title, supported status,
+timestamps, and valid workspace/group references. Persisted state is validated
+as-is and must not be repaired on load or write. A missing task type or a task
+`type_id` that is not defined in active config is a startup error with reset
+guidance.
 
 Task type defaults belong in config and are copied into new tasks:
 
@@ -780,7 +791,7 @@ Rules:
 Add workspace:
 
 - User provides an existing filesystem path.
-- Weft must not auto-add or reselect the launch directory during state repair or first supervisor start.
+- Weft must not auto-add or reselect the launch directory during state load or first supervisor start.
 - When an interactive client opens from a launch directory that is already configured, Weft selects that workspace automatically.
 - Launch-directory selection is a first attach behavior for that client. Repeated attach or retry requests from the same attached client must not reselect the launch workspace after the user has navigated elsewhere.
 - Launch-directory selection happens only when the interactive client attaches. It must not run on every snapshot, navigation, or delete request, because that would keep snapping selection back to the launch workspace and prevent removing stale workspace entries.
@@ -1087,9 +1098,9 @@ Visual style:
 ## Migration
 
 Unsupported old state shapes are not migrated or archived. If `state.json` is
-not strict v5 current shape, including a task row without `type_id`, Weft
-returns a clear error that tells the user to run `weft clear` when a reset is
-acceptable.
+not strict v5 current shape, including malformed references, missing titles,
+missing `type_id`, or task types not defined by active config, Weft returns a
+clear error that tells the user to run `weft clear` when a reset is acceptable.
 
 ## Configuration
 
@@ -1131,8 +1142,7 @@ help = "?"
 quit = "C-c"
 ```
 
-Configs with `delete = "d"` are rejected; users must remove that override or
-set `delete = "Backspace"` so `d` is not a dashboard delete shortcut.
+`key_bindings.delete = "d"` is not a valid current config value.
 
 Only the current config keys are emitted by default. Unknown config keys are
 rejected generically instead of being mapped silently or returning

@@ -120,7 +120,6 @@ func TestPreviewEmptyWeftLogoGraphShape(t *testing.T) {
 
 func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	output := "output from a selected task that is intentionally long enough to be cropped by the preview lens"
 
@@ -171,7 +170,6 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 
 func TestRenderTaskPreviewRequiresFocusedTaskRow(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	output := "selected terminal output"
 
@@ -257,7 +255,6 @@ func TestRenderTaskPreviewEmptyStateUsesPreviewLogoAndAnimation(t *testing.T) {
 
 func TestRenderTaskPreviewRejectsMismatchedCursorContent(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.Tasks = append(st.Tasks, state.Task{
 		ID:          "b",
@@ -648,7 +645,6 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 
 func TestRenderTasksPaneShowsGroupCountInline(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.Tasks = append(st.Tasks, state.Task{
 		ID:          "b",
@@ -671,7 +667,6 @@ func TestRenderTasksPaneShowsGroupCountInline(t *testing.T) {
 
 func TestRenderTasksPaneShowsCollapsedGroupLoadingChild(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.CollapsedGroupIDs = []string{"f"}
 	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
@@ -692,7 +687,6 @@ func TestRenderTasksPaneShowsCollapsedGroupLoadingChild(t *testing.T) {
 
 func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.SelectedGroupID = ""
 	st.Groups = nil
@@ -724,7 +718,6 @@ func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 
 func TestRenderTasksPaneUsesSingleGapBetweenNewTaskRowAndFirstGroup(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.Tasks = nil
 	st.ActiveTaskID = ""
@@ -753,7 +746,6 @@ func TestRenderTasksPaneUsesSingleGapBetweenNewTaskRowAndFirstGroup(t *testing.T
 
 func TestRenderTasksPaneScrollsSelectedBottomGroupTaskIntoView(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	now := state.NowISO()
 	st := state.State{
 		Version:             state.Version,
@@ -790,7 +782,6 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	defer lipgloss.SetColorProfile(previous)
 
 	cfg := config.DefaultConfig()
-	cfg.TitleTemplate = "{title}"
 	now := state.NowISO()
 	st := state.State{
 		Version:             state.Version,
@@ -799,14 +790,14 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
 		Tasks: []state.Task{
-			{ID: "loading", WorkspaceID: "w", Title: "Booting", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
-			{ID: "working", WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
-			{ID: "waiting", WorkspaceID: "w", Title: "Approval", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
+			{ID: "loading", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Booting", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "working", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Approval", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
 			{ID: "terminal-waiting", TypeID: config.DefaultTaskTypeShell, WorkspaceID: "w", Title: "Shell Awaiting", Status: state.TaskStatus("waiting"), CreatedAt: now, UpdatedAt: now},
-			{ID: "ready", WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
-			{ID: "failed", WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
-			{ID: "stopped", WorkspaceID: "w", Title: "Paused", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
-			{ID: "killed", WorkspaceID: "w", Title: "Killed", Status: state.StatusKilled, CreatedAt: now, UpdatedAt: now},
+			{ID: "ready", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "failed", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
+			{ID: "stopped", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Paused", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
+			{ID: "killed", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Killed", Status: state.StatusKilled, CreatedAt: now, UpdatedAt: now},
 		},
 	}
 

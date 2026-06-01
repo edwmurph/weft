@@ -194,7 +194,11 @@ func start(args []string) error {
 			return err
 		}
 	}
-	if _, err := store.Ensure(); err != nil {
+	st, err := store.Ensure()
+	if err != nil {
+		return err
+	}
+	if err := validateStateTaskTypes(cfg, st); err != nil {
 		return err
 	}
 	result, err := supervisor.Ensure(rt)
@@ -706,7 +710,9 @@ func configCommand(args []string) error {
 		fmt.Printf("Config: %s\n", rt.ConfigPath)
 		fmt.Printf("State: %s\n", rt.StatePath)
 		fmt.Printf("Supervisor socket: %s\n", rt.SocketPath)
-		fmt.Printf("Codex command: %s\n", cfg.CodexCommand)
+		if codex, ok := cfg.TaskType(config.DefaultTaskTypeCodex); ok {
+			fmt.Printf("Codex command: %s\n", codex.Command)
+		}
 		fmt.Printf("Default task type: %s\n", cfg.DefaultTaskType)
 		taskLabels := []string{}
 		for _, taskType := range cfg.OrderedTaskTypes() {
@@ -728,11 +734,15 @@ func configCommand(args []string) error {
 }
 
 func callIPC(command string, args map[string]string, quiet bool) error {
-	rt, _, store, err := resolveRuntime()
+	rt, cfg, store, err := resolveRuntime()
 	if err != nil {
 		return err
 	}
-	if _, err := store.Ensure(); err != nil {
+	st, err := store.Ensure()
+	if err != nil {
+		return err
+	}
+	if err := validateStateTaskTypes(cfg, st); err != nil {
 		return err
 	}
 	args = cloneArgs(args)
@@ -769,7 +779,11 @@ func loadRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
-	if _, err := store.Ensure(); err != nil {
+	st, err := store.Ensure()
+	if err != nil {
+		return config.Runtime{}, config.Config{}, nil, err
+	}
+	if err := validateStateTaskTypes(cfg, st); err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
 	return rt, cfg, store, nil
@@ -789,6 +803,17 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	}
 	store := state.NewStore(rt.StatePath, rt.Workspace)
 	return rt, cfg, store, nil
+}
+
+func validateStateTaskTypes(cfg config.Config, st state.State) error {
+	err := state.ValidateTaskTypes(st, func(id string) bool {
+		_, ok := cfg.TaskType(id)
+		return ok
+	})
+	if err != nil {
+		return fmt.Errorf("%v; run `weft clear` to reset", err)
+	}
+	return nil
 }
 
 func runtimeResolveOptions() config.ResolveOptions {

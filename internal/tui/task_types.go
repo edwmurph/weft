@@ -10,7 +10,17 @@ import (
 )
 
 func taskTypeForTask(cfg config.Config, task state.Task) config.TaskType {
-	return cfg.TaskTypeOrDefault(state.TaskTypeID(task))
+	taskType, ok := cfg.TaskType(state.TaskTypeID(task))
+	if ok {
+		return taskType
+	}
+	return config.TaskType{
+		ID:            state.TaskTypeID(task),
+		Label:         state.TaskTypeID(task),
+		Kind:          config.TaskKindTerminal,
+		Badge:         "[?]",
+		TitleTemplate: "{title}",
+	}
 }
 
 func taskUsesCodexIntegration(cfg config.Config, task state.Task) bool {

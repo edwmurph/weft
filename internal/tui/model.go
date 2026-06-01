@@ -1801,6 +1801,31 @@ func ipcError(code string, err error) ipc.Response {
 	return ipc.ErrorResponse(code, err.Error())
 }
 
+func unsupportedIPCArg(args map[string]string, allowed ...string) string {
+	allowedSet := map[string]bool{}
+	for _, key := range allowed {
+		allowedSet[key] = true
+	}
+	for key := range args {
+		if ipcTransportArg(key) {
+			continue
+		}
+		if !allowedSet[key] {
+			return key
+		}
+	}
+	return ""
+}
+
+func ipcTransportArg(key string) bool {
+	switch key {
+	case "client_id", "width", "height":
+		return true
+	default:
+		return false
+	}
+}
+
 func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	if request.Command == "snapshot" || request.Command == "status" {
 		m.refreshTerminalTaskActivity()
@@ -1928,8 +1953,17 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		if state.ActiveWorkspace(m.state) == nil {
 			return ipc.ErrorResponse("workspace_required", "add a workspace first"), nil
 		}
+		if arg := unsupportedIPCArg(request.Args, "title", "type"); arg != "" {
+			return ipc.ErrorResponse("unsupported_arg", "unsupported argument: "+arg), nil
+		}
 		title := request.Args["title"]
 		typeID := strings.TrimSpace(request.Args["type"])
+		if typeID == "" {
+			typeID = m.cfg.DefaultTaskType
+		}
+		if _, ok := m.cfg.TaskType(typeID); !ok {
+			return ipc.ErrorResponse("task_type_not_found", "task type not found: "+typeID), nil
+		}
 		cmd := m.newTask(title, typeID)
 		m.snapNavWidthToTarget()
 		return m.ipcResponse("created task"), cmd
@@ -2023,6 +2057,9 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		return ipc.Response{OK: false, Message: "task not found"}, nil
 	case "move":
+		if arg := unsupportedIPCArg(request.Args, "id", "direction", "group"); arg != "" {
+			return ipc.ErrorResponse("unsupported_arg", "unsupported argument: "+arg), nil
+		}
 		id := request.Args["id"]
 		if id == "" {
 			id = m.state.ActiveTaskID
@@ -2444,19 +2481,6 @@ func trimPreviousInputToken(value []rune) []rune {
 }
 
 func (m Model) destinationGroupIDForMove(task state.Task, args map[string]string) (string, bool) {
-	if value, ok := args["ungrouped"]; ok && strings.EqualFold(value, "true") {
-		return "", true
-	}
-	if groupID, ok := args["group_id"]; ok {
-		if groupID == "" {
-			return "", true
-		}
-		group := state.GroupByID(m.state, groupID)
-		if group != nil && group.WorkspaceID == task.WorkspaceID {
-			return group.ID, true
-		}
-		return "", false
-	}
 	if groupPath, ok := args["group"]; ok {
 		if strings.TrimSpace(groupPath) == "" {
 			return "", true

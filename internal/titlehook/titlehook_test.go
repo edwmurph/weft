@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
 )
 
 func TestBuildPayloadUsesTaskContext(t *testing.T) {
-	task := state.Task{ID: "a", TypeID: state.DefaultTaskTypeID, Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
+	task := state.Task{ID: "a", TypeID: config.DefaultTaskTypeCodex, Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
 	payload := BuildPayload(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login", 32, 24)
 
@@ -22,7 +23,7 @@ func TestBuildPayloadUsesTaskContext(t *testing.T) {
 	if payload.TaskID != "a" || payload.Workspace != "/tmp/project" || payload.Group != "ship" {
 		t.Fatalf("payload context = %#v", payload)
 	}
-	if payload.TypeID != state.DefaultTaskTypeID || payload.Status != "Ready" || payload.FirstMessage != "fix login" {
+	if payload.TypeID != config.DefaultTaskTypeCodex || payload.Status != "Ready" || payload.FirstMessage != "fix login" {
 		t.Fatalf("payload values = %#v", payload)
 	}
 	if payload.TitleColumns != 32 || payload.AutoTitleColumns != 24 {

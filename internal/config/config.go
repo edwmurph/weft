@@ -51,8 +51,6 @@ type TaskType struct {
 }
 
 type Config struct {
-	CodexCommand            string              `toml:"-"`
-	TitleTemplate           string              `toml:"-"`
 	DefaultTaskType         string              `toml:"default_task_type"`
 	TaskTypes               map[string]TaskType `toml:"task_types"`
 	TitleHookCommand        string              `toml:"title_hook_command"`
@@ -103,8 +101,6 @@ func DefaultKeyBindings() KeyBindings {
 func DefaultConfig() Config {
 	taskTypes := DefaultTaskTypes()
 	return Config{
-		CodexCommand:            "codex",
-		TitleTemplate:           "{status} {auto}",
 		DefaultTaskType:         DefaultTaskTypeCodex,
 		TaskTypes:               taskTypes,
 		TitleHookCommand:        "",
@@ -329,15 +325,11 @@ func LoadConfig(path string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.MoveTask, raw.KeyBindings.MoveTask)
 	applyBinding(&cfg.KeyBindings.Edit, raw.KeyBindings.Edit)
 	if strings.EqualFold(strings.TrimSpace(raw.KeyBindings.Delete), "d") {
-		return Config{}, ConfigError{Message: fmt.Sprintf("unsupported config value in %s: key_bindings.delete cannot be \"d\"; use \"Backspace\" or delete key_bindings.delete", path)}
+		return Config{}, ConfigError{Message: fmt.Sprintf("unsupported config value in %s: key_bindings.delete cannot be \"d\"", path)}
 	}
 	applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
-	if codex, ok := cfg.TaskTypes[DefaultTaskTypeCodex]; ok {
-		cfg.CodexCommand = codex.Command
-		cfg.TitleTemplate = codex.TitleTemplate
-	}
 	cfg.normalizeTaskTypes()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -373,10 +365,6 @@ func (c *Config) normalizeTaskTypes() {
 	c.DefaultTaskType = strings.TrimSpace(c.DefaultTaskType)
 	if c.DefaultTaskType == "" {
 		c.DefaultTaskType = DefaultTaskTypeCodex
-	}
-	if codex, ok := c.TaskTypes[DefaultTaskTypeCodex]; ok {
-		c.CodexCommand = codex.Command
-		c.TitleTemplate = codex.TitleTemplate
 	}
 }
 
@@ -454,17 +442,6 @@ func (c Config) TaskType(id string) (TaskType, bool) {
 	c.normalizeTaskTypes()
 	taskType, ok := c.TaskTypes[strings.TrimSpace(id)]
 	return taskType, ok
-}
-
-func (c Config) TaskTypeOrDefault(id string) TaskType {
-	c.normalizeTaskTypes()
-	if taskType, ok := c.TaskTypes[strings.TrimSpace(id)]; ok {
-		return taskType
-	}
-	if taskType, ok := c.TaskTypes[c.DefaultTaskType]; ok {
-		return taskType
-	}
-	return c.TaskTypes[DefaultTaskTypeCodex]
 }
 
 func (c Config) OrderedTaskTypes() []TaskType {

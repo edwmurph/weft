@@ -79,6 +79,34 @@ func TestSupervisorRejectsSecondRuntimeForSameHome(t *testing.T) {
 	}
 }
 
+func TestSupervisorRejectsStateTaskTypesMissingFromConfig(t *testing.T) {
+	rt, cfg, store := testRuntime(t)
+	now := state.NowISO()
+	raw := `{
+  "version": 5,
+  "selected_workspace_id": "w",
+  "focus": "tasks",
+  "nav_open": true,
+  "workspaces": [{"id": "w", "path": "` + rt.Workspace + `", "created_at": "` + now + `", "updated_at": "` + now + `"}],
+  "groups": [],
+  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "type_id": "ghost", "title": "Ghost", "status": "stopped", "created_at": "` + now + `", "updated_at": "` + now + `"}],
+  "collapsed_group_ids": []
+}`
+	if err := os.WriteFile(rt.StatePath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Run(context.Background(), rt, cfg, store)
+	if err == nil {
+		t.Fatal("expected undefined task type error")
+	}
+	for _, expected := range []string{`tasks[0].type_id "ghost" is not defined in active config`, "run `weft clear` to reset"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error missing %q: %v", expected, err)
+		}
+	}
+}
+
 func TestRepeatedAttachDoesNotReselectLaunchWorkspace(t *testing.T) {
 	rt, cfg, store := testRuntime(t)
 	stop := runTestSupervisor(t, rt, cfg, store)
@@ -216,7 +244,6 @@ func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cfg.CodexCommand = fakeCodex
 	codexType := cfg.TaskTypes[config.DefaultTaskTypeCodex]
 	codexType.Command = fakeCodex
 	cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType

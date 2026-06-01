@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestInferBumpAndBumpVersion(t *testing.T) {
+func TestInferBumpAndBumpVersionWithOptions(t *testing.T) {
 	if got := InferBump("feat: add sessions command", nil); got != "minor" {
 		t.Fatalf("got %q", got)
 	}
@@ -17,14 +17,14 @@ func TestInferBumpAndBumpVersion(t *testing.T) {
 	if got := InferBump("refactor!: rewrite runtime", nil); got != "major" {
 		t.Fatalf("got %q", got)
 	}
-	next, err := BumpVersion("1.2.3", "minor")
+	next, err := BumpVersionWithOptions("1.2.3", "minor", BumpOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if next != "1.3.0" {
 		t.Fatalf("next = %q", next)
 	}
-	next, err = BumpVersion("0.0.0", "patch")
+	next, err = BumpVersionWithOptions("0.0.0", "patch", BumpOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestInferBumpAndBumpVersion(t *testing.T) {
 }
 
 func TestBumpVersionKeepsZeroMajorUntilStableRelease(t *testing.T) {
-	next, err := BumpVersion("0.9.1", "major")
+	next, err := BumpVersionWithOptions("0.9.1", "major", BumpOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

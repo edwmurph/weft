@@ -145,6 +145,10 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 		_ = lock.Close()
 		return err
 	}
+	if err := validateStateTaskTypes(cfg, st); err != nil {
+		_ = lock.Close()
+		return err
+	}
 	engine := tui.NewModel(rt, cfg, st)
 	if err := os.WriteFile(PIDPath(rt), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600); err != nil {
 		engine.Stop()
@@ -190,6 +194,17 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 			return nil
 		}
 	}
+}
+
+func validateStateTaskTypes(cfg config.Config, st state.State) error {
+	err := state.ValidateTaskTypes(st, func(id string) bool {
+		_, ok := cfg.TaskType(id)
+		return ok
+	})
+	if err != nil {
+		return fmt.Errorf("%v; run `weft clear` to reset", err)
+	}
+	return nil
 }
 
 type clientCoordinator struct {

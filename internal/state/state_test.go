@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+const codexTaskTypeID = "codex"
+
 func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -198,8 +200,8 @@ func TestCloseLastTaskInWorkspaceStaysInCurrentWorkspace(t *testing.T) {
 	st.Workspaces = append(st.Workspaces, otherWorkspace)
 	st.Groups = append(st.Groups, otherGroup)
 	st.Tasks = []Task{
-		{ID: "only", WorkspaceID: "w", GroupID: "f", TypeID: DefaultTaskTypeID, Title: "Only", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
-		{ID: "other", WorkspaceID: "w2", GroupID: "g2", TypeID: DefaultTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
+		{ID: "only", WorkspaceID: "w", GroupID: "f", TypeID: codexTaskTypeID, Title: "Only", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
+		{ID: "other", WorkspaceID: "w2", GroupID: "g2", TypeID: codexTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
 	}
 	st.ActiveTaskID = "only"
 
@@ -216,7 +218,7 @@ func TestWorkspaceCanHaveNoGroupsAndUngroupedTasks(t *testing.T) {
 		t.Fatalf("workspace state = %#v", st)
 	}
 
-	next, task, err := AddTask(st, "a", st.SelectedWorkspaceID, "", "Codex", NowISO())
+	next, task, err := AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,18 +254,18 @@ func TestWorkspaceTitleOverrideCanBeSetAndCleared(t *testing.T) {
 	}
 }
 
-func TestAddTaskDefaultsTitleToCodexTemplate(t *testing.T) {
+func TestAddTaskWithTypeRequiresTitle(t *testing.T) {
 	st := stateWithWorkspace(t)
 
-	_, task, err := AddTask(st, "a", st.SelectedWorkspaceID, "", "", NowISO())
-	if err != nil {
-		t.Fatal(err)
+	_, task, err := AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "", NowISO())
+	if err == nil {
+		t.Fatal("expected title error")
 	}
-	if task.Title != DefaultTaskTitle {
-		t.Fatalf("task title = %q", task.Title)
+	if err.Error() != "task title is required" {
+		t.Fatalf("error = %v", err)
 	}
-	if task.TypeID != DefaultTaskTypeID {
-		t.Fatalf("task type = %q", task.TypeID)
+	if task.ID != "" {
+		t.Fatalf("task should be empty on error: %#v", task)
 	}
 }
 
@@ -325,10 +327,10 @@ func TestRemoveLastWorkspaceLeavesEmptyState(t *testing.T) {
 func TestGroupValidationAndMoveTask(t *testing.T) {
 	st := testState(t)
 
-	if _, _, err := AddGroup(st, "bad", st.SelectedWorkspaceID, "bad/path", NowISO()); err == nil {
+	if _, _, err := AddGroupWithSilent(st, "bad", st.SelectedWorkspaceID, "bad/path", NowISO(), false); err == nil {
 		t.Fatal("expected slash validation error")
 	}
-	next, group, err := AddGroup(st, "ideas", st.SelectedWorkspaceID, "ideas", NowISO())
+	next, group, err := AddGroupWithSilent(st, "ideas", st.SelectedWorkspaceID, "ideas", NowISO(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,13 +384,13 @@ func TestEditGroupPersistsSilentAndPath(t *testing.T) {
 		t.Fatalf("group not renamed+silent: %#v", group)
 	}
 
-	next, err = RenameGroup(next, "g", "shipping")
+	next, err = EditGroup(next, "g", "shipping", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	group = GroupByID(next, "g")
-	if group == nil || !group.Silent {
-		t.Fatalf("rename should preserve silent: %#v", group)
+	if group == nil || group.Silent {
+		t.Fatalf("edit should store explicit silent value: %#v", group)
 	}
 }
 
@@ -536,11 +538,11 @@ func reorderTaskTestState(t *testing.T) State {
 		{ID: "review", WorkspaceID: "w", Path: "review", CreatedAt: now, UpdatedAt: now},
 	}
 	st.Tasks = []Task{
-		{ID: "top-a", WorkspaceID: "w", GroupID: "", TypeID: DefaultTaskTypeID, Title: "Top A", Status: StatusRunning, CreatedAt: "2026-01-01T00:03:00Z", UpdatedAt: now},
-		{ID: "release-a", WorkspaceID: "w", GroupID: "release", TypeID: DefaultTaskTypeID, Title: "Release A", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z", UpdatedAt: now},
-		{ID: "review-a", WorkspaceID: "w", GroupID: "review", TypeID: DefaultTaskTypeID, Title: "Review A", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
-		{ID: "release-b", WorkspaceID: "w", GroupID: "release", TypeID: DefaultTaskTypeID, Title: "Release B", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
-		{ID: "top-b", WorkspaceID: "w", GroupID: "", TypeID: DefaultTaskTypeID, Title: "Top B", Status: StatusRunning, CreatedAt: "2026-01-01T00:04:00Z", UpdatedAt: now},
+		{ID: "top-a", WorkspaceID: "w", GroupID: "", TypeID: codexTaskTypeID, Title: "Top A", Status: StatusRunning, CreatedAt: "2026-01-01T00:03:00Z", UpdatedAt: now},
+		{ID: "release-a", WorkspaceID: "w", GroupID: "release", TypeID: codexTaskTypeID, Title: "Release A", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z", UpdatedAt: now},
+		{ID: "review-a", WorkspaceID: "w", GroupID: "review", TypeID: codexTaskTypeID, Title: "Review A", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
+		{ID: "release-b", WorkspaceID: "w", GroupID: "release", TypeID: codexTaskTypeID, Title: "Release B", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
+		{ID: "top-b", WorkspaceID: "w", GroupID: "", TypeID: codexTaskTypeID, Title: "Top B", Status: StatusRunning, CreatedAt: "2026-01-01T00:04:00Z", UpdatedAt: now},
 	}
 	return st
 }
@@ -617,8 +619,8 @@ func TestReorderGroupStaysWithinWorkspaceAndPreservesSelection(t *testing.T) {
 		{ID: "qa", WorkspaceID: "w", Path: "qa", CreatedAt: now, UpdatedAt: now},
 	}
 	st.Tasks = []Task{
-		{ID: "active", WorkspaceID: "w", GroupID: "review", TypeID: DefaultTaskTypeID, Title: "Active", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
-		{ID: "other", WorkspaceID: "w2", GroupID: "other-a", TypeID: DefaultTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
+		{ID: "active", WorkspaceID: "w", GroupID: "review", TypeID: codexTaskTypeID, Title: "Active", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
+		{ID: "other", WorkspaceID: "w2", GroupID: "other-a", TypeID: codexTaskTypeID, Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
 	}
 
 	next, moved, err := ReorderGroup(st, "review", -1)
@@ -688,9 +690,9 @@ func testState(t *testing.T) State {
 		Workspaces:          []Workspace{{ID: workspaceID, Path: dir, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []Group{{ID: groupID, WorkspaceID: workspaceID, Path: "inbox", CreatedAt: now, UpdatedAt: now}},
 		Tasks: []Task{
-			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, TypeID: DefaultTaskTypeID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
-			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, TypeID: DefaultTaskTypeID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
-			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, TypeID: DefaultTaskTypeID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
+			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
+			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
+			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, TypeID: codexTaskTypeID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
 		},
 	}
 }

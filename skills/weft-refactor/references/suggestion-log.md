@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Maximum cutover refactor
+
+- Request: Implement the maximum legacy cutover in a fresh `.worktrees/max-cutover-refactor` worktree, preserving dashboard `U`, supervisor-owned `upgrade_resume`, Codex session capture/resume, backups, typed task launching, and current workspace/group/task UX.
+- Suggestions: Stop store load/write from repairing persisted state, validate strict v5 references/titles/statuses, reject persisted task `type_id` values missing from active config before supervisor startup, reject stale IPC `new.type_id` and `move.group_id`/`move.ungrouped`, remove state/config/release convenience wrappers held by old tests, and read Codex command/title defaults from `task_types.codex`.
+- Outcome: Implemented in `.worktrees/max-cutover-refactor`; awaiting review.
+- Evidence: `internal/state`, `internal/config`, `internal/app`, `internal/supervisor`, `internal/tui`, `internal/codexsession`, `internal/release`, `README.md`, `spec.md`.
+- Deferred: No additional compatibility aliases identified; current display-only fallback for an impossible missing task type remains defensive because startup validation rejects persisted mismatches.
+
 ## 2026-06-01 - Task type strictness cleanup
 
 - Request: Remove residual task-type alias/default compatibility after the v10.0.0 strict state/config cutover.

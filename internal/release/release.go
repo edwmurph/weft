@@ -56,10 +56,6 @@ func InferBump(messages string, changedFiles []string) string {
 	return "patch"
 }
 
-func BumpVersion(version string, bump string) (string, error) {
-	return BumpVersionWithOptions(version, bump, BumpOptions{})
-}
-
 func BumpVersionWithOptions(version string, bump string, options BumpOptions) (string, error) {
 	match := semverRE.FindStringSubmatch(version)
 	if len(match) != 4 {

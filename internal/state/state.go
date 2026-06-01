@@ -17,10 +17,6 @@ import (
 
 const Version = 5
 
-const DefaultGroupPath = "inbox"
-const DefaultTaskTitle = "{codex}"
-const DefaultTaskTypeID = "codex"
-
 type Focus string
 
 const (
@@ -123,7 +119,7 @@ func (s *Store) Ensure() (State, error) {
 	var loaded State
 	err := withFileLock(s.LockPath, func() error {
 		if _, err := os.Stat(s.Path); errors.Is(err, os.ErrNotExist) {
-			loaded = Repair(Empty(), s.Workspace)
+			loaded = Empty()
 			return writeJSONAtomic(s.Path, loaded)
 		}
 		raw, err := os.ReadFile(s.Path)
@@ -134,9 +130,7 @@ func (s *Store) Ensure() (State, error) {
 		if err != nil {
 			return err
 		}
-		repaired := Repair(loaded, s.Workspace)
-		loaded = repaired
-		return writeJSONAtomic(s.Path, repaired)
+		return nil
 	})
 	return loaded, err
 }
@@ -152,7 +146,7 @@ func (s *Store) Read() (State, error) {
 	err := withFileLock(s.LockPath, func() error {
 		raw, err := os.ReadFile(s.Path)
 		if errors.Is(err, os.ErrNotExist) {
-			loaded = Repair(Empty(), s.Workspace)
+			loaded = Empty()
 			return nil
 		}
 		if err != nil {
@@ -173,7 +167,10 @@ func (s *Store) Write(next State) error {
 		return err
 	}
 	return withFileLock(s.LockPath, func() error {
-		return writeJSONAtomic(s.Path, Repair(next, s.Workspace))
+		if err := ValidateCurrent(next); err != nil {
+			return unsupportedStateError(err.Error())
+		}
+		return writeJSONAtomic(s.Path, next)
 	})
 }
 
@@ -196,10 +193,10 @@ func parseState(raw []byte, fallbackWorkspace string) (State, error) {
 	if !validFocus(st.Focus) {
 		return State{}, unsupportedStateError(fmt.Sprintf("unsupported focus value %q", st.Focus))
 	}
-	if err := validateCurrentShape(st); err != nil {
+	if err := ValidateCurrent(st); err != nil {
 		return State{}, unsupportedStateError(err.Error())
 	}
-	return Repair(st, fallbackWorkspace), nil
+	return st, nil
 }
 
 func unsupportedStateError(reason string) error {
@@ -215,10 +212,170 @@ func validFocus(focus Focus) bool {
 	}
 }
 
-func validateCurrentShape(st State) error {
+func ValidateCurrent(st State) error {
+	if st.Version != Version {
+		return fmt.Errorf("unsupported state version %d", st.Version)
+	}
+	if !validFocus(st.Focus) {
+		return fmt.Errorf("unsupported focus value %q", st.Focus)
+	}
+	if st.Workspaces == nil {
+		return fmt.Errorf("workspaces must be an array")
+	}
+	if st.Groups == nil {
+		return fmt.Errorf("groups must be an array")
+	}
+	if st.Tasks == nil {
+		return fmt.Errorf("tasks must be an array")
+	}
+	workspaceIDs := map[string]bool{}
+	for index, workspace := range st.Workspaces {
+		if strings.TrimSpace(workspace.ID) == "" {
+			return fmt.Errorf("workspaces[%d].id is required", index)
+		}
+		if workspaceIDs[workspace.ID] {
+			return fmt.Errorf("workspaces[%d].id %q is duplicated", index, workspace.ID)
+		}
+		workspaceIDs[workspace.ID] = true
+		if strings.TrimSpace(workspace.Path) == "" {
+			return fmt.Errorf("workspaces[%d].path is required", index)
+		}
+		if strings.TrimSpace(workspace.CreatedAt) == "" {
+			return fmt.Errorf("workspaces[%d].created_at is required", index)
+		}
+		if strings.TrimSpace(workspace.UpdatedAt) == "" {
+			return fmt.Errorf("workspaces[%d].updated_at is required", index)
+		}
+	}
+	groupIDs := map[string]Group{}
+	for index, group := range st.Groups {
+		if strings.TrimSpace(group.ID) == "" {
+			return fmt.Errorf("groups[%d].id is required", index)
+		}
+		if _, exists := groupIDs[group.ID]; exists {
+			return fmt.Errorf("groups[%d].id %q is duplicated", index, group.ID)
+		}
+		if strings.TrimSpace(group.WorkspaceID) == "" {
+			return fmt.Errorf("groups[%d].workspace_id is required", index)
+		}
+		if !workspaceIDs[group.WorkspaceID] {
+			return fmt.Errorf("groups[%d].workspace_id %q is not defined", index, group.WorkspaceID)
+		}
+		if strings.TrimSpace(group.Path) == "" {
+			return fmt.Errorf("groups[%d].path is required", index)
+		}
+		if strings.Contains(group.Path, "/") {
+			return fmt.Errorf("groups[%d].path cannot contain /", index)
+		}
+		if strings.TrimSpace(group.CreatedAt) == "" {
+			return fmt.Errorf("groups[%d].created_at is required", index)
+		}
+		if strings.TrimSpace(group.UpdatedAt) == "" {
+			return fmt.Errorf("groups[%d].updated_at is required", index)
+		}
+		groupIDs[group.ID] = group
+	}
+	taskIDs := map[string]Task{}
 	for index, task := range st.Tasks {
+		if strings.TrimSpace(task.ID) == "" {
+			return fmt.Errorf("tasks[%d].id is required", index)
+		}
+		if _, exists := taskIDs[task.ID]; exists {
+			return fmt.Errorf("tasks[%d].id %q is duplicated", index, task.ID)
+		}
+		if strings.TrimSpace(task.WorkspaceID) == "" {
+			return fmt.Errorf("tasks[%d].workspace_id is required", index)
+		}
+		if !workspaceIDs[task.WorkspaceID] {
+			return fmt.Errorf("tasks[%d].workspace_id %q is not defined", index, task.WorkspaceID)
+		}
 		if strings.TrimSpace(task.TypeID) == "" {
 			return fmt.Errorf("tasks[%d].type_id is required", index)
+		}
+		if strings.TrimSpace(task.Title) == "" {
+			return fmt.Errorf("tasks[%d].title is required", index)
+		}
+		if !validTaskStatus(task.Status) {
+			return fmt.Errorf("tasks[%d].status %q is not supported", index, task.Status)
+		}
+		if strings.TrimSpace(task.CreatedAt) == "" {
+			return fmt.Errorf("tasks[%d].created_at is required", index)
+		}
+		if strings.TrimSpace(task.UpdatedAt) == "" {
+			return fmt.Errorf("tasks[%d].updated_at is required", index)
+		}
+		if task.GroupID != "" {
+			group, ok := groupIDs[task.GroupID]
+			if !ok {
+				return fmt.Errorf("tasks[%d].group_id %q is not defined", index, task.GroupID)
+			}
+			if group.WorkspaceID != task.WorkspaceID {
+				return fmt.Errorf("tasks[%d].group_id %q belongs to workspace %q", index, task.GroupID, group.WorkspaceID)
+			}
+		}
+		taskIDs[task.ID] = task
+	}
+	if st.ActiveTaskID != "" {
+		if _, ok := taskIDs[st.ActiveTaskID]; !ok {
+			return fmt.Errorf("active_task_id %q is not defined", st.ActiveTaskID)
+		}
+	}
+	if st.SelectedTaskID != "" {
+		task, ok := taskIDs[st.SelectedTaskID]
+		if !ok {
+			return fmt.Errorf("selected_task_id %q is not defined", st.SelectedTaskID)
+		}
+		if st.SelectedWorkspaceID != "" && task.WorkspaceID != st.SelectedWorkspaceID {
+			return fmt.Errorf("selected_task_id %q belongs to workspace %q", st.SelectedTaskID, task.WorkspaceID)
+		}
+	}
+	if st.SelectedWorkspaceID != "" && !workspaceIDs[st.SelectedWorkspaceID] {
+		return fmt.Errorf("selected_workspace_id %q is not defined", st.SelectedWorkspaceID)
+	}
+	if st.SelectedGroupID != "" {
+		group, ok := groupIDs[st.SelectedGroupID]
+		if !ok {
+			return fmt.Errorf("selected_group_id %q is not defined", st.SelectedGroupID)
+		}
+		if st.SelectedWorkspaceID != "" && group.WorkspaceID != st.SelectedWorkspaceID {
+			return fmt.Errorf("selected_group_id %q belongs to workspace %q", st.SelectedGroupID, group.WorkspaceID)
+		}
+	}
+	for index, groupID := range st.CollapsedGroupIDs {
+		if _, ok := groupIDs[groupID]; !ok {
+			return fmt.Errorf("collapsed_group_ids[%d] %q is not defined", index, groupID)
+		}
+	}
+	if st.NavOpen {
+		if st.Focus != FocusWorkspaces && st.Focus != FocusTasks {
+			return fmt.Errorf("focus %q requires nav_open=false", st.Focus)
+		}
+	} else if st.Focus != FocusConsole {
+		return fmt.Errorf("focus %q requires nav_open=true", st.Focus)
+	}
+	if st.ActiveTaskID == "" && !st.NavOpen {
+		return fmt.Errorf("nav_open must be true when active_task_id is empty")
+	}
+	return nil
+}
+
+func validTaskStatus(status TaskStatus) bool {
+	switch status {
+	case StatusStarting, StatusRunning, StatusReady, StatusSitting, StatusShipping, StatusStopped, StatusKilled, StatusError:
+		return true
+	default:
+		return false
+	}
+}
+
+func ValidateTaskTypes(st State, hasTaskType func(string) bool) error {
+	if hasTaskType == nil {
+		return fmt.Errorf("active config task types are not available")
+	}
+	for index, task := range st.Tasks {
+		typeID := strings.TrimSpace(task.TypeID)
+		if !hasTaskType(typeID) {
+			return fmt.Errorf("tasks[%d].type_id %q is not defined in active config", index, typeID)
 		}
 	}
 	return nil
@@ -258,9 +415,6 @@ func Repair(st State, fallbackWorkspace string) State {
 		if !workspaces[st.Groups[index].WorkspaceID] && len(st.Workspaces) > 0 {
 			st.Groups[index].WorkspaceID = st.Workspaces[0].ID
 		}
-		if strings.TrimSpace(st.Groups[index].Path) == "" {
-			st.Groups[index].Path = DefaultGroupPath
-		}
 		if strings.TrimSpace(st.Groups[index].ID) == "" {
 			st.Groups[index].ID = StableID("group", st.Groups[index].WorkspaceID, st.Groups[index].Path)
 		}
@@ -293,9 +447,6 @@ func Repair(st State, fallbackWorkspace string) State {
 		if !workspaces[task.WorkspaceID] && len(st.Workspaces) > 0 {
 			task.WorkspaceID = st.Workspaces[0].ID
 			task.GroupID = ""
-		}
-		if strings.TrimSpace(task.Title) == "" {
-			task.Title = DefaultTaskTitle
 		}
 		task.CodexStatus = strings.TrimSpace(task.CodexStatus)
 		if task.Status == "" {
@@ -916,10 +1067,6 @@ func SetWorkspaceTitle(st State, workspaceID string, title string) (State, error
 	return st, fmt.Errorf("workspace not found")
 }
 
-func AddGroup(st State, id string, workspaceID string, path string, now string) (State, Group, error) {
-	return AddGroupWithSilent(st, id, workspaceID, path, now, false)
-}
-
 func AddGroupWithSilent(st State, id string, workspaceID string, path string, now string, silent bool) (State, Group, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -949,14 +1096,6 @@ func AddGroupWithSilent(st State, id string, workspaceID string, path string, no
 	st.NavOpen = true
 	st.Focus = FocusTasks
 	return st, group, nil
-}
-
-func RenameGroup(st State, groupID string, path string) (State, error) {
-	group := GroupByID(st, groupID)
-	if group == nil {
-		return st, fmt.Errorf("group not found")
-	}
-	return EditGroup(st, groupID, path, group.Silent)
 }
 
 func EditGroup(st State, groupID string, path string, silent bool) (State, error) {
@@ -1026,10 +1165,6 @@ func ToggleGroupCollapsed(st State, groupID string) State {
 	return st
 }
 
-func AddTask(st State, id string, workspaceID string, groupID string, title string, now string) (State, Task, error) {
-	return AddTaskWithType(st, id, workspaceID, groupID, DefaultTaskTypeID, title, now)
-}
-
 func AddTaskWithType(st State, id string, workspaceID string, groupID string, typeID string, title string, now string) (State, Task, error) {
 	if WorkspaceByID(st, workspaceID) == nil {
 		return st, Task{}, fmt.Errorf("workspace not found")
@@ -1040,12 +1175,13 @@ func AddTaskWithType(st State, id string, workspaceID string, groupID string, ty
 			return st, Task{}, fmt.Errorf("group not found")
 		}
 	}
-	if strings.TrimSpace(title) == "" {
-		title = DefaultTaskTitle
-	}
 	typeID = strings.TrimSpace(typeID)
 	if typeID == "" {
 		return st, Task{}, fmt.Errorf("task type is required")
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return st, Task{}, fmt.Errorf("task title is required")
 	}
 	if id == "" {
 		id = StableID("task", workspaceID, groupID, typeID, now, title)
