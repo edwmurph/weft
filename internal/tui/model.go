@@ -475,9 +475,9 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
 		m.focusNavPane(state.FocusAgents)
 	case msg.Type == tea.KeyShiftUp:
-		m.reorderSelectedAgent(-1)
+		m.reorderSelectedRow(-1)
 	case msg.Type == tea.KeyShiftDown:
-		m.reorderSelectedAgent(1)
+		m.reorderSelectedRow(1)
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
 		m.moveSelection(-1)
 	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
@@ -599,6 +599,19 @@ func (m *Model) applyGroupCursor(row groupRow) {
 	m.save()
 }
 
+func (m *Model) reorderSelectedRow(delta int) {
+	if m.state.Focus != state.FocusAgents {
+		return
+	}
+	row := m.currentGroupRow()
+	switch row.kind {
+	case groupRowGroup:
+		m.reorderSelectedGroup(row.groupID, delta)
+	case groupRowAgent:
+		m.reorderSelectedAgent(delta)
+	}
+}
+
 func (m *Model) reorderSelectedAgent(delta int) {
 	if m.state.Focus != state.FocusAgents {
 		return
@@ -618,6 +631,23 @@ func (m *Model) reorderSelectedAgent(delta int) {
 	}
 	m.state = next
 	m.syncGroupCursorToAgent(agentID)
+	m.save()
+}
+
+func (m *Model) reorderSelectedGroup(groupID string, delta int) {
+	if groupID == "" {
+		return
+	}
+	next, moved, err := state.ReorderGroup(m.state, groupID, delta)
+	if err != nil {
+		m.message = err.Error()
+		return
+	}
+	if !moved {
+		return
+	}
+	m.state = next
+	m.syncGroupCursorToSelectedGroup()
 	m.save()
 }
 
@@ -1776,6 +1806,31 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			m.save()
 		}
 		return m.ipcResponse("reordered task"), nil
+	case "reorder_group":
+		delta, err := strconv.Atoi(request.Args["delta"])
+		if err != nil || delta == 0 {
+			return ipc.ErrorResponse("invalid_delta", "delta must be a non-zero integer"), nil
+		}
+		id := request.Args["id"]
+		if id == "" {
+			row := m.currentGroupRow()
+			if row.kind == groupRowGroup {
+				id = row.groupID
+			}
+		}
+		if id == "" {
+			return ipc.ErrorResponse("group_not_found", "group not found"), nil
+		}
+		next, moved, err := state.ReorderGroup(m.state, id, delta)
+		if err != nil {
+			return ipcError("reorder_group_failed", err), nil
+		}
+		if moved {
+			m.state = next
+			m.syncGroupCursorToSelectedGroup()
+			m.save()
+		}
+		return m.ipcResponse("reordered group"), nil
 	case "open":
 		cmd := m.openSelection()
 		m.navWidth = m.targetNavWidth()
@@ -2424,7 +2479,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s new group", cfg.KeyBindings.NewGroup),
 		fmt.Sprintf("%s new task", cfg.KeyBindings.NewAgent),
 		fmt.Sprintf("%s move task", cfg.KeyBindings.MoveAgent),
-		"Shift+Up/Down reorder task",
+		"Shift+Up/Down reorder selected task or group",
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
 		"U upgrade supervisor and resume idle Codex tasks",

@@ -262,9 +262,9 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.newWorkspaceCardSelected = false
 		return m, m.request("focus", map[string]string{"target": string(state.FocusAgents)})
 	case msg.Type == tea.KeyShiftUp:
-		return m.reorderSelectedAgent(-1)
+		return m.reorderSelectedRow(-1)
 	case msg.Type == tea.KeyShiftDown:
-		return m.reorderSelectedAgent(1)
+		return m.reorderSelectedRow(1)
 	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
 		if m.newWorkspaceCardSelected {
 			m.newWorkspaceCardSelected = false
@@ -343,6 +343,24 @@ func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeNormal
 	return m, m.request("new", map[string]string{"type": taskType.ID})
+}
+
+func (m ClientModel) reorderSelectedRow(delta int) (tea.Model, tea.Cmd) {
+	if m.snapshot.State.Focus != state.FocusAgents {
+		return m, nil
+	}
+	row := currentGroupRowForState(m.snapshot.State, m.snapshot.GroupCursor)
+	switch row.kind {
+	case groupRowGroup:
+		return m, m.request("reorder_group", map[string]string{
+			"id":    row.groupID,
+			"delta": strconv.Itoa(delta),
+		})
+	case groupRowAgent:
+		return m.reorderSelectedAgent(delta)
+	default:
+		return m, nil
+	}
 }
 
 func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {

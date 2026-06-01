@@ -413,6 +413,173 @@ func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 	})
 }
 
+func TestDashboardReordersGroupsE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "direct-client-group-reorder"
+	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?") &&
+			strings.Contains(capture, "Enter yes")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") &&
+			strings.Contains(capture, "Tasks")
+	})
+
+	createGroup := func(name string) {
+		t.Helper()
+		directRun(t, env, "send-keys", "-t", pane, "g")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Create group")
+		})
+		directRun(t, env, "send-keys", "-l", "-t", pane, name)
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			return groupByPath(st, name) != nil
+		})
+	}
+	groupOrderMatches := func(st state.State, want []string) bool {
+		workspaceState := state.WorkspaceByPath(st, workspace)
+		if workspaceState == nil {
+			return false
+		}
+		return strings.Join(groupPaths(state.GroupsForWorkspace(st, workspaceState.ID)), ",") == strings.Join(want, ",")
+	}
+	assertRenderedOrder := func(want ...string) {
+		t.Helper()
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
+			for _, value := range want {
+				if !strings.Contains(capture, value) {
+					return false
+				}
+			}
+			return stringsAppearInOrder(capture, want...)
+		})
+		if !stringsAppearInOrder(capture, want...) {
+			t.Fatalf("rendered group order does not match %v:\n%s", want, capture)
+		}
+	}
+
+	timedStep(t, "groups render and persist manual order", func() {
+		createGroup("zulu")
+		createGroup("alpha")
+		createGroup("middle")
+		waitState(t, env, bin, func(st state.State) bool {
+			return groupOrderMatches(st, []string{"zulu", "alpha", "middle"})
+		})
+		assertRenderedOrder("zulu", "alpha", "middle")
+	})
+
+	timedStep(t, "shift arrows reorder the selected group", func() {
+		directRun(t, env, "send-keys", "-t", pane, "S-Up")
+		waitState(t, env, bin, func(st state.State) bool {
+			selected := state.GroupByID(st, st.SelectedGroupID)
+			return selected != nil &&
+				selected.Path == "middle" &&
+				st.SelectedAgentID == "" &&
+				groupOrderMatches(st, []string{"zulu", "middle", "alpha"})
+		})
+		assertRenderedOrder("zulu", "middle", "alpha")
+
+		directRun(t, env, "send-keys", "-t", pane, "S-Down")
+		waitState(t, env, bin, func(st state.State) bool {
+			selected := state.GroupByID(st, st.SelectedGroupID)
+			return selected != nil &&
+				selected.Path == "middle" &&
+				st.SelectedAgentID == "" &&
+				groupOrderMatches(st, []string{"zulu", "alpha", "middle"})
+		})
+		assertRenderedOrder("zulu", "alpha", "middle")
+	})
+
+	var agentID string
+	timedStep(t, "shift arrows move selected task across group boundaries", func() {
+		directRun(t, env, "send-keys", "-t", pane, "n")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		st := waitState(t, env, bin, func(st state.State) bool {
+			active := state.ActiveAgent(st)
+			if active != nil {
+				agentID = active.ID
+			}
+			return len(st.Agents) == 1 &&
+				active != nil &&
+				active.GroupID == "" &&
+				st.Focus == state.FocusCodex
+		})
+		if agentID == "" {
+			t.Fatalf("created task id missing: %#v", st.Agents)
+		}
+
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.ActiveAgentID == agentID &&
+				st.SelectedAgentID == agentID &&
+				st.Focus == state.FocusAgents &&
+				st.NavOpen
+		})
+		directRun(t, env, "send-keys", "-t", pane, "S-Down")
+		waitState(t, env, bin, func(st state.State) bool {
+			group := groupByPath(st, "zulu")
+			agent := findAgent(st, agentID)
+			return group != nil &&
+				agent != nil &&
+				agent.GroupID == group.ID &&
+				st.SelectedAgentID == agentID &&
+				st.SelectedGroupID == group.ID
+		})
+
+		directRun(t, env, "send-keys", "-t", pane, "S-Up")
+		waitState(t, env, bin, func(st state.State) bool {
+			agent := findAgent(st, agentID)
+			return agent != nil &&
+				agent.GroupID == "" &&
+				st.SelectedAgentID == agentID &&
+				st.SelectedGroupID == ""
+		})
+	})
+
+	timedStep(t, "group order survives refresh and supervisor restart", func() {
+		out := runWeft(t, env, bin, "refresh")
+		if !strings.Contains(out, "refreshed Weft dashboard") {
+			t.Fatalf("refresh output missing message:\n%s", out)
+		}
+		waitState(t, env, bin, func(st state.State) bool {
+			return groupOrderMatches(st, []string{"zulu", "alpha", "middle"})
+		})
+
+		runWeft(t, env, bin, "close", "--kill", "--yes")
+		if directClient.pty != nil {
+			_ = directClient.pty.Close()
+		}
+		if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) && directClient.cmd != nil && directClient.cmd.Process != nil {
+			_ = directClient.cmd.Process.Kill()
+		}
+		if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
+			t.Fatal("dashboard client did not exit after supervisor close")
+		}
+		clientOutput, _ = startDirectDashboardClient(t, env, bin, workspace, pane+"-restart", 120, 32)
+		assertRenderedOrder("zulu", "alpha", "middle")
+		waitState(t, env, bin, func(st state.State) bool {
+			return groupOrderMatches(st, []string{"zulu", "alpha", "middle"})
+		})
+	})
+}
+
 func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
@@ -2489,6 +2656,26 @@ func groupByPath(st state.State, path string) *state.Group {
 		}
 	}
 	return nil
+}
+
+func groupPaths(groups []state.Group) []string {
+	paths := make([]string, 0, len(groups))
+	for _, group := range groups {
+		paths = append(paths, group.Path)
+	}
+	return paths
+}
+
+func stringsAppearInOrder(value string, parts ...string) bool {
+	offset := 0
+	for _, part := range parts {
+		index := strings.Index(value[offset:], part)
+		if index < 0 {
+			return false
+		}
+		offset += index + len(part)
+	}
+	return true
 }
 
 func startDirectDashboardClient(t *testing.T, env []string, bin string, workspace string, pane string, cols int, rows int) (func() string, <-chan struct{}) {

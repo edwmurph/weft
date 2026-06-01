@@ -224,8 +224,9 @@ directly in a workspace as top-level rows, or they can be organized into
 optional collapsible groups inside the `Tasks` pane. Use groups for whatever
 makes the work easier to scan: release tasks, experiments, review follow-ups,
 bug fixes, or blocked investigations. `Enter` on a group opens or collapses it.
-When a task row is selected, `Shift+Up`/`Shift+Down` moves it within its current
-group or top-level area.
+`Shift+Up`/`Shift+Down` reorders the selected task or group. Task rows move
+within their current group or top-level area, crossing into the adjacent group
+at boundaries; group rows move as whole sections.
 
 Shell rows use the same spinner as Codex rows while a foreground command is in
 progress, then return to the ready marker when the shell regains control.

@@ -305,7 +305,7 @@ The middle pane shows tasks for the selected workspace. It is always present so 
 
 When no workspace exists or no workspace is selected, the Tasks pane shows centered help text telling the user to add a workspace first. It must not advertise creating a task until a workspace exists. When a workspace is selected but has no tasks or groups, the Tasks pane shows centered help text saying there are no tasks and to press the configured new-task key.
 
-Tasks without a group render as top-level rows. User-created groups render as collapsible sections inside this pane, with their member tasks indented underneath. Creating a group must not force existing top-level tasks into a visible `Ungrouped`, `General`, or `Inbox` section.
+Tasks without a group render as top-level rows above group sections. User-created groups render as collapsible sections inside this pane, with their member tasks indented underneath. Creating a group must not force existing top-level tasks into a visible `Ungrouped`, `General`, or `Inbox` section.
 
 Group names are plain text. Emojis are inherently allowed because the group name is just user text. Weft does not need a separate emoji feature, picker, or icon system for groups in the first implementation.
 
@@ -337,6 +337,8 @@ Task type badges render as plain bracketed text such as `[codex]` or `[shell]`, 
 
 Group rows should be visually distinct from task rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Task rows should use a lighter marker and indentation when nested under a group.
 
+Groups render in the persisted manual order stored in state for that workspace. They are not sorted alphabetically.
+
 When a collapsed group contains an active/loading task, the group row surfaces the shared loading spinner after the chevron so hidden terminal foreground commands and other active child tasks are still visible in the Tasks pane.
 
 When the Tasks pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or task row visible.
@@ -345,10 +347,15 @@ The Tasks pane cursor is persisted separately from the active task console.
 Moving the cursor to a group row must survive supervisor refreshes, restarts,
 and upgrades without snapping back to the active task inside that group.
 
-`Shift+Up` and `Shift+Down` on a selected task row move that task one row up
-or down within its current group. Top-level tasks reorder only within the
-top-level ungrouped area. Reordering never moves a task into or out of a
-group, and does not restart the task PTY.
+`Shift+Up` and `Shift+Down` reorder the selected task or group row. On a
+selected task row, the task moves within its current group or top-level area
+when possible. At an area boundary, the task moves into the adjacent area:
+`Shift+Down` from the last top-level task moves it to the top of the first
+group, and `Shift+Up` from the first task in a group moves it to the end of the
+previous group or top-level area. Reordering never changes the workspace and
+does not restart the task PTY. On a selected group row, the whole group section
+moves among groups in the same workspace. Top-level ungrouped tasks remain
+above group sections.
 
 ## Task Live Preview And Console
 
@@ -466,7 +473,7 @@ w       Add workspace
 g       Create group in selected workspace
 n       Open the new-task type menu
 m       Move selected task to another group in the same workspace, or clear its group
-Shift+Up/Down Reorder selected task within its group or top-level area
+Shift+Up/Down Reorder selected task or group
 e       Edit selected workspace title, group, or task title
 Backspace Delete/remove selected item
 ?       Help
@@ -805,12 +812,19 @@ Move task:
 - Does not restart the PTY.
 - Cross-workspace moves are out of scope for the first implementation.
 
-Reorder task:
+Reorder task or group:
 
 - `Shift+Up` and `Shift+Down` reorder the selected task within its current
   group, or within the top-level ungrouped area when the task has no group.
-- Reordering never crosses group boundaries, never changes the workspace, and
-  does not restart the PTY.
+- At a boundary, task reordering crosses into the adjacent top-level/group
+  area. Moving down from the last top-level task inserts it at the top of the
+  next group; moving up from the first grouped task inserts it at the end of the
+  previous group or top-level area.
+- Reordering never changes the workspace and does not restart the PTY.
+- When a group row is selected, `Shift+Up` and `Shift+Down` reorder that whole
+  group section among the other groups in the same workspace.
+- Group reordering preserves the group's tasks, collapse state, silent flag,
+  and running terminals.
 
 Close/delete task:
 

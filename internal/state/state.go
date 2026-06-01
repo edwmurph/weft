@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -461,12 +460,6 @@ func GroupsForWorkspace(st State, workspaceID string) []Group {
 			groups = append(groups, group)
 		}
 	}
-	sort.SliceStable(groups, func(i, j int) bool {
-		if groups[i].Path == groups[j].Path {
-			return groups[i].CreatedAt < groups[j].CreatedAt
-		}
-		return groups[i].Path < groups[j].Path
-	})
 	return groups
 }
 
@@ -586,25 +579,23 @@ func ReorderAgent(st State, agentID string, delta int) (State, bool, error) {
 	if index < 0 {
 		return st, false, fmt.Errorf("agent not found")
 	}
-	target := -1
 	if delta < 0 {
 		for i := index - 1; i >= 0; i-- {
 			if sameAgentOrderArea(st.Agents[i], selected) {
-				target = i
-				break
+				return swapAgentsAndSelect(st, index, i, selected), true, nil
 			}
 		}
 	} else {
 		for i := index + 1; i < len(st.Agents); i++ {
 			if sameAgentOrderArea(st.Agents[i], selected) {
-				target = i
-				break
+				return swapAgentsAndSelect(st, index, i, selected), true, nil
 			}
 		}
 	}
-	if target < 0 {
-		return st, false, nil
-	}
+	return moveAgentToAdjacentArea(st, index, selected, delta)
+}
+
+func swapAgentsAndSelect(st State, index int, target int, selected Agent) State {
 	st.Agents[index], st.Agents[target] = st.Agents[target], st.Agents[index]
 	now := NowISO()
 	st.Agents[index].UpdatedAt = now
@@ -613,11 +604,138 @@ func ReorderAgent(st State, agentID string, delta int) (State, bool, error) {
 	st.SelectedAgentID = selected.ID
 	st.SelectedWorkspaceID = selected.WorkspaceID
 	st.SelectedGroupID = selected.GroupID
-	return st, true, nil
+	return st
 }
 
 func sameAgentOrderArea(left Agent, right Agent) bool {
 	return left.WorkspaceID == right.WorkspaceID && left.GroupID == right.GroupID
+}
+
+func moveAgentToAdjacentArea(st State, index int, selected Agent, delta int) (State, bool, error) {
+	areas := agentOrderAreas(st, selected.WorkspaceID)
+	currentArea := areaIndex(areas, selected.GroupID)
+	if currentArea < 0 {
+		return st, false, fmt.Errorf("agent group not found")
+	}
+	targetArea := currentArea
+	if delta < 0 {
+		targetArea--
+	} else {
+		targetArea++
+	}
+	if targetArea < 0 || targetArea >= len(areas) {
+		return st, false, nil
+	}
+	targetGroupID := areas[targetArea]
+	selected.GroupID = targetGroupID
+	selected.UpdatedAt = NowISO()
+	agents := append([]Agent{}, st.Agents[:index]...)
+	agents = append(agents, st.Agents[index+1:]...)
+	insertAt := agentAreaInsertIndex(agents, selected.WorkspaceID, targetGroupID, areas, targetArea, delta > 0)
+	agents = append(agents, Agent{})
+	copy(agents[insertAt+1:], agents[insertAt:])
+	agents[insertAt] = selected
+	st.Agents = agents
+	st.ActiveAgentID = selected.ID
+	st.SelectedAgentID = selected.ID
+	st.SelectedWorkspaceID = selected.WorkspaceID
+	st.SelectedGroupID = selected.GroupID
+	return st, true, nil
+}
+
+func agentOrderAreas(st State, workspaceID string) []string {
+	areas := []string{""}
+	for _, group := range GroupsForWorkspace(st, workspaceID) {
+		areas = append(areas, group.ID)
+	}
+	return areas
+}
+
+func areaIndex(areas []string, groupID string) int {
+	for index, areaGroupID := range areas {
+		if areaGroupID == groupID {
+			return index
+		}
+	}
+	return -1
+}
+
+func agentAreaInsertIndex(agents []Agent, workspaceID string, targetGroupID string, areas []string, targetArea int, atStart bool) int {
+	if atStart {
+		for index, agent := range agents {
+			if agent.WorkspaceID == workspaceID && agent.GroupID == targetGroupID {
+				return index
+			}
+		}
+	} else {
+		for index := len(agents) - 1; index >= 0; index-- {
+			if agents[index].WorkspaceID == workspaceID && agents[index].GroupID == targetGroupID {
+				return index + 1
+			}
+		}
+	}
+	insertAt := len(agents)
+	for index, agent := range agents {
+		if agent.WorkspaceID != workspaceID {
+			continue
+		}
+		agentArea := areaIndex(areas, agent.GroupID)
+		if agentArea < 0 {
+			continue
+		}
+		if agentArea > targetArea {
+			return index
+		}
+		if agentArea < targetArea {
+			insertAt = index + 1
+		}
+	}
+	return insertAt
+}
+
+func ReorderGroup(st State, groupID string, delta int) (State, bool, error) {
+	if delta == 0 {
+		return st, false, nil
+	}
+	index := -1
+	selected := Group{}
+	for i, group := range st.Groups {
+		if group.ID == groupID {
+			index = i
+			selected = group
+			break
+		}
+	}
+	if index < 0 {
+		return st, false, fmt.Errorf("group not found")
+	}
+	target := -1
+	if delta < 0 {
+		for i := index - 1; i >= 0; i-- {
+			if st.Groups[i].WorkspaceID == selected.WorkspaceID {
+				target = i
+				break
+			}
+		}
+	} else {
+		for i := index + 1; i < len(st.Groups); i++ {
+			if st.Groups[i].WorkspaceID == selected.WorkspaceID {
+				target = i
+				break
+			}
+		}
+	}
+	if target < 0 {
+		return st, false, nil
+	}
+	st.Groups[index], st.Groups[target] = st.Groups[target], st.Groups[index]
+	now := NowISO()
+	st.Groups[index].UpdatedAt = now
+	st.Groups[target].UpdatedAt = now
+	st.SelectedWorkspaceID = selected.WorkspaceID
+	st.SelectedGroupID = selected.ID
+	st.SelectedAgentID = ""
+	return st, true, nil
 }
 
 func MoveAgent(st State, agentID string, groupID string) (State, error) {

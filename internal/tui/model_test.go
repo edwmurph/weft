@@ -1756,6 +1756,169 @@ func TestShiftUpDownReordersSelectedAgentInAgentsPane(t *testing.T) {
 	}
 }
 
+func TestShiftUpDownMovesSelectedAgentAcrossAdjacentGroups(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		ActiveAgentID:       "top-b",
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now},
+			{ID: "review", WorkspaceID: "w", Path: "review", CreatedAt: now, UpdatedAt: now},
+		},
+		Agents: []state.Agent{
+			{ID: "top-a", WorkspaceID: "w", Title: "Top A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "top-b", WorkspaceID: "w", Title: "Top B", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "release-a", WorkspaceID: "w", GroupID: "release", Title: "Release A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "review-a", WorkspaceID: "w", GroupID: "review", Title: "Review A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		},
+	})
+	model.groupCursor = 1
+	model.groupCursorPinned = true
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
+	model = updated.(Model)
+	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ungrouped order after crossing down = %#v, want %#v", got, want)
+	}
+	if got, want := tuiAgentIDs(state.AgentsForGroup(model.state, "release")), []string{"top-b", "release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("release order after crossing down = %#v, want %#v", got, want)
+	}
+	if row := model.currentGroupRow(); row.kind != groupRowAgent || row.agentID != "top-b" || row.groupID != "release" {
+		t.Fatalf("selection should follow task into release: cursor=%d row=%#v", model.groupCursor, row)
+	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	model = updated.(Model)
+	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ungrouped order after crossing up = %#v, want %#v", got, want)
+	}
+	if got, want := tuiAgentIDs(state.AgentsForGroup(model.state, "release")), []string{"release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("release order after crossing up = %#v, want %#v", got, want)
+	}
+	if row := model.currentGroupRow(); row.kind != groupRowAgent || row.agentID != "top-b" || row.groupID != "" {
+		t.Fatalf("selection should follow task back to top-level: cursor=%d row=%#v", model.groupCursor, row)
+	}
+}
+
+func TestShiftUpDownReordersSelectedGroupInAgentsPane(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "beta",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "alpha", WorkspaceID: "w", Path: "alpha", CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", WorkspaceID: "w", Path: "beta", CreatedAt: now, UpdatedAt: now},
+			{ID: "gamma", WorkspaceID: "w", Path: "gamma", CreatedAt: now, UpdatedAt: now},
+		},
+	})
+	model.groupCursor = 1
+	model.groupCursorPinned = true
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	model = updated.(Model)
+	if got, want := tuiGroupIDs(state.GroupsForWorkspace(model.state, "w")), []string{"beta", "alpha", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("shift up group order = %#v, want %#v", got, want)
+	}
+	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "beta" {
+		t.Fatalf("selection should follow reordered group: cursor=%d row=%#v", model.groupCursor, row)
+	}
+	if model.state.SelectedAgentID != "" || model.state.SelectedGroupID != "beta" {
+		t.Fatalf("group selection state = %#v", model.state)
+	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
+	model = updated.(Model)
+	if got, want := tuiGroupIDs(state.GroupsForWorkspace(model.state, "w")), []string{"alpha", "beta", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("shift down group order = %#v, want %#v", got, want)
+	}
+	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "beta" {
+		t.Fatalf("selection should follow reordered group after down: cursor=%d row=%#v", model.groupCursor, row)
+	}
+}
+
+func TestClientShiftUpOnSelectedGroupRequestsReorderGroup(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "beta",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "alpha", WorkspaceID: "w", Path: "alpha", CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", WorkspaceID: "w", Path: "beta", CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	requests := make(chan ipc.Request, 1)
+	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
+		requests <- request
+		snapshot := ipc.Snapshot{State: st, GroupCursor: 1}
+		return ipc.Response{OK: true, Snapshot: &snapshot}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.snapshot = ipc.Snapshot{State: st, GroupCursor: 1}
+	_, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	if cmd == nil {
+		t.Fatal("expected client reorder command")
+	}
+	msg := cmd()
+	if response, ok := msg.(clientResponseMsg); !ok || response.err != nil {
+		t.Fatalf("client command response = %#v", msg)
+	}
+	select {
+	case request := <-requests:
+		if request.Command != "reorder_group" || request.Args["id"] != "beta" || request.Args["delta"] != "-1" {
+			t.Fatalf("client request = %#v", request)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for client request")
+	}
+}
+
+func TestSupervisorReorderGroupRequestMovesSelectedGroup(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "beta",
+		Focus:               state.FocusAgents,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "alpha", WorkspaceID: "w", Path: "alpha", CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", WorkspaceID: "w", Path: "beta", CreatedAt: now, UpdatedAt: now},
+		},
+	})
+	response, _ := model.HandleSupervisorRequest(ipc.Request{Command: "reorder_group", Args: map[string]string{"id": "beta", "delta": "-1"}})
+	if !response.OK {
+		t.Fatalf("reorder_group response = %#v", response)
+	}
+	if got, want := tuiGroupIDs(state.GroupsForWorkspace(model.state, "w")), []string{"beta", "alpha"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("supervisor group order = %#v, want %#v", got, want)
+	}
+	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "beta" {
+		t.Fatalf("supervisor selection row = %#v", row)
+	}
+}
+
 func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveAgent(t *testing.T) {
 	rt := testRuntime(t)
 	now := state.NowISO()
@@ -1770,8 +1933,8 @@ func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveAgent(t *testing.T) {
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
 			{ID: "in-progress", WorkspaceID: "w", Path: "in progress", CreatedAt: now, UpdatedAt: now},
-			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
 			{ID: "planning", WorkspaceID: "w", Path: "planning", CreatedAt: now, UpdatedAt: now},
+			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
 		},
 		Agents: []state.Agent{
 			{ID: "progress-a", WorkspaceID: "w", GroupID: "in-progress", Title: "Progress A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
@@ -2374,6 +2537,14 @@ func tuiAgentIDs(agents []state.Agent) []string {
 	ids := make([]string, 0, len(agents))
 	for _, agent := range agents {
 		ids = append(ids, agent.ID)
+	}
+	return ids
+}
+
+func tuiGroupIDs(groups []state.Group) []string {
+	ids := make([]string, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
 	}
 	return ids
 }
