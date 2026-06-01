@@ -194,6 +194,8 @@ func (r *clientInputRouter) routeTerminalInput(data []byte) {
 				return
 			case codexControlMouse:
 				r.pending = append(r.pending, data[index:index+width]...)
+			case terminalControlInterrupt:
+				r.sendTerminalInterrupt()
 			case terminalControlKeyboard:
 				r.handleTerminalKeyboard(data[index : index+width])
 			}
@@ -214,10 +216,11 @@ func (r *clientInputRouter) routeTerminalInput(data []byte) {
 type codexControlKind string
 
 const (
-	codexControlDrawer      codexControlKind = "drawer"
-	codexControlInterrupt   codexControlKind = "interrupt"
-	codexControlMouse       codexControlKind = "mouse"
-	terminalControlKeyboard codexControlKind = "keyboard"
+	codexControlDrawer       codexControlKind = "drawer"
+	codexControlInterrupt    codexControlKind = "interrupt"
+	codexControlMouse        codexControlKind = "mouse"
+	terminalControlInterrupt codexControlKind = "terminal_interrupt"
+	terminalControlKeyboard  codexControlKind = "keyboard"
 )
 
 var (
@@ -271,6 +274,9 @@ func (r *clientInputRouter) findTerminalControl(data []byte) (codexControlKind, 
 		}
 		if width := matchingTerminalSequenceWidth(data[index:], r.drawerSequences); width > 0 {
 			return codexControlDrawer, index, width
+		}
+		if width := matchingTerminalSequenceWidth(data[index:], r.interruptSequences); width > 0 {
+			return terminalControlInterrupt, index, width
 		}
 		if sequence, width, ok := consumeCSISequence(data[index:]); ok {
 			if _, ok := parseCSIKeyboardEvent(sequence); ok {
@@ -377,9 +383,20 @@ func (r *clientInputRouter) sendTerminalBytes(data []byte) {
 	})
 }
 
+func (r *clientInputRouter) sendTerminalInterrupt() {
+	_ = r.send("task_input", map[string]string{
+		"encoded": "\x03",
+		"input":   "ctrl+c",
+	})
+}
+
 func (r *clientInputRouter) handleTerminalKeyboard(raw []byte) {
 	event, ok := parseCSIKeyboardEvent(raw)
 	if !ok || event.isRelease() {
+		return
+	}
+	if key, ok := event.keyMsg(); ok && isCtrlCKey(key) {
+		r.sendTerminalInterrupt()
 		return
 	}
 	if event.isCommandK() {

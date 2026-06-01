@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 	"unicode"
@@ -247,6 +249,107 @@ title_template = "Shell"
 		return strings.Contains(capture, "Tasks") &&
 			strings.Contains(capture, "[shell] Ops Shell") &&
 			containsTaskLivePreviewAnimation(capture)
+	})
+}
+
+func TestDashboardIdleTerminalCtrlCMarksShellTaskKilledE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	pidPath := filepath.Join(tmp, "shell.pid")
+	shellCommand := "/bin/sh -lc " + shellQuote("printf '%s\n' \"$$\" > "+shellQuote(pidPath)+"; printf 'terminal-ready\n'; while IFS= read -r line; do printf 'line:%s\n' \"$line\"; done")
+	configText := fmt.Sprintf(`
+default_task_type = "shell"
+
+[task_types.codex]
+command = %q
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = %q
+badge = "[shell]"
+title_template = "Shell"
+`, fakeCodex, shellCommand)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "direct-client-shell-ctrl-c"
+	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Tasks") &&
+			strings.Contains(capture, "No task selected")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Tasks) == 1 &&
+			st.Focus == state.FocusConsole &&
+			st.Tasks[0].TypeID == "shell" &&
+			st.Tasks[0].Status == state.StatusReady
+	})
+	taskID := st.Tasks[0].ID
+	capture := waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "terminal-ready") &&
+			strings.Contains(capture, collapsedCodexToolbar)
+	})
+	if strings.Contains(capture, "C-c") {
+		t.Fatalf("Task Console toolbar should not mention C-c:\n%s", capture)
+	}
+
+	directRun(t, env, "send-keys", "-t", pane, "C-c")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Tasks) == 1 &&
+			st.ActiveTaskID == taskID &&
+			st.Focus == state.FocusTasks &&
+			st.NavOpen &&
+			st.Tasks[0].Status == state.StatusKilled &&
+			st.Tasks[0].CodexTitle == "Shell killed"
+	})
+	if clientExited(clientDone) {
+		t.Fatal("idle terminal C-c should not quit Weft")
+	}
+	pid := readPIDFile(t, pidPath)
+	if !waitForBool(2*time.Second, func() bool {
+		return !processRunning(pid)
+	}) {
+		t.Fatalf("idle terminal C-c should kill shell process pid %d", pid)
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Tasks") &&
+			strings.Contains(capture, "! [shell] Shell")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Shell killed") &&
+			strings.Contains(capture, "Process exited.") &&
+			strings.Contains(capture, "terminal-ready") &&
+			strings.Index(capture, "terminal-ready") < strings.Index(capture, "Shell killed")
 	})
 }
 
@@ -2761,6 +2864,26 @@ func clientExited(done <-chan struct{}) bool {
 	default:
 		return false
 	}
+}
+
+func readPIDFile(t *testing.T, path string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read shell pid file: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatalf("parse shell pid file: %v", err)
+	}
+	return pid
+}
+
+func processRunning(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	return syscall.Kill(pid, 0) == nil
 }
 
 func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {

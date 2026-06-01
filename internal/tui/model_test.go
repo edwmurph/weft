@@ -334,6 +334,22 @@ func TestApplyPTYDataMarksCommandApprovalScreenReady(t *testing.T) {
 	}
 }
 
+func TestApplyPTYDataMarksWrappedCommandApprovalScreenReady(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HWould you like to run the following comman\nd?\n\nReason: Do you want to remove temporary generated QA frames and the unused package lock\nfrom the demo video project?\n\n$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\n\n1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `rm -f` (p)\n3. No, and tell Codex what to do differently (esc)\n"})
+
+	task := state.TaskByID(model.state, "a")
+	if task == nil {
+		t.Fatal("task missing")
+	}
+	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
+		t.Fatalf("wrapped command approval status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+	}
+}
+
 func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 	st := testStateWithTask(t.TempDir())
 	model := Model{
@@ -1029,6 +1045,52 @@ func TestRecentCtrlCPTYExitMarksTaskKilled(t *testing.T) {
 	}
 	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
 		t.Fatalf("interrupted PTY exit should recover to Tasks pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
+	}
+}
+
+func TestIdleTerminalTaskCtrlCKillsTask(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.width = 120
+	model.navWidth = 0
+	model.state.Focus = state.FocusConsole
+	model.state.NavOpen = false
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.codexInputBuffers["a"] = []rune("stale")
+	model.screens["a"] = NewTerminalScreen(80, 6)
+	model.screens["a"].Write("terminal-ready\r\n$ ")
+	model.visible["a"] = true
+
+	_ = model.applyTaskInput(map[string]string{"input": "ctrl+c", "encoded": terminalKeyboardCtrlC})
+	if got := string(model.codexInputBuffers["a"]); got != "" {
+		t.Fatalf("terminal ctrl+c should clear pending input buffer, got %q", got)
+	}
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.Status != state.StatusKilled || task.CodexTitle != "Shell killed" {
+		t.Fatalf("idle terminal ctrl+c should kill task immediately: %#v", task)
+	}
+	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
+		t.Fatalf("idle terminal ctrl+c should recover to Tasks pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
+	}
+	if model.ptys["a"] != nil {
+		t.Fatal("idle terminal ctrl+c should remove the killed PTY")
+	}
+	model.applyPTYData(ptyx.Data{TaskID: "a", Err: os.ErrClosed})
+	task = state.TaskByID(model.state, "a")
+	if task == nil || task.Status != state.StatusKilled || task.CodexTitle != "Shell killed" {
+		t.Fatalf("delayed PTY exit should not downgrade killed task: %#v", task)
+	}
+
+	model.state.Focus = state.FocusConsole
+	output := model.activeOutput()
+	if !strings.Contains(output, "terminal-ready") || !strings.Contains(output, "Shell killed") || !strings.Contains(output, "Process exited.") {
+		t.Fatalf("killed terminal output should preserve terminal history and append exited state:\n%s", output)
+	}
+	if strings.Index(output, "terminal-ready") > strings.Index(output, "Shell killed") {
+		t.Fatalf("killed terminal output should render exited state below terminal history:\n%s", output)
+	}
+	if strings.Contains(output, "\x1b") {
+		t.Fatalf("killed terminal output should not render terminal cursor or ANSI styles:\n%q", output)
 	}
 }
 

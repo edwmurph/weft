@@ -336,6 +336,57 @@ func TestClientInputRouterDecodesTerminalKeyboardInput(t *testing.T) {
 	}
 }
 
+func TestClientInputRouterRoutesTerminalCtrlCAsInterrupt(t *testing.T) {
+	router := &clientInputRouter{
+		input:              bytes.NewBufferString("run\x03after\x1b[99;5uend\x02j"),
+		drawer:             []byte{0x02},
+		drawerSequences:    bindingTerminalSequences("C-b"),
+		interruptSequences: terminalInterruptSequences(),
+	}
+	router.SetTaskInputMode(taskInputTerminal)
+	var sent []struct {
+		command string
+		args    map[string]string
+	}
+	router.send = func(command string, args map[string]string) error {
+		sent = append(sent, struct {
+			command string
+			args    map[string]string
+		}{command: command, args: args})
+		return nil
+	}
+
+	buf := make([]byte, 8)
+	n, err := router.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+
+	if got := string(buf[:n]); got != "j" {
+		t.Fatalf("post-drawer bytes should return to Bubble Tea, got %q", got)
+	}
+	if len(sent) != 6 {
+		t.Fatalf("sent commands = %#v", sent)
+	}
+	if got := sent[0].args["encoded"]; sent[0].command != "task_input" || got != "run" {
+		t.Fatalf("raw prefix should be terminal input: %#v", sent[0])
+	}
+	for _, index := range []int{1, 3} {
+		if sent[index].command != "task_input" || sent[index].args["input"] != "ctrl+c" || sent[index].args["encoded"] != "\x03" {
+			t.Fatalf("terminal ctrl+c should be recorded and forwarded as ETX: %#v", sent[index])
+		}
+	}
+	if got := sent[2].args["encoded"]; sent[2].command != "task_input" || got != "after" {
+		t.Fatalf("raw middle should be terminal input: %#v", sent[2])
+	}
+	if got := sent[4].args["encoded"]; sent[4].command != "task_input" || got != "end" {
+		t.Fatalf("raw suffix should be terminal input: %#v", sent[4])
+	}
+	if sent[5].command != "toggle_drawer" {
+		t.Fatalf("drawer command = %#v", sent[5])
+	}
+}
+
 func TestClientInputRouterDropsTerminalModifierOnlyEvents(t *testing.T) {
 	router := &clientInputRouter{
 		input:              bytes.NewBufferString("\x1b[57441;2u\x1b[57442;5u\x02j"),

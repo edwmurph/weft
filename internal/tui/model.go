@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/edwmurph/weft/internal/codexsession"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
@@ -922,6 +923,38 @@ func (m *Model) killTaskPTY(taskID string) {
 	delete(m.sessionCaptures, taskID)
 }
 
+func (m *Model) killFocusedTerminalTask(taskID string) tea.Cmd {
+	task := state.TaskByID(m.state, taskID)
+	if task == nil {
+		return nil
+	}
+	if pty := m.ptys[taskID]; pty != nil {
+		pty.Kill()
+		delete(m.ptys, taskID)
+	}
+	delete(m.terminalCommands, taskID)
+	delete(m.codexInputBuffers, taskID)
+	delete(m.taskInterrupts, taskID)
+	delete(m.sessionCaptures, taskID)
+	title := taskTypeForTask(m.cfg, *task).Label + " killed"
+	m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
+		if task.Status != state.StatusError {
+			task.Status = state.StatusKilled
+			task.CodexTitle = title
+		}
+		return task
+	})
+	if m.state.ActiveTaskID == taskID && m.state.Focus == state.FocusConsole {
+		m.state.NavOpen = true
+		m.state.Focus = state.FocusTasks
+		m.lastNavFocus = state.FocusTasks
+		m.syncGroupCursor()
+		m.snapNavWidthToTarget()
+	}
+	m.save()
+	return m.startNavAnimation()
+}
+
 func (m *Model) selectedTask() *state.Task {
 	return selectedTaskForState(m.state, m.groupCursor)
 }
@@ -1382,7 +1415,13 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		activeExited := m.state.ActiveTaskID == data.TaskID
 		status := state.StatusStopped
 		title := taskTypeForTask(m.cfg, *task).Label + " exited"
-		if m.recentTaskInterrupt(data.TaskID) {
+		if task.Status == state.StatusKilled {
+			status = state.StatusKilled
+			title = task.CodexTitle
+			if strings.TrimSpace(title) == "" {
+				title = taskTypeForTask(m.cfg, *task).Label + " killed"
+			}
+		} else if m.recentTaskInterrupt(data.TaskID) {
 			status = state.StatusKilled
 			title = taskTypeForTask(m.cfg, *task).Label + " killed"
 		}
@@ -1488,13 +1527,30 @@ func (m *Model) activeOutput() string {
 	if active == nil {
 		return ""
 	}
+	footer := m.terminalExitFooter(*active)
 	if screen := m.screens[active.ID]; screen != nil {
 		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return ""
+			return footer
 		}
-		return screen.ANSIStringWithCursor(m.state.Focus == state.FocusConsole)
+		return appendTerminalExitFooter(screen.ANSIStringWithCursor(m.state.Focus == state.FocusConsole && footer == ""), footer)
 	}
-	return ""
+	return footer
+}
+
+func (m Model) terminalExitFooter(task state.Task) string {
+	if taskUsesCodexIntegration(m.cfg, task) {
+		return ""
+	}
+	switch task.Status {
+	case state.StatusKilled, state.StatusStopped:
+	default:
+		return ""
+	}
+	title := strings.TrimSpace(task.CodexTitle)
+	if title == "" {
+		title = taskTypeForTask(m.cfg, task).Label + " exited"
+	}
+	return title + "\n\nProcess exited."
 }
 
 func (m Model) activePlainLines() []string {
@@ -1502,13 +1558,14 @@ func (m Model) activePlainLines() []string {
 	if active == nil {
 		return nil
 	}
+	footer := m.terminalExitFooter(*active)
 	if screen := m.screens[active.ID]; screen != nil {
 		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return nil
+			return terminalExitFooterLines(footer)
 		}
-		return screen.PlainLines()
+		return appendTerminalExitFooterPlainLines(screen.PlainLines(), footer)
 	}
-	return nil
+	return terminalExitFooterLines(footer)
 }
 
 func (m *Model) activeScrollbackOutput() string {
@@ -1516,13 +1573,14 @@ func (m *Model) activeScrollbackOutput() string {
 	if active == nil {
 		return ""
 	}
+	footer := m.terminalExitFooter(*active)
 	if screen := m.screens[active.ID]; screen != nil {
 		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return ""
+			return footer
 		}
-		return screen.ScrollbackANSIStringWithCursor(m.state.Focus == state.FocusConsole)
+		return appendTerminalExitFooter(screen.ScrollbackANSIStringWithCursor(m.state.Focus == state.FocusConsole && footer == ""), footer)
 	}
-	return ""
+	return footer
 }
 
 func (m Model) activeScrollbackPlainLines() []string {
@@ -1530,13 +1588,60 @@ func (m Model) activeScrollbackPlainLines() []string {
 	if active == nil {
 		return nil
 	}
+	footer := m.terminalExitFooter(*active)
 	if screen := m.screens[active.ID]; screen != nil {
 		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return nil
+			return terminalExitFooterLines(footer)
 		}
-		return screen.ScrollbackPlainLines()
+		return appendTerminalExitFooterPlainLines(screen.ScrollbackPlainLines(), footer)
 	}
-	return nil
+	return terminalExitFooterLines(footer)
+}
+
+func appendTerminalExitFooter(output string, footer string) string {
+	if strings.TrimSpace(footer) == "" {
+		return output
+	}
+	lines := strings.Split(strings.ReplaceAll(output, "\r", ""), "\n")
+	lines = trimTrailingANSIBlankLines(lines)
+	if len(lines) == 0 {
+		return footer
+	}
+	lines = append(lines, "")
+	lines = append(lines, strings.Split(footer, "\n")...)
+	return strings.Join(lines, "\n")
+}
+
+func appendTerminalExitFooterPlainLines(lines []string, footer string) []string {
+	if strings.TrimSpace(footer) == "" {
+		return lines
+	}
+	out := append([]string(nil), lines...)
+	for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
+		out = out[:len(out)-1]
+	}
+	footerLines := strings.Split(footer, "\n")
+	if len(out) == 0 {
+		return footerLines
+	}
+	out = append(out, "")
+	out = append(out, footerLines...)
+	return out
+}
+
+func terminalExitFooterLines(footer string) []string {
+	if strings.TrimSpace(footer) == "" {
+		return nil
+	}
+	return strings.Split(footer, "\n")
+}
+
+func trimTrailingANSIBlankLines(lines []string) []string {
+	out := append([]string(nil), lines...)
+	for len(out) > 0 && strings.TrimSpace(ansi.Strip(out[len(out)-1])) == "" {
+		out = out[:len(out)-1]
+	}
+	return out
 }
 
 func (m Model) codexLoading() bool {
@@ -2225,7 +2330,16 @@ func (m *Model) applyTaskInput(args map[string]string) tea.Cmd {
 		return m.applyCodexInput(args)
 	}
 	encoded := []byte(args["encoded"])
+	if args["input"] == "ctrl+c" {
+		encoded = []byte{0x03}
+		if pty := m.ptys[active.ID]; pty == nil || !pty.ForegroundProcessActive() {
+			return m.killFocusedTerminalTask(active.ID)
+		}
+	}
 	if pty := m.ptys[active.ID]; pty != nil {
+		if args["input"] == "ctrl+c" {
+			m.recordTaskInterrupt(active.ID)
+		}
 		_ = pty.Write(encoded)
 	}
 	return m.captureRawTerminalInput(*active, encoded)
@@ -2395,6 +2509,9 @@ func (m *Model) captureRawTerminalInput(task state.Task, data []byte) tea.Cmd {
 			m.codexInputBuffers[task.ID] = trimLastRune(m.codexInputBuffers[task.ID])
 			index++
 		case 0x15:
+			delete(m.codexInputBuffers, task.ID)
+			index++
+		case 0x03:
 			delete(m.codexInputBuffers, task.ID)
 			index++
 		case 0x17:
