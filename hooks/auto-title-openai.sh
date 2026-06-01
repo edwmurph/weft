@@ -26,11 +26,19 @@ payload="$(cat)"
 model="${OPENAI_TITLE_MODEL:-gpt-5.4-nano}"
 
 first_message="$(jq -r '.first_message // ""' <<<"$payload")"
+auto_title_columns="$(jq -r '(.auto_title_columns // .title_columns // 32) | tostring' <<<"$payload")"
+if [[ -z "$auto_title_columns" || "$auto_title_columns" =~ [^0-9] ]]; then
+  auto_title_columns=32
+fi
+if (( auto_title_columns < 1 )); then
+  auto_title_columns=1
+fi
 
 request="$(
   jq -n \
     --arg model "$model" \
     --arg first_message "$first_message" \
+    --arg auto_title_columns "$auto_title_columns" \
     '{
       model: $model,
       store: false,
@@ -40,7 +48,7 @@ request="$(
       input: [
         {
           role: "system",
-          content: "Write a very short terminal tab title for the first message sent to a coding agent. Output only the title. Use only the first message. Do not use repo, workdir, product, or app context unless it appears in the message. If the message is a greeting or not a clear task, preserve its simple intent, often exactly. Examples: hi -> hi; hello -> hello; can you help? -> Help Request. If it is a task request, summarize the requested task in 1 to 5 words."
+          content: ("Write a very short Weft task title for the first message sent to a coding agent. Output only the title. Use only the first message. Do not use repo, workdir, product, or app context unless it appears in the message. Fit within " + $auto_title_columns + " terminal display columns so the title fits after Weft reserves space for the task marker, widest configured task-type badge, and title-template fields such as status. Count ordinary ASCII characters as one column. Prefer 1 to 4 words. If the column limit is tiny, output the shortest useful label. If the message is a greeting or not a clear task, preserve its simple intent, often exactly. Examples: hi -> hi; hello -> hello; can you help? -> Help Request. If it is a task request, summarize the requested task compactly.")
         },
         {
           role: "user",

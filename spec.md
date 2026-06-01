@@ -376,6 +376,9 @@ Task rows may use subtle row color and marker shape to make derived state easier
 
 Task type badges render as plain bracketed text such as `[codex]` or `[shell]`, usually from the task type ID, in a fixed-width badge column so task rows align across terminal fonts. Avoid emoji and wide symbols because terminal width and fallback-font behavior is inconsistent.
 
+When there is enough room for all three panes, the Tasks pane should prefer a
+54-column frame before giving extra columns to `Task Live Preview`.
+
 Group rows should be visually distinct from task rows. Use the chevron/collapse marker, count, stronger color or weight, and one blank line before group sections. When there are no top-level tasks, the first group must reuse the new-task template row's existing separator instead of adding a second blank line. Task rows should use a lighter marker and indentation when nested under a group.
 
 Groups render in the persisted manual order stored in state for that workspace. They are not sorted alphabetically.
@@ -647,7 +650,10 @@ command after their task type title template includes `{auto}`. The hook runs
 from the task workspace, sends JSON on stdin, and stores the first non-empty stdout line as
 the task's generated title. The hook payload includes `version`, `event`,
 `task_id`, `workspace`, `group`, `status`, `title`, the task `type_id`, task
-`title_template`, `codex_title` when available, and `first_message`.
+`title_template`, `codex_title` when available, `first_message`,
+`title_columns` for the rendered title area, and `auto_title_columns` for the
+available `{auto}` text after Weft accounts for the marker, widest configured
+task type badge, nesting, and other title-template fields.
 
 Weft must not encode provider-specific clients, model names, API keys, or HTTP
 contracts into the runtime. The title hook is just a shell command. If the hook
@@ -1064,6 +1070,8 @@ Minimum behavior:
 - At 116 columns and wider, show Workspaces, Tasks, and `Task Live Preview` panes together.
 - At medium widths where a fixed Workspaces pane and useful `Task Live Preview` cannot
   both fit, keep Workspaces and Tasks visible and hide `Task Live Preview`.
+- When all three panes fit, give the Tasks pane up to its preferred 54-column
+  frame while preserving at least the minimum useful `Task Live Preview` width.
 - If navigation cannot fit, fall back to a single navigation pane that switches between workspaces and tasks.
 - Task Focus State must always give the active task the full available terminal.
 

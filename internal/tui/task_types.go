@@ -48,6 +48,14 @@ func taskTypeBadgeCell(cfg config.Config, taskType config.TaskType) string {
 	return padVisual(taskTypeBadge(taskType), taskTypeBadgeColumnWidth(cfg))
 }
 
+func taskRowPrefixWidth(cfg config.Config, nested bool) int {
+	width := lipgloss.Width("·") + lipgloss.Width(" ") + taskTypeBadgeColumnWidth(cfg) + lipgloss.Width(" ")
+	if nested {
+		width += lipgloss.Width("  ")
+	}
+	return width
+}
+
 func defaultTaskTypeIndex(cfg config.Config) int {
 	taskTypes := cfg.OrderedTaskTypes()
 	for index, taskType := range taskTypes {

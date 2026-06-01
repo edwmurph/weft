@@ -1511,6 +1511,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		if !strings.Contains(string(payload), `"first_message":"ljs?n"`) {
 			t.Fatalf("title hook payload missing first message:\n%s", payload)
 		}
+		if !strings.Contains(string(payload), `"title_columns":`) || !strings.Contains(string(payload), `"auto_title_columns":`) {
+			t.Fatalf("title hook payload missing column hints:\n%s", payload)
+		}
 	})
 
 	timedStep(t, "group prompt and move task update structure", func() {

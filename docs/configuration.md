@@ -89,7 +89,10 @@ title_hook_timeout_seconds = 10
 ```
 
 When configured, Weft runs the hook from the task workspace and sends JSON on
-stdin. The first non-empty stdout line becomes the generated title.
+stdin. The payload includes the first message plus `title_columns` and
+`auto_title_columns` hints that account for the current Tasks pane width, task
+marker, widest configured task-type badge, and title-template fields such as
+`{status}`. The first non-empty stdout line becomes the generated title.
 
 Codex agent tasks use the first submitted chat message. Configured command
 tasks opt in by including `{auto}` in `title_template`, then use the first typed
@@ -97,8 +100,10 @@ command.
 
 The checked-in `hooks/auto-title-openai.sh` script is one example hook. It reads
 `OPENAI_API_KEY` from the environment or a local ignored `.env` file and calls
-the OpenAI Responses API. You can replace it with any command that follows the
-same stdin/stdout contract.
+the OpenAI Responses API. Its prompt tells the model to stay within
+`auto_title_columns` so generated titles fit task rows without ellipsis
+truncation. You can replace it with any command that follows the same
+stdin/stdout contract.
 
 ## Runtime Paths
 

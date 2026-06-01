@@ -1180,7 +1180,15 @@ func (m Model) titleHookCmd(task state.Task, firstMessage string) tea.Cmd {
 	if found := state.GroupForTask(m.state, task); found != nil {
 		group = *found
 	}
-	payload := titlehook.BuildPayload(task, workspace, group, task.Title, firstMessage)
+	payload := titlehook.BuildPayload(
+		task,
+		workspace,
+		group,
+		task.Title,
+		firstMessage,
+		taskTitleColumnWidth(m.cfg, m.state, task, m.width),
+		autoTitleMaxColumns(m.cfg, m.state, task, m.width),
+	)
 	command := m.cfg.TitleHookCommand
 	timeout := time.Duration(m.cfg.TitleHookTimeoutSeconds) * time.Second
 	ctx := m.ctx

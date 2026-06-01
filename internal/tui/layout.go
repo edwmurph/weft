@@ -19,7 +19,7 @@ const (
 	navHorizontalPadding     = 1
 	fixedWorkspacePaneWidth  = 60
 	minTasksPaneWidth        = 28
-	defaultTasksPaneWidth    = 48
+	defaultTasksPaneWidth    = 54
 	minCodexPaneWidth        = 28
 	minTwoPaneNavWidth       = fixedWorkspacePaneWidth + minTasksPaneWidth
 	minThreePaneWidth        = minTwoPaneNavWidth + minCodexPaneWidth
@@ -929,6 +929,45 @@ func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int
 		return activePaneStyle.Render(row)
 	}
 	return taskRowStyle(task, options.loadingTasks).Render(row)
+}
+
+func taskPaneWidthForTitleHook(st state.State, terminalWidth int) int {
+	if terminalWidth <= 0 {
+		return defaultTasksPaneWidth
+	}
+	st.NavOpen = true
+	st.Focus = state.FocusTasks
+	navWidth := workspaceNavFrameWidth(st, terminalWidth)
+	if navWidth <= 0 {
+		return defaultTasksPaneWidth
+	}
+	if navWidth >= minTwoPaneNavWidth {
+		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, navWidth-minTasksPaneWidth))
+		return max(0, navWidth-workspaceWidth)
+	}
+	return navWidth
+}
+
+func taskTitleColumnWidth(cfg config.Config, st state.State, task state.Task, terminalWidth int) int {
+	paneWidth := taskPaneWidthForTitleHook(st, terminalWidth)
+	rowWidth := max(0, paneWidth-2-(navHorizontalPadding*2))
+	return max(0, rowWidth-taskRowPrefixWidth(cfg, task.GroupID != ""))
+}
+
+func autoTitleMaxColumns(cfg config.Config, st state.State, task state.Task, terminalWidth int) int {
+	columnWidth := taskTitleColumnWidth(cfg, st, task, terminalWidth)
+	slots := strings.Count(task.Title, titles.AutoTemplate)
+	if slots <= 0 || columnWidth <= 0 {
+		return columnWidth
+	}
+	const sentinel = "X"
+	probe := task
+	probe.AutoTitle = sentinel
+	probe.AutoTitleAttempted = false
+	probe.AutoTitleError = ""
+	rendered := renderTaskTitleForState(cfg, st, probe)
+	fixedWidth := max(0, lipgloss.Width(rendered)-(slots*lipgloss.Width(sentinel)))
+	return max(1, (columnWidth-fixedWidth)/slots)
 }
 
 func taskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {

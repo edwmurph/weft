@@ -14,7 +14,7 @@ import (
 func TestBuildPayloadUsesTaskContext(t *testing.T) {
 	task := state.Task{ID: "a", TypeID: state.DefaultTaskTypeID, Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
-	payload := BuildPayload(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login")
+	payload := BuildPayload(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login", 32, 24)
 
 	if payload.Version != 2 || payload.Event != EventFirstMessage {
 		t.Fatalf("payload identity = %#v", payload)
@@ -24,6 +24,9 @@ func TestBuildPayloadUsesTaskContext(t *testing.T) {
 	}
 	if payload.TypeID != state.DefaultTaskTypeID || payload.Status != "Ready" || payload.FirstMessage != "fix login" {
 		t.Fatalf("payload values = %#v", payload)
+	}
+	if payload.TitleColumns != 32 || payload.AutoTitleColumns != 24 {
+		t.Fatalf("payload column hints = %#v", payload)
 	}
 }
 

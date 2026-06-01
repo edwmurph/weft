@@ -16,8 +16,11 @@ import (
 
 func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	st := layoutState("/tmp/project")
-	if got := workspaceNavFrameWidth(st, 140); got != fixedWorkspacePaneWidth+defaultTasksPaneWidth {
+	if got := workspaceNavFrameWidth(st, 142); got != fixedWorkspacePaneWidth+defaultTasksPaneWidth {
 		t.Fatalf("wide nav width = %d", got)
+	}
+	if got := workspaceNavFrameWidth(st, 140); got != 112 {
+		t.Fatalf("wide nav width with minimum preview = %d", got)
 	}
 	if got := workspaceNavFrameWidth(st, minThreePaneWidth); got != minTwoPaneNavWidth {
 		t.Fatalf("minimum three-pane nav width = %d", got)
@@ -31,6 +34,31 @@ func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	st.NavOpen = false
 	if got := workspaceNavFrameWidth(st, 140); got != 0 {
 		t.Fatalf("collapsed nav width = %d", got)
+	}
+}
+
+func TestAutoTitleMaxColumnsAccountsForTaskTypeBadges(t *testing.T) {
+	cfg := config.DefaultConfig()
+	custom := cfg.TaskTypes[config.DefaultTaskTypeShell]
+	custom.ID = "wide"
+	custom.Badge = "[widekind]"
+	cfg.TaskTypes[custom.ID] = custom
+	st := layoutState("/tmp/project")
+	st.Tasks = []state.Task{{
+		ID:          "a",
+		WorkspaceID: "w",
+		TypeID:      config.DefaultTaskTypeCodex,
+		Title:       "{status} {auto}",
+		CodexTitle:  "Fake Codex Ready",
+		Status:      state.StatusRunning,
+		CreatedAt:   state.NowISO(),
+		UpdatedAt:   state.NowISO(),
+	}}
+
+	got := autoTitleMaxColumns(cfg, st, st.Tasks[0], fixedWorkspacePaneWidth+defaultTasksPaneWidth+minCodexPaneWidth)
+
+	if got != 31 {
+		t.Fatalf("auto title columns = %d, want 31", got)
 	}
 }
 

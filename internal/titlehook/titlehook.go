@@ -23,32 +23,36 @@ const (
 )
 
 type Payload struct {
-	Version       int    `json:"version"`
-	Event         string `json:"event"`
-	TaskID        string `json:"task_id"`
-	TypeID        string `json:"type_id"`
-	Workspace     string `json:"workspace"`
-	Group         string `json:"group,omitempty"`
-	Status        string `json:"status"`
-	Title         string `json:"title"`
-	TitleTemplate string `json:"title_template"`
-	CodexTitle    string `json:"codex_title,omitempty"`
-	FirstMessage  string `json:"first_message"`
+	Version          int    `json:"version"`
+	Event            string `json:"event"`
+	TaskID           string `json:"task_id"`
+	TypeID           string `json:"type_id"`
+	Workspace        string `json:"workspace"`
+	Group            string `json:"group,omitempty"`
+	Status           string `json:"status"`
+	Title            string `json:"title"`
+	TitleTemplate    string `json:"title_template"`
+	CodexTitle       string `json:"codex_title,omitempty"`
+	FirstMessage     string `json:"first_message"`
+	TitleColumns     int    `json:"title_columns,omitempty"`
+	AutoTitleColumns int    `json:"auto_title_columns,omitempty"`
 }
 
-func BuildPayload(task state.Task, workspace state.Workspace, group state.Group, titleTemplate string, firstMessage string) Payload {
+func BuildPayload(task state.Task, workspace state.Workspace, group state.Group, titleTemplate string, firstMessage string, titleColumns int, autoColumns int) Payload {
 	return Payload{
-		Version:       2,
-		Event:         EventFirstMessage,
-		TaskID:        task.ID,
-		TypeID:        state.TaskTypeID(task),
-		Workspace:     workspace.Path,
-		Group:         group.Path,
-		Status:        titles.RenderStatus(task),
-		Title:         task.Title,
-		TitleTemplate: titleTemplate,
-		CodexTitle:    titles.NormalizeCodexTitle(task.CodexTitle),
-		FirstMessage:  firstMessage,
+		Version:          2,
+		Event:            EventFirstMessage,
+		TaskID:           task.ID,
+		TypeID:           state.TaskTypeID(task),
+		Workspace:        workspace.Path,
+		Group:            group.Path,
+		Status:           titles.RenderStatus(task),
+		Title:            task.Title,
+		TitleTemplate:    titleTemplate,
+		CodexTitle:       titles.NormalizeCodexTitle(task.CodexTitle),
+		FirstMessage:     firstMessage,
+		TitleColumns:     titleColumns,
+		AutoTitleColumns: autoColumns,
 	}
 }
 
