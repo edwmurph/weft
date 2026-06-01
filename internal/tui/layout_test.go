@@ -612,8 +612,17 @@ func TestRenderWorkspaceCardCountsColorOnlyNonzeroValues(t *testing.T) {
 	if strings.Contains(zeroActive, workspaceCountActiveStyle.Render("0 active")) {
 		t.Fatalf("zero active should not use active color:\n%q", zeroActive)
 	}
+	if got, want := workspaceCountNeedsAttentionStyle.Render("1 needs attention"), taskReadyStyle.Render("1 needs attention"); got != want {
+		t.Fatalf("needs attention style should match the Tasks pane ready highlight/text style:\ngot  %q\nwant %q", got, want)
+	}
 	if !strings.Contains(zeroActive, workspaceCountNeedsAttentionStyle.Render("1 needs attention")) {
-		t.Fatalf("nonzero needs attention should use amber style:\n%q", zeroActive)
+		t.Fatalf("nonzero needs attention should use the Tasks pane yellow style:\n%q", zeroActive)
+	}
+	if strings.Contains(zeroActive, activePaneStyle.Render("1 needs attention")) {
+		t.Fatalf("nonzero needs attention should not use the blue focus style:\n%q", zeroActive)
+	}
+	if strings.Contains(zeroActive, taskAttentionStyle.Render("1 needs attention")) {
+		t.Fatalf("nonzero needs attention should not use the orange attention style:\n%q", zeroActive)
 	}
 
 	zeroNeedsAttention := renderWorkspaceCardCounts(workspaceCardCounts{total: 1, active: 1, needsAttention: 0, silenced: 0}, 72)

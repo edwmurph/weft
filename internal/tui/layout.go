@@ -36,6 +36,8 @@ var (
 	headerStyle                       = lipgloss.NewStyle().Underline(true)
 	activeTaskStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
 	activePaneStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	attentionHighlightStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	taskReadyHighlightStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 	groupHeaderStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	modalStyle                        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
 	modalInputStyle                   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("244")).Padding(0, 1)
@@ -53,7 +55,7 @@ var (
 	workspaceCardSelectedFocusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	workspaceCountMutedStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	workspaceCountActiveStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	workspaceCountNeedsAttentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	workspaceCountNeedsAttentionStyle = taskReadyHighlightStyle
 	workspacePathWarningStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	workspaceUpgradeFooterStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	workspaceInfoBrandStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true).Underline(true)
@@ -65,13 +67,13 @@ var (
 	newWorkspaceCardHintStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	taskReadyStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	taskReadyStyle                    = taskReadyHighlightStyle
 	taskReadySelectedStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("220")).Bold(true)
 	taskRunningStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
 	taskWorkingStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	taskLoadingStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	taskShippingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
-	taskAttentionStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	taskAttentionStyle                = attentionHighlightStyle
 	taskErrorStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 )
 

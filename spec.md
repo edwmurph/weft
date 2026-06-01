@@ -191,7 +191,7 @@ Counts should use subtle colors:
 
 - `total`: muted neutral
 - `active`: blue
-- `needs attention`: amber when nonzero, muted neutral when zero
+- `needs attention`: the Tasks pane ready highlight/text yellow when nonzero, muted neutral when zero
 
 Example:
 
