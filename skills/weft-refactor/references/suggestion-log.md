@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Task type strictness cleanup
+
+- Request: Remove residual task-type alias/default compatibility after the v10.0.0 strict state/config cutover.
+- Suggestions: Drop hidden IPC `new` support for `type_id`, make `state.AddTaskWithType` require an explicit non-empty task type ID while keeping `state.AddTask` as the Codex-default helper, and remove the leftover `d` shortcut regression test now that current Backspace/delete-key coverage exists.
+- Outcome: Implemented in `.worktrees/task-type-strictness`; awaiting review.
+- Evidence: `internal/state/state.go`, `internal/tui/model.go`, `internal/state/state_test.go`, `internal/tui/model_test.go`.
+
 ## 2026-06-01 - Maximum legacy prune
 
 - Request: Make persisted state and config strictly current-shape only, without legacy alias advice, state repair, migration, archival, or regression scaffolding for retired surfaces.

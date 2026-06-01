@@ -283,6 +283,21 @@ func TestAddTaskWithTypeStoresTaskType(t *testing.T) {
 	}
 }
 
+func TestAddTaskWithTypeRequiresTaskType(t *testing.T) {
+	st := stateWithWorkspace(t)
+
+	_, task, err := AddTaskWithType(st, "", st.SelectedWorkspaceID, "", " ", "Shell", NowISO())
+	if err == nil {
+		t.Fatal("expected task type error")
+	}
+	if err.Error() != "task type is required" {
+		t.Fatalf("error = %v", err)
+	}
+	if task.ID != "" {
+		t.Fatalf("task should be empty on error: %#v", task)
+	}
+}
+
 func TestRepairAllowsEmptyWorkspaces(t *testing.T) {
 	st := Repair(Empty(), t.TempDir())
 

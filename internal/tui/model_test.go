@@ -510,21 +510,6 @@ func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {
 	}
 }
 
-func TestDefaultDeleteShortcutNoLongerUsesD(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
-	model = updated.(Model)
-
-	if cmd != nil || model.mode == modeConfirm || model.confirm == confirmDeleteTask {
-		t.Fatalf("d should not start delete confirmation mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
-	}
-}
-
 func TestBackspaceDeleteShortcutAcceptsCtrlHSequence(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
@@ -2344,6 +2329,27 @@ func TestIPCNewCreatesRequestedTaskType(t *testing.T) {
 	task := model.state.Tasks[0]
 	if task.TypeID != config.DefaultTaskTypeShell || task.Title != "Shell" {
 		t.Fatalf("shell task = %#v", task)
+	}
+}
+
+func TestIPCNewIgnoresLegacyTypeID(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Tasks = nil
+	model.state.ActiveTaskID = ""
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"type_id": config.DefaultTaskTypeShell}})
+	defer killPTYs(model)
+
+	if !response.OK || cmd == nil {
+		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+	}
+	if len(model.state.Tasks) != 1 {
+		t.Fatalf("tasks = %#v", model.state.Tasks)
+	}
+	task := model.state.Tasks[0]
+	if task.TypeID != config.DefaultTaskTypeCodex || task.Title != model.cfg.TaskTypes[config.DefaultTaskTypeCodex].TitleTemplate {
+		t.Fatalf("legacy type_id should not select shell: %#v", task)
 	}
 }
 

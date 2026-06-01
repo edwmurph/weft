@@ -1875,9 +1875,6 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		title := request.Args["title"]
 		typeID := strings.TrimSpace(request.Args["type"])
-		if typeID == "" {
-			typeID = strings.TrimSpace(request.Args["type_id"])
-		}
 		cmd := m.newTask(title, typeID)
 		m.snapNavWidthToTarget()
 		return m.ipcResponse("created task"), cmd

@@ -1014,7 +1014,7 @@ func AddTaskWithType(st State, id string, workspaceID string, groupID string, ty
 	}
 	typeID = strings.TrimSpace(typeID)
 	if typeID == "" {
-		typeID = DefaultTaskTypeID
+		return st, Task{}, fmt.Errorf("task type is required")
 	}
 	if id == "" {
 		id = StableID("task", workspaceID, groupID, typeID, now, title)
