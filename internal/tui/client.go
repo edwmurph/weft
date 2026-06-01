@@ -166,6 +166,7 @@ func (m ClientModel) View() string {
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
 	options := m.workspaceRenderOptions()
 	options.loadingFrame = loadingFrame
+	options.previewHeaderAnimation = livePreviewAnimationFrame(m.loading)
 	dashboardState := m.dashboardState()
 	if loadingText != "" {
 		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
@@ -650,7 +651,9 @@ func (m *ClientModel) ensureLoadingTick() tea.Cmd {
 }
 
 func (m ClientModel) hasLoadingAnimation() bool {
-	return strings.TrimSpace(m.snapshot.LoadingText) != "" || len(m.snapshot.LoadingAgentIDs) > 0
+	return strings.TrimSpace(m.snapshot.LoadingText) != "" ||
+		len(m.snapshot.LoadingAgentIDs) > 0 ||
+		m.mode == modeNormal && m.snapshot.State.NavOpen && state.ActiveAgent(m.snapshot.State) != nil
 }
 
 func dashboardUpgradeMessage(upgrade ipc.Upgrade, st state.State) string {

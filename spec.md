@@ -362,7 +362,7 @@ The pane shows either:
 - a centered empty message when no task is open, with a subtle Weft wordmark and version label above it when space allows
 - the selected task terminal when a task is open
 
-When navigation is open, the Workspaces and Tasks panes push `Task Live Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the task PTY. When a task is active, the preview top border shows the selected task title at the top right; preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
+When navigation is open, the Workspaces and Tasks panes push `Task Live Preview` to the right. When a task is active, the preview title appends one space and a slowly pulsing dot to indicate the preview can update with live task output. The preview animation is presentation only and does not mean the selected task is busy; it is omitted when there is no selected task to preview. The preview is read-only: keyboard input controls Weft navigation and organization, not the task PTY. When a task is active, the preview top border shows the selected task title at the top right; preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
 
 When the user presses `Enter` on a task, navigation slides away left, `Task Console` expands to the full terminal, and focus moves to the task console.
 

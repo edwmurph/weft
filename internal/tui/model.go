@@ -284,7 +284,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.stepNavAnimation()
 	case loadingTick:
 		m.refreshTerminalTaskActivity()
-		if !m.anyAgentLoading() {
+		if !m.hasLoadingAnimation() {
 			return m, nil
 		}
 		m.loading++
@@ -332,9 +332,18 @@ func (m Model) View() string {
 		title = m.renderAgentTitle(*active)
 	}
 	if loadingText != "" {
-		return renderLoadingWorkspaceWithNavWidthAndAgents(m.cfg, m.state, title, loadingText, m.loadingFrame(), m.loadingAgentSet(), m.width, m.height, m.message, m.navWidth, m.groupCursor)
+		return renderWorkspaceView(m.cfg, m.state, title, "", m.width, m.height, m.message, m.navWidth, m.groupCursor, workspaceRenderOptions{
+			loadingText:            loadingText,
+			loadingFrame:           m.loadingFrame(),
+			previewHeaderAnimation: livePreviewAnimationFrame(m.loading),
+			loadingAgents:          m.loadingAgentSet(),
+		})
 	}
-	return renderWorkspaceWithNavWidthAndAgents(m.cfg, m.state, title, content, m.loadingFrame(), m.loadingAgentSet(), m.width, m.height, m.message, m.navWidth, m.groupCursor)
+	return renderWorkspaceView(m.cfg, m.state, title, content, m.width, m.height, m.message, m.navWidth, m.groupCursor, workspaceRenderOptions{
+		loadingFrame:           m.loadingFrame(),
+		previewHeaderAnimation: livePreviewAnimationFrame(m.loading),
+		loadingAgents:          m.loadingAgentSet(),
+	})
 }
 
 func (m Model) modalView(content string) string {
@@ -1588,6 +1597,10 @@ func (m Model) loadingLabel() string {
 		label = taskTypeForAgent(m.cfg, *active).Label
 	}
 	return m.loadingFrame() + " Starting " + label
+}
+
+func (m Model) hasLoadingAnimation() bool {
+	return m.anyAgentLoading() || m.state.NavOpen && state.ActiveAgent(m.state) != nil
 }
 
 func (m *Model) save() {

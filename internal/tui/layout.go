@@ -74,6 +74,7 @@ var (
 type workspaceRenderOptions struct {
 	loadingText              string
 	loadingFrame             string
+	previewHeaderAnimation   string
 	loadingAgents            map[string]bool
 	workspaceFooterText      string
 	workspaceInfoText        string
@@ -238,13 +239,13 @@ func renderWorkspaceView(
 		navWidth = width - codexWidth
 	}
 	if navWidth <= 0 {
-		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText, options.codexToastText), "\n")
+		return strings.Join(renderCodexFrame(cfg, st, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation), "\n")
 	}
 	if codexWidth <= 0 {
 		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
 	}
 	nav := renderNavSection(cfg, st, navWidth, height, groupCursor, options)
-	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText)
+	codex := renderCodexFrame(cfg, st, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.previewHeaderAnimation)
 	lines := make([]string, 0, height)
 	for index := 0; index < height; index++ {
 		left := lineAt(nav, index, navWidth)
@@ -958,6 +959,7 @@ func renderCodexFrame(
 	navCollapsed bool,
 	loadingText string,
 	toastText string,
+	previewHeaderAnimation string,
 ) []string {
 	if width < 2 || height <= 0 {
 		return nil
@@ -968,6 +970,9 @@ func renderCodexFrame(
 	previewMode := !navCollapsed
 	topLabel := "Task Live Preview"
 	topRightLabel := ""
+	if previewMode && agentActive {
+		topLabel = previewTopLabel(previewHeaderAnimation)
+	}
 	if navCollapsed && active {
 		topLabel = "Task Console  " + codexCollapsedTopShortcuts(cfg)
 		topRightLabel = codexConsoleTopRightLabel(st, toastText)
@@ -1006,6 +1011,14 @@ func renderCodexFrame(
 	}
 	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))
 	return lines
+}
+
+func previewTopLabel(animation string) string {
+	animation = strings.TrimSpace(animation)
+	if animation == "" {
+		animation = livePreviewAnimationFrame(0)
+	}
+	return "Task Live Preview " + animation
 }
 
 func renderStatusBanner(message string, width int, maxLines int) []string {

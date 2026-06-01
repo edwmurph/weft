@@ -32,6 +32,35 @@ func TestEmptyDashboardStartsInAgentsFocus(t *testing.T) {
 	}
 }
 
+func TestLoadingTickContinuesOnlyWhenLivePreviewHasTask(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	model := NewModel(rt, cfg, state.Empty())
+
+	updated, cmd := model.Update(loadingTick{})
+	model = updated.(Model)
+
+	if model.loading != 0 {
+		t.Fatalf("empty preview loading frame index = %d, want 0", model.loading)
+	}
+	if cmd != nil {
+		t.Fatal("empty live preview should not keep the loading ticker active")
+	}
+
+	activeState := testStateWithAgent(rt.Workspace)
+	activeState.NavOpen = true
+	model = NewModel(rt, cfg, activeState)
+	updated, cmd = model.Update(loadingTick{})
+	model = updated.(Model)
+
+	if model.loading != 1 {
+		t.Fatalf("loading frame index = %d, want 1", model.loading)
+	}
+	if cmd == nil {
+		t.Fatal("live preview animation should keep the loading ticker active")
+	}
+}
+
 func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()

@@ -186,7 +186,9 @@ title_template = "Shell"
 	})
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Tasks") && strings.Contains(capture, "No task open")
+		return strings.Contains(capture, "Tasks") &&
+			strings.Contains(capture, "No task open") &&
+			!containsTaskLivePreviewAnimation(capture)
 	})
 
 	directRun(t, env, "send-keys", "-t", pane, "n")
@@ -235,7 +237,8 @@ title_template = "Shell"
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Tasks") &&
-			strings.Contains(capture, "[shell] Shell")
+			strings.Contains(capture, "[shell] Shell") &&
+			containsTaskLivePreviewAnimation(capture)
 	})
 }
 
@@ -2350,6 +2353,15 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 	if !empty && strings.Contains(capture, "No task open") {
 		t.Fatalf("dashboard kept empty state after agent was created:\n%s", capture)
 	}
+}
+
+func containsTaskLivePreviewAnimation(capture string) bool {
+	for _, frame := range []string{"·", "∙", "•", "●"} {
+		if strings.Contains(capture, "Task Live Preview "+frame) {
+			return true
+		}
+	}
+	return false
 }
 
 func assertClientEnablesMouseTracking(t *testing.T, capture string) {

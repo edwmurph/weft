@@ -90,7 +90,7 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	}
 	stripped := ansi.Strip(got)
 	lines := strings.Split(stripped, "\n")
-	if len(lines) == 0 || !strings.Contains(lines[0], "Task Live Preview") || !strings.Contains(lines[0], "alpha") {
+	if len(lines) == 0 || !strings.Contains(lines[0], "Task Live Preview ·") || !strings.Contains(lines[0], "alpha") {
 		t.Fatalf("preview top border should include pane title and agent title:\n%s", stripped)
 	}
 	if strings.Contains(lines[len(lines)-1], "alpha") {
@@ -107,6 +107,55 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	}
 	if strings.Contains(got, "ready") {
 		t.Fatalf("agent rows should not render fixed status tags unless template asks for them:\n%s", got)
+	}
+}
+
+func TestRenderTaskPreviewHeaderUsesAnimationFrame(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+
+	got := renderWorkspaceView(cfg, st, "alpha", "output", 140, 24, "", minTwoPaneNavWidth, 1, workspaceRenderOptions{
+		previewHeaderAnimation: "●",
+	})
+	stripped := ansi.Strip(got)
+	lines := strings.Split(stripped, "\n")
+
+	if len(lines) == 0 || !strings.Contains(lines[0], "Task Live Preview ●") || !strings.Contains(lines[0], "alpha") {
+		t.Fatalf("preview top border should include animation frame and agent title:\n%s", stripped)
+	}
+
+	st.ActiveAgentID = ""
+	st.SelectedAgentID = ""
+	st.Agents = nil
+	got = renderWorkspaceView(cfg, st, "Task", "No task open.", 140, 24, "", minTwoPaneNavWidth, 1, workspaceRenderOptions{
+		previewHeaderAnimation: "●",
+	})
+	stripped = ansi.Strip(got)
+	lines = strings.Split(stripped, "\n")
+	if len(lines) == 0 || strings.Contains(lines[0], "Task Live Preview ●") {
+		t.Fatalf("empty preview should not include animation frame:\n%s", stripped)
+	}
+}
+
+func TestLivePreviewAnimationFramePulsesDotSlowly(t *testing.T) {
+	cases := []struct {
+		index int
+		want  string
+	}{
+		{index: -1, want: "·"},
+		{index: 0, want: "·"},
+		{index: 2, want: "·"},
+		{index: 3, want: "∙"},
+		{index: 6, want: "•"},
+		{index: 9, want: "●"},
+		{index: 12, want: "•"},
+		{index: 15, want: "∙"},
+		{index: 18, want: "·"},
+	}
+	for _, tt := range cases {
+		if got := livePreviewAnimationFrame(tt.index); got != tt.want {
+			t.Fatalf("animation frame index=%d = %q, want %q", tt.index, got, tt.want)
+		}
 	}
 }
 
