@@ -337,6 +337,8 @@ Task type badges render as plain bracketed text such as `[codex]` or `[shell]`, 
 
 Group rows should be visually distinct from task rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Task rows should use a lighter marker and indentation when nested under a group.
 
+When a collapsed group contains an active/loading task, the group row surfaces the shared loading spinner after the chevron so hidden terminal foreground commands and other active child tasks are still visible in the Tasks pane.
+
 When the Tasks pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or task row visible.
 
 The Tasks pane cursor is persisted separately from the active task console.

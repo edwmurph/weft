@@ -408,6 +408,27 @@ func TestRenderAgentsPaneShowsGroupCountInline(t *testing.T) {
 	}
 }
 
+func TestRenderAgentsPaneShowsCollapsedGroupLoadingChild(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TitleTemplate = "{title}"
+	st := layoutState("/tmp/project")
+	st.CollapsedGroupIDs = []string{"f"}
+	st.Agents[0].TypeID = config.DefaultTaskTypeShell
+	st.Agents[0].Status = state.StatusRunning
+
+	got := ansi.Strip(strings.Join(renderGroupsPaneWithOptions(cfg, st, 40, 12, 0, workspaceRenderOptions{
+		loadingFrame:  "⠼",
+		loadingAgents: map[string]bool{"a": true},
+	}), "\n"))
+
+	if !strings.Contains(got, "▸ ⠼ inbox (1)") {
+		t.Fatalf("collapsed group should expose loading child marker:\n%s", got)
+	}
+	if strings.Contains(got, "[shell] alpha") {
+		t.Fatalf("collapsed group should still hide child task rows:\n%s", got)
+	}
+}
+
 func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"

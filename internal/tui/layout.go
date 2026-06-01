@@ -726,15 +726,20 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		if rowIndex > 0 {
 			content = append(content, "")
 		}
+		collapsed := state.IsGroupCollapsed(st, group.ID)
 		indicator := "▾ "
-		if state.IsGroupCollapsed(st, group.ID) {
+		if collapsed {
 			indicator = "▸ "
 		}
 		silentMarker := ""
 		if group.Silent {
 			silentMarker = "⊘ "
 		}
-		groupRow := rowLine(indicator+silentMarker+group.Path+" ("+fmtInt(state.AgentCountForGroup(st, group.ID))+")", "", rowWidth)
+		loadingMarker := ""
+		if collapsed && groupHasLoadingAgent(st, group.ID, options.loadingAgents) {
+			loadingMarker = loadingFrameForRender(options.loadingFrame) + " "
+		}
+		groupRow := rowLine(indicator+loadingMarker+silentMarker+group.Path+" ("+fmtInt(state.AgentCountForGroup(st, group.ID))+")", "", rowWidth)
 		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
 			groupRow = activeAgentStyle.Render(padVisual(groupRow, rowWidth))
 		} else {
@@ -745,7 +750,7 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		}
 		content = append(content, strings.Repeat(" ", navHorizontalPadding)+groupRow)
 		rowIndex++
-		if state.IsGroupCollapsed(st, group.ID) {
+		if collapsed {
 			continue
 		}
 		for _, agent := range state.AgentsForGroup(st, group.ID) {
@@ -766,6 +771,15 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 	}
 	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))
 	return renderPaneFrame("Tasks", "", width, height, st.Focus == state.FocusAgents, content)
+}
+
+func groupHasLoadingAgent(st state.State, groupID string, loadingAgents map[string]bool) bool {
+	for _, agent := range state.AgentsForGroup(st, groupID) {
+		if agentIsLoadingForRender(agent, loadingAgents) {
+			return true
+		}
+	}
+	return false
 }
 
 func scrollPaneContentToLine(content []string, selectedLine int, visibleLines int) []string {

@@ -239,6 +239,106 @@ title_template = "Shell"
 	})
 }
 
+func TestDashboardShowsShellLoadingInsideCollapsedGroupE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	configText := fmt.Sprintf(`
+default_task_type = "shell"
+
+[task_types.codex]
+command = %q
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = 'exec "$SHELL" -l'
+badge = "[shell]"
+title_template = "Shell"
+`, fakeCodex)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "direct-client-shell-loading-collapsed-group"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Tasks") && strings.Contains(capture, "No task open")
+	})
+
+	runWeft(t, env, bin, "new", "--type", "shell")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Agents) == 1 &&
+			st.Agents[0].TypeID == "shell" &&
+			st.Agents[0].Status == state.StatusReady
+	})
+	if st.Agents[0].GroupID != "" {
+		t.Fatalf("new shell task should start top-level: %#v", st.Agents[0])
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar) &&
+			strings.Contains(capture, "Shell")
+	})
+
+	runWeft(t, env, bin, "group", "add", "repro")
+	runWeft(t, env, bin, "move-right")
+	st = waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Groups) == 1 &&
+			len(st.Agents) == 1 &&
+			st.Agents[0].GroupID == st.Groups[0].ID
+	})
+	time.Sleep(200 * time.Millisecond)
+	if st.Focus == state.FocusCodex {
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "▾ repro (1)") &&
+			strings.Contains(capture, "[shell] Shell")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Up")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "▸ repro (1)") &&
+			!strings.Contains(capture, "[shell] Shell")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar)
+	})
+	directRun(t, env, "send-keys", "-l", "-t", pane, "sleep 10")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "repro (1)") &&
+			agentLineHasLoadingFrame(capture, "repro (1)") &&
+			!strings.Contains(capture, "[shell] Shell")
+	})
+}
+
 func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
