@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Direct model UI hard cutover
+
+- Request: Remove legacy unneeded code with a breaking hard cutover instead of keeping parity or back-compat code for this iteration.
+- Suggestions: Delete the unused direct Bubble Tea `Model` UI path, old in-process modal/key handling, nav animation scaffolding, production wrappers held only by tests, stale Codex input argument adapters, and the terminal scrollback string helper; keep the supervisor engine, IPC, client dashboard, dashboard `U`, and Codex session capture/resume paths.
+- Outcome: Implemented and verified in `.worktrees/legacy-cutover-cleanup`; awaiting review.
+- Evidence: `internal/tui/model.go`, `internal/tui/client.go`, `internal/tui/terminal_keys.go`, `internal/tui/layout.go`, `internal/tui/task_types.go`, `internal/tui/terminal_screen.go`, and focused TUI tests; `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`, `go run golang.org/x/tools/cmd/deadcode@latest ./...`, `git diff --check`.
+- Deferred: None.
+
 ## 2026-06-01 - Legacy code prune
 
 - Request: Prune current-main legacy scaffolding and true dead helpers without merging stale cleanup worktrees or weakening dashboard `U`, supervisor-owned `upgrade_resume`, or Codex resume.

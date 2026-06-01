@@ -83,12 +83,11 @@ func TestEnhancedKeyboardInputPreservesShiftTabForCodex(t *testing.T) {
 		if !input.hasKey || input.key.Type != tea.KeyShiftTab {
 			t.Fatalf("shift tab should still be available as a key outside Codex focus, got %#v", input.key)
 		}
-		args := input.codexInputArgs()
-		if got := args["encoded"]; got != raw {
+		if got := string(input.encoded); got != raw {
 			t.Fatalf("encoded = %q, want %q", got, raw)
 		}
-		if got := args["input"]; got != codexInputShiftTab {
-			t.Fatalf("input kind = %q", got)
+		if input.input != codexInputShiftTab {
+			t.Fatalf("input kind = %q", input.input)
 		}
 	}
 }
@@ -110,15 +109,14 @@ func TestEnhancedKeyboardInputMapsPrintableAndEnterCSIUForCodexCapture(t *testin
 		if !input.hasKey {
 			t.Fatalf("expected parsed key for %q", tc.raw)
 		}
-		args := input.codexInputArgs()
-		if got := args["encoded"]; got != tc.raw {
+		if got := string(input.encoded); got != tc.raw {
 			t.Fatalf("encoded = %q, want %q", got, tc.raw)
 		}
-		if got := args["input"]; got != tc.wantInput {
-			t.Fatalf("input = %q, want %q", got, tc.wantInput)
+		if tc.wantInput == "enter" && input.key.Type != tea.KeyEnter {
+			t.Fatalf("key = %#v, want enter", input.key)
 		}
-		if got := args["text"]; got != tc.wantText {
-			t.Fatalf("text = %q, want %q", got, tc.wantText)
+		if tc.wantInput == "text" && (input.key.Type != tea.KeyRunes || string(input.key.Runes) != tc.wantText) {
+			t.Fatalf("key = %#v, want text %q", input.key, tc.wantText)
 		}
 	}
 }
@@ -134,12 +132,6 @@ func TestEnhancedKeyboardInputMapsCSIUCtrlC(t *testing.T) {
 		}
 		if got := string(input.encoded); got != raw {
 			t.Fatalf("ctrl+c should keep raw encoded bytes, got %q want %q", got, raw)
-		}
-		if got := input.codexInputArgs()["input"]; got != "ctrl+c" {
-			t.Fatalf("ctrl+c should request terminal interrupt, got input kind %q", got)
-		}
-		if got := input.codexInputArgs()["encoded"]; got != raw {
-			t.Fatalf("ctrl+c should preserve enhanced terminal bytes, got encoded %q want %q", got, raw)
 		}
 		cfg := config.DefaultConfig()
 		active := &state.Task{ID: "a"}
@@ -164,16 +156,6 @@ func TestEnhancedKeyboardInputKeepsDrawerKeyForWeftInCodexFocus(t *testing.T) {
 	active := &state.Task{ID: "a"}
 	if !input.shouldHandleAsKey(cfg, state.FocusConsole, active) {
 		t.Fatal("configured drawer key should stay owned by Weft in Codex focus")
-	}
-}
-
-func TestCodexInputArgsSendsPlainCtrlCAsEnhancedCodexKey(t *testing.T) {
-	args := codexInputArgs(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if got := args["input"]; got != "ctrl+c" {
-		t.Fatalf("input = %q, want ctrl+c", got)
-	}
-	if got := args["encoded"]; got != terminalKeyboardCtrlC {
-		t.Fatalf("encoded = %q, want enhanced ctrl+c %q", got, terminalKeyboardCtrlC)
 	}
 }
 
@@ -224,34 +206,6 @@ func TestEncodeKeyPreservesAltModifierForCodexPTY(t *testing.T) {
 	}
 	if got, want := string(encodeKey(tea.KeyMsg{Type: tea.KeyDelete, Alt: true})), "\x1b\x1b[3~"; got != want {
 		t.Fatalf("alt-delete = %q, want %q", got, want)
-	}
-}
-
-func TestCodexInputArgsPreservesAltBackspace(t *testing.T) {
-	args := codexInputArgs(tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
-	if got, want := args["encoded"], "\x1b\x7f"; got != want {
-		t.Fatalf("encoded = %q, want %q", got, want)
-	}
-	if got, want := args["input"], "alt+backspace"; got != want {
-		t.Fatalf("input = %q, want %q", got, want)
-	}
-
-	args = codexInputArgs(tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})
-	if got, want := args["encoded"], "\x1b\b"; got != want {
-		t.Fatalf("alt ctrl-h encoded = %q, want %q", got, want)
-	}
-	if got, want := args["input"], "alt+backspace"; got != want {
-		t.Fatalf("alt ctrl-h input = %q, want %q", got, want)
-	}
-}
-
-func TestCodexInputArgsPreservesShiftTab(t *testing.T) {
-	args := codexInputArgs(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if got, want := args["encoded"], "\x1b[Z"; got != want {
-		t.Fatalf("encoded = %q, want %q", got, want)
-	}
-	if got, want := args["input"], codexInputShiftTab; got != want {
-		t.Fatalf("input = %q, want %q", got, want)
 	}
 }
 

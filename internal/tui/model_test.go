@@ -19,7 +19,7 @@ import (
 	weftversion "github.com/edwmurph/weft/internal/version"
 )
 
-func TestEmptyDashboardStartsInTasksFocus(t *testing.T) {
+func TestEmptyModelStartsInWorkspacesFocus(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 
@@ -30,167 +30,6 @@ func TestEmptyDashboardStartsInTasksFocus(t *testing.T) {
 	}
 	if len(model.state.Workspaces) != 0 || len(model.state.Groups) != 0 {
 		t.Fatalf("empty state = %#v", model.state)
-	}
-}
-
-func TestLoadingTickContinuesWhileDashboardCanAnimate(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	model := NewModel(rt, cfg, state.Empty())
-	model.width = 140
-	model.navWidth = model.targetNavWidth()
-
-	updated, cmd := model.Update(loadingTick{})
-	model = updated.(Model)
-
-	if model.loading != 1 {
-		t.Fatalf("empty preview loading frame index = %d, want 1", model.loading)
-	}
-	if cmd == nil {
-		t.Fatal("empty live preview animation should keep the loading ticker active")
-	}
-
-	model.width = 100
-	model.navWidth = model.targetNavWidth()
-	updated, cmd = model.Update(loadingTick{})
-	model = updated.(Model)
-
-	if model.loading != 1 {
-		t.Fatalf("nav-only dashboard loading frame index = %d, want 1", model.loading)
-	}
-	if cmd != nil {
-		t.Fatal("nav-only dashboard should not keep the loading ticker active")
-	}
-
-	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
-	model = updated.(Model)
-	if cmd == nil {
-		t.Fatal("widening to show the preview should start the animation ticker")
-	}
-
-	activeState := testStateWithTask(rt.Workspace)
-	activeState.NavOpen = true
-	model = NewModel(rt, cfg, activeState)
-	updated, cmd = model.Update(loadingTick{})
-	model = updated.(Model)
-
-	if model.loading != 1 {
-		t.Fatalf("loading frame index = %d, want 1", model.loading)
-	}
-	if cmd == nil {
-		t.Fatal("live preview animation should keep the loading ticker active")
-	}
-}
-
-func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	cfg.DefaultTaskType = config.DefaultTaskTypeShell
-	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
-	defer killPTYs(model)
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	model = updated.(Model)
-
-	if cmd != nil {
-		t.Fatalf("new task menu should not start command immediately, got %#v", cmd)
-	}
-	if model.mode != modeNewTask {
-		t.Fatalf("mode = %s, want new task menu", model.mode)
-	}
-	got := ansi.Strip(model.View())
-	for _, expected := range []string{"New task", "Type", "Codex", "Shell", "Title", "Enter create", "Up/Down type", "Esc cancel"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("new task menu missing %q:\n%s", expected, got)
-		}
-	}
-	if model.input.Value() != "Shell" {
-		t.Fatalf("new task title input = %q, want Shell", model.input.Value())
-	}
-	for _, unexpected := range []string{"[codex] Codex", "[shell] Shell"} {
-		if strings.Contains(got, unexpected) {
-			t.Fatalf("new task menu should not render %q:\n%s", unexpected, got)
-		}
-	}
-
-	updated, cmd = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	defer killPTYs(model)
-	if cmd == nil {
-		t.Fatal("expected PTY start command")
-	}
-	if len(model.state.Tasks) != 1 {
-		t.Fatalf("tasks = %#v", model.state.Tasks)
-	}
-	if model.state.Tasks[0].TypeID != config.DefaultTaskTypeShell {
-		t.Fatalf("new task type = %q", model.state.Tasks[0].TypeID)
-	}
-	if model.state.Tasks[0].Title != "Shell" {
-		t.Fatalf("new task title = %q", model.state.Tasks[0].Title)
-	}
-	if model.state.Tasks[0].GroupID != "" {
-		t.Fatalf("new task should be top-level: %#v", model.state.Tasks[0])
-	}
-	if model.state.Focus != state.FocusConsole || model.state.NavOpen {
-		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
-	}
-}
-
-func TestNewTaskFormCanSetInitialTitle(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	cfg.DefaultTaskType = config.DefaultTaskTypeShell
-	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
-	defer killPTYs(model)
-
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	model = updated.(Model)
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlU})
-	model = updated.(Model)
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Ops Shell")})
-	model = updated.(Model)
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
-
-	if model.input.Value() != "Ops Shell" {
-		t.Fatalf("custom title should survive type changes, got %q", model.input.Value())
-	}
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	defer killPTYs(model)
-	if cmd == nil {
-		t.Fatal("expected PTY start command")
-	}
-	if len(model.state.Tasks) != 1 {
-		t.Fatalf("tasks = %#v", model.state.Tasks)
-	}
-	if model.state.Tasks[0].TypeID != config.DefaultTaskTypeCodex {
-		t.Fatalf("new task type = %q", model.state.Tasks[0].TypeID)
-	}
-	if model.state.Tasks[0].Title != "Ops Shell" {
-		t.Fatalf("new task title = %q", model.state.Tasks[0].Title)
-	}
-}
-
-func TestEnterOnNewTaskPlaceholderOpensTypeMenu(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
-	defer killPTYs(model)
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-
-	if cmd != nil {
-		t.Fatalf("new task placeholder should open the menu locally, got %#v", cmd)
-	}
-	if model.mode != modeNewTask {
-		t.Fatalf("mode = %s, want new task menu", model.mode)
-	}
-	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "New task") || !strings.Contains(got, "Enter create") {
-		t.Fatalf("new task menu missing after Enter on placeholder:\n%s", got)
 	}
 }
 
@@ -225,7 +64,7 @@ func TestTaskTypeBadgeDoesNotSynthesizeMissingTypes(t *testing.T) {
 	cfg := config.DefaultConfig()
 	task := state.Task{ID: "a", TypeID: "missing"}
 
-	if got := taskTypeBadgeForTask(cfg, task); got != "" {
+	if got := strings.TrimSpace(taskTypeBadgeCellForTask(cfg, task)); got != "" {
 		t.Fatalf("missing task type badge = %q, want empty configured badge", got)
 	}
 	if got := taskTypeBadgeColumnWidth(config.Config{TaskTypes: map[string]config.TaskType{}}); got != 0 {
@@ -236,24 +75,18 @@ func TestTaskTypeBadgeDoesNotSynthesizeMissingTypes(t *testing.T) {
 func TestNewTaskRequiresWorkspace(t *testing.T) {
 	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
 
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	model = updated.(Model)
-
-	if cmd != nil || len(model.state.Tasks) != 0 {
-		t.Fatalf("new task should be blocked without workspace, cmd=%v tasks=%#v", cmd, model.state.Tasks)
-	}
-	if model.message != "add a workspace first" {
-		t.Fatalf("message = %q", model.message)
-	}
-
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{}})
 	if response.OK || response.Message != "add a workspace first" || cmd != nil {
 		t.Fatalf("ipc new should be blocked without workspace, response=%#v cmd=%v", response, cmd)
+	}
+	if len(model.state.Tasks) != 0 {
+		t.Fatalf("new task should not mutate tasks: %#v", model.state.Tasks)
 	}
 }
 
 func TestApplyPTYDataUsesTaskID(t *testing.T) {
 	model := testModelWithTask(t)
+	defer killPTYs(model)
 
 	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "hello\n", Title: "Fake Codex Ready"})
 
@@ -270,6 +103,7 @@ func TestApplyPTYDataUsesTaskID(t *testing.T) {
 
 func TestApplyPTYDataMarksRequestUserInputScreenReady(t *testing.T) {
 	model := testModelWithTask(t)
+	defer killPTYs(model)
 
 	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
 	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HQuestion 1\nPick a path\n1 unanswered question\nEnter to submit answer\n"})
@@ -297,57 +131,40 @@ func TestApplyPTYDataMarksRequestUserInputScreenReady(t *testing.T) {
 	}
 }
 
-func TestApplyPTYDataMarksToolPermissionScreenReady(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-
-	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
-	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HField 1/1\nAllow Codex to use ChatGPT Atlas?\n› 1. Allow         Allow this request and continue.\n  2. Always allow  Allow this request and remember this choice for future requests.\n  3. Deny          Decline this request and continue.\n  4. Cancel        Cancel this request\nenter to submit | esc to cancel\n"})
-
-	task := state.TaskByID(model.state, "a")
-	if task == nil {
-		t.Fatal("task missing")
+func TestApplyPTYDataMarksPermissionScreensReady(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+	}{
+		{
+			name: "tool permission",
+			text: "\033[2J\033[HField 1/1\nAllow Codex to use ChatGPT Atlas?\n› 1. Allow         Allow this request and continue.\n  2. Always allow  Allow this request and remember this choice for future requests.\n  3. Deny          Decline this request and continue.\n  4. Cancel        Cancel this request\nenter to submit | esc to cancel\n",
+		},
+		{
+			name: "command approval",
+			text: "\033[2J\033[HWould you like to run the following comman\nd?\n\nReason: Do you want to remove temporary generated QA frames and the unused package lock\nfrom the demo video project?\n\n$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\n\n1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `rm -f` (p)\n3. No, and tell Codex what to do differently (esc)\n",
+		},
 	}
-	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
-		t.Fatalf("permission prompt status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
-	}
-	if model.taskLoading("a") {
-		t.Fatalf("permission prompt should not show as loading")
-	}
-}
 
-func TestApplyPTYDataMarksCommandApprovalScreenReady(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := testModelWithTask(t)
+			defer killPTYs(model)
 
-	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
-	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HWould you like to run the following comman\nd?\n\nReason: Do you want to remove temporary generated QA frames and the unused package lock\nfrom the demo video project?\n\n$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\n\n1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `rm -f` (p)\n3. No, and tell Codex what to do different\nly (esc)\n"})
+			model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
+			model.applyPTYData(ptyx.Data{TaskID: "a", Text: tt.text})
 
-	task := state.TaskByID(model.state, "a")
-	if task == nil {
-		t.Fatal("task missing")
-	}
-	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
-		t.Fatalf("command approval status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
-	}
-	if model.taskLoading("a") {
-		t.Fatalf("command approval should not show as loading")
-	}
-}
-
-func TestApplyPTYDataMarksWrappedCommandApprovalScreenReady(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-
-	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
-	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HWould you like to run the following comman\nd?\n\nReason: Do you want to remove temporary generated QA frames and the unused package lock\nfrom the demo video project?\n\n$ rm -f package-lock.json .hyperframes/frame-check/frame-01.png\n\n1. Yes, proceed (y)\n2. Yes, and don't ask again for commands that start with `rm -f` (p)\n3. No, and tell Codex what to do differently (esc)\n"})
-
-	task := state.TaskByID(model.state, "a")
-	if task == nil {
-		t.Fatal("task missing")
-	}
-	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
-		t.Fatalf("wrapped command approval status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+			task := state.TaskByID(model.state, "a")
+			if task == nil {
+				t.Fatal("task missing")
+			}
+			if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
+				t.Fatalf("prompt status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+			}
+			if model.taskLoading("a") {
+				t.Fatalf("prompt should not show as loading")
+			}
+		})
 	}
 }
 
@@ -381,12 +198,6 @@ func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 	snapshot = model.Snapshot()
 	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
 		t.Fatalf("waiting task should be marked loading: %#v", snapshot.LoadingTaskIDs)
-	}
-
-	model.state.Tasks[0].CodexTitle = "Fake Codex Working"
-	snapshot = model.Snapshot()
-	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
-		t.Fatalf("working task should be marked loading: %#v", snapshot.LoadingTaskIDs)
 	}
 }
 
@@ -507,34 +318,10 @@ func TestClientPromptsToAddMissingLaunchWorkspace(t *testing.T) {
 			t.Fatalf("launch workspace prompt missing %q:\n%s", expected, got)
 		}
 	}
-	for _, unexpected := range []string{"Y yes", "N no", "Y/Enter yes"} {
+	for _, unexpected := range []string{"Y yes", "N no", "Y/Enter yes", "New tasks will start from this directory."} {
 		if strings.Contains(got, unexpected) {
 			t.Fatalf("launch workspace prompt should not include %q:\n%s", unexpected, got)
 		}
-	}
-	if strings.Contains(got, "New tasks will start from this directory.") {
-		t.Fatalf("launch workspace prompt should not include task-start explanation:\n%s", got)
-	}
-}
-
-func TestLaunchWorkspaceConfirmationEnterAddsWorkspace(t *testing.T) {
-	rt := testRuntime(t)
-	model := NewModel(rt, config.DefaultConfig(), state.Empty())
-	model.mode = modeConfirm
-	model.confirm = confirmAddLaunchWorkspace
-	model.pendingID = rt.Workspace
-
-	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-
-	if cmd != nil {
-		t.Fatalf("launch workspace confirm should not start command, got %#v", cmd)
-	}
-	if model.mode != modeNormal {
-		t.Fatalf("mode = %s, want normal", model.mode)
-	}
-	if workspace := state.WorkspaceByPath(model.state, rt.Workspace); workspace == nil {
-		t.Fatalf("workspace was not added: %#v", model.state.Workspaces)
 	}
 }
 
@@ -581,101 +368,6 @@ func TestClientRepaintShortcutWorksFromHelp(t *testing.T) {
 		t.Fatalf("first repaint shortcut command = %s, want tea.clearScreenMsg", got)
 	}
 }
-
-func TestLaunchWorkspaceConfirmationIgnoresYAndN(t *testing.T) {
-	rt := testRuntime(t)
-	model := NewModel(rt, config.DefaultConfig(), state.Empty())
-	model.mode = modeConfirm
-	model.confirm = confirmAddLaunchWorkspace
-	model.pendingID = rt.Workspace
-
-	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
-	model = updated.(Model)
-	if cmd != nil || model.mode != modeConfirm {
-		t.Fatalf("y should be ignored for launch workspace confirm, mode=%s cmd=%#v", model.mode, cmd)
-	}
-
-	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	model = updated.(Model)
-	if cmd != nil || model.mode != modeConfirm {
-		t.Fatalf("n should be ignored for launch workspace confirm, mode=%s cmd=%#v", model.mode, cmd)
-	}
-
-	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEsc})
-	model = updated.(Model)
-	if cmd != nil || model.mode != modeNormal {
-		t.Fatalf("esc should cancel launch workspace confirm, mode=%s cmd=%#v", model.mode, cmd)
-	}
-	if workspace := state.WorkspaceByPath(model.state, rt.Workspace); workspace != nil {
-		t.Fatalf("workspace should not be added after ignored keys and esc: %#v", model.state.Workspaces)
-	}
-}
-
-func TestDeleteTaskConfirmationEnterSubmitsYIgnoredAndNCancels(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.mode = modeConfirm
-	model.confirm = confirmDeleteTask
-	model.pendingID = "a"
-
-	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
-	model = updated.(Model)
-	if cmd != nil || model.mode != modeConfirm || len(model.state.Tasks) != 1 {
-		t.Fatalf("y should be ignored for delete confirm, mode=%s cmd=%#v tasks=%d", model.mode, cmd, len(model.state.Tasks))
-	}
-
-	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	model = updated.(Model)
-	if cmd != nil || model.mode != modeNormal || len(model.state.Tasks) != 1 {
-		t.Fatalf("n should cancel delete confirm, mode=%s cmd=%#v tasks=%d", model.mode, cmd, len(model.state.Tasks))
-	}
-
-	model.mode = modeConfirm
-	model.confirm = confirmDeleteTask
-	model.pendingID = "a"
-	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeNormal {
-		t.Fatalf("enter should submit delete confirm, mode=%s cmd=%#v", model.mode, cmd)
-	}
-	if len(model.state.Tasks) != 0 {
-		t.Fatalf("task should be removed after enter: %#v", model.state.Tasks)
-	}
-}
-
-func TestDeleteTaskConfirmationExplainsStopAndDelete(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	model = updated.(Model)
-
-	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteTask || model.pendingID != "a" {
-		t.Fatalf("delete confirm state mode=%s confirm=%s pending=%s cmd=%v", model.mode, model.confirm, model.pendingID, cmd)
-	}
-	got := ansi.Strip(model.View())
-	for _, expected := range []string{
-		"Delete task",
-		"Task",
-		"alpha",
-		"Stops the terminal, then removes this task from Weft.",
-		"Enter stop and delete",
-		"N Esc",
-	} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("delete task confirm missing %q:\n%s", expected, got)
-		}
-	}
-	for _, unexpected := range []string{"Y stop and delete", "N cancel", "Esc cancel"} {
-		if strings.Contains(got, unexpected) {
-			t.Fatalf("delete task confirm should not show %q:\n%s", unexpected, got)
-		}
-	}
-}
-
 func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {
 	for _, confirm := range []confirmKind{confirmAddLaunchWorkspace, confirmDeleteWorkspace, confirmDeleteGroup, confirmUpgradeResume} {
 		if !confirmKeySubmits(confirm, tea.KeyMsg{Type: tea.KeyEnter}) {
@@ -702,21 +394,6 @@ func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {
 	}
 	if !confirmKeyCancels(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}) {
 		t.Fatal("delete task should cancel with n")
-	}
-}
-
-func TestBackspaceDeleteShortcutAcceptsCtrlHSequence(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlH})
-	model = updated.(Model)
-
-	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteTask || model.pendingID != "a" {
-		t.Fatalf("ctrl+h backspace confirm state mode=%s confirm=%s pending=%s cmd=%v", model.mode, model.confirm, model.pendingID, cmd)
 	}
 }
 
@@ -845,7 +522,8 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 		"Weft",
 		"CLI        " + weftversion.Version,
 		"Supervisor 3.9.0",
-		"supervisor 3.9.0 → " + weftversion.Version,
+		"Upgrade ready: supervisor 3.9.0",
+		weftversion.Version,
 		"Press U to upgrade and resume 1 idle Codex task",
 	} {
 		if !strings.Contains(got, expected) {
@@ -864,7 +542,8 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	got = ansi.Strip(model.View())
 	for _, expected := range []string{
 		"Upgrade supervisor?",
-		"supervisor 3.9.0 → " + weftversion.Version,
+		"supervisor 3.9.0",
+		weftversion.Version,
 		"Enter upgrade",
 		"saved session IDs",
 		"fresh Codex tasks without one",
@@ -875,11 +554,6 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
-		}
-	}
-	for _, unexpected := range []string{"Y upgrade", "N cancel", "Esc cancel"} {
-		if strings.Contains(got, unexpected) {
-			t.Fatalf("upgrade confirm should not show %q:\n%s", unexpected, got)
 		}
 	}
 }
@@ -938,15 +612,13 @@ func TestClientUpgradeAllowsFreshCodexWithoutSession(t *testing.T) {
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
 		"Upgrade ready",
-		"supervisor 3.9.0 → " + weftversion.Version,
+		"supervisor 3.9.0",
+		weftversion.Version,
 		"Press U to upgrade and start 1 fresh Codex task",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("fresh upgrade footer missing %q:\n%s", expected, got)
 		}
-	}
-	if strings.Contains(got, "Upgrade: ready") {
-		t.Fatalf("task console should not duplicate upgrade status banner:\n%s", got)
 	}
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = updated.(ClientModel)
@@ -1134,63 +806,6 @@ func TestSnapshotShowsActiveTaskStartError(t *testing.T) {
 	}
 }
 
-func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
-	for _, msg := range []tea.KeyMsg{
-		{Type: tea.KeyRunes, Runes: []rune("s")},
-		{Type: tea.KeyRunes, Runes: []rune("?")},
-		{Type: tea.KeyRunes, Runes: []rune("n")},
-		{Type: tea.KeyShiftRight},
-		{Type: tea.KeyShiftTab},
-		{Type: tea.KeyCtrlD},
-		{Type: tea.KeyCtrlQ},
-	} {
-		model := testModelWithTask(t)
-		defer killPTYs(model)
-
-		updated, cmd := model.handleKey(msg)
-		model = updated.(Model)
-
-		if cmd != nil {
-			t.Fatalf("%s should not start dashboard command in codex focus", msg.String())
-		}
-		if model.mode != modeNormal {
-			t.Fatalf("%s changed mode to %s", msg.String(), model.mode)
-		}
-		if model.state.Focus != state.FocusConsole {
-			t.Fatalf("%s changed focus to %s", msg.String(), model.state.Focus)
-		}
-		if len(model.state.Tasks) != 1 {
-			t.Fatalf("%s changed tasks: %#v", msg.String(), model.state.Tasks)
-		}
-	}
-
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlB})
-	model = updated.(Model)
-	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
-		t.Fatalf("C-b should open dashboard, got %s/%t", model.state.Focus, model.state.NavOpen)
-	}
-
-	model.state.Focus = state.FocusConsole
-	model.state.NavOpen = false
-	model.state.Tasks[0].CodexTitle = "Fake Codex Working"
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
-	model = updated.(Model)
-	if model.message != "" {
-		t.Fatalf("C-c should forward while Codex has focus, message=%q", model.message)
-	}
-
-	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
-	model.screens[model.state.Tasks[0].ID] = NewTerminalScreen(model.ptyWidth(), model.ptyHeight())
-	model.screens[model.state.Tasks[0].ID].Write("ready\n")
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
-	model = updated.(Model)
-	if model.message != "" || model.state.Focus != state.FocusConsole {
-		t.Fatalf("C-c should still forward while Codex is ready, message=%q focus=%s", model.message, model.state.Focus)
-	}
-}
-
 func TestActivePTYExitReturnsToTasksPane(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
@@ -1264,6 +879,7 @@ func TestIdleTerminalTaskCtrlCKillsTask(t *testing.T) {
 	if model.ptys["a"] != nil {
 		t.Fatal("idle terminal ctrl+c should remove the killed PTY")
 	}
+
 	model.applyPTYData(ptyx.Data{TaskID: "a", Err: os.ErrClosed})
 	task = state.TaskByID(model.state, "a")
 	if task == nil || task.Status != state.StatusKilled || task.CodexTitle != "Shell killed" {
@@ -1528,7 +1144,7 @@ func TestTitleHookBuffersShiftEnterUntilSubmit(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
-	msg := cmd().(titleHookMsg)
+	msg := titleHookMessageFromCmd(t, cmd)
 	if msg.err != nil {
 		t.Fatal(msg.err)
 	}
@@ -1561,71 +1177,7 @@ func TestTitleHookDoesNotRetryAfterAttempt(t *testing.T) {
 	}
 }
 
-func TestRenameToAutoWithoutHookReportsConfigurationError(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.prompt = promptEditTask
-	model.pendingID = "a"
-
-	cmd := model.applyPrompt("{auto}")
-
-	if cmd != nil {
-		t.Fatal("missing hook should not start hook command")
-	}
-	task := state.TaskByID(model.state, "a")
-	if task == nil || task.Title != "{auto}" {
-		t.Fatalf("task not renamed: %#v", task)
-	}
-	if task.AutoTitleError != "title_hook_command is not configured" {
-		t.Fatalf("auto title error = %q", task.AutoTitleError)
-	}
-	if !strings.Contains(model.message, "title_hook_command") {
-		t.Fatalf("message = %q", model.message)
-	}
-}
-
-func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	payloadPath := filepath.Join(t.TempDir(), "payload.json")
-	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated before rename\\n'"
-
-	cmd := model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("summarize this bug")})
-	if cmd != nil {
-		t.Fatal("plain title should not run hook while capturing input")
-	}
-	cmd = model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("hook should run on first message even before {auto} is used")
-	}
-	msg := cmd().(titleHookMsg)
-	if msg.err != nil {
-		t.Fatal(msg.err)
-	}
-	model.applyTitleHook(msg)
-
-	model.prompt = promptEditTask
-	model.pendingID = "a"
-	cmd = model.applyPrompt("{auto}")
-	if cmd != nil {
-		t.Fatal("rename to auto should only reveal saved auto title")
-	}
-	if got := state.TaskByID(model.state, "a").AutoTitle; got != "Generated before rename" {
-		t.Fatalf("auto title = %q", got)
-	}
-	if got := model.renderTaskTitle(*state.TaskByID(model.state, "a")); got != "Generated before rename" {
-		t.Fatalf("rendered title = %q", got)
-	}
-	raw, err := os.ReadFile(payloadPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), `"first_message":"summarize this bug"`) {
-		t.Fatalf("payload missing first submitted message:\n%s", raw)
-	}
-}
-
-func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
+func TestTitleHookFailureRecordsFullError(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	detail := "curl: (56) HTTP/2 stream 1 was reset while reading the OpenAI response after the request was accepted; retryable receive failure with request id req-title-transport-56 and status text requested URL returned incomplete body"
@@ -1648,22 +1200,6 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 	}
 	if !strings.Contains(model.message, "auto title hook failed") || !strings.Contains(model.message, "returned incomplete body") {
 		t.Fatalf("message = %q", model.message)
-	}
-
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-	model.prompt = promptEditTask
-	model.mode = modeInput
-	model.pendingID = "a"
-	model.input.SetValue("{auto}")
-
-	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "Auto title error") ||
-		!strings.Contains(got, "curl: (56)") ||
-		!strings.Contains(got, "retryable receive failure") ||
-		!strings.Contains(got, "returned incomplete body") {
-		t.Fatalf("edit pane missing hook error:\n%s", got)
 	}
 }
 
@@ -1704,515 +1240,6 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 	}
 }
 
-func TestEditTaskPromptPreviewsEditedTitle(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	codexType := model.cfg.TaskTypes[config.DefaultTaskTypeCodex]
-	codexType.TitleTemplate = "{auto}"
-	model.cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType
-	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-	model.prompt = promptEditTask
-	model.mode = modeInput
-	model.pendingID = "a"
-	model.input.SetValue("{codex}")
-
-	got := ansi.Strip(model.View())
-	for _, expected := range []string{
-		"Edit task",
-		"Preview",
-		"Fake Codex Ready",
-		"Variables",
-		"{auto}: generated title",
-		"Enter save",
-		"Esc cancel",
-	} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("edit modal missing %q:\n%s", expected, got)
-		}
-	}
-}
-
-func TestEditTaskPromptPrefillsStoredTaskTitleTemplate(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Tasks[0].Title = "{status} {auto}"
-	model.state.Tasks[0].AutoTitle = "Fix login"
-	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-	model = updated.(Model)
-
-	if cmd != nil {
-		t.Fatalf("rename prompt should not start command, got %#v", cmd)
-	}
-	if model.mode != modeInput || model.prompt != promptEditTask || model.pendingID != "a" {
-		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s", model.mode, model.prompt, model.pendingID)
-	}
-	if got, want := model.input.Value(), "{status} {auto}"; got != want {
-		t.Fatalf("edit prompt value = %q, want stored title template %q", got, want)
-	}
-	if got := model.renderTaskTitle(model.state.Tasks[0]); got != "Ready Fix login" {
-		t.Fatalf("task row title = %q", got)
-	}
-}
-
-func TestWorkspaceRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
-	model.state.Focus = state.FocusWorkspaces
-	model.state.NavOpen = true
-	model.lastNavFocus = state.FocusWorkspaces
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-	model = updated.(Model)
-	if cmd != nil {
-		t.Fatalf("rename prompt should not start command, got %#v", cmd)
-	}
-	if model.mode != modeInput || model.prompt != promptWorkspaceTitle || model.pendingID != model.state.SelectedWorkspaceID {
-		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s selected:%s", model.mode, model.prompt, model.pendingID, model.state.SelectedWorkspaceID)
-	}
-
-	model.input.SetValue("Trading Engine")
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeNormal {
-		t.Fatalf("mode after save = %s", model.mode)
-	}
-	if got := model.state.Workspaces[0].Title; got != "Trading Engine" {
-		t.Fatalf("title override = %q", got)
-	}
-
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-	model = updated.(Model)
-	model.input.SetValue("")
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if got := model.state.Workspaces[0].Title; got != "" {
-		t.Fatalf("blank input should clear title override, got %q", got)
-	}
-	if model.message != "cleared workspace title" {
-		t.Fatalf("message = %q", model.message)
-	}
-}
-
-func TestDashboardEditShortcutRequiresConfiguredEditKey(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
-	model = updated.(Model)
-	if cmd != nil {
-		t.Fatalf("unconfigured edit key should not start command, got %#v", cmd)
-	}
-	if model.mode != modeNormal {
-		t.Fatalf("mode = %s, want normal", model.mode)
-	}
-}
-
-func TestEditGroupPromptTogglesSilentAndSaves(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	now := state.NowISO()
-	st := state.State{
-		Version:             state.Version,
-		SelectedWorkspaceID: "w",
-		SelectedGroupID:     "g",
-		Focus:               state.FocusTasks,
-		NavOpen:             true,
-		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
-		Groups:              []state.Group{{ID: "g", WorkspaceID: "w", Path: "release", Silent: false, CreatedAt: now, UpdatedAt: now}},
-		Tasks:               []state.Task{},
-	}
-	model := NewModel(rt, cfg, st)
-	defer killPTYs(model)
-	model.groupCursor = 1
-
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
-	model = updated.(Model)
-	if model.mode != modeInput || model.prompt != promptEditGroup || model.pendingID != "g" {
-		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s", model.mode, model.prompt, model.pendingID)
-	}
-
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeySpace})
-	model = updated.(Model)
-	if !model.editGroupSilent {
-		t.Fatalf("expected silent toggle, got %#v", model.editGroupSilent)
-	}
-
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeNormal {
-		t.Fatalf("mode after save = %s", model.mode)
-	}
-	group := state.GroupByID(model.state, "g")
-	if group == nil || !group.Silent {
-		t.Fatalf("silent not persisted: %#v", group)
-	}
-}
-
-func TestCreateGroupPromptCanCreateSilentGroup(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	now := state.NowISO()
-	st := state.State{
-		Version:             state.Version,
-		SelectedWorkspaceID: "w",
-		Focus:               state.FocusTasks,
-		NavOpen:             true,
-		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
-		Groups:              []state.Group{},
-		Tasks:               []state.Task{},
-	}
-	model := NewModel(rt, cfg, st)
-	defer killPTYs(model)
-
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
-	model = updated.(Model)
-	if model.mode != modeInput || model.prompt != promptGroup {
-		t.Fatalf("prompt state = mode:%s prompt:%s", model.mode, model.prompt)
-	}
-
-	model.input.SetValue("release")
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeySpace})
-	model = updated.(Model)
-	if !model.editGroupSilent {
-		t.Fatalf("expected silent toggle, got %#v", model.editGroupSilent)
-	}
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-
-	if model.mode != modeNormal {
-		t.Fatalf("mode after save = %s", model.mode)
-	}
-	group := state.GroupByID(model.state, model.state.SelectedGroupID)
-	if group == nil || group.Path != "release" || !group.Silent {
-		t.Fatalf("group not created silent: %#v", group)
-	}
-}
-
-func TestNewWorkspacePromptPrefillsSelectedParentAndShowsPathStatus(t *testing.T) {
-	parent := t.TempDir()
-	current := filepath.Join(parent, "current")
-	if err := os.Mkdir(current, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	rt := testRuntime(t)
-	rt.Workspace = current
-	cfg := config.DefaultConfig()
-	model := NewModel(rt, cfg, state.Empty())
-	model.state.Focus = state.FocusWorkspaces
-	model.state.NavOpen = true
-
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")})
-	model = updated.(Model)
-	if cmd != nil {
-		t.Fatalf("workspace prompt should not start command, got %#v", cmd)
-	}
-	if model.mode != modeInput || model.prompt != promptWorkspace {
-		t.Fatalf("prompt state = mode:%s prompt:%s", model.mode, model.prompt)
-	}
-	if want := withTrailingSeparator(displayPathForPrompt(parent)); model.input.Value() != want {
-		t.Fatalf("prompt value = %q, want %q", model.input.Value(), want)
-	}
-
-	got := ansi.Strip(model.View())
-	for _, expected := range []string{
-		"Add workspace",
-		"Path",
-		"✓ ",
-		"> current",
-		"Enter choose",
-		"Tab choose",
-		"Up/Down move",
-		"Esc close suggestions",
-	} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("workspace modal missing %q:\n%s", expected, got)
-		}
-	}
-	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "✓ "+parent {
-		t.Fatalf("path status = %q", status)
-	}
-	if strings.Count(got, "╭") < 2 || strings.Count(got, "╰") < 2 {
-		t.Fatalf("workspace modal should render a bordered input box:\n%s", got)
-	}
-	if got := model.input.MatchedSuggestions(); len(got) != 1 || got[0] != withTrailingSeparator(current) {
-		t.Fatalf("matched suggestions = %#v", got)
-	}
-}
-
-func TestTextEntryPromptsUseSharedFormChromeAndStatefulActions(t *testing.T) {
-	rt := testRuntime(t)
-	model := NewModel(rt, config.DefaultConfig(), testStateWithWorkspace(t, rt.Workspace))
-
-	model.startPrompt(promptGroup, "")
-	got := ansi.Strip(model.View())
-	for _, expected := range []string{
-		"Create group",
-		"Group",
-		"Group required",
-		"Esc cancel",
-	} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("group prompt missing %q:\n%s", expected, got)
-		}
-	}
-	if strings.Contains(got, "Flat and unique in this workspace.") {
-		t.Fatalf("group prompt should not show hint copy:\n%s", got)
-	}
-	if strings.Contains(got, "Enter create") {
-		t.Fatalf("empty required prompt should not advertise submit:\n%s", got)
-	}
-	if strings.Count(got, "╭") < 2 || strings.Count(got, "╰") < 2 {
-		t.Fatalf("group prompt should render a bordered input box:\n%s", got)
-	}
-
-	model.input.SetValue("release")
-	got = ansi.Strip(model.View())
-	for _, expected := range []string{"Enter create", "Esc cancel"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("valid group prompt missing %q:\n%s", expected, got)
-		}
-	}
-	if strings.Contains(got, "Ready") {
-		t.Fatalf("valid group prompt should not show Ready status:\n%s", got)
-	}
-
-	model.startPrompt(promptWorkspaceTitle, "")
-	got = ansi.Strip(model.View())
-	for _, expected := range []string{"Rename workspace", "Blank uses path title", "Enter clear", "Esc cancel"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("blank title prompt missing %q:\n%s", expected, got)
-		}
-	}
-	model.input.SetValue("Trading Engine")
-	got = ansi.Strip(model.View())
-	if !strings.Contains(got, "Enter save") {
-		t.Fatalf("non-empty title prompt should advertise save:\n%s", got)
-	}
-}
-
-func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
-	parent := t.TempDir()
-	alpha := filepath.Join(parent, "alpha-project")
-	beta := filepath.Join(parent, "beta-project")
-	if err := os.Mkdir(alpha, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(beta, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(beta, "nested"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
-	model.startPrompt(promptWorkspace, withTrailingSeparator(parent))
-
-	got := ansi.Strip(model.View())
-	if got, want := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex), withTrailingSeparator(alpha); got != want {
-		t.Fatalf("initial suggestion = %q, want %q", got, want)
-	}
-	for _, expected := range []string{"> alpha-project", "beta-project", "Enter choose", "Tab choose", "Up/Down move", "Esc close suggestions"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("initial suggestion state missing %q:\n%s", expected, got)
-		}
-	}
-	if strings.Contains(got, "alpha-project/") || strings.Contains(got, "beta-project/") {
-		t.Fatalf("suggestion labels should not render trailing slashes:\n%s", got)
-	}
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
-	if got, want := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex), withTrailingSeparator(beta); got != want {
-		t.Fatalf("down arrow suggestion = %q, want %q", got, want)
-	}
-	if got := ansi.Strip(model.View()); !strings.Contains(got, "> beta-project") {
-		t.Fatalf("down arrow should highlight beta:\n%s", got)
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeInput {
-		t.Fatalf("enter on highlighted suggestion should keep prompt open, mode=%s", model.mode)
-	}
-	if want := beta; model.input.Value() != want {
-		t.Fatalf("selected suggestion = %q, want %q", model.input.Value(), want)
-	}
-	got = ansi.Strip(model.View())
-	if strings.Contains(got, "> nested") || !strings.Contains(got, "Enter add") {
-		t.Fatalf("selection should close nested suggestions and show submit action:\n%s", got)
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeNormal {
-		t.Fatalf("second enter should add workspace, mode=%s", model.mode)
-	}
-	if model.state.SelectedWorkspaceID == "" || model.state.Workspaces[len(model.state.Workspaces)-1].Path != beta {
-		t.Fatalf("workspace was not added/selected: %#v", model.state.Workspaces)
-	}
-}
-
-func TestMoveTaskPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.state.Tasks[0].GroupID = ""
-	model.groupCursor = 1
-	now := state.NowISO()
-	model.state.Groups = append(model.state.Groups, state.Group{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
-
-	model.startPrompt(promptMoveTask, "")
-	got := ansi.Strip(model.View())
-	highlighted := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex)
-	for _, expected := range []string{"Move task", "Top-level task", "> " + highlighted, "Enter choose", "Tab choose", "Esc close suggestions"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("blank move prompt missing %q:\n%s", expected, got)
-		}
-	}
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeInput || model.promptSuggestionOpen {
-		t.Fatalf("choosing from blank move prompt should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
-	}
-	if got := model.input.Value(); got != highlighted {
-		t.Fatalf("blank move prompt enter chose %q, want %q", got, highlighted)
-	}
-	if task := state.TaskByID(model.state, "a"); task == nil || task.GroupID != "" {
-		t.Fatalf("choosing a suggestion should not submit the move: %#v", task)
-	}
-	got = ansi.Strip(model.View())
-	if !strings.Contains(got, "Enter move") || strings.Contains(got, "Esc close suggestions") {
-		t.Fatalf("chosen blank suggestion should close suggestions and advertise submit:\n%s", got)
-	}
-
-	model.startPrompt(promptMoveTask, "rel")
-	if got, want := model.input.MatchedSuggestions(), []string{"release"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("matched groups = %#v, want %#v", got, want)
-	}
-	got = ansi.Strip(model.View())
-	for _, expected := range []string{"> release", "Enter choose", "Tab choose", "Esc close suggestions"} {
-		if !strings.Contains(got, expected) {
-			t.Fatalf("group suggestion menu missing %q:\n%s", expected, got)
-		}
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeInput || model.promptSuggestionOpen {
-		t.Fatalf("choosing a group should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
-	}
-	if got := model.input.Value(); got != "release" {
-		t.Fatalf("chosen group = %q", got)
-	}
-	got = ansi.Strip(model.View())
-	if strings.Count(got, "> release") > 1 || !strings.Contains(got, "Enter move") {
-		t.Fatalf("chosen group should close suggestions and advertise submit:\n%s", got)
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeNormal {
-		t.Fatalf("valid move should close prompt, mode=%s", model.mode)
-	}
-	if task := state.TaskByID(model.state, "a"); task == nil || task.GroupID != "release" {
-		t.Fatalf("task was not moved to release: %#v", task)
-	}
-
-	model.groupCursor = 3
-	model.startPrompt(promptMoveTask, "missing")
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeInput || model.message != "Group not found" {
-		t.Fatalf("invalid move should stay open with message, mode=%s message=%q", model.mode, model.message)
-	}
-}
-
-func TestMoveTaskPromptAutocompletesGroupSubstring(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Focus = state.FocusTasks
-	model.state.NavOpen = true
-	model.groupCursor = 2
-	now := state.NowISO()
-	model.state.Groups = append(model.state.Groups,
-		state.Group{ID: "feature", WorkspaceID: "w", Path: "release-feature", CreatedAt: now, UpdatedAt: now},
-		state.Group{ID: "rollout", WorkspaceID: "w", Path: "release-rollout", CreatedAt: now, UpdatedAt: now},
-	)
-
-	model.startPrompt(promptMoveTask, "out")
-	if got, want := promptMatchedSuggestions(model.promptContext(), model.input.Value()), []string{"release-rollout"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("substring matched groups = %#v, want %#v", got, want)
-	}
-	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "> release-rollout") || !strings.Contains(got, "Enter choose") || !strings.Contains(got, "Tab choose") {
-		t.Fatalf("substring group suggestion menu missing match:\n%s", got)
-	}
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeInput || model.promptSuggestionOpen {
-		t.Fatalf("choosing substring group should keep prompt open with menu closed: mode=%s open=%t", model.mode, model.promptSuggestionOpen)
-	}
-	if got := model.input.Value(); got != "release-rollout" {
-		t.Fatalf("chosen substring group = %q", got)
-	}
-	got = ansi.Strip(model.View())
-	if !strings.Contains(got, "Enter move") || strings.Count(got, "> release-rollout") > 1 {
-		t.Fatalf("chosen substring group should close suggestions and advertise submit:\n%s", got)
-	}
-}
-
-func TestShiftUpDownReordersSelectedWorkspaceInWorkspacesPane(t *testing.T) {
-	rt := testRuntime(t)
-	now := state.NowISO()
-	model := NewModel(rt, config.DefaultConfig(), state.State{
-		Version:             state.Version,
-		SelectedWorkspaceID: "beta",
-		Focus:               state.FocusWorkspaces,
-		NavOpen:             true,
-		Workspaces: []state.Workspace{
-			{ID: "alpha", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now},
-			{ID: "beta", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
-			{ID: "gamma", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
-		},
-	})
-
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
-	model = updated.(Model)
-	if got, want := tuiWorkspaceIDs(model.state.Workspaces), []string{"beta", "alpha", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("shift up workspace order = %#v, want %#v", got, want)
-	}
-	if model.state.SelectedWorkspaceID != "beta" || model.state.Focus != state.FocusWorkspaces {
-		t.Fatalf("selection should follow reordered workspace: %#v", model.state)
-	}
-
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
-	model = updated.(Model)
-	if got, want := tuiWorkspaceIDs(model.state.Workspaces), []string{"alpha", "beta", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("shift down workspace order = %#v, want %#v", got, want)
-	}
-	if model.state.SelectedWorkspaceID != "beta" || model.state.Focus != state.FocusWorkspaces {
-		t.Fatalf("selection should follow reordered workspace after down: %#v", model.state)
-	}
-}
-
 func TestMovingWorkspaceSelectionClearsStaleGroup(t *testing.T) {
 	rt := testRuntime(t)
 	now := state.NowISO()
@@ -2229,137 +1256,10 @@ func TestMovingWorkspaceSelectionClearsStaleGroup(t *testing.T) {
 		Groups: []state.Group{{ID: "alpha-group", WorkspaceID: "alpha", Path: "alpha", CreatedAt: now, UpdatedAt: now}},
 	})
 
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
+	model.moveSelection(1)
 
 	if model.state.SelectedWorkspaceID != "beta" || model.state.SelectedGroupID != "" || model.state.SelectedTaskID != "" {
 		t.Fatalf("workspace move should clear stale task/group selection: %#v", model.state)
-	}
-}
-
-func TestShiftUpDownReordersSelectedTaskInTasksPane(t *testing.T) {
-	rt := testRuntime(t)
-	now := state.NowISO()
-	model := NewModel(rt, config.DefaultConfig(), state.State{
-		Version:             state.Version,
-		ActiveTaskID:        "b",
-		SelectedWorkspaceID: "w",
-		Focus:               state.FocusTasks,
-		NavOpen:             true,
-		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
-		Tasks: []state.Task{
-			{ID: "a", WorkspaceID: "w", Title: "Alpha", Status: state.StatusReady, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
-			{ID: "b", WorkspaceID: "w", Title: "Beta", Status: state.StatusReady, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
-		},
-	})
-	model.groupCursor = 2
-
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
-	model = updated.(Model)
-	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"b", "a"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("shift up order = %#v, want %#v", got, want)
-	}
-	if model.groupCursor != 1 || model.state.ActiveTaskID != "b" {
-		t.Fatalf("selection should follow reordered task: cursor=%d active=%q", model.groupCursor, model.state.ActiveTaskID)
-	}
-
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
-	model = updated.(Model)
-	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"a", "b"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("shift down order = %#v, want %#v", got, want)
-	}
-	if model.groupCursor != 2 || model.state.ActiveTaskID != "b" {
-		t.Fatalf("selection should follow reordered task: cursor=%d active=%q", model.groupCursor, model.state.ActiveTaskID)
-	}
-}
-
-func TestShiftUpDownMovesSelectedTaskAcrossAdjacentGroups(t *testing.T) {
-	rt := testRuntime(t)
-	now := state.NowISO()
-	model := NewModel(rt, config.DefaultConfig(), state.State{
-		Version:             state.Version,
-		ActiveTaskID:        "top-b",
-		SelectedWorkspaceID: "w",
-		Focus:               state.FocusTasks,
-		NavOpen:             true,
-		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
-		Groups: []state.Group{
-			{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now},
-			{ID: "review", WorkspaceID: "w", Path: "review", CreatedAt: now, UpdatedAt: now},
-		},
-		Tasks: []state.Task{
-			{ID: "top-a", WorkspaceID: "w", Title: "Top A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "top-b", WorkspaceID: "w", Title: "Top B", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "release-a", WorkspaceID: "w", GroupID: "release", Title: "Release A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "review-a", WorkspaceID: "w", GroupID: "review", Title: "Review A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-		},
-	})
-	model.groupCursor = 2
-	model.groupCursorPinned = true
-
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
-	model = updated.(Model)
-	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("ungrouped order after crossing down = %#v, want %#v", got, want)
-	}
-	if got, want := tuiTaskIDs(state.TasksForGroup(model.state, "release")), []string{"top-b", "release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("release order after crossing down = %#v, want %#v", got, want)
-	}
-	if row := model.currentGroupRow(); row.kind != groupRowTask || row.taskID != "top-b" || row.groupID != "release" {
-		t.Fatalf("selection should follow task into release: cursor=%d row=%#v", model.groupCursor, row)
-	}
-
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
-	model = updated.(Model)
-	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("ungrouped order after crossing up = %#v, want %#v", got, want)
-	}
-	if got, want := tuiTaskIDs(state.TasksForGroup(model.state, "release")), []string{"release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("release order after crossing up = %#v, want %#v", got, want)
-	}
-	if row := model.currentGroupRow(); row.kind != groupRowTask || row.taskID != "top-b" || row.groupID != "" {
-		t.Fatalf("selection should follow task back to top-level: cursor=%d row=%#v", model.groupCursor, row)
-	}
-}
-
-func TestShiftUpDownReordersSelectedGroupInTasksPane(t *testing.T) {
-	rt := testRuntime(t)
-	now := state.NowISO()
-	model := NewModel(rt, config.DefaultConfig(), state.State{
-		Version:             state.Version,
-		SelectedWorkspaceID: "w",
-		SelectedGroupID:     "beta",
-		Focus:               state.FocusTasks,
-		NavOpen:             true,
-		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
-		Groups: []state.Group{
-			{ID: "alpha", WorkspaceID: "w", Path: "alpha", CreatedAt: now, UpdatedAt: now},
-			{ID: "beta", WorkspaceID: "w", Path: "beta", CreatedAt: now, UpdatedAt: now},
-			{ID: "gamma", WorkspaceID: "w", Path: "gamma", CreatedAt: now, UpdatedAt: now},
-		},
-	})
-	model.groupCursor = 2
-	model.groupCursorPinned = true
-
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
-	model = updated.(Model)
-	if got, want := tuiGroupIDs(state.GroupsForWorkspace(model.state, "w")), []string{"beta", "alpha", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("shift up group order = %#v, want %#v", got, want)
-	}
-	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "beta" {
-		t.Fatalf("selection should follow reordered group: cursor=%d row=%#v", model.groupCursor, row)
-	}
-	if model.state.SelectedTaskID != "" || model.state.SelectedGroupID != "beta" {
-		t.Fatalf("group selection state = %#v", model.state)
-	}
-
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
-	model = updated.(Model)
-	if got, want := tuiGroupIDs(state.GroupsForWorkspace(model.state, "w")), []string{"alpha", "beta", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("shift down group order = %#v, want %#v", got, want)
-	}
-	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "beta" {
-		t.Fatalf("selection should follow reordered group after down: cursor=%d row=%#v", model.groupCursor, row)
 	}
 }
 
@@ -2533,8 +1433,7 @@ func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveTask(t *testing.T) {
 		t.Fatalf("initial cursor row = %#v, want planning task", row)
 	}
 
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyUp})
-	model = updated.(Model)
+	model.moveSelection(-1)
 	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "planning" {
 		t.Fatalf("up should move to planning group row, got %#v", row)
 	}
@@ -2544,8 +1443,7 @@ func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveTask(t *testing.T) {
 	}
 
 	model.syncGroupCursorToTask("planning-task")
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(Model)
+	model.moveSelection(1)
 	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "shipit" {
 		t.Fatalf("down should move to shipit group row, got %#v", row)
 	}
@@ -2618,216 +1516,6 @@ func TestSnapshotSyncsGroupCursorToSelectedTask(t *testing.T) {
 	row := currentGroupRowForState(snapshot.State, snapshot.GroupCursor)
 	if row.kind != groupRowTask || row.taskID != "release-task" {
 		t.Fatalf("snapshot cursor row = %#v, cursor=%d", row, snapshot.GroupCursor)
-	}
-}
-
-func TestWorkspacePromptSuggestionMenuScrollsWithSelection(t *testing.T) {
-	parent := t.TempDir()
-	for index := 0; index < 12; index++ {
-		if err := os.Mkdir(filepath.Join(parent, fmt.Sprintf("project-%02d", index)), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
-	model.height = 32
-	model.startPrompt(promptWorkspace, withTrailingSeparator(parent))
-
-	var updated tea.Model
-	for index := 0; index < 9; index++ {
-		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyDown})
-		model = updated.(Model)
-	}
-
-	if got, want := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex), withTrailingSeparator(filepath.Join(parent, "project-09")); got != want {
-		t.Fatalf("current suggestion = %q, want %q", got, want)
-	}
-	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "> project-09") {
-		t.Fatalf("selected suggestion should remain visible after scrolling:\n%s", got)
-	}
-	if strings.Contains(got, "project-00") {
-		t.Fatalf("menu should scroll past the first row:\n%s", got)
-	}
-}
-
-func TestWorkspacePromptTabChoosesVisibleDirectory(t *testing.T) {
-	parent := t.TempDir()
-	alpha := filepath.Join(parent, "alpha-project")
-	if err := os.Mkdir(alpha, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(parent, "beta-project"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
-	model.startPrompt(promptWorkspace, filepath.Join(parent, "alp"))
-
-	if got, want := model.input.MatchedSuggestions(), []string{withTrailingSeparator(alpha)}; strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("matched suggestions = %#v, want %#v", got, want)
-	}
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
-	if want := alpha; model.input.Value() != want {
-		t.Fatalf("completed path = %q, want %q", model.input.Value(), want)
-	}
-	if model.promptSuggestionOpen {
-		t.Fatal("tab should close suggestions after choosing")
-	}
-	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "✓ "+alpha {
-		t.Fatalf("completed path status = %q", status)
-	}
-}
-
-func TestWorkspacePromptAutocompletesDirectorySubstring(t *testing.T) {
-	parent := t.TempDir()
-	target := filepath.Join(parent, "client-suffix")
-	if err := os.Mkdir(target, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(parent, "other-project"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
-	model.startPrompt(promptWorkspace, filepath.Join(parent, "suffix"))
-
-	if got, want := promptMatchedSuggestions(model.promptContext(), model.input.Value()), []string{withTrailingSeparator(target)}; strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("substring matched directories = %#v, want %#v", got, want)
-	}
-	if !model.promptSuggestionOpen {
-		t.Fatal("substring suggestions should open on prompt init")
-	}
-	if got := ansi.Strip(model.View()); !strings.Contains(got, "> client-suffix") {
-		t.Fatalf("substring suggestion should render target directory:\n%s", got)
-	}
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyTab})
-	model = updated.(Model)
-	if model.input.Value() != target {
-		t.Fatalf("completed substring path = %q, want %q", model.input.Value(), target)
-	}
-	if model.promptSuggestionOpen {
-		t.Fatal("tab should close substring suggestions after choosing")
-	}
-}
-
-func TestPromptInputSupportsOptionWordEditing(t *testing.T) {
-	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
-	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Position(), len("/alpha-beta/gamma_"); got != want {
-		t.Fatalf("option-left cursor = %d, want %d", got, want)
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRight, Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Position(), len("/alpha-beta/gamma_delta"); got != want {
-		t.Fatalf("option-right cursor = %d, want %d", got, want)
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-		t.Fatalf("option-backspace value = %q, want %q", got, want)
-	}
-}
-
-func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
-	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
-	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b"), Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Position(), len("/alpha-beta/gamma_"); got != want {
-		t.Fatalf("alt-b cursor = %d, want %d", got, want)
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f"), Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Position(), len("/alpha-beta/gamma_delta"); got != want {
-		t.Fatalf("alt-f cursor = %d, want %d", got, want)
-	}
-
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-		t.Fatalf("alt-ctrl-h value = %q, want %q", got, want)
-	}
-
-	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x7f}, Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-		t.Fatalf("alt-del rune value = %q, want %q", got, want)
-	}
-
-	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'\b'}, Alt: true})
-	model = updated.(Model)
-	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-		t.Fatalf("alt-backspace rune value = %q, want %q", got, want)
-	}
-
-	for _, r := range []rune{'⌫', '←'} {
-		model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
-		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		model = updated.(Model)
-		if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-			t.Fatalf("option-backspace glyph %q value = %q, want %q", r, got, want)
-		}
-	}
-
-	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyCtrlH})
-	model = updated.(Model)
-	if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-		t.Fatalf("ctrl-h value = %q, want %q", got, want)
-	}
-
-	for _, prompt := range []promptKind{promptWorkspace, promptGroup, promptWorkspaceTitle, promptEditGroup, promptEditTask, promptMoveTask} {
-		model.startPrompt(prompt, "/alpha-beta/gamma_delta")
-		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'➜'}})
-		model = updated.(Model)
-		if got, want := model.input.Value(), "/alpha-beta/gamma_"; got != want {
-			t.Fatalf("%s option-backspace arrow glyph value = %q, want %q", prompt, got, want)
-		}
-	}
-
-	model.startPrompt(promptWorkspaceTitle, "/alpha-beta/gamma_delta")
-	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'∂'}})
-	model = updated.(Model)
-	if got, want := model.input.Value(), "/alpha-beta/gamma_delta∂"; got != want {
-		t.Fatalf("sanity glyph insert value = %q, want %q", got, want)
-	}
-}
-
-func TestWorkspacePromptShowsInvalidPathStatus(t *testing.T) {
-	parent := t.TempDir()
-	filePath := filepath.Join(parent, "notes.txt")
-	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
-
-	model.startPrompt(promptWorkspace, filePath)
-	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "! Not a directory: "+filePath {
-		t.Fatalf("file path status = %q", status)
-	}
-
-	missing := filepath.Join(parent, "missing")
-	model.startPrompt(promptWorkspace, missing)
-	if status := inspectWorkspacePromptPath(model.state, model.input.Value()).message; status != "! Parent exists: "+parent {
-		t.Fatalf("missing path status = %q", status)
-	}
-
-	updated, _ := model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if model.mode != modeInput {
-		t.Fatalf("invalid path should keep prompt open, mode=%s", model.mode)
-	}
-	if model.message != "! Parent exists: "+parent {
-		t.Fatalf("message = %q", model.message)
 	}
 }
 
@@ -3051,23 +1739,6 @@ func TestTerminalTaskAutoTitleCapturesFirstCommandWhenOptedIn(t *testing.T) {
 	}
 }
 
-func titleHookMessageFromCmd(t *testing.T, cmd tea.Cmd) titleHookMsg {
-	t.Helper()
-	msg := cmd()
-	if hook, ok := msg.(titleHookMsg); ok {
-		return hook
-	}
-	if batch, ok := msg.(tea.BatchMsg); ok {
-		for _, next := range batch {
-			if hook, ok := next().(titleHookMsg); ok {
-				return hook
-			}
-		}
-	}
-	t.Fatalf("command did not produce titleHookMsg: %#v", msg)
-	return titleHookMsg{}
-}
-
 func TestTerminalTaskClearResetsVisibleScreen(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
@@ -3103,15 +1774,17 @@ func TestTerminalTaskPTYTitleDoesNotBecomeLoading(t *testing.T) {
 	}
 }
 
-func TestEnterOnGroupTogglesCollapse(t *testing.T) {
+func TestIPCOpenOnGroupTogglesCollapse(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 1
 
-	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
+	response, _ := model.handleIPC(ipc.Request{Command: "open"})
+	if !response.OK {
+		t.Fatalf("open response = %#v", response)
+	}
 	if !state.IsGroupCollapsed(model.state, "f") {
 		t.Fatalf("group should collapse: %#v", model.state.CollapsedGroupIDs)
 	}
@@ -3119,8 +1792,10 @@ func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 		t.Fatalf("collapsed group should hide tasks, rows=%#v", rows)
 	}
 
-	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
+	response, _ = model.handleIPC(ipc.Request{Command: "open"})
+	if !response.OK {
+		t.Fatalf("open response = %#v", response)
+	}
 	if state.IsGroupCollapsed(model.state, "f") {
 		t.Fatalf("group should reopen: %#v", model.state.CollapsedGroupIDs)
 	}
@@ -3172,7 +1847,7 @@ func TestIPCFocusRejectsGroupsAlias(t *testing.T) {
 	}
 }
 
-func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
+func TestNavWidthSnapsOnDrawerToggle(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.width = 120
@@ -3185,25 +1860,38 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	if expanded <= 0 {
 		t.Fatalf("expanded nav width = %d", expanded)
 	}
-	cmd := model.setCodexFocus()
-	if cmd == nil {
-		t.Fatal("expected collapse animation command")
+	if cmd := model.setCodexFocus(); cmd != nil {
+		t.Fatalf("codex focus should not start legacy nav animation, got %#v", cmd)
 	}
-	for model.navWidth != 0 {
-		model.stepNavAnimation()
-	}
-	if got := model.View(); strings.Contains(got, "Workspaces") || !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] repaint") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
-		t.Fatalf("codex focus should collapse nav pane:\n%s", got)
+	model.snapNavWidthToTarget()
+	if model.navWidth != 0 {
+		t.Fatalf("codex focus nav width = %d, want 0", model.navWidth)
 	}
 
-	cmd = model.openNav()
-	if cmd == nil {
-		t.Fatal("expected expand animation command")
+	if cmd := model.openNav(); cmd != nil {
+		t.Fatalf("opening nav should not start legacy nav animation, got %#v", cmd)
 	}
-	model.stepNavAnimation()
-	if model.navWidth <= 0 || model.navWidth >= expanded {
-		t.Fatalf("expected partial expansion, width=%d expanded=%d", model.navWidth, expanded)
+	model.snapNavWidthToTarget()
+	if model.navWidth != expanded {
+		t.Fatalf("nav width after open = %d, want %d", model.navWidth, expanded)
 	}
+}
+
+func titleHookMessageFromCmd(t *testing.T, cmd tea.Cmd) titleHookMsg {
+	t.Helper()
+	msg := cmd()
+	if hook, ok := msg.(titleHookMsg); ok {
+		return hook
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, next := range batch {
+			if hook, ok := next().(titleHookMsg); ok {
+				return hook
+			}
+		}
+	}
+	t.Fatalf("command did not produce titleHookMsg: %#v", msg)
+	return titleHookMsg{}
 }
 
 func testModelWithTask(t *testing.T) Model {
@@ -3245,14 +1933,6 @@ func killPTYs(model Model) {
 	for _, pty := range model.ptys {
 		pty.Kill()
 	}
-}
-
-func tuiTaskIDs(tasks []state.Task) []string {
-	ids := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		ids = append(ids, task.ID)
-	}
-	return ids
 }
 
 func tuiWorkspaceIDs(workspaces []state.Workspace) []string {

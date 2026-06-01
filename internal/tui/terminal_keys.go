@@ -87,29 +87,6 @@ func enhancedKeyboardInputFromMsg(msg tea.Msg) (enhancedKeyboardInput, bool) {
 	return enhancedKeyboardInput{encoded: raw, input: codexInputRaw}, true
 }
 
-func (input enhancedKeyboardInput) codexInputArgs() map[string]string {
-	if input.hasKey {
-		args := codexInputArgs(input.key)
-		if len(input.encoded) > 0 {
-			args["encoded"] = string(input.encoded)
-		}
-		return args
-	}
-	kind := input.input
-	if kind == "" {
-		kind = codexInputRaw
-	}
-	if isCtrlCKey(input.key) {
-		kind = "ctrl+c"
-		encoded := string(input.encoded)
-		if encoded == "" {
-			encoded = "\x03"
-		}
-		return map[string]string{"encoded": encoded, "input": kind}
-	}
-	return map[string]string{"encoded": string(input.encoded), "input": kind}
-}
-
 func routeCodexInputArgs(task state.Task, args map[string]string) map[string]string {
 	if args["input"] != "ctrl+c" || !titles.StatusIndicatesActivity(task) {
 		return args
@@ -130,14 +107,6 @@ func (input enhancedKeyboardInput) shouldHandleAsKey(cfg config.Config, focus st
 		return bindingMatches(cfg.KeyBindings.Drawer, input.key) || bindingMatches(cfg.KeyBindings.Repaint, input.key)
 	}
 	return true
-}
-
-func (m Model) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {
-	active := state.ActiveTask(m.state)
-	if input.shouldHandleAsKey(m.cfg, m.state.Focus, active) {
-		return m.handleKey(input.key)
-	}
-	return m, nil
 }
 
 func (m ClientModel) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {

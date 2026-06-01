@@ -22,10 +22,6 @@ func taskUsesCodexIntegration(cfg config.Config, task state.Task) bool {
 	return taskTypeForTask(cfg, task).Kind == config.TaskKindCodex
 }
 
-func taskTypeBadgeForTask(cfg config.Config, task state.Task) string {
-	return taskTypeBadge(taskTypeForTask(cfg, task))
-}
-
 func taskTypeBadgeCellForTask(cfg config.Config, task state.Task) string {
 	return taskTypeBadgeCell(cfg, taskTypeForTask(cfg, task))
 }

@@ -79,7 +79,7 @@ func TestTerminalScreenKeepsScrolledRowsInScrollback(t *testing.T) {
 	for row := 1; row <= 5; row++ {
 		screen.Write(fmt.Sprintf("line%02d\r\n", row))
 	}
-	scrollback := screen.ScrollbackString()
+	scrollback := strings.Join(screen.ScrollbackPlainLines(), "\n")
 
 	if !strings.Contains(scrollback, "line01") || !strings.Contains(scrollback, "line05") {
 		t.Fatalf("scrollback should include old and current rows:\n%q", scrollback)
@@ -125,14 +125,16 @@ func TestTerminalScreenResizeTopAlignedKeepsPromptAtTop(t *testing.T) {
 func TestTerminalScreenClearRemovesScrollbackAndVisibleContent(t *testing.T) {
 	screen := NewTerminalScreen(12, 2)
 	screen.Write("old\r\ncontent")
-	if !strings.Contains(screen.ScrollbackString(), "old") {
-		t.Fatalf("test setup missing scrollback:\n%q", screen.ScrollbackString())
+	scrollback := strings.Join(screen.ScrollbackPlainLines(), "\n")
+	if !strings.Contains(scrollback, "old") {
+		t.Fatalf("test setup missing scrollback:\n%q", scrollback)
 	}
 
 	screen.Clear()
 
-	if strings.TrimSpace(screen.String()) != "" || strings.TrimSpace(screen.ScrollbackString()) != "" {
-		t.Fatalf("clear should remove visible content and scrollback:\nvisible=%q\nscrollback=%q", screen.String(), screen.ScrollbackString())
+	scrollback = strings.Join(screen.ScrollbackPlainLines(), "\n")
+	if strings.TrimSpace(screen.String()) != "" || strings.TrimSpace(scrollback) != "" {
+		t.Fatalf("clear should remove visible content and scrollback:\nvisible=%q\nscrollback=%q", screen.String(), scrollback)
 	}
 }
 

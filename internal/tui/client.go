@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -914,45 +913,4 @@ func (m *ClientModel) setToast(text string) tea.Cmd {
 	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg {
 		return clientToastTick{id: id}
 	})
-}
-
-func codexInputArgs(msg tea.KeyMsg) map[string]string {
-	args := map[string]string{"encoded": string(encodeKey(msg))}
-	switch msg.Type {
-	case tea.KeyRunes:
-		args["input"] = "text"
-		args["text"] = string(msg.Runes)
-	case tea.KeySpace:
-		args["input"] = "space"
-	case tea.KeyShiftTab:
-		args["input"] = codexInputShiftTab
-	case tea.KeyBackspace:
-		if msg.Alt {
-			args["input"] = "alt+backspace"
-		} else {
-			args["input"] = "backspace"
-		}
-	case tea.KeyCtrlH:
-		if msg.Alt {
-			args["input"] = "alt+backspace"
-		} else {
-			args["input"] = "ctrl+h"
-		}
-	case tea.KeyEnter:
-		args["input"] = "enter"
-	default:
-		key := strings.ToLower(msg.String())
-		if strings.HasPrefix(key, "ctrl+") {
-			args["input"] = key
-		}
-		if len([]rune(key)) == 1 && !unicode.IsControl([]rune(key)[0]) {
-			args["input"] = "text"
-			args["text"] = key
-		}
-	}
-	if isCtrlCKey(msg) {
-		args["input"] = "ctrl+c"
-		args["encoded"] = terminalKeyboardCtrlC
-	}
-	return args
 }

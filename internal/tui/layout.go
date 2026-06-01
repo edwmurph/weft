@@ -149,86 +149,6 @@ func previewPaneVisible(navOpen bool, width int, navWidth int) bool {
 	return navOpen && width > 0 && navWidth > 0 && navWidth < width
 }
 
-func renderWorkspace(
-	cfg config.Config,
-	st state.State,
-	codexTitle string,
-	codexContent string,
-	width int,
-	height int,
-	message string,
-	_ string,
-) string {
-	return renderWorkspaceWithNavWidth(cfg, st, codexTitle, codexContent, width, height, message, workspaceNavFrameWidth(st, width), 0)
-}
-
-func renderWorkspaceWithNavWidth(
-	cfg config.Config,
-	st state.State,
-	codexTitle string,
-	codexContent string,
-	width int,
-	height int,
-	message string,
-	navWidth int,
-	groupCursor int,
-) string {
-	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, navWidth, groupCursor, workspaceRenderOptions{})
-}
-
-func renderLoadingWorkspaceWithNavWidth(
-	cfg config.Config,
-	st state.State,
-	codexTitle string,
-	loadingText string,
-	width int,
-	height int,
-	message string,
-	navWidth int,
-	groupCursor int,
-) string {
-	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, groupCursor, workspaceRenderOptions{loadingText: loadingText})
-}
-
-func renderWorkspaceWithNavWidthAndTasks(
-	cfg config.Config,
-	st state.State,
-	codexTitle string,
-	codexContent string,
-	loadingFrame string,
-	loadingTasks map[string]bool,
-	width int,
-	height int,
-	message string,
-	navWidth int,
-	groupCursor int,
-) string {
-	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, navWidth, groupCursor, workspaceRenderOptions{
-		loadingFrame: loadingFrame,
-		loadingTasks: loadingTasks,
-	})
-}
-
-func renderLoadingWorkspaceWithNavWidthAndTasks(
-	cfg config.Config,
-	st state.State,
-	codexTitle string,
-	loadingText string,
-	loadingFrame string,
-	loadingTasks map[string]bool,
-	width int,
-	height int,
-	message string,
-	navWidth int,
-	groupCursor int,
-) string {
-	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, groupCursor, workspaceRenderOptions{
-		loadingText:  loadingText,
-		loadingFrame: loadingFrame,
-		loadingTasks: loadingTasks,
-	})
-}
-
 func renderWorkspaceView(
 	cfg config.Config,
 	st state.State,
@@ -388,10 +308,6 @@ func newTaskTemplateRowAreaFor(cfg config.Config, st state.State, width int, hei
 		width:  rowWidth,
 		height: 1,
 	}, true
-}
-
-func renderWorkspacesPane(cfg config.Config, st state.State, width int, height int) []string {
-	return renderWorkspacesPaneWithOptions(cfg, st, width, height, workspaceRenderOptions{})
 }
 
 func renderWorkspacesPaneWithOptions(cfg config.Config, st state.State, width int, height int, options workspaceRenderOptions) []string {
@@ -792,10 +708,6 @@ func workspaceCardCountLabels(counts workspaceCardCounts) []string {
 		fmtInt(counts.needsAttention) + " needs attention",
 		fmtInt(counts.silenced) + " silenced",
 	}
-}
-
-func renderGroupsPane(cfg config.Config, st state.State, width int, height int, groupCursor int) []string {
-	return renderGroupsPaneWithOptions(cfg, st, width, height, groupCursor, workspaceRenderOptions{})
 }
 
 func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, height int, groupCursor int, options workspaceRenderOptions) []string {
@@ -1316,14 +1228,6 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 	return lines
 }
 
-func renderEmptyCodexContent(width int, height int, canCreateTask bool, titles ...string) []string {
-	title := "No task open"
-	if len(titles) > 0 && strings.TrimSpace(titles[0]) != "" {
-		title = strings.TrimSpace(titles[0])
-	}
-	return renderEmptyCodexContentWithFrame(width, height, canCreateTask, title, false, 0)
-}
-
 func renderEmptyCodexContentWithFrame(width int, height int, canCreateTask bool, title string, previewEmpty bool, emptyArtFrame int) []string {
 	emptyTitle := "No task open"
 	if strings.TrimSpace(title) != "" {
@@ -1682,13 +1586,6 @@ func lineAt(lines []string, index int, width int) string {
 		return strings.Repeat(" ", width)
 	}
 	return padVisual(clip(lines[index], width), width)
-}
-
-func workspaceForRender(st state.State, task state.Task) state.Workspace {
-	if workspace := state.WorkspaceForTask(st, task); workspace != nil {
-		return *workspace
-	}
-	return state.Workspace{}
 }
 
 func fmtInt(value int) string {

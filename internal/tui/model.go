@@ -11,9 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/edwmurph/weft/internal/codexsession"
 	"github.com/edwmurph/weft/internal/config"
@@ -69,13 +67,10 @@ const (
 )
 
 const (
-	navAnimationInterval        = 12 * time.Millisecond
-	navAnimationStep            = 4
 	loadingInterval             = 90 * time.Millisecond
 	terminalCommandLoadingFloor = 250 * time.Millisecond
 )
 
-type navAnimationTick struct{}
 type loadingTick struct{}
 
 var loadingFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -101,10 +96,8 @@ type Model struct {
 	state    state.State
 	width    int
 	height   int
-	mode     mode
 	message  string
 	navWidth int
-	loading  int
 
 	screens           map[string]*TerminalScreen
 	ptys              map[string]*ptyx.Session
@@ -117,26 +110,13 @@ type Model struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 
-	input                 textinput.Model
-	prompt                promptKind
-	confirm               confirmKind
-	pendingID             string
-	newTaskIndex          int
-	groupCursor           int
-	groupCursorPinned     bool
-	lastNavFocus          state.Focus
-	promptSuggestionOpen  bool
-	promptSuggestionIndex int
-	editGroupField        int
-	editGroupSilent       bool
+	groupCursor       int
+	groupCursorPinned bool
+	lastNavFocus      state.Focus
 }
 
 func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	input := textinput.New()
-	input.Prompt = "> "
-	input.CharLimit = 240
-	input.Width = 60
 	if state.ActiveTask(st) == nil {
 		st.ActiveTaskID = ""
 		if len(st.Workspaces) == 0 {
@@ -159,7 +139,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		taskInterrupts:    map[string]time.Time{},
 		sessionCaptures:   map[string]time.Time{},
 		dataCh:            make(chan ptyx.Data, 64),
-		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
+		ctx:               ctx, cancel: cancel, lastNavFocus: lastNav,
 	}
 	model.syncGroupCursor()
 	model.navWidth = model.targetNavWidth()
@@ -230,24 +210,6 @@ func (m *Model) Snapshot() ipc.Snapshot {
 	}
 }
 
-func (m *Model) LiveTaskCount() int {
-	count := ipc.RunningTaskCount(&m.state)
-	counted := map[string]bool{}
-	for _, task := range m.state.Tasks {
-		switch task.Status {
-		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
-			counted[task.ID] = true
-		}
-	}
-	for id, pty := range m.ptys {
-		if pty == nil || counted[id] || state.TaskByID(m.state, id) == nil {
-			continue
-		}
-		count++
-	}
-	return count
-}
-
 func (m *Model) PrepareUpgradeResume() codexsession.Report {
 	next, report := codexsession.PrepareResumeState(m.state, m.runtime.Workspace)
 	assigned := report.Assigned
@@ -275,296 +237,6 @@ func (m Model) activeErrorText() string {
 		label = "Task"
 	}
 	return label + " failed to start:\n" + detail
-}
-
-func (m Model) Init() tea.Cmd {
-	return tea.Batch(waitPTY(m.dataCh), tickLoading())
-}
-
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch typed := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = typed.Width
-		m.height = typed.Height
-		m.navWidth = m.targetNavWidth()
-		m.resizePTYs()
-		m.resizeScreens()
-		if m.hasLoadingAnimation() {
-			return m, tickLoading()
-		}
-		return m, nil
-	case navAnimationTick:
-		return m, m.stepNavAnimation()
-	case loadingTick:
-		m.refreshTerminalTaskActivity()
-		if !m.hasLoadingAnimation() {
-			return m, nil
-		}
-		m.loading++
-		return m, tickLoading()
-	case ptyx.Data:
-		m.applyPTYData(typed)
-		return m, waitPTY(m.dataCh)
-	case ptyStartedMsg:
-		m.applyPTYStarted(typed)
-		return m, nil
-	case titleHookMsg:
-		m.applyTitleHook(typed)
-		return m, nil
-	case tea.KeyMsg:
-		return m.handleKey(typed)
-	}
-	if input, ok := enhancedKeyboardInputFromMsg(msg); ok {
-		return m.handleEnhancedKeyboardInput(input)
-	}
-	return m, nil
-}
-
-func (m Model) View() string {
-	if m.mode == modeHelp {
-		return m.modalView(renderHelp(m.cfg))
-	}
-	if m.mode == modeInput {
-		return m.modalView(m.renderInputModal())
-	}
-	if m.mode == modeConfirm {
-		return m.modalView(m.renderConfirmModal())
-	}
-	if m.mode == modeNewTask {
-		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, m.input, max(36, min(m.width-16, 72))))
-	}
-	content := m.activeOutput()
-	loadingText := ""
-	if content == "" && m.codexLoading() {
-		loadingText = m.loadingLabel()
-	} else if content == "" {
-		content = "No task open."
-	}
-	title := "Task"
-	if active := state.ActiveTask(m.state); active != nil {
-		title = m.renderTaskTitle(*active)
-	}
-	if loadingText != "" {
-		return renderWorkspaceView(m.cfg, m.state, title, "", m.width, m.height, m.message, m.navWidth, m.groupCursor, workspaceRenderOptions{
-			loadingText:            loadingText,
-			loadingFrame:           m.loadingFrame(),
-			previewHeaderAnimation: livePreviewAnimationFrame(m.loading),
-			emptyArtFrame:          m.loading,
-			loadingTasks:           m.loadingTaskSet(),
-		})
-	}
-	return renderWorkspaceView(m.cfg, m.state, title, content, m.width, m.height, m.message, m.navWidth, m.groupCursor, workspaceRenderOptions{
-		loadingFrame:           m.loadingFrame(),
-		previewHeaderAnimation: livePreviewAnimationFrame(m.loading),
-		emptyArtFrame:          m.loading,
-		loadingTasks:           m.loadingTaskSet(),
-	})
-}
-
-func (m Model) modalView(content string) string {
-	w := max(40, min(m.width-4, 82))
-	box := modalStyle.Width(w).Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
-}
-
-func (m Model) renderInputModal() string {
-	width := max(36, min(m.width-16, 72))
-	if m.prompt == promptGroup || m.prompt == promptEditGroup {
-		return renderEditGroupPromptModal(m.promptContext(), m.input, width, m.height, m.editGroupField, m.editGroupSilent)
-	}
-	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.promptSuggestionIndex, m.renderPromptExtra(m.input, width))
-}
-
-func (m Model) promptContext() promptContext {
-	return promptContextFor(m.prompt, m.pendingID, m.state, m.selectedTask())
-}
-
-func (m Model) renderPromptExtra(input textinput.Model, width int) []string {
-	return renderPromptExtraForState(m.cfg, m.state, m.prompt, m.selectedTask(), input, width)
-}
-
-func (m Model) renderConfirmModal() string {
-	width := max(36, min(m.width-16, 72))
-	return renderConfirmPrompt(m.confirm, confirmTarget(m.confirm, m.state, m.pendingID, m.renderTaskTitle), width)
-}
-
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if bindingMatches(m.cfg.KeyBindings.Repaint, msg) {
-		m.refreshTerminalTaskActivity()
-		m.message = "refreshed"
-		return m, tea.ClearScreen
-	}
-	if m.mode == modeInput {
-		return m.handleInputKey(msg)
-	}
-	if m.mode == modeHelp {
-		if msg.Type == tea.KeyEsc || msg.String() == "q" || msg.String() == "?" {
-			m.mode = modeNormal
-		}
-		return m, nil
-	}
-	if m.mode == modeConfirm {
-		return m.handleConfirmKey(msg)
-	}
-	if m.mode == modeNewTask {
-		return m.handleNewTaskKey(msg)
-	}
-
-	if bindingMatches(m.cfg.KeyBindings.Drawer, msg) {
-		return m, m.toggleDrawer()
-	}
-	if m.state.Focus == state.FocusConsole && state.ActiveTask(m.state) != nil {
-		if active := state.ActiveTask(m.state); active != nil {
-			return m, m.applyCodexInput(codexInputArgs(msg))
-		}
-		return m, nil
-	}
-	if m.state.Focus == state.FocusConsole {
-		cmd := m.openNav()
-		updated, nextCmd := m.handleNavKey(msg)
-		return updated, tea.Batch(cmd, nextCmd)
-	}
-	if bindingMatches(m.cfg.KeyBindings.Quit, msg) {
-		m.closeWeft()
-		return m, nil
-	}
-	if bindingMatches(m.cfg.KeyBindings.Help, msg) {
-		m.mode = modeHelp
-		return m, nil
-	}
-	return m.handleNavKey(msg)
-}
-
-func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.prompt == promptGroup || m.prompt == promptEditGroup {
-		result := handleEditGroupPromptInputKey(m.input, m.promptContext(), m.editGroupField, m.editGroupSilent, msg)
-		m.input = result.input
-		m.editGroupField = result.field
-		m.editGroupSilent = result.silent
-		if result.message != "" {
-			m.message = result.message
-		}
-		switch result.action {
-		case promptInputCancel:
-			m.mode = modeNormal
-			return m, nil
-		case promptInputSubmit:
-			cmd := m.applyPrompt(result.value)
-			m.mode = modeNormal
-			return m, cmd
-		default:
-			return m, result.cmd
-		}
-	}
-	result := handlePromptInputKey(m.input, m.promptContext(), m.promptSuggestionOpen, m.promptSuggestionIndex, msg)
-	m.input = result.input
-	m.promptSuggestionOpen = result.suggestionOpen
-	m.promptSuggestionIndex = result.suggestionIndex
-	if result.message != "" {
-		m.message = result.message
-	}
-	switch result.action {
-	case promptInputCancel:
-		m.mode = modeNormal
-		return m, nil
-	case promptInputSubmit:
-		cmd := m.applyPrompt(result.value)
-		m.mode = modeNormal
-		return m, cmd
-	default:
-		return m, result.cmd
-	}
-}
-
-func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if confirmKeySubmits(m.confirm, msg) {
-		cmd := m.applyConfirm()
-		m.mode = modeNormal
-		return m, cmd
-	}
-	if confirmKeyCancels(m.confirm, msg) {
-		m.mode = modeNormal
-	}
-	return m, nil
-}
-
-func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case bindingMatches(m.cfg.KeyBindings.FocusLeft, msg):
-		m.focusNavPane(state.FocusWorkspaces)
-	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
-		m.focusNavPane(state.FocusTasks)
-	case msg.Type == tea.KeyShiftUp:
-		m.reorderSelectedRow(-1)
-	case msg.Type == tea.KeyShiftDown:
-		m.reorderSelectedRow(1)
-	case bindingMatches(m.cfg.KeyBindings.SelectPrev, msg) || msg.Type == tea.KeyUp:
-		m.moveSelection(-1)
-	case bindingMatches(m.cfg.KeyBindings.SelectNext, msg) || msg.Type == tea.KeyDown:
-		m.moveSelection(1)
-	case bindingMatches(m.cfg.KeyBindings.NewWorkspace, msg):
-		m.startPrompt(promptWorkspace, defaultWorkspacePromptValue(m.state, m.runtime.Workspace))
-	case bindingMatches(m.cfg.KeyBindings.NewGroup, msg):
-		m.focusNavPane(state.FocusTasks)
-		m.startPrompt(promptGroup, "")
-	case bindingMatches(m.cfg.KeyBindings.NewTask, msg):
-		m.startNewTaskMenu()
-	case bindingMatches(m.cfg.KeyBindings.MoveTask, msg):
-		if task := m.selectedTask(); task != nil {
-			m.startPrompt(promptMoveTask, "")
-		}
-	case bindingMatches(m.cfg.KeyBindings.Edit, msg):
-		m.startEditPrompt()
-	case bindingMatches(m.cfg.KeyBindings.Delete, msg):
-		m.startDeleteConfirm()
-	case bindingMatches(m.cfg.KeyBindings.Open, msg) || msg.Type == tea.KeyEnter:
-		if m.state.Focus == state.FocusWorkspaces {
-			m.focusNavPane(state.FocusTasks)
-			return m, nil
-		}
-		row := m.currentGroupRow()
-		if row.kind == groupRowNewTask {
-			m.startNewTaskMenu()
-			return m, nil
-		}
-		if row.kind == groupRowGroup {
-			m.toggleSelectedGroup(row.groupID)
-			return m, nil
-		}
-		if task := m.selectedTask(); task != nil {
-			m.state.SelectedTaskID = task.ID
-			m.state.ActiveTaskID = task.ID
-			m.state.SelectedWorkspaceID = task.WorkspaceID
-			m.state.SelectedGroupID = task.GroupID
-			m.save()
-			return m, m.setCodexFocus()
-		}
-	}
-	return m, nil
-}
-
-func (m Model) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	result := handleNewTaskKey(m.cfg, m.newTaskIndex, m.input, msg)
-	m.newTaskIndex = result.index
-	m.input = result.input
-	if result.message != "" {
-		m.message = result.message
-	}
-	if result.cancel {
-		m.mode = modeNormal
-		return m, nil
-	}
-	if !result.submit {
-		return m, result.cmd
-	}
-	taskType, ok := selectedTaskType(m.cfg, m.newTaskIndex)
-	if !ok {
-		m.mode = modeNormal
-		m.message = "no task types configured"
-		return m, nil
-	}
-	m.mode = modeNormal
-	return m, m.newTask(m.input.Value(), taskType.ID)
 }
 
 func (m *Model) focusNavPane(focus state.Focus) {
@@ -626,261 +298,6 @@ func (m *Model) applyGroupCursor(row groupRow) {
 	m.save()
 }
 
-func (m *Model) reorderSelectedRow(delta int) {
-	if m.state.Focus == state.FocusWorkspaces {
-		m.reorderSelectedWorkspace(delta)
-		return
-	}
-	if m.state.Focus != state.FocusTasks {
-		return
-	}
-	row := m.currentGroupRow()
-	switch row.kind {
-	case groupRowGroup:
-		m.reorderSelectedGroup(row.groupID, delta)
-	case groupRowTask:
-		m.reorderSelectedTask(delta)
-	}
-}
-
-func (m *Model) reorderSelectedWorkspace(delta int) {
-	workspaceID := m.state.SelectedWorkspaceID
-	if workspaceID == "" {
-		return
-	}
-	next, moved, err := state.ReorderWorkspace(m.state, workspaceID, delta)
-	if err != nil {
-		m.message = err.Error()
-		return
-	}
-	if !moved {
-		return
-	}
-	m.state = next
-	m.groupCursor = 0
-	m.groupCursorPinned = false
-	m.save()
-}
-
-func (m *Model) reorderSelectedTask(delta int) {
-	if m.state.Focus != state.FocusTasks {
-		return
-	}
-	task := m.selectedTask()
-	if task == nil {
-		return
-	}
-	taskID := task.ID
-	next, moved, err := state.ReorderTask(m.state, task.ID, delta)
-	if err != nil {
-		m.message = err.Error()
-		return
-	}
-	if !moved {
-		return
-	}
-	m.state = next
-	m.syncGroupCursorToTask(taskID)
-	m.save()
-}
-
-func (m *Model) reorderSelectedGroup(groupID string, delta int) {
-	if groupID == "" {
-		return
-	}
-	next, moved, err := state.ReorderGroup(m.state, groupID, delta)
-	if err != nil {
-		m.message = err.Error()
-		return
-	}
-	if !moved {
-		return
-	}
-	m.state = next
-	m.syncGroupCursorToSelectedGroup()
-	m.save()
-}
-
-func (m *Model) startPrompt(prompt promptKind, value string) {
-	m.prompt = prompt
-	configurePromptInput(&m.input, m.promptContext(), value)
-	m.promptSuggestionOpen = promptShouldOpenSuggestions(m.promptContext(), m.input.Value())
-	m.promptSuggestionIndex = 0
-	m.editGroupField = 0
-	if prompt != promptGroup && prompt != promptEditGroup {
-		m.editGroupSilent = false
-	}
-	m.mode = modeInput
-}
-
-func (m *Model) startEditPrompt() {
-	prompt, id, value, silent, ok := editPromptTargetForState(m.state, m.groupCursor)
-	if ok {
-		m.pendingID = id
-		m.editGroupSilent = silent
-		m.startPrompt(prompt, value)
-	}
-}
-
-func (m *Model) startDeleteConfirm() {
-	confirm, id, ok := deleteConfirmTargetForState(m.state, m.groupCursor)
-	if ok {
-		m.confirm = confirm
-		m.pendingID = id
-		m.mode = modeConfirm
-	}
-}
-
-func (m *Model) startNewTaskMenu() {
-	if state.ActiveWorkspace(m.state) == nil {
-		m.message = "add a workspace first"
-		return
-	}
-	m.focusNavPane(state.FocusTasks)
-	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
-	configureNewTaskTitleInput(&m.input, m.cfg, m.newTaskIndex)
-	m.mode = modeNewTask
-}
-
-func (m *Model) applyPrompt(value string) tea.Cmd {
-	switch m.prompt {
-	case promptWorkspace:
-		next, workspace, err := state.AddWorkspace(m.state, shortID(), value, state.NowISO())
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		message := workspaceAddMessage(m.state, workspace)
-		m.state = next
-		m.message = message
-		m.rememberCurrentNavFocus()
-		m.syncGroupCursor()
-		m.save()
-	case promptGroup:
-		workspace := state.ActiveWorkspace(m.state)
-		if workspace == nil {
-			m.message = "select a workspace first"
-			return nil
-		}
-		next, group, err := state.AddGroupWithSilent(m.state, shortID(), workspace.ID, value, state.NowISO(), m.editGroupSilent)
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		m.state = next
-		m.message = "created group " + group.Path
-		m.syncGroupCursor()
-		m.save()
-	case promptEditGroup:
-		next, err := state.EditGroup(m.state, m.pendingID, value, m.editGroupSilent)
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		m.state = next
-		m.message = "updated group"
-		m.syncGroupCursorToSelectedGroup()
-		m.save()
-	case promptWorkspaceTitle:
-		next, err := state.SetWorkspaceTitle(m.state, m.pendingID, value)
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		m.state = next
-		if value == "" {
-			m.message = "cleared workspace title"
-		} else {
-			m.message = "renamed workspace"
-		}
-		m.save()
-	case promptEditTask:
-		next, err := state.RenameTask(m.state, m.pendingID, value)
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		m.state = next
-		m.message = "renamed task"
-		if task := state.TaskByID(m.state, m.pendingID); task != nil && m.taskUsesAutoTitle(*task) {
-			m.message = m.autoTitleRenameMessage(*task)
-			if strings.TrimSpace(m.cfg.TitleHookCommand) == "" && strings.TrimSpace(task.AutoTitle) == "" {
-				m.recordAutoTitleError(task.ID, "title_hook_command is not configured", false)
-			}
-		}
-		m.save()
-	case promptMoveTask:
-		task := m.selectedTask()
-		if task == nil {
-			m.message = "select a task first"
-			return nil
-		}
-		groupID := ""
-		if value != "" {
-			group := m.findGroupByPath(task.WorkspaceID, value)
-			if group == nil {
-				m.message = "group not found"
-				return nil
-			}
-			groupID = group.ID
-		}
-		next, err := state.MoveTask(m.state, task.ID, groupID)
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		m.state = next
-		m.message = "moved task"
-		m.syncGroupCursorToTask(task.ID)
-		m.save()
-	}
-	return nil
-}
-
-func (m *Model) applyConfirm() tea.Cmd {
-	switch m.confirm {
-	case confirmAddLaunchWorkspace:
-		next, workspace, err := state.AddWorkspace(m.state, shortID(), m.pendingID, state.NowISO())
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		message := workspaceAddMessage(m.state, workspace)
-		m.state = next
-		m.message = message
-		m.rememberCurrentNavFocus()
-		m.syncGroupCursor()
-		m.save()
-	case confirmDeleteWorkspace:
-		next, tasks, err := state.RemoveWorkspace(m.state, m.pendingID)
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		for _, task := range tasks {
-			m.killTaskPTY(task.ID)
-		}
-		m.state = next
-		m.message = "removed workspace"
-		m.syncGroupCursor()
-		m.save()
-		return m.startNavAnimation()
-	case confirmDeleteGroup:
-		next, err := state.DeleteGroup(m.state, m.pendingID)
-		if err != nil {
-			m.message = err.Error()
-			return nil
-		}
-		m.state = next
-		m.message = "deleted group"
-		m.syncGroupCursor()
-		m.save()
-	case confirmDeleteTask:
-		return m.closeTask(m.pendingID)
-	}
-	return nil
-}
-
 func (m *Model) newTask(title string, typeIDs ...string) tea.Cmd {
 	workspace := state.ActiveWorkspace(m.state)
 	if workspace == nil {
@@ -908,7 +325,7 @@ func (m *Model) newTask(title string, typeIDs ...string) tea.Cmd {
 	m.syncGroupCursorToTask(task.ID)
 	m.snapNavWidthToTarget()
 	m.save()
-	return tea.Batch(m.startPTYCmd(task.ID), m.startNavAnimation(), tickLoading())
+	return tea.Batch(m.startPTYCmd(task.ID), tickLoading())
 }
 
 func (m *Model) closeTask(taskID string) tea.Cmd {
@@ -919,7 +336,7 @@ func (m *Model) closeTask(taskID string) tea.Cmd {
 	m.state = state.CloseTask(m.state, taskID)
 	m.syncGroupCursor()
 	m.save()
-	return m.startNavAnimation()
+	return nil
 }
 
 func (m *Model) killTaskPTY(taskID string) {
@@ -962,7 +379,7 @@ func (m *Model) killFocusedTerminalTask(taskID string) tea.Cmd {
 		m.snapNavWidthToTarget()
 	}
 	m.save()
-	return m.startNavAnimation()
+	return nil
 }
 
 func (m *Model) selectedTask() *state.Task {
@@ -1113,7 +530,7 @@ func (m *Model) toggleDrawer() tea.Cmd {
 		m.state.NavOpen = true
 		m.state.Focus = m.lastNavFocus
 		m.save()
-		return m.startNavAnimation()
+		return nil
 	}
 	return m.setCodexFocus()
 }
@@ -1125,7 +542,7 @@ func (m *Model) openNav() tea.Cmd {
 	}
 	m.state.Focus = m.lastNavFocus
 	m.save()
-	return m.startNavAnimation()
+	return nil
 }
 
 func (m *Model) setCodexFocus() tea.Cmd {
@@ -1139,7 +556,7 @@ func (m *Model) setCodexFocus() tea.Cmd {
 	m.state.Focus = state.FocusConsole
 	m.state.NavOpen = false
 	m.save()
-	return m.startNavAnimation()
+	return nil
 }
 
 func (m *Model) closeWeft() {
@@ -1284,22 +701,6 @@ func (m *Model) recordAutoTitleError(taskID string, message string, attempted bo
 
 func hookErrorText(err error) string {
 	return strings.Join(strings.Fields(err.Error()), " ")
-}
-
-func (m Model) autoTitleRenameMessage(task state.Task) string {
-	if strings.TrimSpace(task.AutoTitle) != "" {
-		return "renamed task; auto title ready"
-	}
-	if strings.TrimSpace(task.AutoTitleError) != "" {
-		return "renamed task; auto title failed"
-	}
-	if task.AutoTitleAttempted {
-		return "renamed task; auto title is generating"
-	}
-	if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
-		return "renamed task; auto title unavailable: set title_hook_command"
-	}
-	return "renamed task; auto title will generate from the first message"
 }
 
 func trimLastRune(value []rune) []rune {
@@ -1665,15 +1066,6 @@ func (m Model) codexLoading() bool {
 	return m.taskLoading(active.ID)
 }
 
-func (m Model) anyTaskLoading() bool {
-	for _, task := range m.state.Tasks {
-		if m.taskLoading(task.ID) {
-			return true
-		}
-	}
-	return false
-}
-
 func (m Model) loadingTaskIDs() []string {
 	ids := make([]string, 0)
 	for _, task := range m.state.Tasks {
@@ -1682,18 +1074,6 @@ func (m Model) loadingTaskIDs() []string {
 		}
 	}
 	return ids
-}
-
-func (m Model) loadingTaskSet() map[string]bool {
-	ids := m.loadingTaskIDs()
-	if len(ids) == 0 {
-		return nil
-	}
-	set := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		set[id] = true
-	}
-	return set
 }
 
 func (m Model) taskLoading(taskID string) bool {
@@ -1797,20 +1177,12 @@ func (m *Model) recordTaskInterrupt(taskID string) {
 	m.taskInterrupts[taskID] = time.Now()
 }
 
-func (m Model) loadingFrame() string {
-	return loadingFrames[m.loading%len(loadingFrames)]
-}
-
 func (m Model) loadingLabel() string {
 	label := "task"
 	if active := state.ActiveTask(m.state); active != nil {
 		label = taskTypeForTask(m.cfg, *active).Label
 	}
-	return m.loadingFrame() + " Starting " + label
-}
-
-func (m Model) hasLoadingAnimation() bool {
-	return m.anyTaskLoading() || previewPaneVisible(m.state.NavOpen, m.width, m.navWidth)
+	return loadingFrames[0] + " Starting " + label
 }
 
 func (m *Model) save() {
@@ -1880,34 +1252,6 @@ func (m Model) targetNavWidth() int {
 		return 0
 	}
 	return workspaceNavFrameWidth(m.state, m.width)
-}
-
-func (m *Model) startNavAnimation() tea.Cmd {
-	if m.navWidth == m.targetNavWidth() {
-		return nil
-	}
-	return tickNavAnimation()
-}
-
-func (m *Model) stepNavAnimation() tea.Cmd {
-	target := m.targetNavWidth()
-	delta := target - m.navWidth
-	if delta == 0 {
-		return nil
-	}
-	if abs(delta) <= navAnimationStep {
-		m.navWidth = target
-	} else if delta > 0 {
-		m.navWidth += navAnimationStep
-	} else {
-		m.navWidth -= navAnimationStep
-	}
-	m.resizePTYs()
-	m.resizeScreens()
-	if m.navWidth != target {
-		return tickNavAnimation()
-	}
-	return nil
 }
 
 func (m Model) ipcResponse(message string) ipc.Response {
@@ -1994,7 +1338,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.groupCursor = 0
 		m.applyGroupCursor(m.currentGroupRow())
 		m.snapNavWidthToTarget()
-		return m.ipcResponse("selection updated"), m.startNavAnimation()
+		return m.ipcResponse("selection updated"), nil
 	case "reorder_task":
 		delta, err := strconv.Atoi(request.Args["delta"])
 		if err != nil || delta == 0 {
@@ -2157,7 +1501,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.syncGroupCursor()
 		m.save()
 		m.snapNavWidthToTarget()
-		return m.ipcResponse("removed workspace"), m.startNavAnimation()
+		return m.ipcResponse("removed workspace"), nil
 	case "remove_group":
 		next, err := state.DeleteGroup(m.state, request.Args["id"])
 		if err != nil {
@@ -2248,7 +1592,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		case state.FocusWorkspaces, state.FocusTasks:
 			m.focusNavPane(target)
 			m.snapNavWidthToTarget()
-			return m.ipcResponse("focus updated"), m.startNavAnimation()
+			return m.ipcResponse("focus updated"), nil
 		case state.FocusConsole:
 			cmd := m.setCodexFocus()
 			m.snapNavWidthToTarget()
@@ -2703,16 +2047,6 @@ func displayFocus(focus state.Focus) string {
 	return string(focus)
 }
 
-func waitPTY(ch <-chan ptyx.Data) tea.Cmd {
-	return func() tea.Msg {
-		return <-ch
-	}
-}
-
-func tickNavAnimation() tea.Cmd {
-	return tea.Tick(navAnimationInterval, func(time.Time) tea.Msg { return navAnimationTick{} })
-}
-
 func tickLoading() tea.Cmd {
 	return tea.Tick(loadingInterval, func(time.Time) tea.Msg { return loadingTick{} })
 }
@@ -2755,11 +2089,4 @@ func min(a int, b int) int {
 		return a
 	}
 	return b
-}
-
-func abs(value int) int {
-	if value < 0 {
-		return -value
-	}
-	return value
 }

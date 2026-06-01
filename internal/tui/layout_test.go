@@ -141,7 +141,7 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	st := layoutState("/tmp/project")
 	output := "output from a selected task that is intentionally long enough to be cropped by the preview lens"
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", output, 140, 24, "", minTwoPaneNavWidth, 2)
+	got := renderWorkspaceView(cfg, st, "alpha", output, 140, 24, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{})
 
 	for _, expected := range []string{
 		"Workspaces",
@@ -365,7 +365,7 @@ func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
 	expectedPath := "~" + strings.TrimPrefix(workspace, home)
 	st := layoutState(workspace)
 
-	got := renderWorkspace(cfg, st, "Task", "No task open.", minThreePaneWidth, 24, "", workspace)
+	got := renderWorkspaceView(cfg, st, "Task", "No task open.", minThreePaneWidth, 24, "", workspaceNavFrameWidth(st, minThreePaneWidth), 0, workspaceRenderOptions{})
 
 	for _, expected := range []string{"Workspaces", "Tasks", "No task selected", expectedPath} {
 		if !strings.Contains(got, expected) {
@@ -384,7 +384,7 @@ func TestRenderWorkspaceKeepsFixedWorkspacePaneAtMediumWidth(t *testing.T) {
 	expectedPath := "~" + strings.TrimPrefix(workspace, home)
 	st := layoutState(workspace)
 
-	got := renderWorkspace(cfg, st, "Task", "No task open.", 100, 24, "", workspace)
+	got := renderWorkspaceView(cfg, st, "Task", "No task open.", 100, 24, "", workspaceNavFrameWidth(st, 100), 0, workspaceRenderOptions{})
 
 	for _, expected := range []string{"Workspaces", "Tasks", expectedPath} {
 		if !strings.Contains(got, expected) {
@@ -406,7 +406,7 @@ func TestRenderWorkspaceCardsUseDefaultPathAndTitleOverride(t *testing.T) {
 	st := layoutState(workspace)
 	st.Focus = state.FocusWorkspaces
 
-	got := ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n"))
+	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 78, 8, workspaceRenderOptions{}), "\n"))
 	if !strings.Contains(got, workspace) {
 		t.Fatalf("workspace card should use default display path title:\n%s", got)
 	}
@@ -415,7 +415,7 @@ func TestRenderWorkspaceCardsUseDefaultPathAndTitleOverride(t *testing.T) {
 	}
 
 	st.Workspaces[0].Title = "Main Weft"
-	got = ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n"))
+	got = ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 78, 8, workspaceRenderOptions{}), "\n"))
 	if !strings.Contains(got, "Main Weft") || strings.Contains(got, workspace) {
 		t.Fatalf("workspace card should use manual title override:\n%s", got)
 	}
@@ -432,7 +432,7 @@ func TestRenderWorkspaceCardFlagsMissingPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 9), "\n"))
+	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 78, 9, workspaceRenderOptions{}), "\n"))
 	if !strings.Contains(got, "path missing; press Backspace to remove") {
 		t.Fatalf("missing workspace path should be visible and actionable:\n%s", got)
 	}
@@ -587,7 +587,7 @@ func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 	if counts.active+counts.needsAttention+counts.silenced != counts.total {
 		t.Fatalf("counts = %#v", counts)
 	}
-	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkspacesPane(cfg, st, 78, 8), "\n")))
+	got := strings.ToLower(ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 78, 8, workspaceRenderOptions{}), "\n")))
 	for _, expected := range []string{"9 total", "5 active", "4 needs attention", "0 silenced", "╭ /tmp/project", "│", "╰"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("workspace card missing %q:\n%s", expected, got)
@@ -674,7 +674,7 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusWorkspaces
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 70, 16, "", 32, 0)
+	got := renderWorkspaceView(cfg, st, "alpha", "output", 70, 16, "", 32, 0, workspaceRenderOptions{})
 
 	if !strings.Contains(got, "Workspaces") {
 		t.Fatalf("narrow workspace focus should show workspaces pane:\n%s", got)
@@ -697,7 +697,7 @@ func TestRenderTasksPaneShowsGroupCountInline(t *testing.T) {
 		UpdatedAt:   state.NowISO(),
 	})
 
-	got := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n"))
+	got := ansi.Strip(strings.Join(renderGroupsPaneWithOptions(cfg, st, 40, 12, 0, workspaceRenderOptions{}), "\n"))
 	if !strings.Contains(got, "▾ inbox (2)") {
 		t.Fatalf("group count should render inline after the title:\n%s", got)
 	}
@@ -733,7 +733,7 @@ func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 	st.Groups = nil
 	st.Tasks[0].GroupID = ""
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 0)
+	got := renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 60, 0, workspaceRenderOptions{})
 	stripped := ansi.Strip(got)
 	if !strings.Contains(stripped, "Tasks") || !strings.Contains(stripped, "+ New task") || !strings.Contains(stripped, "· [codex] alpha") || strings.Contains(stripped, "▾") {
 		t.Fatalf("top-level task rendering mismatch:\n%s", got)
@@ -744,14 +744,14 @@ func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 
 	st.Tasks = nil
 	st.ActiveTaskID = ""
-	got = renderWorkspaceWithNavWidth(cfg, st, "Task", "", 100, 18, "", 60, 0)
+	got = renderWorkspaceView(cfg, st, "Task", "", 100, 18, "", 60, 0, workspaceRenderOptions{})
 	stripped = ansi.Strip(got)
 	if !strings.Contains(stripped, "+ New task") || !strings.Contains(stripped, "Press n to create") || strings.Contains(stripped, "No tasks") {
 		t.Fatalf("empty tasks pane missing new task row:\n%s", got)
 	}
 
 	st = state.Empty()
-	got = strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n")
+	got = strings.Join(renderGroupsPaneWithOptions(cfg, st, 40, 12, 0, workspaceRenderOptions{}), "\n")
 	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create") {
 		t.Fatalf("no-workspace tasks pane should explain workspace requirement:\n%s", got)
 	}
@@ -764,7 +764,7 @@ func TestRenderTasksPaneUsesSingleGapBetweenNewTaskRowAndFirstGroup(t *testing.T
 	st.ActiveTaskID = ""
 	st.SelectedTaskID = ""
 
-	got := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n"))
+	got := ansi.Strip(strings.Join(renderGroupsPaneWithOptions(cfg, st, 40, 12, 0, workspaceRenderOptions{}), "\n"))
 	lines := strings.Split(got, "\n")
 	newTaskLine := -1
 	groupLine := -1
@@ -806,12 +806,12 @@ func TestRenderTasksPaneScrollsSelectedBottomGroupTaskIntoView(t *testing.T) {
 		Tasks: []state.Task{{ID: "ship", WorkspaceID: "w", GroupID: "shipit", TypeID: config.DefaultTaskTypeCodex, Title: "Ship Task", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
 	}
 
-	groupSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 5), "\n"))
+	groupSelected := ansi.Strip(strings.Join(renderGroupsPaneWithOptions(cfg, st, 32, 11, 5, workspaceRenderOptions{}), "\n"))
 	if !strings.Contains(groupSelected, "shipit") || strings.Contains(groupSelected, "Ship Task") {
 		t.Fatalf("shipit group should sit at the bottom before moving into its hidden child:\n%s", groupSelected)
 	}
 
-	taskSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 6), "\n"))
+	taskSelected := ansi.Strip(strings.Join(renderGroupsPaneWithOptions(cfg, st, 32, 11, 6, workspaceRenderOptions{}), "\n"))
 	if !strings.Contains(taskSelected, "shipit") || !strings.Contains(taskSelected, "Ship Task") {
 		t.Fatalf("selected bottom group task should scroll into view:\n%s", taskSelected)
 	}
@@ -906,7 +906,7 @@ func TestReadyTaskColorSurvivesSelectionAndActiveFallback(t *testing.T) {
 	rowWidth := width - 2 - (navHorizontalPadding * 2)
 	readyRow := "  · [codex] alpha"
 
-	selected := strings.Join(renderGroupsPane(cfg, st, width, 12, 2), "\n")
+	selected := strings.Join(renderGroupsPaneWithOptions(cfg, st, width, 12, 2, workspaceRenderOptions{}), "\n")
 	expectedSelected := taskReadySelectedStyle.Render(padVisual(readyRow, rowWidth))
 	if !strings.Contains(selected, expectedSelected) {
 		t.Fatalf("selected ready task should keep a high-contrast ready style:\n%s", selected)
@@ -915,7 +915,7 @@ func TestReadyTaskColorSurvivesSelectionAndActiveFallback(t *testing.T) {
 		t.Fatalf("selected ready task should not fall back to generic selected styling:\n%s", selected)
 	}
 
-	groupSelected := strings.Join(renderGroupsPane(cfg, st, width, 12, 3), "\n")
+	groupSelected := strings.Join(renderGroupsPaneWithOptions(cfg, st, width, 12, 3, workspaceRenderOptions{}), "\n")
 	if !strings.Contains(groupSelected, taskReadyStyle.Render(readyRow)) {
 		t.Fatalf("active ready task should keep ready color when cursor moves to a group:\n%s", groupSelected)
 	}
@@ -928,7 +928,7 @@ func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Empty()
 
-	got := strings.Join(renderWorkspacesPane(cfg, st, fixedWorkspacePaneWidth, 12), "\n")
+	got := strings.Join(renderWorkspacesPaneWithOptions(cfg, st, fixedWorkspacePaneWidth, 12, workspaceRenderOptions{}), "\n")
 
 	if !strings.Contains(got, "No workspaces") || !strings.Contains(got, "Press w to add one.") {
 		t.Fatalf("empty workspaces pane missing help:\n%s", got)
@@ -969,7 +969,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Empty()
 
-	got := renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
+	got := renderWorkspaceView(cfg, st, "Task", "No task open.", 80, 24, "", workspaceNavFrameWidth(st, 80), 0, workspaceRenderOptions{})
 
 	if strings.Contains(got, "Press n to create one.") || !strings.Contains(got, "Add a workspace first.") {
 		t.Fatalf("workspace should not advertise task creation before a workspace exists:\n%s", got)
@@ -980,7 +980,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	st.ActiveTaskID = ""
 	st.Focus = state.FocusTasks
 	st.NavOpen = true
-	got = renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
+	got = renderWorkspaceView(cfg, st, "Task", "No task open.", 80, 24, "", workspaceNavFrameWidth(st, 80), 0, workspaceRenderOptions{})
 	if !strings.Contains(got, "Press n to create") {
 		t.Fatalf("workspace missing task creation hint:\n%s", got)
 	}
@@ -989,7 +989,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 		t.Fatalf("empty dashboard should not render default codex title in bottom border:\n%s", got)
 	}
 
-	got = renderWorkspaceWithNavWidth(cfg, st, "Task", "No task open.", 100, 24, "", 0, 0)
+	got = renderWorkspaceView(cfg, st, "Task", "No task open.", 100, 24, "", 0, 0, workspaceRenderOptions{})
 	stripped := ansi.Strip(got)
 	logoIndex := strings.Index(stripped, `◆━━━━━╋━━━━━➤ ██║ █╗ ██║ █████╗   █████╗      ██║`)
 	hintIndex := strings.Index(stripped, "No task open")
@@ -1006,7 +1006,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
 	}
 
-	content := renderEmptyCodexContent(100, 24, true)
+	content := renderEmptyCodexContentWithFrame(100, 24, true, "No task open", false, 0)
 	logoWidth := maxVisualWidth(emptyWeftLogo)
 	expectedLeft := strings.Repeat(" ", (100-logoWidth)/2)
 	logoStart := -1
@@ -1043,7 +1043,7 @@ func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
 	st.NavOpen = false
 	st.Tasks[0].Status = state.StatusStarting
 
-	got := renderLoadingWorkspaceWithNavWidth(cfg, st, "alpha", "⠋ Starting Codex", 80, 24, "", 0, 0)
+	got := renderWorkspaceView(cfg, st, "alpha", "", 80, 24, "", 0, 0, workspaceRenderOptions{loadingText: "⠋ Starting Codex"})
 	lines := strings.Split(ansi.Strip(got), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "Starting Codex") {
@@ -1065,7 +1065,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	st.Focus = state.FocusConsole
 	st.NavOpen = false
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 80, 24, "", 0, 0)
+	got := renderWorkspaceView(cfg, st, "alpha", "output", 80, 24, "", 0, 0, workspaceRenderOptions{})
 
 	if strings.Contains(got, "●") {
 		t.Fatalf("active dot indicator should not render:\n%s", got)
@@ -1090,7 +1090,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	}
 	st.Tasks[0].Status = state.StatusRunning
 	st.Tasks[0].CodexTitle = "Fake Codex Working"
-	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 80, 24, "", 0, 0)
+	got = renderWorkspaceView(cfg, st, "alpha", "output", 80, 24, "", 0, 0, workspaceRenderOptions{})
 	if !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] repaint") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("working codex toolbar should advertise only Weft-owned console shortcuts:\n%s", got)
 	}
@@ -1112,7 +1112,7 @@ func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 		state.Task{ID: "d", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
 	)
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
+	got := renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 0, 0, workspaceRenderOptions{})
 	if !strings.Contains(ansi.Strip(got), "2 other tasks ready") {
 		t.Fatalf("console should show ready indicator for other global tasks:\n%s", got)
 	}
@@ -1121,7 +1121,7 @@ func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 	}
 
 	st.Tasks = st.Tasks[:1]
-	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
+	got = renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 0, 0, workspaceRenderOptions{})
 	if strings.Contains(ansi.Strip(got), "other task") {
 		t.Fatalf("console should hide ready indicator when no other tasks are ready:\n%s", got)
 	}
@@ -1133,7 +1133,7 @@ func TestCodexLeftPaddingStaysBeforeLeadingANSIStyle(t *testing.T) {
 	st.Focus = state.FocusConsole
 	st.NavOpen = false
 
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "\x1b[48;2;1;2;3mZ\x1b[m", 40, 8, "", 0, 0)
+	got := renderWorkspaceView(cfg, st, "alpha", "\x1b[48;2;1;2;3mZ\x1b[m", 40, 8, "", 0, 0, workspaceRenderOptions{})
 
 	if !strings.Contains(got, "│ \x1b[48;2;1;2;3mZ") {
 		t.Fatalf("padding should render before Codex ANSI styling:\n%q", got)
@@ -1156,7 +1156,7 @@ func TestFocusedCodexAndNavUseSeparateFocusColors(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
-	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 2)
+	got := renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 60, 2, workspaceRenderOptions{})
 
 	rawLines := strings.Split(got, "\n")
 	strippedLines := strings.Split(ansi.Strip(got), "\n")
