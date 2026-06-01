@@ -954,6 +954,8 @@ Global `--clear`:
 `weft version`:
 
 - prints the local CLI version
+- is the only supported version-reporting CLI surface; `weft --version` is
+  unsupported
 - checks the current runtime socket without starting the supervisor or creating
   runtime config/state
 - when a supervisor is running, prints the supervisor version, supervisor

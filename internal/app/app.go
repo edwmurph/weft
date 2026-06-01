@@ -40,8 +40,7 @@ func Run(args []string) error {
 		case "--version":
 			clearApplies = false
 			action = func() error {
-				fmt.Println(version.Version)
-				return nil
+				return errors.New("weft --version is not supported; use `weft version`")
 			}
 		case "version":
 			clearApplies = false

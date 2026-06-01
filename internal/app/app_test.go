@@ -105,6 +105,15 @@ func TestVersionReportHandlesMissingSupervisor(t *testing.T) {
 	}
 }
 
+func TestVersionFlagIsUnsupported(t *testing.T) {
+	for _, args := range [][]string{{"--version"}, {"--clear", "--version"}} {
+		err := Run(args)
+		if err == nil || !strings.Contains(err.Error(), "use `weft version`") {
+			t.Fatalf("Run(%q) error = %v", strings.Join(args, " "), err)
+		}
+	}
+}
+
 func TestSourceBuildRefusesDefaultMainRuntime(t *testing.T) {
 	withBuildChannel(t, "source")
 	home := t.TempDir()
