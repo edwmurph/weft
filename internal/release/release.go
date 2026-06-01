@@ -10,17 +10,19 @@ import (
 )
 
 var (
-	explicitBumpRE = regexp.MustCompile(`(?im)^(?:semver[- ]bump|release[- ]bump):\s*(major|minor|patch)\b`)
-	breakingRE     = regexp.MustCompile(`(?im)^(BREAKING CHANGE:|[a-z][a-z0-9_-]*(?:\([^)]*\))?!:)`)
-	minorRE        = regexp.MustCompile(`(?im)^(feat(?:\([^)]*\))?:|add(?:ed|s)?\b|creat(?:e|ed|es)\b|implement(?:ed|s)?\b|introduc(?:e|ed|es)\b|support(?:ed|s)?\b)`)
-	patchRE        = regexp.MustCompile(`(?im)^(fix|docs?|chore|test|tests|refactor|update|remove|repair)\b`)
-	semverRE       = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`)
-	goVersionRE    = regexp.MustCompile(`(?m)^var Version = "([^"]+)"$`)
-	conventionalRE = regexp.MustCompile(`^([a-z][a-z0-9-]*)(?:\([^)]*\))?(!)?:\s*(.+)$`)
-	footerRE       = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9- ]*:\s+`)
-	releaseNotesRE = regexp.MustCompile(`(?i)^Release-Notes:\s*(.*)$`)
-	bulletRE       = regexp.MustCompile(`^(?:[-*]|\d+\.)\s+`)
-	releaseMetaRE  = regexp.MustCompile(`(?i)^release v?\d+\.\d+\.\d+(?:\s|$)`)
+	explicitBumpRE         = regexp.MustCompile(`(?im)^(?:semver[- ]bump|release[- ]bump):\s*(major|minor|patch)\b`)
+	breakingRE             = regexp.MustCompile(`(?im)^(BREAKING[ -]CHANGE:|[a-z][a-z0-9_-]*(?:\([^)]*\))?!:)`)
+	breakingChangeFooterRE = regexp.MustCompile(`(?i)^BREAKING[ -]CHANGE:\s*(.*)$`)
+	migrationFooterRE      = regexp.MustCompile(`(?i)^(?:Migration|Migrate|Upgrade|Action[ -]Required|How[ -]to[ -]Migrate):\s*(.*)$`)
+	minorRE                = regexp.MustCompile(`(?im)^(feat(?:\([^)]*\))?:|add(?:ed|s)?\b|creat(?:e|ed|es)\b|implement(?:ed|s)?\b|introduc(?:e|ed|es)\b|support(?:ed|s)?\b)`)
+	patchRE                = regexp.MustCompile(`(?im)^(fix|docs?|chore|test|tests|refactor|update|remove|repair)\b`)
+	semverRE               = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`)
+	goVersionRE            = regexp.MustCompile(`(?m)^var Version = "([^"]+)"$`)
+	conventionalRE         = regexp.MustCompile(`^([a-z][a-z0-9-]*)(?:\([^)]*\))?(!)?:\s*(.+)$`)
+	footerRE               = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9- ]*:\s*`)
+	releaseNotesRE         = regexp.MustCompile(`(?i)^Release-Notes:\s*(.*)$`)
+	bulletRE               = regexp.MustCompile(`^(?:[-*]|\d+\.)\s+`)
+	releaseMetaRE          = regexp.MustCompile(`(?i)^release v?\d+\.\d+\.\d+(?:\s|$)`)
 )
 
 const EmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -165,6 +167,7 @@ func ReleaseNotes(base string, head string) (string, error) {
 
 func RenderReleaseNotes(commits []Commit) string {
 	sections := map[string][]string{}
+	var breakingNotes []breakingReleaseNote
 	for _, commit := range commits {
 		if ignoreReleaseNoteCommit(commit) {
 			continue
@@ -175,12 +178,20 @@ func RenderReleaseNotes(commits []Commit) string {
 			notes = []string{details.Description}
 		}
 		section := releaseNoteSection(details)
-		if details.Breaking || breakingRE.MatchString(commit.Body) {
-			section = "breaking"
-		}
+		isBreaking := details.Breaking || breakingRE.MatchString(commit.Body)
+		impact := firstFooterValue(commit.Body, breakingChangeFooterRE)
+		migration := firstFooterValue(commit.Body, migrationFooterRE)
 		for _, note := range notes {
 			normalized := normalizeReleaseNote(note)
 			if normalized == "" {
+				continue
+			}
+			if isBreaking {
+				breakingNotes = append(breakingNotes, breakingReleaseNote{
+					Text:      normalized,
+					Impact:    impact,
+					Migration: migration,
+				})
 				continue
 			}
 			sections[section] = append(sections[section], normalized)
@@ -191,13 +202,33 @@ func RenderReleaseNotes(commits []Commit) string {
 		key   string
 		title string
 	}{
-		{key: "breaking", title: "Breaking Changes"},
 		{key: "features", title: "Features"},
 		{key: "fixes", title: "Fixes"},
 		{key: "documentation", title: "Documentation"},
 		{key: "maintenance", title: "Maintenance"},
 	}
 	var builder strings.Builder
+	if len(breakingNotes) > 0 {
+		builder.WriteString("## Breaking Changes\n\n")
+		builder.WriteString("Review these before upgrading.\n\n")
+		for _, note := range breakingNotes {
+			builder.WriteString("- **")
+			builder.WriteString(note.Text)
+			builder.WriteString("**\n")
+			if note.Impact != "" {
+				builder.WriteString("  - Impact: ")
+				builder.WriteString(note.Impact)
+				builder.WriteString("\n")
+			}
+			migration := note.Migration
+			if migration == "" {
+				migration = "Review this item before upgrading; no migration step was documented."
+			}
+			builder.WriteString("  - Migration: ")
+			builder.WriteString(migration)
+			builder.WriteString("\n")
+		}
+	}
 	for _, section := range order {
 		notes := sections[section.key]
 		if len(notes) == 0 {
@@ -276,6 +307,12 @@ type conventionalSubject struct {
 	Type        string
 	Description string
 	Breaking    bool
+}
+
+type breakingReleaseNote struct {
+	Text      string
+	Impact    string
+	Migration string
 }
 
 func splitCommitMessage(message string) (string, string) {
@@ -372,6 +409,61 @@ func stripConventionalPrefix(note string) string {
 
 func stripBullet(note string) string {
 	return strings.TrimSpace(bulletRE.ReplaceAllString(strings.TrimSpace(note), ""))
+}
+
+func firstFooterValue(body string, matcher *regexp.Regexp) string {
+	values := footerValues(body, matcher)
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func footerValues(body string, matcher *regexp.Regexp) []string {
+	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	var values []string
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		match := matcher.FindStringSubmatch(line)
+		if len(match) == 0 {
+			continue
+		}
+		var parts []string
+		if inline := stripBullet(match[1]); inline != "" {
+			parts = append(parts, inline)
+		}
+		for j := i + 1; j < len(lines); j++ {
+			next := strings.TrimSpace(lines[j])
+			if next == "" {
+				if len(parts) > 0 {
+					i = j
+					break
+				}
+				continue
+			}
+			if footerRE.MatchString(next) && !bulletRE.MatchString(next) {
+				i = j - 1
+				break
+			}
+			parts = append(parts, stripBullet(next))
+			i = j
+		}
+		if value := normalizeFooterValue(strings.Join(parts, " ")); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func normalizeFooterValue(value string) string {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if value == "" {
+		return ""
+	}
+	if value[0] >= 'a' && value[0] <= 'z' {
+		value = string(value[0]-'a'+'A') + value[1:]
+	}
+	return value
 }
 
 func ignoreReleaseNoteCommit(commit Commit) bool {

@@ -102,14 +102,72 @@ func TestRenderReleaseNotesUsesExplicitBulletsAndScopes(t *testing.T) {
 
 func TestRenderReleaseNotesLabelsBreakingChanges(t *testing.T) {
 	notes := RenderReleaseNotes([]Commit{
-		{Subject: "feat(config)!: require WEFT_HOME for supervisor state"},
-		{Subject: "fix: repair stale release notes", Body: "BREAKING CHANGE: release notes are regenerated from commits."},
+		{
+			Subject: "feat(config)!: require WEFT_HOME for supervisor state",
+			Body: `BREAKING CHANGE: Supervisor state no longer defaults to the old global path.
+Migration: Set WEFT_HOME before launching Weft or run weft clear after backing up state.`,
+		},
+		{
+			Subject: "fix: repair stale release notes",
+			Body: `BREAKING CHANGE: release notes are regenerated from commits.
+Migration: Add Release-Notes bullets to ship commits when the subject is not enough.`,
+		},
 	})
 
 	want := `## Breaking Changes
 
-- Require WEFT_HOME for supervisor state
-- Repair stale release notes
+Review these before upgrading.
+
+- **Require WEFT_HOME for supervisor state**
+  - Impact: Supervisor state no longer defaults to the old global path.
+  - Migration: Set WEFT_HOME before launching Weft or run weft clear after backing up state.
+- **Repair stale release notes**
+  - Impact: Release notes are regenerated from commits.
+  - Migration: Add Release-Notes bullets to ship commits when the subject is not enough.
+`
+	if notes != want {
+		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
+	}
+}
+
+func TestRenderReleaseNotesWarnsWhenBreakingMigrationIsMissing(t *testing.T) {
+	notes := RenderReleaseNotes([]Commit{
+		{Subject: "refactor!: remove legacy tab state"},
+	})
+
+	want := `## Breaking Changes
+
+Review these before upgrading.
+
+- **Remove legacy tab state**
+  - Migration: Review this item before upgrading; no migration step was documented.
+`
+	if notes != want {
+		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
+	}
+}
+
+func TestRenderReleaseNotesReadsMultilineBreakingMigrationFooter(t *testing.T) {
+	notes := RenderReleaseNotes([]Commit{
+		{
+			Subject: "feat(config)!: reject legacy config files",
+			Body: `Release-Notes:
+- Reject legacy config files.
+
+BREAKING-CHANGE: Legacy config keys are unsupported.
+Migration:
+- Remove retired keys from config.toml.
+- Run weft doctor before launching.`,
+		},
+	})
+
+	want := `## Breaking Changes
+
+Review these before upgrading.
+
+- **Reject legacy config files.**
+  - Impact: Legacy config keys are unsupported.
+  - Migration: Remove retired keys from config.toml. Run weft doctor before launching.
 `
 	if notes != want {
 		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
