@@ -84,7 +84,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		return strings.Contains(capture, "CLI        "+weftversion.Version) &&
 			strings.Contains(capture, "Supervisor "+weftversion.Version)
 	})
-	if out := runWeft(t, env, bin, "doctor"); !strings.Contains(out, "supervisor owns Codex PTYs") {
+	if out := runWeft(t, env, bin, "doctor"); !strings.Contains(out, "supervisor owns task PTYs") {
 		t.Fatalf("doctor output missing supervisor ownership:\n%s", out)
 	}
 
@@ -314,11 +314,11 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 	if oldPID != newPID {
 		t.Fatalf("running-agent upgrade should preserve supervisor, old pid %q new pid %q\n%s", oldPID, newPID, out)
 	}
-	if !strings.Contains(out, "1 live Codex terminal") {
+	if !strings.Contains(out, "1 live task terminal") {
 		t.Fatalf("running upgrade output missing live-terminal warning:\n%s", out)
 	}
 	status := runWeft(t, newEnv, bin, "status")
-	if !strings.Contains(status, "supervisor version: 3.9.0") || !strings.Contains(status, "upgrade: upgrade pending, wait for idle/resumable agents (1 live)") {
+	if !strings.Contains(status, "supervisor version: 3.9.0") || !strings.Contains(status, "upgrade: upgrade pending, wait for idle/resumable tasks (1 live)") {
 		t.Fatalf("status missing upgrade details:\n%s", status)
 	}
 
@@ -387,11 +387,11 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workspaces") &&
 			strings.Contains(capture, "supervisor 3.9.0 → "+weftversion.Version) &&
-			strings.Contains(capture, "Press U to upgrade and resume 1 idle agent")
+			strings.Contains(capture, "Press U to upgrade and resume 1 idle Codex task")
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "u")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Upgrade supervisor and resume agents?") &&
+		return strings.Contains(capture, "Upgrade supervisor and resume Codex tasks?") &&
 			strings.Contains(capture, "Enter upgrade and resume") &&
 			!strings.Contains(capture, "Y upgrade and resume") &&
 			!strings.Contains(capture, "N cancel") &&
@@ -414,7 +414,7 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 			strings.Contains(agent.CodexTitle, "Ready")
 	})
 	if len(st.Agents) != 1 {
-		t.Fatalf("upgrade resume should preserve agent rows: %#v", st.Agents)
+		t.Fatalf("upgrade resume should preserve task rows: %#v", st.Agents)
 	}
 	if !waitForBool(4*time.Second, func() bool {
 		data, err := os.ReadFile(resumeLog)

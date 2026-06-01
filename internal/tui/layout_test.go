@@ -59,7 +59,7 @@ func TestWeftLogoGraphShape(t *testing.T) {
 	}
 }
 
-func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
+func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
@@ -69,8 +69,8 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 
 	for _, expected := range []string{
 		"Workspaces",
-		"Agents",
-		"Agent Live Preview",
+		"Tasks",
+		"Task Live Preview",
 		"▾ inbox (1)",
 		"╭ /tmp/project",
 		"1 total",
@@ -90,7 +90,7 @@ func TestRenderWorkspaceShowsWorkspacesAgentsAndAgentPreview(t *testing.T) {
 	}
 	stripped := ansi.Strip(got)
 	lines := strings.Split(stripped, "\n")
-	if len(lines) == 0 || !strings.Contains(lines[0], "Agent Live Preview") || !strings.Contains(lines[0], "alpha") {
+	if len(lines) == 0 || !strings.Contains(lines[0], "Task Live Preview") || !strings.Contains(lines[0], "alpha") {
 		t.Fatalf("preview top border should include pane title and agent title:\n%s", stripped)
 	}
 	if strings.Contains(lines[len(lines)-1], "alpha") {
@@ -120,9 +120,9 @@ func TestRenderWorkspaceShowsAllPanesAtWideTerminalWidth(t *testing.T) {
 	expectedPath := "~" + strings.TrimPrefix(workspace, home)
 	st := layoutState(workspace)
 
-	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", minThreePaneWidth, 24, "", workspace)
+	got := renderWorkspace(cfg, st, "Task", "No task open.", minThreePaneWidth, 24, "", workspace)
 
-	for _, expected := range []string{"Workspaces", "Agents", "No Codex agent open", expectedPath} {
+	for _, expected := range []string{"Workspaces", "Tasks", "No task open", expectedPath} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("wide dashboard missing %q:\n%s", expected, got)
 		}
@@ -139,15 +139,15 @@ func TestRenderWorkspaceKeepsFixedWorkspacePaneAtMediumWidth(t *testing.T) {
 	expectedPath := "~" + strings.TrimPrefix(workspace, home)
 	st := layoutState(workspace)
 
-	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", workspace)
+	got := renderWorkspace(cfg, st, "Task", "No task open.", 100, 24, "", workspace)
 
-	for _, expected := range []string{"Workspaces", "Agents", expectedPath} {
+	for _, expected := range []string{"Workspaces", "Tasks", expectedPath} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("medium dashboard missing %q:\n%s", expected, got)
 		}
 	}
-	if strings.Contains(got, "No Codex agent open") || strings.Contains(got, "Agent Live Preview") {
-		t.Fatalf("medium dashboard should hide Agent Live Preview before clipping fixed Workspaces:\n%s", got)
+	if strings.Contains(got, "No task open") || strings.Contains(got, "Task Live Preview") {
+		t.Fatalf("medium dashboard should hide Task Live Preview before clipping fixed Workspaces:\n%s", got)
 	}
 }
 
@@ -380,7 +380,7 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 	if !strings.Contains(got, "Workspaces") {
 		t.Fatalf("narrow workspace focus should show workspaces pane:\n%s", got)
 	}
-	if strings.Contains(got, "Agents") {
+	if strings.Contains(got, "Tasks") {
 		t.Fatalf("narrow nav should use one pane, got agents too:\n%s", got)
 	}
 }
@@ -417,14 +417,14 @@ func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
 	st.Agents[0].GroupID = ""
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 0)
-	if !strings.Contains(got, "Agents") || !strings.Contains(got, "● alpha") || strings.Contains(got, "▾") {
+	if !strings.Contains(got, "Tasks") || !strings.Contains(got, "· [codex] alpha") || strings.Contains(got, "▾") {
 		t.Fatalf("top-level agent rendering mismatch:\n%s", got)
 	}
 
 	st.Agents = nil
 	st.ActiveAgentID = ""
-	got = renderWorkspaceWithNavWidth(cfg, st, "Codex", "", 100, 18, "", 60, 0)
-	if !strings.Contains(got, "No agents") || !strings.Contains(got, "Press n to create one.") {
+	got = renderWorkspaceWithNavWidth(cfg, st, "Task", "", 100, 18, "", 60, 0)
+	if !strings.Contains(got, "No tasks") || !strings.Contains(got, "Press n to create one.") {
 		t.Fatalf("empty agents pane missing empty state:\n%s", got)
 	}
 
@@ -497,31 +497,31 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		loadingAgents: map[string]bool{"loading": true},
 	}), "\n")
 	stripped := ansi.Strip(got)
-	if !strings.Contains(stripped, "⠼ Booting") || strings.Contains(stripped, "• Booting") {
+	if !strings.Contains(stripped, "⠼ [codex] Booting") || strings.Contains(stripped, "· [codex] Booting") {
 		t.Fatalf("loading row should replace the static marker with the spinner:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "⠼ Review") || strings.Contains(stripped, "• Review") {
+	if !strings.Contains(stripped, "⠼ [codex] Review") || strings.Contains(stripped, "· [codex] Review") {
 		t.Fatalf("working row should use the animated marker:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "● Respond") || strings.Contains(stripped, "⠼ Respond") {
-		t.Fatalf("ready row should use the attention marker instead of the spinner:\n%s", stripped)
+	if !strings.Contains(stripped, "· [codex] Respond") || strings.Contains(stripped, "⠼ [codex] Respond") {
+		t.Fatalf("ready row should use the subtle ready marker instead of the spinner:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "! Broken") {
+	if !strings.Contains(stripped, "! [codex] Broken") {
 		t.Fatalf("error row should use the error marker:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "◦ Paused") {
+	if !strings.Contains(stripped, "◦ [codex] Paused") {
 		t.Fatalf("stopped row should use the attention marker:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "! Killed") {
+	if !strings.Contains(stripped, "! [codex] Killed") {
 		t.Fatalf("killed row should use the attention marker:\n%s", stripped)
 	}
 	for _, expected := range []string{
-		agentRunningStyle.Render("⠼ Booting"),
-		agentWorkingStyle.Render("⠼ Review"),
-		agentReadyStyle.Render("● Respond"),
-		agentErrorStyle.Render("! Broken"),
-		agentAttentionStyle.Render("◦ Paused"),
-		agentAttentionStyle.Render("! Killed"),
+		agentRunningStyle.Render("⠼ [codex] Booting"),
+		agentWorkingStyle.Render("⠼ [codex] Review"),
+		agentReadyStyle.Render("· [codex] Respond"),
+		agentErrorStyle.Render("! [codex] Broken"),
+		agentAttentionStyle.Render("◦ [codex] Paused"),
+		agentAttentionStyle.Render("! [codex] Killed"),
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("agents pane missing styled row %q:\n%s", expected, got)
@@ -554,7 +554,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Repair(state.Empty(), "/tmp/project")
 
-	got := renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
+	got := renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
 
 	if strings.Contains(got, "Press n to create one.") || !strings.Contains(got, "Add a workspace first.") {
 		t.Fatalf("workspace should not advertise agent creation before a workspace exists:\n%s", got)
@@ -565,7 +565,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	st.ActiveAgentID = ""
 	st.Focus = state.FocusAgents
 	st.NavOpen = true
-	got = renderWorkspace(cfg, st, "Codex", "No Codex agent open.", 80, 24, "", "/tmp/project")
+	got = renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
 	if !strings.Contains(got, "Press n to create one.") {
 		t.Fatalf("workspace missing agent creation hint:\n%s", got)
 	}
@@ -574,10 +574,10 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 		t.Fatalf("empty dashboard should not render default codex title in bottom border:\n%s", got)
 	}
 
-	got = renderWorkspaceWithNavWidth(cfg, st, "Codex", "No Codex agent open.", 100, 24, "", 0, 0)
+	got = renderWorkspaceWithNavWidth(cfg, st, "Task", "No task open.", 100, 24, "", 0, 0)
 	stripped := ansi.Strip(got)
 	logoIndex := strings.Index(stripped, `●─────┼────▶  ██║ █╗ ██║ █████╗   █████╗      ██║`)
-	hintIndex := strings.Index(stripped, "No Codex agent open")
+	hintIndex := strings.Index(stripped, "No task open")
 	if logoIndex < 0 {
 		t.Fatalf("empty dashboard missing Weft wordmark:\n%s", stripped)
 	}
@@ -587,7 +587,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	if !strings.Contains(stripped, weftversion.Label()) {
 		t.Fatalf("empty dashboard missing version label:\n%s", stripped)
 	}
-	if strings.Contains(stripped, "Agent Live Preview") || strings.Contains(stripped, " … │") {
+	if strings.Contains(stripped, "Task Live Preview") || strings.Contains(stripped, " … │") {
 		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
 	}
 
@@ -613,7 +613,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+1]); !strings.HasPrefix(got, expectedLeft+centerVisual(weftversion.Label(), logoWidth)) {
 		t.Fatalf("empty version should align inside centered logo block, got %q", got)
 	}
-	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+3]); !strings.HasPrefix(got, expectedLeft+centerVisual("No Codex agent open", logoWidth)) {
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+3]); !strings.HasPrefix(got, expectedLeft+centerVisual("No task open", logoWidth)) {
 		t.Fatalf("empty title should align inside centered logo block, got %q", got)
 	}
 	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+4]); !strings.HasPrefix(got, expectedLeft+centerVisual("Press n to create one.", logoWidth)) {
@@ -664,10 +664,10 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "C-c") {
 		t.Fatalf("collapsed codex top toolbar should not advertise C-c:\n%s", got)
 	}
-	if !strings.Contains(got, "Agent Console") {
-		t.Fatalf("focused codex pane should render Agent Console title:\n%s", got)
+	if !strings.Contains(got, "Task Console") {
+		t.Fatalf("focused codex pane should render Task Console title:\n%s", got)
 	}
-	if strings.Contains(got, "Agent Live Preview") || strings.Contains(got, "● Live") {
+	if strings.Contains(got, "Task Live Preview") || strings.Contains(got, "● Live") {
 		t.Fatalf("focused codex pane should not render live preview UI:\n%s", got)
 	}
 	st.Agents[0].Status = state.StatusRunning
@@ -695,16 +695,16 @@ func TestAgentConsoleReadyIndicatorCountsOtherGlobalReadyAgents(t *testing.T) {
 	)
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
-	if !strings.Contains(ansi.Strip(got), "2 other agents ready") {
+	if !strings.Contains(ansi.Strip(got), "2 other tasks ready") {
 		t.Fatalf("console should show ready indicator for other global agents:\n%s", got)
 	}
-	if !strings.Contains(got, workspaceCountNeedsAttentionStyle.Render("2 other agents ready")) {
+	if !strings.Contains(got, workspaceCountNeedsAttentionStyle.Render("2 other tasks ready")) {
 		t.Fatalf("ready indicator should use needs-attention styling:\n%q", got)
 	}
 
 	st.Agents = st.Agents[:1]
 	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
-	if strings.Contains(ansi.Strip(got), "other agent") {
+	if strings.Contains(ansi.Strip(got), "other task") {
 		t.Fatalf("console should hide ready indicator when no other agents are ready:\n%s", got)
 	}
 }

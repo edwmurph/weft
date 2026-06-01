@@ -51,6 +51,7 @@ type ClientModel struct {
 	prompt                   promptKind
 	confirm                  confirmKind
 	pendingID                string
+	newTaskIndex             int
 	promptSuggestionOpen     bool
 	promptSuggestionIndex    int
 	editGroupField           int
@@ -91,7 +92,7 @@ func NewClientModel(rt config.Runtime, cfg config.Config) ClientModel {
 	st := state.Repair(state.Empty(), rt.Workspace)
 	return ClientModel{
 		cfg: cfg, runtime: rt, clientID: shortID(), width: 100, height: 32,
-		snapshot: ipc.Snapshot{State: st, CodexTitle: "Codex", CodexContent: "No Codex agent open.", NavWidth: workspaceNavFrameWidth(st, 100)},
+		snapshot: ipc.Snapshot{State: st, CodexTitle: "Task", CodexContent: "No task open.", NavWidth: workspaceNavFrameWidth(st, 100)},
 		input:    input,
 	}
 }
@@ -158,6 +159,9 @@ func (m ClientModel) View() string {
 	if m.mode == modeConfirm {
 		return m.modalView(m.renderConfirmModal())
 	}
+	if m.mode == modeNewTask {
+		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, max(36, min(m.width-16, 72))))
+	}
 	loadingText := m.snapshot.LoadingText
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
 	options := m.workspaceRenderOptions()
@@ -215,11 +219,14 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeConfirm {
 		return m.handleConfirmKey(msg)
 	}
+	if m.mode == modeNewTask {
+		return m.handleNewTaskKey(msg)
+	}
 
 	if m.snapshot.State.Focus == state.FocusCodex &&
 		state.ActiveAgent(m.snapshot.State) != nil &&
 		m.inputRouter != nil &&
-		!m.inputRouter.CodexActive() {
+		!m.inputRouter.TaskInputActive() {
 		m.snapshot.State.Focus = state.FocusAgents
 		m.snapshot.State.NavOpen = true
 	}
@@ -280,7 +287,7 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
 		m.newWorkspaceCardSelected = false
-		return m, m.request("new", nil)
+		m.startNewTaskMenu()
 	case m.canActOnUpgrade() && strings.EqualFold(msg.String(), "u"):
 		m.newWorkspaceCardSelected = false
 		m.startUpgradeConfirm()
@@ -315,6 +322,26 @@ func (m ClientModel) shouldMoveToNewWorkspaceCard() bool {
 func (m ClientModel) newWorkspaceCardVisible() bool {
 	_, ok := newWorkspaceTemplateCardAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth, m.workspaceRenderOptions())
 	return ok
+}
+
+func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	nextIndex, submit, cancel := handleNewTaskKey(m.cfg, m.newTaskIndex, msg)
+	m.newTaskIndex = nextIndex
+	if cancel {
+		m.mode = modeNormal
+		return m, nil
+	}
+	if !submit {
+		return m, nil
+	}
+	taskType, ok := selectedTaskType(m.cfg, m.newTaskIndex)
+	if !ok {
+		m.mode = modeNormal
+		m.message = "no task types configured"
+		return m, nil
+	}
+	m.mode = modeNormal
+	return m, m.request("new", map[string]string{"type": taskType.ID})
 }
 
 func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {
@@ -423,11 +450,24 @@ func (m *ClientModel) startDeleteConfirm() {
 	}
 }
 
+func (m *ClientModel) startNewTaskMenu() {
+	if state.ActiveWorkspace(m.snapshot.State) == nil {
+		m.message = "add a workspace first"
+		return
+	}
+	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
+	m.mode = modeNewTask
+}
+
 func (m *ClientModel) startUpgradeConfirm() {
 	if m.upgrade == nil {
 		return
 	}
 	if !m.canUpgradeResumeNow() {
+		if blocked := codexsession.LiveNonCodexTaskCount(m.snapshot.State); blocked > 0 {
+			m.message = fmt.Sprintf("Upgrade waits until %d non-resumable task(s) stop.", blocked)
+			return
+		}
 		m.message = upgradeResumeWaitingMessage(codexsession.BuildReport(m.snapshot.State))
 		return
 	}
@@ -590,7 +630,15 @@ func (m *ClientModel) syncInputRouter() {
 	active := m.mode == modeNormal &&
 		m.snapshot.State.Focus == state.FocusCodex &&
 		state.ActiveAgent(m.snapshot.State) != nil
-	m.inputRouter.SetCodexActive(active)
+	if !active {
+		m.inputRouter.SetTaskInputMode(taskInputNone)
+		return
+	}
+	if agent := state.ActiveAgent(m.snapshot.State); agent != nil && agentUsesCodexIntegration(m.cfg, *agent) {
+		m.inputRouter.SetTaskInputMode(taskInputCodex)
+		return
+	}
+	m.inputRouter.SetTaskInputMode(taskInputTerminal)
 }
 
 func (m *ClientModel) ensureLoadingTick() tea.Cmd {
@@ -617,14 +665,17 @@ func dashboardUpgradeMessage(upgrade ipc.Upgrade, st state.State) string {
 	}
 	delta := fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 	report := codexsession.BuildReport(st)
+	if blocked := codexsession.LiveNonCodexTaskCount(st); blocked > 0 {
+		return fmt.Sprintf("Upgrade pending: %s must restart. Stop %d non-resumable task(s) first; reopening alone is not enough.", delta, blocked)
+	}
 	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade pending: %s must restart. Wait for %d Codex agent(s) to become idle; reopening alone is not enough.", delta, len(report.Busy))
+		return fmt.Sprintf("Upgrade pending: %s must restart. Wait for %d Codex task(s) to become idle; reopening alone is not enough.", delta, len(report.Busy))
 	}
 	if len(report.Missing) > 0 {
 		return fmt.Sprintf("Upgrade pending: %s must restart. Waiting for %d Codex session id(s); reopening alone is not enough.", delta, len(report.Missing))
 	}
 	if report.Total > 0 {
-		return fmt.Sprintf("Upgrade ready: %s can restart and resume %d idle Codex agent(s). Press U to continue.", delta, report.Total)
+		return fmt.Sprintf("Upgrade ready: %s can restart and resume %d idle Codex task(s). Press U to continue.", delta, report.Total)
 	}
 	return fmt.Sprintf("Upgrade ready: %s is idle. Press U to restart it now.", delta)
 }
@@ -635,17 +686,20 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {
 	}
 	delta := fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 	if !upgrade.Compatible {
-		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop agents before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop tasks before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
 	}
 	report := codexsession.BuildReport(st)
+	if blocked := codexsession.LiveNonCodexTaskCount(st); blocked > 0 {
+		return fmt.Sprintf("Upgrade pending: %s.\nStop %d non-resumable task(s) first.", delta, blocked)
+	}
 	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade pending: %s.\nWait for %d agent(s) to become idle.", delta, len(report.Busy))
+		return fmt.Sprintf("Upgrade pending: %s.\nWait for %d Codex task(s) to become idle.", delta, len(report.Busy))
 	}
 	if len(report.Missing) > 0 {
 		return fmt.Sprintf("Upgrade pending: %s.\nWaiting for %d Codex session id(s).", delta, len(report.Missing))
 	}
 	if report.Total > 0 {
-		return fmt.Sprintf("Upgrade ready: %s.\nPress U to upgrade and resume %d idle agent(s).", delta, report.Total)
+		return fmt.Sprintf("Upgrade ready: %s.\nPress U to upgrade and resume %d idle Codex task(s).", delta, report.Total)
 	}
 	return fmt.Sprintf("Upgrade ready: %s.\nPress U to restart now.", delta)
 }
@@ -659,7 +713,9 @@ func (m ClientModel) canUpgradePending() bool {
 }
 
 func (m ClientModel) canUpgradeResumeNow() bool {
-	return m.canUpgradePending() && codexsession.BuildReport(m.snapshot.State).CanUpgrade()
+	return m.canUpgradePending() &&
+		codexsession.LiveNonCodexTaskCount(m.snapshot.State) == 0 &&
+		codexsession.BuildReport(m.snapshot.State).CanUpgrade()
 }
 
 func (m ClientModel) canActOnUpgrade() bool {
@@ -684,7 +740,7 @@ func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
 
 func upgradeResumeWaitingMessage(report codexsession.Report) string {
 	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade waits until %d Codex agent(s) are idle.", len(report.Busy))
+		return fmt.Sprintf("Upgrade waits until %d Codex task(s) are idle.", len(report.Busy))
 	}
 	if len(report.Missing) > 0 {
 		return fmt.Sprintf("Upgrade waits until %d Codex session id(s) are available.", len(report.Missing))

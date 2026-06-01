@@ -376,6 +376,9 @@ func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorCont
 		return ipc.ErrorResponse("upgrade_incompatible", "Cannot upgrade from the dashboard because the supervisor protocol is incompatible. Use `weft close --kill` when ready.")
 	}
 	report := engine.PrepareUpgradeResume()
+	if blocked := codexsession.LiveNonCodexTaskCount(engine.Snapshot().State); blocked > 0 {
+		return ipc.ErrorResponse("upgrade_resume_blocked", fmt.Sprintf("Upgrade waits until %d non-resumable task(s) stop.", blocked))
+	}
 	if !report.CanUpgrade() {
 		return ipc.ErrorResponse("upgrade_resume_blocked", upgradeResumeBlockedMessage(report))
 	}
@@ -436,9 +439,9 @@ func upgradeResumeRestartMessage(agents int, backupID string) string {
 		return "Restarting supervisor to finish the upgrade. Backup: " + backupID + "."
 	}
 	if backupID == "" {
-		return fmt.Sprintf("Closing and resuming %d idle Codex agent(s) to finish the supervisor upgrade.", agents)
+		return fmt.Sprintf("Closing and resuming %d idle Codex task(s) to finish the supervisor upgrade.", agents)
 	}
-	return fmt.Sprintf("Closing and resuming %d idle Codex agent(s) to finish the supervisor upgrade. Backup: %s.", agents, backupID)
+	return fmt.Sprintf("Closing and resuming %d idle Codex task(s) to finish the supervisor upgrade. Backup: %s.", agents, backupID)
 }
 
 func upgradeResumeBlockedMessage(report codexsession.Report) string {
@@ -450,9 +453,9 @@ func upgradeResumeBlockedMessage(report codexsession.Report) string {
 		blockers = append(blockers, fmt.Sprintf("%d missing a Codex session id", len(report.Missing)))
 	}
 	if len(blockers) == 0 {
-		return "Upgrade waits for idle, resumable Codex agents before closing terminals and restarting the supervisor."
+		return "Upgrade waits for idle, resumable Codex tasks before closing terminals and restarting the supervisor."
 	}
-	return "Upgrade waits for idle, resumable Codex agents before closing terminals and restarting the supervisor: " + strings.Join(blockers, ", ") + "."
+	return "Upgrade waits for idle, resumable Codex tasks before closing terminals and restarting the supervisor: " + strings.Join(blockers, ", ") + "."
 }
 
 func ReportedVersion() string {

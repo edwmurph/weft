@@ -54,13 +54,7 @@ func Run(args []string) error {
 		case "status":
 			action = func() error { return status(args[1:]) }
 		case "new":
-			action = func() error {
-				title := ""
-				if len(args) > 1 {
-					title = strings.Join(args[1:], " ")
-				}
-				return callIPC("new", map[string]string{"title": title}, false)
-			}
+			action = func() error { return newCommand(args[1:]) }
 		case "group":
 			action = func() error { return groupCommand(args[1:]) }
 		case "workspace":
@@ -72,7 +66,7 @@ func Run(args []string) error {
 		case "select":
 			action = func() error {
 				if len(args) < 2 {
-					return errors.New("select requires an agent id")
+					return errors.New("select requires a task id")
 				}
 				return callIPC("select", map[string]string{"id": args[1]}, false)
 			}
@@ -139,7 +133,7 @@ func cliHelpText() string {
 	}
 	lines = append(lines,
 		"",
-		"Terminal dashboard for Codex agent threads.",
+		"Terminal dashboard for Codex and shell tasks.",
 		"",
 		"Usage:",
 		"  weft [--clear] [--attach|--no-attach]",
@@ -151,23 +145,23 @@ func cliHelpText() string {
 		"  weft <command> --clear       Clear runtime state, then run the command.",
 		"  weft --no-attach             Start or reuse the supervisor without opening the dashboard.",
 		"  weft refresh                 Request a fresh dashboard snapshot.",
-		"  weft status [--json]         Show supervisor, workspace, group, and agent state.",
+		"  weft status [--json]         Show supervisor, workspace, group, and task state.",
 		"  weft version                 Show CLI, supervisor, and dashboard versions.",
-		"  weft doctor                  Check local runtime and Codex command health.",
+		"  weft doctor                  Check local runtime and task command health.",
 		"  weft doctor keys             Diagnose terminal key encoding.",
 		"",
-		"Agents and organization:",
-		"  weft new [title]             Create a Codex agent.",
-		"  weft select <id>             Make an agent active.",
-		"  weft rename [id] <title>     Rename the selected agent or the given agent.",
-		"  weft close [id]              Close the active client or a Codex agent.",
+		"Tasks and organization:",
+		"  weft new [--type id] [title] Create a task.",
+		"  weft select <id>             Make a task active.",
+		"  weft rename [id] <title>     Rename the selected task or the given task.",
+		"  weft close [id]              Close the active client or a task.",
 		"  weft group add <name>        Add a group in the current workspace.",
 		"  weft workspace add <path>    Add a workspace to the dashboard.",
-		"  weft move-left               Move the selected agent out of its group.",
-		"  weft move-right              Move the selected agent into the selected group.",
+		"  weft move-left               Move the selected task out of its group.",
+		"  weft move-right              Move the selected task into the selected group.",
 		"",
 		"Runtime and configuration:",
-		"  weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
+		"  weft close --kill [--yes]    Stop the supervisor and all task PTYs.",
 		"  weft clear                   Prompt, then delete Weft runtime state.",
 		"  weft backup create           Back up config, state, and logs.",
 		"  weft backup list             List saved runtime backups.",
@@ -222,6 +216,20 @@ func start(args []string) error {
 	return tui.RunClient(rt, cfg)
 }
 
+func newCommand(args []string) error {
+	fs := flag.NewFlagSet("new", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	taskType := fs.String("type", "", "task type id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	requestArgs := map[string]string{"title": strings.Join(fs.Args(), " ")}
+	if strings.TrimSpace(*taskType) != "" {
+		requestArgs["type"] = strings.TrimSpace(*taskType)
+	}
+	return callIPC("new", requestArgs, false)
+}
+
 func runSupervisor() error {
 	rt, cfg, store, err := resolveRuntime()
 	if err != nil {
@@ -235,7 +243,7 @@ func closeCommand(args []string) error {
 		return closeWeft("close", args)
 	}
 	if len(args) > 1 {
-		return errors.New("close accepts at most one agent id")
+		return errors.New("close accepts at most one task id")
 	}
 	return callIPC("close", map[string]string{"id": args[0]}, false)
 }
@@ -243,13 +251,13 @@ func closeCommand(args []string) error {
 func closeWeft(command string, args []string) error {
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	kill := fs.Bool("kill", false, "stop the Weft supervisor and all agent PTYs")
+	kill := fs.Bool("kill", false, "stop the Weft supervisor and all task PTYs")
 	yes := fs.Bool("yes", false, "confirm supervisor shutdown without prompting")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("%s accepts only --kill without an agent id", command)
+		return fmt.Errorf("%s accepts only --kill without a task id", command)
 	}
 	rt, _, _, err := resolveRuntime()
 	if err != nil {
@@ -258,8 +266,8 @@ func closeWeft(command string, args []string) error {
 	if *kill {
 		response, err := supervisor.Status(rt)
 		if err == nil && runningAgentCount(response.State) > 0 && !*yes {
-			fmt.Printf("Stopping the Weft supervisor will stop %d running Codex terminal(s). Saved layout and metadata remain.\n", runningAgentCount(response.State))
-			if !confirm("Stop supervisor and running Codex terminals? [y/N] ") {
+			fmt.Printf("Stopping the Weft supervisor will stop %d running task terminal(s). Saved layout and metadata remain.\n", runningAgentCount(response.State))
+			if !confirm("Stop supervisor and running task terminals? [y/N] ") {
 				fmt.Println("Close canceled.")
 				return nil
 			}
@@ -317,7 +325,7 @@ func status(args []string) error {
 		return json.NewEncoder(os.Stdout).Encode(st)
 	}
 	fmt.Printf("supervisor: down (%v)\n", err)
-	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\nagents: %d\n", rt.Workspace, rt.Dir, displayFocus(st.Focus), len(st.Workspaces), len(st.Groups), len(st.Agents))
+	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\ntasks: %d\n", rt.Workspace, rt.Dir, displayFocus(st.Focus), len(st.Workspaces), len(st.Groups), len(st.Agents))
 	return nil
 }
 
@@ -383,7 +391,7 @@ func upgradeSummary(upgrade *ipc.Upgrade) string {
 		return "incompatible supervisor restart required"
 	}
 	if upgrade.RunningAgents > 0 {
-		return fmt.Sprintf("upgrade pending, wait for idle/resumable agents (%d live)", upgrade.RunningAgents)
+		return fmt.Sprintf("upgrade pending, wait for idle/resumable tasks (%d live)", upgrade.RunningAgents)
 	}
 	return "upgrade ready"
 }
@@ -556,7 +564,7 @@ func backupRestore(args []string) error {
 	if supervisorRunning && !yes {
 		running := runningAgentCount(response.State)
 		if running > 0 {
-			fmt.Printf("Restoring a backup requires stopping the Weft supervisor and %d running Codex terminal(s).\n", running)
+			fmt.Printf("Restoring a backup requires stopping the Weft supervisor and %d running task terminal(s).\n", running)
 		} else {
 			fmt.Println("Restoring a backup requires stopping the Weft supervisor.")
 		}
@@ -635,24 +643,30 @@ func doctor(args []string) error {
 	if err != nil {
 		return err
 	}
-	binary := strings.Fields(cfg.CodexCommand)
-	if len(binary) > 0 {
-		if _, err := exec.LookPath(binary[0]); err == nil || strings.Contains(binary[0], "/") {
-			fmt.Printf("ok Codex command: %s\n", cfg.CodexCommand)
-		} else {
-			fmt.Printf("warn Codex command is not on PATH: %s\n", cfg.CodexCommand)
+	for _, taskType := range cfg.OrderedTaskTypes() {
+		if taskType.Kind != config.TaskKindCodex {
+			fmt.Printf("info task type %s command: %s\n", taskType.ID, taskType.Command)
+			continue
+		}
+		binary := strings.Fields(taskType.Command)
+		if len(binary) > 0 {
+			if _, err := exec.LookPath(binary[0]); err == nil || strings.Contains(binary[0], "/") {
+				fmt.Printf("ok %s task command: %s\n", taskType.Label, taskType.Command)
+			} else {
+				fmt.Printf("warn %s task command is not on PATH: %s\n", taskType.Label, taskType.Command)
+			}
 		}
 	}
 	fmt.Printf("info launch workspace: %s\n", rt.Workspace)
 	fmt.Printf("info runtime dir: %s\n", rt.Dir)
 	fmt.Printf("ok config: %s\n", rt.ConfigPath)
-	fmt.Printf("ok state: %s (%d workspaces, %d groups, %d agents)\n", rt.StatePath, len(st.Workspaces), len(st.Groups), len(st.Agents))
+	fmt.Printf("ok state: %s (%d workspaces, %d groups, %d tasks)\n", rt.StatePath, len(st.Workspaces), len(st.Groups), len(st.Agents))
 	if _, err := supervisor.Status(rt); err == nil {
 		fmt.Println("ok supervisor: running")
 	} else {
 		fmt.Println("info supervisor: not running")
 	}
-	fmt.Println("info supervisor owns Codex PTYs; terminal clients attach and detach without stopping agents.")
+	fmt.Println("info supervisor owns task PTYs; terminal clients attach and detach without stopping tasks.")
 	return nil
 }
 
@@ -694,7 +708,12 @@ func configCommand(args []string) error {
 		fmt.Printf("State: %s\n", rt.StatePath)
 		fmt.Printf("Supervisor socket: %s\n", rt.SocketPath)
 		fmt.Printf("Codex command: %s\n", cfg.CodexCommand)
-		fmt.Printf("Default title template: %s\n", cfg.TitleTemplate)
+		fmt.Printf("Default task type: %s\n", cfg.DefaultTaskType)
+		taskLabels := []string{}
+		for _, taskType := range cfg.OrderedTaskTypes() {
+			taskLabels = append(taskLabels, taskType.ID)
+		}
+		fmt.Printf("Task types: %s\n", strings.Join(taskLabels, ", "))
 	case "path":
 		fmt.Println(rt.ConfigPath)
 	case "show":
@@ -854,7 +873,7 @@ func displayFocus(focus state.Focus) string {
 		return "workspaces"
 	}
 	if focus == state.FocusAgents {
-		return "agents"
+		return "tasks"
 	}
 	return string(focus)
 }

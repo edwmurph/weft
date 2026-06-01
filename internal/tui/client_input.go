@@ -5,9 +5,18 @@ import (
 	"io"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
+)
+
+type taskInputMode int32
+
+const (
+	taskInputNone taskInputMode = iota
+	taskInputCodex
+	taskInputTerminal
 )
 
 type clientInputRouter struct {
@@ -19,7 +28,7 @@ type clientInputRouter struct {
 	interruptSequences [][]byte
 	send               func(command string, args map[string]string) error
 
-	codexActive          atomic.Bool
+	inputMode            atomic.Int32
 	pending              []byte
 	hold                 []byte
 	bracketedPasteActive bool
@@ -39,11 +48,27 @@ func newClientInputRouter(input io.Reader, rt config.Runtime, clientID string, d
 }
 
 func (r *clientInputRouter) SetCodexActive(active bool) {
-	r.codexActive.Store(active)
+	if active {
+		r.SetTaskInputMode(taskInputCodex)
+		return
+	}
+	r.SetTaskInputMode(taskInputNone)
 }
 
 func (r *clientInputRouter) CodexActive() bool {
-	return r.codexActive.Load()
+	return r.TaskInputMode() == taskInputCodex
+}
+
+func (r *clientInputRouter) SetTaskInputMode(mode taskInputMode) {
+	r.inputMode.Store(int32(mode))
+}
+
+func (r *clientInputRouter) TaskInputMode() taskInputMode {
+	return taskInputMode(r.inputMode.Load())
+}
+
+func (r *clientInputRouter) TaskInputActive() bool {
+	return r.TaskInputMode() != taskInputNone
 }
 
 func (r *clientInputRouter) Read(p []byte) (int, error) {
@@ -55,11 +80,15 @@ func (r *clientInputRouter) Read(p []byte) (int, error) {
 		n, err := r.input.Read(buf[:])
 		if n > 0 {
 			data := append([]byte(nil), buf[:n]...)
-			if !r.codexActive.Load() {
+			switch r.TaskInputMode() {
+			case taskInputCodex:
+				r.routeCodexInput(data)
+			case taskInputTerminal:
+				r.routeTerminalInput(data)
+			default:
 				r.pending = append(r.pending, data...)
 				return r.readPending(p), nil
 			}
-			r.routeCodexInput(data)
 			if len(r.pending) > 0 {
 				return r.readPending(p), nil
 			}
@@ -107,7 +136,7 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 		return
 	}
 	for len(data) > 0 {
-		if !r.codexActive.Load() {
+		if r.TaskInputMode() != taskInputCodex {
 			r.pending = append(r.pending, data...)
 			return
 		}
@@ -117,7 +146,7 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 			switch kind {
 			case codexControlDrawer:
 				_ = r.send("toggle_drawer", nil)
-				r.codexActive.Store(false)
+				r.SetTaskInputMode(taskInputNone)
 				r.pending = append(r.pending, data[index+width:]...)
 				return
 			case codexControlInterrupt:
@@ -141,12 +170,54 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 	}
 }
 
+func (r *clientInputRouter) routeTerminalInput(data []byte) {
+	if len(r.hold) > 0 {
+		next := make([]byte, 0, len(r.hold)+len(data))
+		next = append(next, r.hold...)
+		next = append(next, data...)
+		data = next
+		r.hold = nil
+	}
+	for len(data) > 0 {
+		if r.TaskInputMode() != taskInputTerminal {
+			r.pending = append(r.pending, data...)
+			return
+		}
+		kind, index, width := r.findTerminalControl(data)
+		if index >= 0 {
+			r.sendTerminalBytes(data[:index])
+			switch kind {
+			case codexControlDrawer:
+				_ = r.send("toggle_drawer", nil)
+				r.SetTaskInputMode(taskInputNone)
+				r.pending = append(r.pending, data[index+width:]...)
+				return
+			case codexControlMouse:
+				r.pending = append(r.pending, data[index:index+width]...)
+			case terminalControlKeyboard:
+				r.handleTerminalKeyboard(data[index : index+width])
+			}
+			data = data[index+width:]
+			continue
+		}
+		keep := max(drawerPrefixSuffix(data, r.drawer), sgrMousePrefixSuffix(data, r.bracketedPasteActive), csiKeyboardPrefixSuffix(data))
+		if sendLen := len(data) - keep; sendLen > 0 {
+			r.sendTerminalBytes(data[:sendLen])
+		}
+		if keep > 0 {
+			r.hold = append(r.hold, data[len(data)-keep:]...)
+		}
+		return
+	}
+}
+
 type codexControlKind string
 
 const (
-	codexControlDrawer    codexControlKind = "drawer"
-	codexControlInterrupt codexControlKind = "interrupt"
-	codexControlMouse     codexControlKind = "mouse"
+	codexControlDrawer      codexControlKind = "drawer"
+	codexControlInterrupt   codexControlKind = "interrupt"
+	codexControlMouse       codexControlKind = "mouse"
+	terminalControlKeyboard codexControlKind = "keyboard"
 )
 
 var (
@@ -176,6 +247,35 @@ func (r *clientInputRouter) findCodexControl(data []byte) (codexControlKind, int
 		}
 		if width := matchingTerminalSequenceWidth(data[index:], r.interruptSequences); width > 0 {
 			return codexControlInterrupt, index, width
+		}
+	}
+	return "", -1, 0
+}
+
+func (r *clientInputRouter) findTerminalControl(data []byte) (codexControlKind, int, int) {
+	for index := 0; index < len(data); index++ {
+		if r.bracketedPasteActive {
+			if bytes.HasPrefix(data[index:], bracketedPasteEnd) {
+				r.bracketedPasteActive = false
+				index += len(bracketedPasteEnd) - 1
+			}
+			continue
+		}
+		if bytes.HasPrefix(data[index:], bracketedPasteStart) {
+			r.bracketedPasteActive = true
+			index += len(bracketedPasteStart) - 1
+			continue
+		}
+		if width, ok := consumeSGRMouseSequence(data[index:]); ok {
+			return codexControlMouse, index, width
+		}
+		if width := matchingTerminalSequenceWidth(data[index:], r.drawerSequences); width > 0 {
+			return codexControlDrawer, index, width
+		}
+		if sequence, width, ok := consumeCSISequence(data[index:]); ok {
+			if _, ok := parseCSIKeyboardEvent(sequence); ok {
+				return terminalControlKeyboard, index, width
+			}
 		}
 	}
 	return "", -1, 0
@@ -267,6 +367,33 @@ func (r *clientInputRouter) sendCodexInterrupt(data []byte) {
 	})
 }
 
+func (r *clientInputRouter) sendTerminalBytes(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	_ = r.send("task_input", map[string]string{
+		"encoded": string(data),
+		"input":   codexInputRaw,
+	})
+}
+
+func (r *clientInputRouter) handleTerminalKeyboard(raw []byte) {
+	event, ok := parseCSIKeyboardEvent(raw)
+	if !ok || event.isRelease() {
+		return
+	}
+	if event.isCommandK() {
+		_ = r.send("task_clear", nil)
+		return
+	}
+	if event.hasSuperModifier() {
+		return
+	}
+	if encoded, ok := event.terminalBytes(); ok {
+		r.sendTerminalBytes(encoded)
+	}
+}
+
 func (r *clientInputRouter) sendIPC(command string, args map[string]string) error {
 	args = clientRequestArgs(r.rt, r.clientID, command, args)
 	_, err := ipc.Call(r.rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
@@ -281,4 +408,84 @@ func drawerPrefixSuffix(data []byte, drawer []byte) int {
 		}
 	}
 	return 0
+}
+
+func csiKeyboardPrefixSuffix(data []byte) int {
+	for index := max(0, len(data)-32); index < len(data); index++ {
+		if incompleteCSIKeyboardPrefix(data[index:]) {
+			return len(data) - index
+		}
+	}
+	return 0
+}
+
+func incompleteCSIKeyboardPrefix(data []byte) bool {
+	if len(data) < 2 || data[0] != 0x1b || data[1] != '[' {
+		return false
+	}
+	for index := 2; index < len(data); index++ {
+		if data[index] >= 0x40 && data[index] <= 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+func (event csiKeyboardEvent) hasSuperModifier() bool {
+	return event.modifiers&8 != 0
+}
+
+func (event csiKeyboardEvent) isCommandK() bool {
+	return event.hasSuperModifier() && unicode.ToLower(rune(event.keyCode)) == 'k'
+}
+
+func (event csiKeyboardEvent) terminalBytes() ([]byte, bool) {
+	if event.modifiers&4 != 0 {
+		r := unicode.ToLower(rune(event.keyCode))
+		if r >= 'a' && r <= 'z' {
+			return []byte{byte(r - 'a' + 1)}, true
+		}
+	}
+	if encoded, ok := event.terminalPrintableBytes(); ok {
+		return encoded, true
+	}
+	if key, ok := event.keyMsg(); ok {
+		encoded := encodeKey(key)
+		if len(encoded) == 0 {
+			return nil, false
+		}
+		if event.modifiers&2 != 0 {
+			return append([]byte{0x1b}, encoded...), true
+		}
+		return encoded, true
+	}
+	return nil, false
+}
+
+func (event csiKeyboardEvent) terminalPrintableBytes() ([]byte, bool) {
+	if event.modifiers&4 != 0 {
+		return nil, false
+	}
+	alt := event.modifiers&2 != 0
+	if event.modifiers&6 == 0 && len(event.text) > 0 {
+		encoded := []byte(string(event.text))
+		if alt {
+			return append([]byte{0x1b}, encoded...), true
+		}
+		return encoded, true
+	}
+	if event.final == 'u' && event.modifiers&4 == 0 {
+		r := rune(event.keyCode)
+		if unicode.IsPrint(r) {
+			if event.modifiers&1 != 0 && r >= 'a' && r <= 'z' {
+				r = unicode.ToUpper(r)
+			}
+			encoded := []byte(string(r))
+			if alt {
+				return append([]byte{0x1b}, encoded...), true
+			}
+			return encoded, true
+		}
+	}
+	return nil, false
 }

@@ -49,6 +49,9 @@ func AssignMissingSessionIDs(st state.State, fallbackWorkspace string) (state.St
 	assigned := 0
 	for index := range st.Agents {
 		agent := &st.Agents[index]
+		if state.AgentTypeID(*agent) != state.DefaultAgentTypeID {
+			continue
+		}
 		if strings.TrimSpace(agent.CodexSessionID) != "" {
 			continue
 		}
@@ -67,8 +70,12 @@ func AssignMissingSessionIDs(st state.State, fallbackWorkspace string) (state.St
 }
 
 func BuildReport(st state.State) Report {
-	report := Report{Total: len(st.Agents)}
+	report := Report{}
 	for _, agent := range st.Agents {
+		if state.AgentTypeID(agent) != state.DefaultAgentTypeID {
+			continue
+		}
+		report.Total++
 		if !AgentIdleForUpgrade(agent) {
 			report.Busy = append(report.Busy, agent)
 			continue
@@ -80,6 +87,28 @@ func BuildReport(st state.State) Report {
 		report.Ready++
 	}
 	return report
+}
+
+func LiveNonCodexTaskCount(st state.State) int {
+	count := 0
+	for _, agent := range st.Agents {
+		if state.AgentTypeID(agent) == state.DefaultAgentTypeID {
+			continue
+		}
+		if agentLiveForRestart(agent) {
+			count++
+		}
+	}
+	return count
+}
+
+func agentLiveForRestart(agent state.Agent) bool {
+	switch agent.Status {
+	case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
+		return true
+	default:
+		return false
+	}
 }
 
 func AgentIdleForUpgrade(agent state.Agent) bool {
@@ -204,6 +233,9 @@ func canonicalWorkspace(path string) string {
 func earliestAgentCreatedAt(st state.State) time.Time {
 	var earliest time.Time
 	for _, agent := range st.Agents {
+		if state.AgentTypeID(agent) != state.DefaultAgentTypeID {
+			continue
+		}
 		created := parseTime(agent.CreatedAt)
 		if created.IsZero() {
 			continue
@@ -221,6 +253,9 @@ func earliestAgentCreatedAt(st state.State) time.Time {
 func usedSessionIDs(st state.State) map[string]bool {
 	used := map[string]bool{}
 	for _, agent := range st.Agents {
+		if state.AgentTypeID(agent) != state.DefaultAgentTypeID {
+			continue
+		}
 		if id := strings.TrimSpace(agent.CodexSessionID); id != "" {
 			used[id] = true
 		}

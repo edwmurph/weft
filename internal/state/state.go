@@ -20,6 +20,7 @@ const Version = 4
 
 const DefaultGroupPath = "inbox"
 const DefaultAgentTitle = "{codex}"
+const DefaultAgentTypeID = "codex"
 
 type Focus string
 
@@ -63,6 +64,7 @@ type Agent struct {
 	ID                 string      `json:"id"`
 	WorkspaceID        string      `json:"workspace_id"`
 	GroupID            string      `json:"group_id"`
+	TypeID             string      `json:"type_id,omitempty"`
 	Title              string      `json:"title"`
 	AutoTitle          string      `json:"auto_title,omitempty"`
 	AutoTitleAttempted bool        `json:"auto_title_attempted,omitempty"`
@@ -270,6 +272,9 @@ func Repair(st State, fallbackWorkspace string) State {
 		}
 		if strings.TrimSpace(agent.Title) == "" {
 			agent.Title = DefaultAgentTitle
+		}
+		if strings.TrimSpace(agent.TypeID) == "" {
+			agent.TypeID = DefaultAgentTypeID
 		}
 		agent.CodexStatus = strings.TrimSpace(agent.CodexStatus)
 		if agent.Status == "" {
@@ -851,6 +856,10 @@ func ToggleGroupCollapsed(st State, groupID string) State {
 }
 
 func AddAgent(st State, id string, workspaceID string, groupID string, title string, now string) (State, Agent, error) {
+	return AddAgentWithType(st, id, workspaceID, groupID, DefaultAgentTypeID, title, now)
+}
+
+func AddAgentWithType(st State, id string, workspaceID string, groupID string, typeID string, title string, now string) (State, Agent, error) {
 	if WorkspaceByID(st, workspaceID) == nil {
 		return st, Agent{}, fmt.Errorf("workspace not found")
 	}
@@ -863,15 +872,19 @@ func AddAgent(st State, id string, workspaceID string, groupID string, title str
 	if strings.TrimSpace(title) == "" {
 		title = DefaultAgentTitle
 	}
+	typeID = strings.TrimSpace(typeID)
+	if typeID == "" {
+		typeID = DefaultAgentTypeID
+	}
 	if id == "" {
-		id = StableID("agent", workspaceID, groupID, now, title)
+		id = StableID("agent", workspaceID, groupID, typeID, now, title)
 	}
 	if now == "" {
 		now = NowISO()
 	}
 	agent := Agent{
 		ID: id, WorkspaceID: workspaceID, GroupID: groupID,
-		Title: title, Status: StatusStarting, CreatedAt: now, UpdatedAt: now,
+		TypeID: typeID, Title: title, Status: StatusStarting, CreatedAt: now, UpdatedAt: now,
 	}
 	st.Agents = append(st.Agents, agent)
 	st.ActiveAgentID = id
@@ -881,6 +894,13 @@ func AddAgent(st State, id string, workspaceID string, groupID string, title str
 	st.Focus = FocusCodex
 	st.NavOpen = false
 	return st, agent, nil
+}
+
+func AgentTypeID(agent Agent) string {
+	if id := strings.TrimSpace(agent.TypeID); id != "" {
+		return id
+	}
+	return DefaultAgentTypeID
 }
 
 func RenameAgent(st State, agentID string, title string) (State, error) {

@@ -175,6 +175,9 @@ func codexScreenStatus(screen *TerminalScreen) string {
 }
 
 func autoTitleNotice(cfg config.Config, agent state.Agent, draftTitle string) string {
+	if !agentUsesCodexIntegration(cfg, agent) {
+		return ""
+	}
 	if !strings.Contains(draftTitle, titles.AutoTemplate) {
 		return ""
 	}

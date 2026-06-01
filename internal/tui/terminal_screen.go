@@ -70,6 +70,14 @@ func NewTerminalScreen(cols int, rows int) *TerminalScreen {
 }
 
 func (s *TerminalScreen) Resize(cols int, rows int) {
+	s.resize(cols, rows, false)
+}
+
+func (s *TerminalScreen) ResizeTopAligned(cols int, rows int) {
+	s.resize(cols, rows, true)
+}
+
+func (s *TerminalScreen) resize(cols int, rows int, topAligned bool) {
 	cols = max(1, cols)
 	rows = max(1, rows)
 	if cols == s.cols && rows == s.rows {
@@ -83,6 +91,10 @@ func (s *TerminalScreen) Resize(cols int, rows int) {
 	s.cells = make([][]terminalCell, rows)
 	sourceStart := max(0, oldRows-rows)
 	destStart := max(0, rows-oldRows)
+	if topAligned {
+		sourceStart = 0
+		destStart = 0
+	}
 	for row := range s.cells {
 		s.cells[row] = blankCells(cols, cellbuf.Style{})
 		sourceRow := sourceStart + row - destStart
@@ -97,6 +109,13 @@ func (s *TerminalScreen) Resize(cols int, rows int) {
 		s.resetScrollRegion()
 	}
 	s.clampCursor()
+}
+
+func (s *TerminalScreen) Clear() {
+	s.history = nil
+	s.resetScrollRegion()
+	s.cursorHome()
+	s.clearAll()
 }
 
 func (s *TerminalScreen) Write(text string) {

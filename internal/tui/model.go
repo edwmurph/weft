@@ -43,6 +43,7 @@ const (
 	modeHelp    mode = "help"
 	modeInput   mode = "input"
 	modeConfirm mode = "confirm"
+	modeNewTask mode = "new-task"
 )
 
 type promptKind string
@@ -67,9 +68,10 @@ const (
 )
 
 const (
-	navAnimationInterval = 12 * time.Millisecond
-	navAnimationStep     = 4
-	loadingInterval      = 90 * time.Millisecond
+	navAnimationInterval        = 12 * time.Millisecond
+	navAnimationStep            = 4
+	loadingInterval             = 90 * time.Millisecond
+	terminalCommandLoadingFloor = 250 * time.Millisecond
 )
 
 type navAnimationTick struct{}
@@ -106,6 +108,7 @@ type Model struct {
 	ptys              map[string]*ptyx.Session
 	visible           map[string]bool
 	codexInputBuffers map[string][]rune
+	terminalCommands  map[string]time.Time
 	agentInterrupts   map[string]time.Time
 	sessionCaptures   map[string]time.Time
 	dataCh            chan ptyx.Data
@@ -116,6 +119,7 @@ type Model struct {
 	prompt                promptKind
 	confirm               confirmKind
 	pendingID             string
+	newTaskIndex          int
 	groupCursor           int
 	groupCursorPinned     bool
 	lastNavFocus          state.Focus
@@ -150,6 +154,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		width: 100, height: 32, screens: map[string]*TerminalScreen{}, ptys: map[string]*ptyx.Session{},
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
+		terminalCommands:  map[string]time.Time{},
 		agentInterrupts:   map[string]time.Time{},
 		sessionCaptures:   map[string]time.Time{},
 		dataCh:            make(chan ptyx.Data, 64),
@@ -198,9 +203,9 @@ func (m *Model) Snapshot() ipc.Snapshot {
 	} else if content == "" && m.activeErrorText() != "" {
 		content = m.activeErrorText()
 	} else if content == "" {
-		content = "No Codex agent open."
+		content = "No task open."
 	}
-	title := "Codex"
+	title := "Task"
 	if active := state.ActiveAgent(m.state); active != nil {
 		title = m.renderAgentTitle(*active)
 	}
@@ -255,7 +260,11 @@ func (m Model) activeErrorText() string {
 	if detail == "" {
 		detail = "unknown error"
 	}
-	return "Codex failed to start:\n" + detail
+	label := taskTypeForAgent(m.cfg, *active).Label
+	if strings.TrimSpace(label) == "" {
+		label = "Task"
+	}
+	return label + " failed to start:\n" + detail
 }
 
 func (m Model) Init() tea.Cmd {
@@ -274,6 +283,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case navAnimationTick:
 		return m, m.stepNavAnimation()
 	case loadingTick:
+		m.refreshTerminalTaskActivity()
 		if !m.anyAgentLoading() {
 			return m, nil
 		}
@@ -307,14 +317,17 @@ func (m Model) View() string {
 	if m.mode == modeConfirm {
 		return m.modalView(m.renderConfirmModal())
 	}
+	if m.mode == modeNewTask {
+		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, max(36, min(m.width-16, 72))))
+	}
 	content := m.activeOutput()
 	loadingText := ""
 	if content == "" && m.codexLoading() {
 		loadingText = m.loadingLabel()
 	} else if content == "" {
-		content = "No Codex agent open."
+		content = "No task open."
 	}
-	title := "Codex"
+	title := "Task"
 	if active := state.ActiveAgent(m.state); active != nil {
 		title = m.renderAgentTitle(*active)
 	}
@@ -363,6 +376,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.mode == modeConfirm {
 		return m.handleConfirmKey(msg)
+	}
+	if m.mode == modeNewTask {
+		return m.handleNewTaskKey(msg)
 	}
 
 	if bindingMatches(m.cfg.KeyBindings.Drawer, msg) {
@@ -463,7 +479,7 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusNavPane(state.FocusAgents)
 		m.startPrompt(promptGroup, "")
 	case bindingMatches(m.cfg.KeyBindings.NewAgent, msg):
-		return m, m.newAgent(m.cfg.TitleTemplate)
+		m.startNewTaskMenu()
 	case bindingMatches(m.cfg.KeyBindings.MoveAgent, msg):
 		if agent := m.selectedAgent(); agent != nil {
 			m.startPrompt(promptMoveAgent, "")
@@ -492,6 +508,26 @@ func (m Model) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	nextIndex, submit, cancel := handleNewTaskKey(m.cfg, m.newTaskIndex, msg)
+	m.newTaskIndex = nextIndex
+	if cancel {
+		m.mode = modeNormal
+		return m, nil
+	}
+	if !submit {
+		return m, nil
+	}
+	taskType, ok := selectedTaskType(m.cfg, m.newTaskIndex)
+	if !ok {
+		m.mode = modeNormal
+		m.message = "no task types configured"
+		return m, nil
+	}
+	m.mode = modeNormal
+	return m, m.newAgent("", taskType.ID)
 }
 
 func (m *Model) focusNavPane(focus state.Focus) {
@@ -606,6 +642,16 @@ func (m *Model) startDeleteConfirm() {
 	}
 }
 
+func (m *Model) startNewTaskMenu() {
+	if state.ActiveWorkspace(m.state) == nil {
+		m.message = "add a workspace first"
+		return
+	}
+	m.focusNavPane(state.FocusAgents)
+	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
+	m.mode = modeNewTask
+}
+
 func (m *Model) applyPrompt(value string) tea.Cmd {
 	switch m.prompt {
 	case promptWorkspace:
@@ -665,7 +711,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 			return nil
 		}
 		m.state = next
-		m.message = "renamed agent"
+		m.message = "renamed task"
 		if agent := state.AgentByID(m.state, m.pendingID); agent != nil && m.agentUsesAutoTitle(*agent) {
 			m.message = m.autoTitleRenameMessage(*agent)
 			if strings.TrimSpace(m.cfg.TitleHookCommand) == "" && strings.TrimSpace(agent.AutoTitle) == "" {
@@ -676,7 +722,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 	case promptMoveAgent:
 		agent := m.selectedAgent()
 		if agent == nil {
-			m.message = "select an agent first"
+			m.message = "select a task first"
 			return nil
 		}
 		groupID := ""
@@ -694,7 +740,7 @@ func (m *Model) applyPrompt(value string) tea.Cmd {
 			return nil
 		}
 		m.state = next
-		m.message = "moved agent"
+		m.message = "moved task"
 		m.syncGroupCursorToAgent(agent.ID)
 		m.save()
 	}
@@ -745,13 +791,25 @@ func (m *Model) applyConfirm() tea.Cmd {
 	return nil
 }
 
-func (m *Model) newAgent(title string) tea.Cmd {
+func (m *Model) newAgent(title string, typeIDs ...string) tea.Cmd {
 	workspace := state.ActiveWorkspace(m.state)
 	if workspace == nil {
 		m.message = "add a workspace first"
 		return nil
 	}
-	next, agent, err := state.AddAgent(m.state, shortID(), workspace.ID, "", title, state.NowISO())
+	typeID := m.cfg.DefaultTaskType
+	if len(typeIDs) > 0 && strings.TrimSpace(typeIDs[0]) != "" {
+		typeID = strings.TrimSpace(typeIDs[0])
+	}
+	taskType, ok := m.cfg.TaskType(typeID)
+	if !ok {
+		m.message = "task type not found"
+		return nil
+	}
+	if strings.TrimSpace(title) == "" {
+		title = taskType.TitleTemplate
+	}
+	next, agent, err := state.AddAgentWithType(m.state, shortID(), workspace.ID, "", taskType.ID, title, state.NowISO())
 	if err != nil {
 		m.message = err.Error()
 		return nil
@@ -948,7 +1006,7 @@ func (m *Model) openNav() tea.Cmd {
 
 func (m *Model) setCodexFocus() tea.Cmd {
 	if state.ActiveAgent(m.state) == nil {
-		m.message = "select an agent first"
+		m.message = "select a task first"
 		return nil
 	}
 	if m.state.Focus == state.FocusWorkspaces || m.state.Focus == state.FocusAgents {
@@ -1090,18 +1148,18 @@ func hookErrorText(err error) string {
 
 func (m Model) autoTitleRenameMessage(agent state.Agent) string {
 	if strings.TrimSpace(agent.AutoTitle) != "" {
-		return "renamed agent; auto title ready"
+		return "renamed task; auto title ready"
 	}
 	if strings.TrimSpace(agent.AutoTitleError) != "" {
-		return "renamed agent; auto title failed"
+		return "renamed task; auto title failed"
 	}
 	if agent.AutoTitleAttempted {
-		return "renamed agent; auto title is generating"
+		return "renamed task; auto title is generating"
 	}
 	if strings.TrimSpace(m.cfg.TitleHookCommand) == "" {
-		return "renamed agent; auto title unavailable: set title_hook_command"
+		return "renamed task; auto title unavailable: set title_hook_command"
 	}
-	return "renamed agent; auto title will generate from the first message"
+	return "renamed task; auto title will generate from the first message"
 }
 
 func trimLastRune(value []rune) []rune {
@@ -1129,7 +1187,7 @@ func (m *Model) startPTY(agentID string) {
 		m.screens[agentID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
 	}
 	workspace := m.agentWorkspace(agentID)
-	ptySession, err := ptyx.Start(m.ctx, agentID, m.codexCommandForAgent(agentID), workspace, m.ptyWidth(), m.ptyHeight(), func(data ptyx.Data) {
+	ptySession, err := ptyx.Start(m.ctx, agentID, m.taskCommandForAgent(agentID), workspace, m.ptyWidth(), m.ptyHeight(), func(data ptyx.Data) {
 		m.dataCh <- data
 	})
 	if err != nil {
@@ -1143,7 +1201,12 @@ func (m *Model) startPTY(agentID string) {
 	}
 	m.ptys[agentID] = ptySession
 	m.state = state.WithUpdatedAgent(m.state, agentID, func(agent state.Agent) state.Agent {
-		agent.Status = state.StatusRunning
+		if agentUsesCodexIntegration(m.cfg, agent) {
+			agent.Status = state.StatusRunning
+		} else {
+			agent.Status = state.StatusReady
+			m.visible[agent.ID] = true
+		}
 		return agent
 	})
 	m.save()
@@ -1154,7 +1217,7 @@ func (m *Model) startPTYCmd(agentID string) tea.Cmd {
 		return nil
 	}
 	ctx := m.ctx
-	command := m.codexCommandForAgent(agentID)
+	command := m.taskCommandForAgent(agentID)
 	workspace := m.agentWorkspace(agentID)
 	cols := m.ptyWidth()
 	rows := m.ptyHeight()
@@ -1190,7 +1253,12 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 	}
 	m.ptys[msg.agentID] = msg.session
 	m.state = state.WithUpdatedAgent(m.state, msg.agentID, func(agent state.Agent) state.Agent {
-		agent.Status = state.StatusRunning
+		if agentUsesCodexIntegration(m.cfg, agent) {
+			agent.Status = state.StatusRunning
+		} else {
+			agent.Status = state.StatusReady
+			m.visible[agent.ID] = true
+		}
 		return agent
 	})
 	m.save()
@@ -1200,17 +1268,22 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 	if state.AgentByID(m.state, data.AgentID) == nil {
 		return
 	}
-	if data.Text != "" || data.Title != "" {
+	agent := state.AgentByID(m.state, data.AgentID)
+	if agent == nil {
+		return
+	}
+	usesCodex := agentUsesCodexIntegration(m.cfg, *agent)
+	if usesCodex && (data.Text != "" || data.Title != "") {
 		m.captureCodexSession(data.AgentID)
 	}
 	if data.Err != nil {
 		delete(m.ptys, data.AgentID)
 		activeExited := m.state.ActiveAgentID == data.AgentID
 		status := state.StatusStopped
-		title := "Codex exited"
+		title := taskTypeForAgent(m.cfg, *agent).Label + " exited"
 		if m.recentAgentInterrupt(data.AgentID) {
 			status = state.StatusKilled
-			title = "Codex killed"
+			title = taskTypeForAgent(m.cfg, *agent).Label + " killed"
 		}
 		delete(m.agentInterrupts, data.AgentID)
 		m.state = state.WithUpdatedAgent(m.state, data.AgentID, func(agent state.Agent) state.Agent {
@@ -1241,9 +1314,11 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		if screen.HasVisibleContent() {
 			m.visible[data.AgentID] = true
 		}
-		screenStatus = codexScreenStatus(screen)
+		if usesCodex {
+			screenStatus = codexScreenStatus(screen)
+		}
 	}
-	if data.Title != "" || data.Text != "" {
+	if usesCodex && (data.Title != "" || data.Text != "") {
 		title := titles.NormalizeCodexTitle(data.Title)
 		if data.Title != "" {
 			delete(m.agentInterrupts, data.AgentID)
@@ -1277,6 +1352,9 @@ func (m *Model) captureCodexSession(agentID string) {
 	if agent == nil || strings.TrimSpace(agent.CodexSessionID) != "" {
 		return
 	}
+	if !agentUsesCodexIntegration(m.cfg, *agent) {
+		return
+	}
 	now := time.Now()
 	if last, ok := m.sessionCaptures[agentID]; ok && now.Sub(last) < time.Second {
 		return
@@ -1291,9 +1369,14 @@ func (m *Model) captureCodexSession(agentID string) {
 	m.save()
 }
 
-func (m Model) codexCommandForAgent(agentID string) string {
-	command := m.cfg.CodexCommand
-	if agent := state.AgentByID(m.state, agentID); agent != nil && strings.TrimSpace(agent.CodexSessionID) != "" {
+func (m Model) taskCommandForAgent(agentID string) string {
+	agent := state.AgentByID(m.state, agentID)
+	if agent == nil {
+		return ""
+	}
+	taskType := taskTypeForAgent(m.cfg, *agent)
+	command := taskType.Command
+	if agentUsesCodexIntegration(m.cfg, *agent) && strings.TrimSpace(agent.CodexSessionID) != "" {
 		command = codexsession.ResumeCommand(command, agent.CodexSessionID)
 	}
 	return command
@@ -1399,6 +1482,10 @@ func (m Model) agentLoading(agentID string) bool {
 	if agent == nil {
 		return false
 	}
+	if !agentUsesCodexIntegration(m.cfg, *agent) {
+		return agent.Status == state.StatusStarting && m.ptys[agentID] == nil ||
+			agent.Status == state.StatusRunning
+	}
 	canonical := titles.CanonicalStatus(*agent)
 	switch canonical {
 	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
@@ -1422,6 +1509,63 @@ func (m Model) agentLoading(agentID string) bool {
 	return screen == nil || (!screen.HasVisibleContent() && !m.visible[agentID])
 }
 
+func (m *Model) markTerminalCommandStarted(agentID string) {
+	agent := state.AgentByID(m.state, agentID)
+	if agent == nil || agentUsesCodexIntegration(m.cfg, *agent) {
+		return
+	}
+	if m.terminalCommands == nil {
+		m.terminalCommands = map[string]time.Time{}
+	}
+	m.terminalCommands[agentID] = time.Now()
+	m.state = state.WithUpdatedAgent(m.state, agentID, func(agent state.Agent) state.Agent {
+		switch agent.Status {
+		case state.StatusError, state.StatusStopped, state.StatusKilled:
+			return agent
+		default:
+			agent.Status = state.StatusRunning
+			return agent
+		}
+	})
+	m.save()
+}
+
+func (m *Model) refreshTerminalTaskActivity() {
+	if len(m.terminalCommands) == 0 {
+		return
+	}
+	changed := false
+	for agentID, started := range m.terminalCommands {
+		agent := state.AgentByID(m.state, agentID)
+		if agent == nil || agentUsesCodexIntegration(m.cfg, *agent) {
+			delete(m.terminalCommands, agentID)
+			continue
+		}
+		if agent.Status != state.StatusRunning {
+			delete(m.terminalCommands, agentID)
+			continue
+		}
+		if time.Since(started) < terminalCommandLoadingFloor {
+			continue
+		}
+		pty := m.ptys[agentID]
+		if pty != nil && pty.ForegroundProcessActive() {
+			continue
+		}
+		delete(m.terminalCommands, agentID)
+		m.state = state.WithUpdatedAgent(m.state, agentID, func(agent state.Agent) state.Agent {
+			if agent.Status == state.StatusRunning {
+				agent.Status = state.StatusReady
+			}
+			return agent
+		})
+		changed = true
+	}
+	if changed {
+		m.save()
+	}
+}
+
 func (m Model) recentAgentInterrupt(agentID string) bool {
 	if m.agentInterrupts == nil {
 		return false
@@ -1442,7 +1586,11 @@ func (m Model) loadingFrame() string {
 }
 
 func (m Model) loadingLabel() string {
-	return m.loadingFrame() + " Starting Codex"
+	label := "task"
+	if active := state.ActiveAgent(m.state); active != nil {
+		label = taskTypeForAgent(m.cfg, *active).Label
+	}
+	return m.loadingFrame() + " Starting " + label
 }
 
 func (m *Model) save() {
@@ -1456,7 +1604,12 @@ func (m *Model) resizePTYs() {
 }
 
 func (m *Model) resizeScreens() {
-	for _, screen := range m.screens {
+	for agentID, screen := range m.screens {
+		agent := state.AgentByID(m.state, agentID)
+		if agent != nil && !agentUsesCodexIntegration(m.cfg, *agent) {
+			screen.ResizeTopAligned(m.ptyWidth(), m.ptyHeight())
+			continue
+		}
 		screen.Resize(m.ptyWidth(), m.ptyHeight())
 	}
 }
@@ -1552,6 +1705,9 @@ func ipcError(code string, err error) ipc.Response {
 
 func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	m.applyLaunchWorkspace(launchWorkspaceArg(request.Args))
+	if request.Command == "snapshot" || request.Command == "status" {
+		m.refreshTerminalTaskActivity()
+	}
 	switch request.Command {
 	case "snapshot":
 		return m.ipcResponse(m.message), nil
@@ -1609,7 +1765,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			m.syncGroupCursorToAgent(id)
 			m.save()
 		}
-		return m.ipcResponse("reordered Codex agent"), nil
+		return m.ipcResponse("reordered task"), nil
 	case "open":
 		cmd := m.openSelection()
 		m.navWidth = m.targetNavWidth()
@@ -1619,12 +1775,13 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			return ipc.ErrorResponse("workspace_required", "add a workspace first"), nil
 		}
 		title := request.Args["title"]
-		if title == "" {
-			title = m.cfg.TitleTemplate
+		typeID := strings.TrimSpace(request.Args["type"])
+		if typeID == "" {
+			typeID = strings.TrimSpace(request.Args["type_id"])
 		}
-		cmd := m.newAgent(title)
+		cmd := m.newAgent(title, typeID)
 		m.snapNavWidthToTarget()
-		return m.ipcResponse("created Codex agent"), cmd
+		return m.ipcResponse("created task"), cmd
 	case "rename":
 		id := request.Args["id"]
 		if id == "" {
@@ -1640,7 +1797,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		m.state = next
 		m.save()
-		return m.ipcResponse("renamed Codex agent"), nil
+		return m.ipcResponse("renamed task"), nil
 	case "rename_group":
 		groupID := request.Args["id"]
 		silent := false
@@ -1680,7 +1837,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		cmd := m.closeAgent(id)
 		m.snapNavWidthToTarget()
-		return m.ipcResponse("closed Codex agent"), cmd
+		return m.ipcResponse("closed task"), cmd
 	case "remove_workspace":
 		next, agents, err := state.RemoveWorkspace(m.state, request.Args["id"])
 		if err != nil {
@@ -1711,9 +1868,9 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			m.state.SelectedGroupID = agent.GroupID
 			m.syncGroupCursorToAgent(id)
 			m.save()
-			return m.ipcResponse("selected Codex agent"), nil
+			return m.ipcResponse("selected task"), nil
 		}
-		return ipc.Response{OK: false, Message: "agent not found"}, nil
+		return ipc.Response{OK: false, Message: "task not found"}, nil
 	case "move":
 		id := request.Args["id"]
 		if id == "" {
@@ -1721,7 +1878,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		agent := state.AgentByID(m.state, id)
 		if agent == nil {
-			return ipc.ErrorResponse("agent_not_found", "agent not found"), nil
+			return ipc.ErrorResponse("agent_not_found", "task not found"), nil
 		}
 		groupID, ok := m.destinationGroupIDForMove(*agent, request.Args)
 		if !ok {
@@ -1734,7 +1891,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.state = next
 		m.syncGroupCursorToAgent(agent.ID)
 		m.save()
-		return m.ipcResponse("moved Codex agent"), nil
+		return m.ipcResponse("moved task"), nil
 	case "add_workspace":
 		path := request.Args["path"]
 		next, workspace, err := state.AddWorkspace(m.state, shortID(), path, state.NowISO())
@@ -1774,7 +1931,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		if target == "workspaces" {
 			target = state.FocusWorkspaces
 		}
-		if target == "agents" {
+		if target == "agents" || target == "tasks" {
 			target = state.FocusAgents
 		}
 		switch target {
@@ -1787,11 +1944,17 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			m.snapNavWidthToTarget()
 			return m.ipcResponse("focus updated"), cmd
 		default:
-			return ipc.Response{OK: false, Message: "focus target must be workspaces, agents, or codex"}, nil
+			return ipc.Response{OK: false, Message: "focus target must be workspaces, tasks, or codex"}, nil
 		}
 	case "codex_input":
 		cmd := m.applyCodexInput(request.Args)
 		return m.ipcResponse(m.message), cmd
+	case "task_input":
+		cmd := m.applyTaskInput(request.Args)
+		return m.ipcResponse(m.message), cmd
+	case "task_clear":
+		m.clearActiveTerminal()
+		return m.ipcResponse(m.message), nil
 	case "close_client":
 		m.closeWeft()
 		return m.ipcResponse("closed Weft clients"), nil
@@ -1849,6 +2012,9 @@ func (m *Model) applyCodexInput(args map[string]string) tea.Cmd {
 	if active == nil {
 		return nil
 	}
+	if !agentUsesCodexIntegration(m.cfg, *active) {
+		return m.applyTaskInput(args)
+	}
 	args = routeCodexInputArgs(*active, args)
 	if pty := m.ptys[active.ID]; pty != nil {
 		if args["input"] == "ctrl+c" {
@@ -1857,6 +2023,41 @@ func (m *Model) applyCodexInput(args map[string]string) tea.Cmd {
 		_ = pty.Write([]byte(args["encoded"]))
 	}
 	return m.captureCodexInputArgs(*active, args)
+}
+
+func (m *Model) applyTaskInput(args map[string]string) tea.Cmd {
+	if m.state.Focus != state.FocusCodex {
+		return nil
+	}
+	active := state.ActiveAgent(m.state)
+	if active == nil {
+		return nil
+	}
+	if agentUsesCodexIntegration(m.cfg, *active) {
+		return m.applyCodexInput(args)
+	}
+	encoded := []byte(args["encoded"])
+	if pty := m.ptys[active.ID]; pty != nil {
+		_ = pty.Write(encoded)
+	}
+	return m.captureRawTerminalInput(*active, encoded)
+}
+
+func (m *Model) clearActiveTerminal() {
+	if m.state.Focus != state.FocusCodex {
+		return
+	}
+	active := state.ActiveAgent(m.state)
+	if active == nil || agentUsesCodexIntegration(m.cfg, *active) {
+		return
+	}
+	if screen := m.screens[active.ID]; screen != nil {
+		screen.Clear()
+		m.visible[active.ID] = true
+	}
+	if pty := m.ptys[active.ID]; pty != nil {
+		_ = pty.Write([]byte{0x0c})
+	}
 }
 
 func (m *Model) captureCodexInputArgs(agent state.Agent, args map[string]string) tea.Cmd {
@@ -1975,6 +2176,102 @@ func (m *Model) captureRawCodexInput(agent state.Agent, data []byte) tea.Cmd {
 	return cmd
 }
 
+func (m *Model) captureRawTerminalInput(agent state.Agent, data []byte) tea.Cmd {
+	var cmd tea.Cmd
+	started := false
+	for index := 0; index < len(data); {
+		switch data[index] {
+		case '\r', '\n':
+			if m.submitTerminalInputBuffer(agent) {
+				started = true
+				if m.agentUsesAutoTitle(agent) && cmd == nil {
+					cmd = m.submitCodexInputBuffer(agent)
+					if cmd != nil {
+						agent.AutoTitleAttempted = true
+					}
+				} else {
+					delete(m.codexInputBuffers, agent.ID)
+				}
+			} else {
+				delete(m.codexInputBuffers, agent.ID)
+			}
+			index++
+		case 0x7f, '\b':
+			m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+			index++
+		case 0x15:
+			delete(m.codexInputBuffers, agent.ID)
+			index++
+		case 0x17:
+			m.codexInputBuffers[agent.ID] = trimLastWord(m.codexInputBuffers[agent.ID])
+			index++
+		case 0x1b:
+			if sequence, width, ok := consumeCSISequence(data[index:]); ok {
+				if event, ok := parseCSIKeyboardEvent(sequence); ok {
+					if event.isShiftEnter() {
+						m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], '\n')
+					} else if key, ok := event.keyMsg(); ok {
+						m.captureTerminalKey(agent, key)
+					}
+				}
+				index += width
+				continue
+			}
+			if index+1 < len(data) && (data[index+1] == 0x7f || data[index+1] == '\b') {
+				m.codexInputBuffers[agent.ID] = trimPreviousInputToken(m.codexInputBuffers[agent.ID])
+				index += 2
+				continue
+			}
+			if index+1 < len(data) && data[index+1] >= 0x20 && data[index+1] != 0x7f {
+				index += 2
+				continue
+			}
+			index++
+		default:
+			r, width := utf8.DecodeRune(data[index:])
+			if r == utf8.RuneError && width == 1 {
+				index++
+				continue
+			}
+			if !unicode.IsControl(r) {
+				m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], r)
+			}
+			index += width
+		}
+	}
+	if cmd != nil {
+		return tea.Batch(cmd, tickLoading())
+	}
+	if started {
+		return tickLoading()
+	}
+	return nil
+}
+
+func (m *Model) submitTerminalInputBuffer(agent state.Agent) bool {
+	command := strings.TrimSpace(string(m.codexInputBuffers[agent.ID]))
+	if command == "" {
+		return false
+	}
+	m.markTerminalCommandStarted(agent.ID)
+	return true
+}
+
+func (m *Model) captureTerminalKey(agent state.Agent, msg tea.KeyMsg) {
+	switch msg.Type {
+	case tea.KeyRunes:
+		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], msg.Runes...)
+	case tea.KeySpace:
+		m.codexInputBuffers[agent.ID] = append(m.codexInputBuffers[agent.ID], ' ')
+	case tea.KeyBackspace:
+		m.codexInputBuffers[agent.ID] = trimLastRune(m.codexInputBuffers[agent.ID])
+	case tea.KeyCtrlU:
+		delete(m.codexInputBuffers, agent.ID)
+	case tea.KeyCtrlW:
+		m.codexInputBuffers[agent.ID] = trimLastWord(m.codexInputBuffers[agent.ID])
+	}
+}
+
 func consumeCSISequence(data []byte) ([]byte, int, bool) {
 	if len(data) < 3 || data[0] != 0x1b || data[1] != '[' {
 		return nil, 0, false
@@ -2062,7 +2359,7 @@ func (m Model) statusText() string {
 	fmt.Fprintf(&builder, "nav open: %t\n", m.state.NavOpen)
 	fmt.Fprintf(&builder, "workspaces: %d\n", len(m.state.Workspaces))
 	fmt.Fprintf(&builder, "groups: %d\n", len(m.state.Groups))
-	fmt.Fprintf(&builder, "agents: %d\n", len(m.state.Agents))
+	fmt.Fprintf(&builder, "tasks: %d\n", len(m.state.Agents))
 	for _, agent := range m.state.Agents {
 		marker := " "
 		if agent.ID == m.state.ActiveAgentID {
@@ -2086,7 +2383,7 @@ func displayFocus(focus state.Focus) string {
 		return "workspaces"
 	}
 	if focus == state.FocusAgents {
-		return "agents"
+		return "tasks"
 	}
 	return string(focus)
 }
@@ -2112,15 +2409,15 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s dashboard", cfg.KeyBindings.Drawer),
 		fmt.Sprintf("%s/%s panes", cfg.KeyBindings.FocusLeft, cfg.KeyBindings.FocusRight),
 		fmt.Sprintf("%s/%s select", cfg.KeyBindings.SelectPrev, cfg.KeyBindings.SelectNext),
-		fmt.Sprintf("%s open agent", cfg.KeyBindings.Open),
+		fmt.Sprintf("%s open task", cfg.KeyBindings.Open),
 		fmt.Sprintf("%s new workspace", cfg.KeyBindings.NewWorkspace),
 		fmt.Sprintf("%s new group", cfg.KeyBindings.NewGroup),
-		fmt.Sprintf("%s new agent", cfg.KeyBindings.NewAgent),
-		fmt.Sprintf("%s move agent", cfg.KeyBindings.MoveAgent),
-		"Shift+Up/Down reorder agent",
+		fmt.Sprintf("%s new task", cfg.KeyBindings.NewAgent),
+		fmt.Sprintf("%s move task", cfg.KeyBindings.MoveAgent),
+		"Shift+Up/Down reorder task",
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
-		"U upgrade supervisor and resume idle agents",
+		"U upgrade supervisor and resume idle Codex tasks",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),
 		"",

@@ -306,7 +306,7 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	model.snapshot = ipc.Snapshot{
 		State:        st,
 		CodexTitle:   "Codex",
-		CodexContent: "No Codex agent open.",
+		CodexContent: "No task open.",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
 	area, ok := model.newWorkspaceCardArea()
@@ -334,7 +334,7 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	}
 	got := ansi.Strip(model.View())
 	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
-		t.Fatalf("new workspace card selection should empty the Agents pane:\n%s", got)
+		t.Fatalf("new workspace card selection should empty the Tasks pane:\n%s", got)
 	}
 
 	updated, cmd = model.handleNavKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -381,7 +381,7 @@ func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
 	model.snapshot = ipc.Snapshot{
 		State:        st,
 		CodexTitle:   "Codex",
-		CodexContent: "No Codex agent open.",
+		CodexContent: "No task open.",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
 	area, ok := model.newWorkspaceCardArea()
@@ -405,7 +405,7 @@ func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
 	}
 	got := ansi.Strip(model.View())
 	if !strings.Contains(got, "No workspace selected") || strings.Contains(got, "alpha") {
-		t.Fatalf("hovering the new workspace card should empty the Agents pane:\n%s", got)
+		t.Fatalf("hovering the new workspace card should empty the Tasks pane:\n%s", got)
 	}
 
 	updated, cmd = model.handleMouse(tea.MouseMsg{
@@ -424,7 +424,7 @@ func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
 	}
 	got = ansi.Strip(model.View())
 	if !strings.Contains(got, "alpha") || strings.Contains(got, "No workspace selected") {
-		t.Fatalf("leaving hover should restore the real workspace Agents pane:\n%s", got)
+		t.Fatalf("leaving hover should restore the real workspace Tasks pane:\n%s", got)
 	}
 }
 
@@ -440,7 +440,7 @@ func TestClientDownFromLastWorkspaceSelectsNewWorkspaceCard(t *testing.T) {
 	model.snapshot = ipc.Snapshot{
 		State:        st,
 		CodexTitle:   "Codex",
-		CodexContent: "No Codex agent open.",
+		CodexContent: "No task open.",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
 

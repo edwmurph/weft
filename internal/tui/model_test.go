@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -31,31 +32,76 @@ func TestEmptyDashboardStartsInAgentsFocus(t *testing.T) {
 	}
 }
 
-func TestNewAgentKeyStartsAgentAndFocusesCodex(t *testing.T) {
+func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
-	cfg.CodexCommand = "cat"
+	cfg.DefaultTaskType = config.DefaultTaskTypeShell
 	model := NewModel(rt, cfg, testStateWithWorkspace(t, rt.Workspace))
 	defer killPTYs(model)
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	model = updated.(Model)
-	defer killPTYs(model)
 
+	if cmd != nil {
+		t.Fatalf("new task menu should not start command immediately, got %#v", cmd)
+	}
+	if model.mode != modeNewTask {
+		t.Fatalf("mode = %s, want new task menu", model.mode)
+	}
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"New task", "[codex] Codex", "[shell] Shell", "Enter create", "Up/Down move", "Esc cancel"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("new task menu missing %q:\n%s", expected, got)
+		}
+	}
+
+	updated, cmd = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
 	if len(model.state.Agents) != 1 {
 		t.Fatalf("agents = %#v", model.state.Agents)
 	}
-	if model.state.Agents[0].Title != cfg.TitleTemplate {
-		t.Fatalf("new agent title = %q", model.state.Agents[0].Title)
+	if model.state.Agents[0].TypeID != config.DefaultTaskTypeShell {
+		t.Fatalf("new task type = %q", model.state.Agents[0].TypeID)
+	}
+	if model.state.Agents[0].Title != "Shell" {
+		t.Fatalf("new task title = %q", model.state.Agents[0].Title)
 	}
 	if model.state.Agents[0].GroupID != "" {
-		t.Fatalf("new agent should be top-level: %#v", model.state.Agents[0])
+		t.Fatalf("new task should be top-level: %#v", model.state.Agents[0])
 	}
 	if model.state.Focus != state.FocusCodex || model.state.NavOpen {
 		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
+	}
+}
+
+func TestTaskTypeBadgeCellUsesConfiguredColumnWidth(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TaskTypes["logs"] = config.TaskType{
+		ID:            "logs",
+		Label:         "Logs",
+		Kind:          config.TaskKindTerminal,
+		Command:       "tail -f app.log",
+		Badge:         "[logs]",
+		TitleTemplate: "Logs",
+	}
+
+	tests := []struct {
+		taskType config.TaskType
+		want     string
+	}{
+		{taskType: cfg.TaskTypes["codex"], want: "[codex]"},
+		{taskType: cfg.TaskTypes["shell"], want: "[shell]"},
+		{taskType: cfg.TaskTypes["logs"], want: "[logs] "},
+	}
+
+	for _, tt := range tests {
+		if got := taskTypeBadgeCell(cfg, tt.taskType); got != tt.want {
+			t.Fatalf("taskTypeBadgeCell(%q) = %q, want %q", tt.taskType.ID, got, tt.want)
+		}
 	}
 }
 
@@ -316,10 +362,10 @@ func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
 	}
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Delete agent",
-		"Agent",
+		"Delete task",
+		"Task",
 		"alpha",
-		"Stops the Codex terminal, then removes this agent from Weft.",
+		"Stops the terminal, then removes this task from Weft.",
 		"Enter stop and delete",
 		"N Esc",
 	} {
@@ -418,8 +464,8 @@ func TestClientWorkspaceFooterShowsVersionInfo(t *testing.T) {
 		OK: true,
 		Snapshot: &ipc.Snapshot{
 			State:               st,
-			CodexTitle:          "Codex",
-			CodexContent:        "No Codex agent open.",
+			CodexTitle:          "Task",
+			CodexContent:        "No task open.",
 			NavWidth:            minTwoPaneNavWidth,
 			ActiveClientVersion: weftversion.Version,
 		},
@@ -517,10 +563,10 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	for _, expected := range []string{
 		"Upgrade: ready",
 		"can restart",
-		"1 idle Codex agent",
+		"1 idle Codex task",
 		"Press U",
 		"supervisor 3.9.0 → " + weftversion.Version,
-		"Press U to upgrade and resume 1 idle agent",
+		"Press U to upgrade and resume 1 idle Codex task",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade banner missing %q:\n%s", expected, got)
@@ -534,10 +580,10 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	}
 	got = ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Upgrade supervisor and resume agents?",
+		"Upgrade supervisor and resume Codex tasks?",
 		"supervisor 3.9.0 → " + weftversion.Version,
 		"Enter upgrade and resume",
-		"agents. Running commands",
+		"tasks. Running commands",
 		"unsubmitted text are not preserved, so",
 		"finish important work first",
 	} {
@@ -570,7 +616,7 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 	})
 
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Upgrade pending", "Wait for 1 agent(s) to become idle"} {
+	for _, expected := range []string{"Upgrade pending", "Wait for 1 Codex task(s) to become idle"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade wait copy missing %q:\n%s", expected, got)
 		}
@@ -597,7 +643,7 @@ func TestSnapshotShowsActiveAgentStartError(t *testing.T) {
 	defer killPTYs(model)
 
 	snapshot := model.Snapshot()
-	if strings.Contains(snapshot.CodexContent, "No Codex agent open") {
+	if strings.Contains(snapshot.CodexContent, "No task open") {
 		t.Fatalf("snapshot showed empty state for active error:\n%s", snapshot.CodexContent)
 	}
 	if !strings.Contains(snapshot.CodexContent, "Codex failed to start") || !strings.Contains(snapshot.CodexContent, "/missing/zsh") {
@@ -678,7 +724,7 @@ func TestActivePTYExitReturnsToAgentsPane(t *testing.T) {
 		t.Fatalf("agent after PTY exit = %#v", agent)
 	}
 	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
-		t.Fatalf("PTY exit should recover to Agents pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
+		t.Fatalf("PTY exit should recover to Tasks pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
 	}
 	if model.ptys["a"] != nil {
 		t.Fatal("dead PTY should be removed from live PTY map")
@@ -704,7 +750,7 @@ func TestRecentCtrlCPTYExitMarksAgentKilled(t *testing.T) {
 		t.Fatalf("agent after interrupted PTY exit = %#v", agent)
 	}
 	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
-		t.Fatalf("interrupted PTY exit should recover to Agents pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
+		t.Fatalf("interrupted PTY exit should recover to Tasks pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
 	}
 }
 
@@ -790,7 +836,7 @@ func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 		t.Fatalf("agent should be marked attempted: %#v", agent)
 	}
 
-	msg := cmd().(titleHookMsg)
+	msg := titleHookMessageFromCmd(t, cmd)
 	if msg.err != nil {
 		t.Fatal(msg.err)
 	}
@@ -845,7 +891,7 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
-	msg := cmd().(titleHookMsg)
+	msg := titleHookMessageFromCmd(t, cmd)
 	if msg.err != nil {
 		t.Fatal(msg.err)
 	}
@@ -1136,7 +1182,7 @@ func TestEditAgentPromptPreviewsEditedTitle(t *testing.T) {
 
 	got := ansi.Strip(model.View())
 	for _, expected := range []string{
-		"Edit agent",
+		"Edit task",
 		"Preview",
 		"Fake Codex Ready",
 		"Variables",
@@ -1493,7 +1539,7 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 
 	model.startPrompt(promptMoveAgent, "")
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Move agent", "Top-level agent", "> release", "Enter top-level", "Tab choose", "Esc close suggestions"} {
+	for _, expected := range []string{"Move task", "Top-level task", "> release", "Enter top-level", "Tab choose", "Esc close suggestions"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("blank move prompt missing %q:\n%s", expected, got)
 		}
@@ -1909,8 +1955,173 @@ func TestIPCNewCopiesConfiguredTitleTemplate(t *testing.T) {
 	if !response.OK || cmd == nil {
 		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
 	}
-	if len(model.state.Agents) != 1 || model.state.Agents[0].Title != model.cfg.TitleTemplate {
+	if len(model.state.Agents) != 1 || model.state.Agents[0].Title != model.cfg.TaskTypes[config.DefaultTaskTypeCodex].TitleTemplate {
 		t.Fatalf("agents = %#v", model.state.Agents)
+	}
+}
+
+func TestIPCNewCreatesRequestedTaskType(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Agents = nil
+	model.state.ActiveAgentID = ""
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"type": config.DefaultTaskTypeShell}})
+	defer killPTYs(model)
+
+	if !response.OK || cmd == nil {
+		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+	}
+	if len(model.state.Agents) != 1 {
+		t.Fatalf("agents = %#v", model.state.Agents)
+	}
+	agent := model.state.Agents[0]
+	if agent.TypeID != config.DefaultTaskTypeShell || agent.Title != "Shell" {
+		t.Fatalf("shell task = %#v", agent)
+	}
+}
+
+func TestTerminalTaskInputBypassesCodexCapture(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Focus = state.FocusCodex
+	model.state.NavOpen = false
+
+	cmd := model.applyCodexInput(map[string]string{"input": "text", "text": "hello", "encoded": "hello"})
+
+	if cmd != nil {
+		t.Fatalf("terminal input should not start title hook command, got %#v", cmd)
+	}
+	if got := string(model.codexInputBuffers[model.state.Agents[0].ID]); got != "hello" {
+		t.Fatalf("terminal input should track the pending command line without starting a title hook, got %q", got)
+	}
+}
+
+func TestTerminalTaskCommandShowsLoadingUntilForegroundReturns(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Agents[0].Status = state.StatusReady
+	model.state.Focus = state.FocusCodex
+	model.state.NavOpen = false
+
+	if cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "sleep 10"}); cmd != nil {
+		t.Fatal("command text should not start loading before Enter")
+	}
+	cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "\r"})
+	if cmd == nil {
+		t.Fatal("terminal command should start loading tick")
+	}
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.Status != state.StatusRunning {
+		t.Fatalf("terminal command should mark task running: %#v", agent)
+	}
+	snapshot := model.Snapshot()
+	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
+		t.Fatalf("terminal command loading ids = %#v", snapshot.LoadingAgentIDs)
+	}
+
+	model.terminalCommands["a"] = time.Now().Add(-terminalCommandLoadingFloor - time.Millisecond)
+	model.refreshTerminalTaskActivity()
+	agent = state.AgentByID(model.state, "a")
+	if agent == nil || agent.Status != state.StatusReady {
+		t.Fatalf("terminal command should become ready when no foreground job is active: %#v", agent)
+	}
+}
+
+func TestTerminalTaskAutoTitleCapturesFirstCommandWhenOptedIn(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	payloadPath := filepath.Join(t.TempDir(), "payload.json")
+	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Shell title\\n'"
+	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Agents[0].Title = "{auto}"
+	model.state.Agents[0].Status = state.StatusReady
+	model.state.Focus = state.FocusCodex
+	model.state.NavOpen = false
+
+	if cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "echo stale"}); cmd != nil {
+		t.Fatal("hook should not run before Enter")
+	}
+	if cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "\x15"}); cmd != nil {
+		t.Fatal("hook should not run for C-u")
+	}
+	if cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "echo hello"}); cmd != nil {
+		t.Fatal("hook should not run before Enter")
+	}
+	cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "\r"})
+	if cmd == nil {
+		t.Fatal("expected title hook command")
+	}
+
+	msg := titleHookMessageFromCmd(t, cmd)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	model.applyTitleHook(msg)
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.AutoTitle != "Shell title" {
+		t.Fatalf("auto title = %#v", agent)
+	}
+	raw, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"type_id":"shell"`) || !strings.Contains(string(raw), `"first_message":"echo hello"`) {
+		t.Fatalf("payload missing shell command context:\n%s", raw)
+	}
+}
+
+func titleHookMessageFromCmd(t *testing.T, cmd tea.Cmd) titleHookMsg {
+	t.Helper()
+	msg := cmd()
+	if hook, ok := msg.(titleHookMsg); ok {
+		return hook
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, next := range batch {
+			if hook, ok := next().(titleHookMsg); ok {
+				return hook
+			}
+		}
+	}
+	t.Fatalf("command did not produce titleHookMsg: %#v", msg)
+	return titleHookMsg{}
+}
+
+func TestTerminalTaskClearResetsVisibleScreen(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Focus = state.FocusCodex
+	model.state.NavOpen = false
+	screen := NewTerminalScreen(20, 3)
+	screen.Write("old output")
+	model.screens["a"] = screen
+	model.visible["a"] = true
+
+	model.clearActiveTerminal()
+
+	if strings.Contains(model.activeOutput(), "old output") {
+		t.Fatalf("terminal clear should remove old output:\n%s", model.activeOutput())
+	}
+}
+
+func TestTerminalTaskPTYTitleDoesNotBecomeLoading(t *testing.T) {
+	model := testModelWithAgent(t)
+	defer killPTYs(model)
+	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Agents[0].Status = state.StatusReady
+
+	model.applyPTYData(ptyx.Data{AgentID: "a", Title: "zsh", Text: "prompt"})
+
+	agent := state.AgentByID(model.state, "a")
+	if agent == nil || agent.Status != state.StatusReady {
+		t.Fatalf("terminal task should stay ready after shell title output: %#v", agent)
+	}
+	if model.agentLoading("a") {
+		t.Fatalf("terminal task should not show loading after PTY title")
 	}
 }
 
@@ -1978,7 +2189,7 @@ func TestIPCFocusRejectsGroupsAlias(t *testing.T) {
 
 	response, _ := model.handleIPC(ipc.Request{Command: "focus", Args: map[string]string{"target": "groups"}})
 
-	if response.OK || response.Message != "focus target must be workspaces, agents, or codex" {
+	if response.OK || response.Message != "focus target must be workspaces, tasks, or codex" {
 		t.Fatalf("focus groups response = %#v", response)
 	}
 }
@@ -2022,6 +2233,9 @@ func testModelWithAgent(t *testing.T) Model {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 	cfg.CodexCommand = "cat"
+	codexType := cfg.TaskTypes[config.DefaultTaskTypeCodex]
+	codexType.Command = "cat"
+	cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType
 	st := testStateWithAgent(rt.Workspace)
 	return NewModel(rt, cfg, st)
 }

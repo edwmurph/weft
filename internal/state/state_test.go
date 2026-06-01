@@ -171,6 +171,39 @@ func TestAddAgentDefaultsTitleToCodexTemplate(t *testing.T) {
 	if agent.Title != DefaultAgentTitle {
 		t.Fatalf("agent title = %q", agent.Title)
 	}
+	if agent.TypeID != DefaultAgentTypeID {
+		t.Fatalf("agent type = %q", agent.TypeID)
+	}
+}
+
+func TestAddAgentWithTypeStoresTaskType(t *testing.T) {
+	st := stateWithWorkspace(t)
+	now := NowISO()
+
+	_, agent, err := AddAgentWithType(st, "", st.SelectedWorkspaceID, "", "shell", "Shell", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.TypeID != "shell" || agent.Title != "Shell" {
+		t.Fatalf("agent = %#v", agent)
+	}
+	if want := StableID("agent", st.SelectedWorkspaceID, "", "shell", now, "Shell"); agent.ID != want {
+		t.Fatalf("typed agent id = %q, want %q", agent.ID, want)
+	}
+}
+
+func TestRepairDefaultsLegacyAgentsToCodexType(t *testing.T) {
+	st := testState(t)
+	st.Agents[0].TypeID = ""
+
+	repaired := Repair(st, t.TempDir())
+
+	if got := repaired.Agents[0].TypeID; got != DefaultAgentTypeID {
+		t.Fatalf("repaired type = %q", got)
+	}
+	if got := AgentTypeID(Agent{ID: "legacy"}); got != DefaultAgentTypeID {
+		t.Fatalf("legacy helper type = %q", got)
+	}
 }
 
 func TestRepairAllowsEmptyWorkspaces(t *testing.T) {

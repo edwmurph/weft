@@ -156,6 +156,9 @@ func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.CodexCommand = fakeCodex
+	codexType := cfg.TaskTypes[config.DefaultTaskTypeCodex]
+	codexType.Command = fakeCodex
+	cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType
 	stop := runTestSupervisor(t, rt, cfg, store)
 	defer stop()
 

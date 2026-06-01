@@ -588,9 +588,9 @@ func promptTitle(prompt promptKind) string {
 	case promptEditGroup:
 		return "Edit group"
 	case promptEditAgent:
-		return "Edit agent"
+		return "Edit task"
 	case promptMoveAgent:
-		return "Move agent"
+		return "Move task"
 	default:
 		return "Input"
 	}
@@ -612,7 +612,7 @@ func promptHint(prompt promptKind) string {
 	case promptWorkspaceTitle:
 		return "Blank uses the path title."
 	case promptMoveAgent:
-		return "Blank makes the agent top-level."
+		return "Blank makes the task top-level."
 	default:
 		return ""
 	}
@@ -650,9 +650,9 @@ func confirmTitle(confirm confirmKind) string {
 	case confirmDeleteGroup:
 		return "Delete group"
 	case confirmDeleteAgent:
-		return "Delete agent"
+		return "Delete task"
 	case confirmUpgradeResume:
-		return "Upgrade supervisor and resume agents?"
+		return "Upgrade supervisor and resume Codex tasks?"
 	default:
 		return "Delete item"
 	}
@@ -666,17 +666,17 @@ func confirmTargetLabel(confirm confirmKind) string {
 		return "Supervisor"
 	}
 	if confirm == confirmDeleteAgent {
-		return "Agent"
+		return "Task"
 	}
 	return "Target"
 }
 
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
-		return "Closes idle Codex terminals, restarts the supervisor, then resumes those agents. Running commands and unsubmitted text are not preserved, so finish important work first."
+		return "Closes idle Codex terminals, restarts the supervisor, then resumes those tasks. Running commands and unsubmitted text are not preserved, so finish important work first."
 	}
 	if confirm == confirmDeleteAgent {
-		return "Stops the Codex terminal, then removes this agent from Weft."
+		return "Stops the terminal, then removes this task from Weft."
 	}
 	return ""
 }
@@ -808,7 +808,7 @@ func inspectPromptStatus(ctx promptContext, raw string) promptStatus {
 		return promptStatus{message: "Ready", style: modalSuccessStyle}
 	case promptMoveAgent:
 		if raw == "" {
-			return promptStatus{message: "Top-level agent", style: mutedStyle}
+			return promptStatus{message: "Top-level task", style: mutedStyle}
 		}
 		if promptMoveGroup(ctx, raw) == nil {
 			return promptStatus{message: "Group not found", style: modalWarningStyle}
@@ -833,7 +833,7 @@ func promptSubmitBlocker(ctx promptContext, value string) string {
 		}
 	case promptMoveAgent:
 		if ctx.selectedAgent == nil {
-			return "Select an agent first"
+			return "Select a task first"
 		}
 		if value != "" && promptMoveGroup(ctx, value) == nil {
 			return "Group not found"

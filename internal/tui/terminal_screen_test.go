@@ -97,6 +97,32 @@ func TestTerminalScreenResizePreservesBottomRows(t *testing.T) {
 	}
 }
 
+func TestTerminalScreenResizeTopAlignedKeepsPromptAtTop(t *testing.T) {
+	screen := NewTerminalScreen(20, 5)
+	screen.Write("shell prompt")
+
+	screen.ResizeTopAligned(20, 10)
+
+	rendered := screen.String()
+	if !strings.HasPrefix(rendered, "shell prompt") {
+		t.Fatalf("top-aligned resize should keep prompt on first row:\n%q", rendered)
+	}
+}
+
+func TestTerminalScreenClearRemovesScrollbackAndVisibleContent(t *testing.T) {
+	screen := NewTerminalScreen(12, 2)
+	screen.Write("old\r\ncontent")
+	if !strings.Contains(screen.ScrollbackString(), "old") {
+		t.Fatalf("test setup missing scrollback:\n%q", screen.ScrollbackString())
+	}
+
+	screen.Clear()
+
+	if strings.TrimSpace(screen.String()) != "" || strings.TrimSpace(screen.ScrollbackString()) != "" {
+		t.Fatalf("clear should remove visible content and scrollback:\nvisible=%q\nscrollback=%q", screen.String(), screen.ScrollbackString())
+	}
+}
+
 func TestTerminalScreenScrollRegionKeepsFooterPinned(t *testing.T) {
 	screen := NewTerminalScreen(20, 6)
 

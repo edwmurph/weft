@@ -4,42 +4,56 @@ This is the living product and technical specification for Weft. Keep this file 
 
 ## Product Definition
 
-Weft is one global terminal dashboard for managing Codex agents across multiple workspaces.
+Weft is one global terminal dashboard for managing typed tasks across multiple
+workspaces. A task is a long-running PTY-backed process. Today Weft ships one
+checked-in integrated task type, `codex`, and one generic configured terminal
+type, `shell`.
 
-Weft is no longer one instance per workspace. One local Weft supervisor owns the global navigation state, the agent registry, and Codex PTYs. Terminal UI clients attach to that supervisor, render the dashboard, and can detach without stopping agents. Users can organize agents by workspace, optionally place agents into flat groups, then enter a selected Codex thread when they want to interact with it.
+Weft is no longer one instance per workspace. One local Weft supervisor owns the
+global navigation state, the task registry, and task PTYs. Terminal UI clients
+attach to that supervisor, render the dashboard, and can detach without
+stopping tasks. Users can organize tasks by workspace, optionally place tasks
+into flat groups, then enter a selected task console when they want to interact
+with it.
 
 The core workflow is:
 
 1. Open Weft.
-2. Use the left navigation panes to choose a workspace and agent.
+2. Use the left navigation panes to choose a workspace and task.
 3. Press `Enter` to maximize and focus the selected console.
-4. Interact with Codex only while the Codex thread is focused and maximized.
-5. Reopen navigation to switch, organize, create, move, edit, or close agents.
+4. Interact with the task only while the task console is focused and maximized.
+5. Reopen navigation to switch, organize, create, move, edit, or close tasks.
 
 ## Design Principles
 
 - Global first: one Weft should manage all configured workspaces.
-- Codex first when active: once an agent is opened, Codex gets the whole terminal.
+- Task first when active: once a task is opened, that PTY gets the whole terminal.
 - Navigation is structural, not workflow-stage based.
 - Workspace and group movement is manual.
 - Group names are flat strings.
-- Groups are optional; agents can live directly in a workspace without a group.
-- Agent rows render configured text only; no fixed status pills beside each row.
+- Groups are optional; tasks can live directly in a workspace without a group.
+- Task rows render configured text only; no fixed status pills beside each row.
+- Integrated task support is checked into Weft. Config can define generic
+  terminal task types, but config alone cannot create a new tailored
+  integration such as Claude.
 - The terminal UI should stay dense, minimal, and close to the current iTerm-style Weft look.
-- Supervisor-owned sessions: agent PTYs must outlive any single TUI client.
-- Disposable clients: closing, upgrading, or restarting a TUI client must not clear state or stop agents.
+- Supervisor-owned sessions: task PTYs must outlive any single TUI client.
+- Disposable clients: closing, upgrading, or restarting a TUI client must not clear state or stop tasks.
 - No tmux runtime dependency: tmux must not be required for normal launch, attach, detach, rendering, upgrades, or tests.
 - Event-driven speed: avoid polling loops and shelling out for routine runtime state.
 - Minimal dependencies: prefer the Go standard library and existing terminal/PTY dependencies before adding new packages.
 
 ## Current And Legacy Boundary
 
-Current Weft behavior is the workspace, group, and agent model backed by one
-local supervisor. The supervisor owns all Codex PTYs, saves current state,
-captures Codex session IDs, and performs the dashboard `U` upgrade/resume flow
-through the supervisor-owned `upgrade_resume` IPC command. Resuming agents with
+Current Weft behavior is the workspace, group, and typed task model backed by
+one local supervisor. The persisted state still names task rows `agents` for
+the v4 schema, but the user-facing product language is `tasks`. The supervisor
+owns all task PTYs, saves current state, captures Codex session IDs for Codex
+tasks, and performs the dashboard `U` upgrade/resume flow through the
+supervisor-owned `upgrade_resume` IPC command. Resuming Codex tasks with
 `codex resume <session-id>` after an explicit dashboard upgrade is part of the
-current product contract, not legacy compatibility.
+current product contract, not legacy compatibility. Generic terminal tasks are
+not resumable by the Codex session integration.
 
 Legacy behavior is unsupported unless this specification explicitly brings it
 back. Legacy includes tmux pane state, tab/column state, workdir/folder naming,
@@ -70,9 +84,9 @@ The supervisor owns:
 
 - config loading
 - state loading, repair, mutation, and persistence
-- the agent registry
-- Codex PTY processes
-- terminal screen state for each agent
+- the task registry
+- task PTY processes
+- terminal screen state for each task
 - title hook execution
 - local IPC over a Unix domain socket
 - attached client coordination
@@ -109,7 +123,7 @@ the local Unix socket. The protocol should support:
 - command request and response
 - state snapshot response
 - event subscription for state, PTY screen, status, and shutdown events
-- key/input delivery to the active Codex PTY
+- key/input delivery to the active task PTY
 - terminal size updates from the active TUI client
 - structured errors suitable for CLI output and TUI footer messages
 
@@ -130,23 +144,24 @@ When a newly installed `weft` client finds an older compatible supervisor:
 - show a concise bottom-of-Workspaces-pane tip with the client version,
   supervisor version, and the `U` upgrade/resume action while the dashboard
   navigation is open when that action can proceed
-- keep existing agents and PTYs running
+- keep existing tasks and PTYs running
 - offer the dashboard upgrade action only through the supervisor-owned
   `upgrade_resume` IPC command
 
-When no agents are running, Weft may restart the supervisor automatically to
-finish the upgrade after creating a runtime backup. When any agent PTY is
+When no tasks are running, Weft may restart the supervisor automatically to
+finish the upgrade after creating a runtime backup. When any task PTY is
 running, Weft must not restart the supervisor without explicit confirmation
-because that can stop live Codex terminals.
+because that can stop live terminal work.
 
-The in-dashboard upgrade action must be safe by default. While Codex agents are
-busy or missing saved session IDs, the dashboard shows pending copy and does not
-offer `U`. Once every remaining agent is idle and resumable, `U` opens a
-confirmation where `Enter` proceeds and `Esc` cancels. The confirmed action
-creates a pre-upgrade backup, closes the idle Codex terminals, restarts the
-supervisor, and resumes agents with `codex resume <session-id>`.
-The client must not run duplicate local restart/resume logic or synthesize
-upgrade state that was not sent by the supervisor.
+The in-dashboard upgrade action must be safe by default. While Codex tasks are
+busy or missing saved session IDs, or while any non-resumable terminal task is
+running, the dashboard shows pending copy and does not offer `U`. Once every
+remaining live task is an idle resumable Codex task, `U` opens a confirmation
+where `Enter` proceeds and `Esc` cancels. The confirmed action creates a
+pre-upgrade backup, closes the idle Codex terminals, restarts the supervisor,
+and resumes Codex tasks with `codex resume <session-id>`. The client must not
+run duplicate local restart/resume logic or synthesize upgrade state that was
+not sent by the supervisor.
 
 If the supervisor protocol is incompatible with the client, the client should
 explain the situation and offer the least destructive recovery path:
@@ -221,7 +236,7 @@ When at least one workspace exists and there is enough vertical room, render a
 template card under the last workspace card with a plus-sign title and concise
 copy telling the user to press the configured add-workspace key to create a
 workspace. Hovering or clicking the template card selects it: real workspace
-cards return to their inactive border, and the Agents pane renders the same
+cards return to their inactive border, and the Tasks pane renders the same
 empty state as no selected workspace. The template card is also selectable by
 moving down from the last workspace card. Pressing `Enter` while the template
 card is selected opens the same add-workspace prompt as the configured
@@ -236,28 +251,29 @@ so the user can navigate to the entry and remove it without resetting all state.
 Each card renders:
 
 - a title in the top border
-- `total`, the number of all agents in that workspace
-- `active`, the number of agents whose rendered/live status is `starting`, `running`, `working`, or `shipping`
+- `total`, the number of all tasks in that workspace
+- `active`, the number of tasks whose rendered/live status is `starting`, `running`, `working`, or `shipping`
 - `needs attention`, computed as `total - active`
 
-Do not render card-level `parked`, `stopped`, `killed`, `quiet`, or `error` categories. Those agent states remain available to title templates and other agent-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.
+Do not render card-level `parked`, `stopped`, `killed`, `quiet`, or `error` categories. Those task states remain available to title templates and other task-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.
 
 The default card title is the display path, for example `~/code/personal/weft`. A workspace can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank edit input clears the override and returns the card to the default path title.
 
-Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workspaces pane has focus. Use a subtler blue border when the selected workspace is active but focus is in the Agents pane.
+Selection is indicated by the card border, not a full-row background. Use a stronger blue border when the Workspaces pane has focus. Use a subtler blue border when the selected workspace is active but focus is in the Tasks pane.
 
 When a newly installed client is attached to an older compatible supervisor, the
-bottom of the Workspaces pane shows a concise upgrade tip. While any Codex agent
-is still active, the tip waits for idle/resumable agents, for example
-`Upgrade pending: client 7.5.5, supervisor 7.4.0. Wait for 1 agent(s) to become idle.`
-When all remaining agents are idle and have saved Codex session IDs, the tip
+bottom of the Workspaces pane shows a concise upgrade tip. While any Codex task
+is still active, the tip waits for idle/resumable Codex tasks, for example
+`Upgrade pending: client 7.5.5, supervisor 7.4.0. Wait for 1 Codex task(s) to become idle.`
+When all remaining Codex tasks are idle and have saved Codex session IDs, and
+no non-resumable terminal tasks are live, the tip
 shows the action, for example
-`Upgrade ready: client 7.5.5, supervisor 7.4.0. Press U to upgrade and resume 2 idle agent(s).`
+`Upgrade ready: client 7.5.5, supervisor 7.4.0. Press U to upgrade and resume 2 idle Codex task(s).`
 The tip must not imply that reopening the dashboard is enough to finish the
-upgrade, and it must not suggest destructive reset commands while live agents
+upgrade, and it must not suggest destructive reset commands while live tasks
 can be resumed. The confirmation modal explains that Weft closes idle Codex
 terminals, restarts the supervisor, and runs `codex resume <session-id>` for
-each saved agent. It also warns that running commands and unsubmitted terminal
+each saved Codex task. It also warns that running commands and unsubmitted terminal
 input are not preserved, so users should finish important work first.
 
 When no upgrade tip is active and there is enough vertical space, the top of the
@@ -283,13 +299,13 @@ Example:
 ╰──────────────────────────────────────────────────────────────╯
 ```
 
-## Agents Pane
+## Tasks Pane
 
-The middle pane shows agents for the selected workspace. It is always present so the Workspaces pane can stay purely scoped to workspaces.
+The middle pane shows tasks for the selected workspace. It is always present so the Workspaces pane can stay purely scoped to workspaces.
 
-When no workspace exists or no workspace is selected, the Agents pane shows centered help text telling the user to add a workspace first. It must not advertise creating an agent until a workspace exists. When a workspace is selected but has no agents or groups, the Agents pane shows centered help text saying there are no agents and to press the configured new-agent key.
+When no workspace exists or no workspace is selected, the Tasks pane shows centered help text telling the user to add a workspace first. It must not advertise creating a task until a workspace exists. When a workspace is selected but has no tasks or groups, the Tasks pane shows centered help text saying there are no tasks and to press the configured new-task key.
 
-Agents without a group render as top-level rows. User-created groups render as collapsible sections inside this pane, with their member agents indented underneath. Creating a group must not force existing top-level agents into a visible `Ungrouped`, `General`, or `Inbox` section.
+Tasks without a group render as top-level rows. User-created groups render as collapsible sections inside this pane, with their member tasks indented underneath. Creating a group must not force existing top-level tasks into a visible `Ungrouped`, `General`, or `Inbox` section.
 
 Group names are plain text. Emojis are inherently allowed because the group name is just user text. Weft does not need a separate emoji feature, picker, or icon system for groups in the first implementation.
 
@@ -307,52 +323,54 @@ Nested group names are out of scope for the first implementation. Treat strings 
 Each group row renders:
 
 - group name text
-- number of agents in the group
+- number of tasks in the group
 
-Each agent row renders:
+Each task row renders:
 
-- only the rendered agent title template
+- marker shape, task type badge, and rendered task title template
 
-Agent rows must not render fixed status tags. Status can appear only if the agent title template includes a status variable.
+Task rows must not render fixed status tags. Status can appear only if the task title template includes a status variable.
 
-Agent rows may use subtle row color and marker shape to make derived state easier to scan. Rows for active non-ready agents (`starting`, `running`, `working`, or `shipping`) replace the static bullet marker with the shared high-resolution Braille loading spinner frame. Rows whose Codex PTY has not produced visible content may also use the spinner until the agent is ready. Ready and other attention-needed rows use a stronger warm marker/color treatment, while errors use the error marker/color. These visuals are presentation only and must not add status text.
+Task rows may use subtle row color and marker shape to make derived state easier to scan. Rows for active non-ready tasks (`starting`, `running`, `working`, or `shipping`) replace the static marker with the shared high-resolution Braille loading spinner frame. Rows whose PTY has not produced visible content may also use the spinner until the task is ready. Terminal task rows also use the same spinner while a submitted foreground command is in progress, returning to the ready marker when the shell regains the PTY foreground process group. Ready or idle rows use the subtle `·` marker; stopped rows use `◦`; errors use `!` and the error marker/color. These visuals are presentation only and must not add status text.
 
-Group rows should be visually distinct from agent rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Agent rows should use a lighter marker and indentation when nested under a group.
+Task type badges render as plain bracketed text such as `[codex]` or `[shell]`, usually from the task type ID, in a fixed-width badge column so task rows align across terminal fonts. Avoid emoji and wide symbols because terminal width and fallback-font behavior is inconsistent.
 
-When the Agents pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or agent row visible.
+Group rows should be visually distinct from task rows. Use the chevron/collapse marker, count, stronger color or weight, and extra vertical space before group sections. Task rows should use a lighter marker and indentation when nested under a group.
 
-The Agents pane cursor is persisted separately from the active Codex thread.
+When the Tasks pane has more rendered rows than fit in the visible frame, moving the cursor must scroll the pane enough to keep the selected group or task row visible.
+
+The Tasks pane cursor is persisted separately from the active task console.
 Moving the cursor to a group row must survive supervisor refreshes, restarts,
-and upgrades without snapping back to the active agent inside that group.
+and upgrades without snapping back to the active task inside that group.
 
-`Shift+Up` and `Shift+Down` on a selected agent row move that agent one row up
-or down within its current group. Top-level agents reorder only within the
-top-level ungrouped area. Reordering never moves an agent into or out of a
-group, and does not restart the agent PTY.
+`Shift+Up` and `Shift+Down` on a selected task row move that task one row up
+or down within its current group. Top-level tasks reorder only within the
+top-level ungrouped area. Reordering never moves a task into or out of a
+group, and does not restart the task PTY.
 
-## Agent Live Preview And Console
+## Task Live Preview And Console
 
-The main agent pane has two modes:
+The main task pane has two modes:
 
-- `Agent Live Preview` when command center navigation is open
-- `Agent Console` when the selected Codex thread is focused and maximized
+- `Task Live Preview` when command center navigation is open
+- `Task Console` when the selected task is focused and maximized
 
 The pane shows either:
 
-- a centered empty message when no agent is open, with a subtle Weft wordmark and version label above it when space allows
-- the selected Codex thread when an agent is open
+- a centered empty message when no task is open, with a subtle Weft wordmark and version label above it when space allows
+- the selected task terminal when a task is open
 
-When navigation is open, the Workspaces and Agents panes push `Agent Live Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the Codex PTY. When an agent is active, the preview top border shows the selected agent title at the top right; preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
+When navigation is open, the Workspaces and Tasks panes push `Task Live Preview` to the right. The preview is read-only: keyboard input controls Weft navigation and organization, not the task PTY. When a task is active, the preview top border shows the selected task title at the top right; preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
 
-When the user presses `Enter` on an agent, navigation slides away left, `Agent Console` expands to the full terminal, and focus moves to Codex.
+When the user presses `Enter` on a task, navigation slides away left, `Task Console` expands to the full terminal, and focus moves to the task console.
 
-Codex can only receive input when `Agent Console` is focused and maximized.
+Task PTYs can only receive input when `Task Console` is focused and maximized.
 
-When `Agent Console` is focused, the top border shows the configured drawer key
+When `Task Console` is focused, the top border shows the configured drawer key
 as `<key> dashboard` without a `WEFT` prefix. If at least one other global
-agent has rendered/live status `ready`, the top-right border shows an amber
-`<n> other agent(s) ready` indicator. The active console agent is excluded from
-that count, and the indicator is hidden when no other agents are ready.
+task has rendered/live status `ready`, the top-right border shows an amber
+`<n> other task(s) ready` indicator. The active console task is excluded from
+that count, and the indicator is hidden when no other tasks are ready.
 
 ## Navigation States
 
@@ -363,9 +381,9 @@ Weft has two primary UI states.
 Navigation panes are open.
 
 - Workspaces pane is visible.
-- Agents pane is visible.
-- `Agent Live Preview` pane is visible but not focused when terminal width allows it.
-- Codex PTY does not receive normal key input.
+- Tasks pane is visible.
+- `Task Live Preview` pane is visible but not focused when terminal width allows it.
+- Task PTY does not receive normal key input.
 - User can create, delete, edit, move, and select objects.
 
 ## Dashboard Form UX
@@ -389,47 +407,48 @@ All in-dashboard confirmation modals use the same keyboard contract:
 Autocomplete appears only when it has a useful known set:
 
 - path autocomplete for the add-workspace path prompt
-- group-name autocomplete for moving an agent to an existing group
+- group-name autocomplete for moving a task to an existing group
 
 Autocomplete matches case-insensitive substrings in the relevant path segment or group name, not only prefixes from the beginning of the value.
 
 Autocomplete menus open directly under the input whenever the current value has suggestions, including on prompt initialization. The visible options update as the user types, use a bounded visible row count, and scroll to keep the highlighted option visible. Choosing an autocomplete option closes the menu and leaves the form in a normal submit state.
 
-## Codex Focus State
+## Task Focus State
 
-`Agent Console` is maximized.
+`Task Console` is maximized.
 
-- Workspaces and Agents panes are hidden offscreen to the left.
-- `Agent Console` fills the terminal.
-- Weft keeps the framed `Agent Console` pane visible while Codex is focused.
-- The attached client forwards raw terminal input bytes into the active Codex
+- Workspaces and Tasks panes are hidden offscreen to the left.
+- `Task Console` fills the terminal.
+- Weft keeps the framed `Task Console` pane visible while a task is focused.
+- The attached client forwards raw terminal input bytes into the active task
   PTY without key-name reconstruction. The configured drawer key, `C-b` by
   default, is the only dashboard key sequence owned by Weft.
-- Terminal-generated C-c belongs to Codex whenever `Agent Console` is focused
-  and an active agent exists. While Codex reports active work, Weft delivers C-c
-  through Codex's interrupt path so running side-thread work is interrupted
-  without returning from or closing the side thread. Weft does not use C-c to
-  quit from `Agent Console`, and the toolbar must not advertise C-c.
-- Codex-owned terminal behavior, including Vim mode, Esc timing, bracketed
+- Terminal-generated C-c belongs to the task whenever `Task Console` is focused
+  and an active task exists. For Codex tasks, while Codex reports active work,
+  Weft delivers C-c through Codex's interrupt path so running side-thread work
+  is interrupted without returning from or closing the side thread. Weft does
+  not use C-c to quit from `Task Console`, and the toolbar must not advertise
+  C-c.
+- Terminal-owned behavior, including Vim mode, Esc timing, bracketed
   paste, Alt/Meta prefixes, and modified-key shortcuts such as Shift+Enter and
   Shift+Tab in supporting terminals, is preserved inside the framed pane.
-- The framed terminal renderer preserves Codex cursor visibility and cursor
+- The framed terminal renderer preserves cursor visibility and cursor
   shape requests, including block, underline, and bar cursor modes used by Vim
   insert/normal state.
-- Weft enables all-motion mouse tracking in the attached client. In focused
-  `Agent Console`, trackpad or wheel scrolling anywhere in the console frame
-  moves through Weft's captured Codex scrollback instead of forwarding mouse
-  packets into the active Codex PTY. Left-button drag selection starts after
-  Codex's shared visual margin, so the highlighted cells and copied clipboard
+- Weft enables cell-level mouse tracking in the attached client. In focused
+  `Task Console`, trackpad or wheel scrolling anywhere in the console frame
+  moves through Weft's captured scrollback instead of forwarding mouse
+  packets into the active task PTY. Left-button drag selection starts after
+  the shared visual margin, so the highlighted cells and copied clipboard
   text match without post-copy text rewriting. While the drag highlight is
-  active, it preserves Codex's existing foreground and background colors under
+  active, it preserves the task's existing foreground and background colors under
   the selection overlay.
   The console border shows a short copy-confirmation toast.
   Mouse input outside the focused console remains a Weft dashboard concern and
   is not forwarded to Codex.
-- If the active Codex PTY exits while `Agent Console` is focused, Weft returns
-  to the dashboard `Agents` pane, keeps the agent selected, marks it killed,
-  and makes the exited state visible in agent metadata.
+- If the active task PTY exits while `Task Console` is focused, Weft returns
+  to the dashboard `Tasks` pane, keeps the task selected, marks it killed,
+  and makes the exited state visible in task metadata.
 - User exits back to dashboard with the configured drawer/navigation key.
 
 ## Initial Keybindings
@@ -437,16 +456,16 @@ Autocomplete menus open directly under the input whenever the current value has 
 These are product-level defaults and may map to existing config structures during implementation.
 
 ```text
-Enter   Open selected agent and maximize Codex
+Enter   Open selected task and maximize its console
 C-b     Toggle dashboard navigation
-Left/Right Move focus between workspaces and agents panes
+Left/Right Move focus between workspaces and tasks panes
 j/k     Move selection within the focused navigation pane
 w       Add workspace
 g       Create group in selected workspace
-n       Create a top-level agent with no group
-m       Move selected agent to another group in the same workspace, or clear its group
-Shift+Up/Down Reorder selected agent within its group or top-level area
-r       Rename selected workspace title, group, or agent title
+n       Open the new-task type menu
+m       Move selected task to another group in the same workspace, or clear its group
+Shift+Up/Down Reorder selected task within its group or top-level area
+e       Edit selected workspace title, group, or task title
 Backspace Delete/remove selected item
 ?       Help
 C-c     Quit Weft from dashboard focus
@@ -456,7 +475,7 @@ Deletion behavior depends on selected item type and is defined below.
 
 ## Status
 
-Agent status exists in the model. The Workspaces pane summarizes status only as `active` and `needs attention` counts per workspace. Beyond the console-only ready indicator, a separate top-level global status summary is deferred.
+Task status exists in the model. The Workspaces pane summarizes status only as `active` and `needs attention` counts per workspace. Beyond the console-only ready indicator, a separate top-level global status summary is deferred.
 
 Status should be available to title templates.
 
@@ -475,15 +494,65 @@ error
 
 The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex terminal title, Weft passes through the live Codex status word verbatim and preserves its casing, including newer labels such as `Exploring` or `Crafting`; fallback lifecycle statuses remain the lowercase model values above. When the Codex screen is stopped on a request-user-input prompt, such as Plan mode waiting for a user answer, Weft derives `Ready` for `{status}` even if the terminal title has not changed from a running-like title.
 
+## Task Types
+
+Task types are loaded from config. Each task type has:
+
+- `id`: map key, such as `codex`, `shell`, or `logs`
+- `label`: human-readable display label
+- `kind`: either a checked-in integrated kind or `terminal`
+- `command`: shell command used to start the PTY
+- `badge`: bracketed type badge rendered before the task title; when omitted, it defaults to `[<id>]`
+- `title_template`: default title copied into newly created tasks of this type
+
+Checked-in integrated kinds can add tailored behavior. `codex` is currently the
+only supported integrated kind. Generic configured task types must use
+`kind = "terminal"` and do not get Codex-specific title capture, session ID
+capture, interrupt routing, or upgrade resume. Unsupported integrated kinds,
+including `kind = "claude"` before Claude support is checked in, must be
+rejected at config load with guidance to use `terminal` for generic commands.
+
+Default task types:
+
+```toml
+default_task_type = "codex"
+
+[task_types.codex]
+label = "Codex"
+kind = "codex"
+command = "codex"
+badge = "[codex]"
+title_template = "{status} {auto}"
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = "exec \"$SHELL\" -l"
+badge = "[shell]"
+title_template = "Shell"
+```
+
+The task type menu and Tasks pane reserve a fixed badge column wide enough for
+the configured task type badges so rows do not drift out of alignment.
+
+The dashboard `n` shortcut opens a task type menu. `Enter` creates a top-level
+task of the selected type. The CLI command `weft new` creates the configured
+`default_task_type`, and `weft new --type <id>` creates a specific task type.
+Tasks always start in the selected workspace and are created top-level with no
+group.
+
+Legacy `codex_command` and top-level `title_template` config keys are aliases
+for `task_types.codex.command` and `task_types.codex.title_template`.
+
 ## Title Templates
 
-Agent rows render each agent's stored title template. The global title template is the default copied into new agents.
+Task rows render each task's stored title template. A task type's
+`title_template` is the default copied into new tasks of that type.
 
-An agent title can include template variables. Renaming an agent edits that agent's stored template and does not change the global default.
+A task title can include template variables. Renaming a task edits that task's
+stored template and does not change the task type default.
 
-New agents copy the configured global title template into their own title.
-
-Default global template:
+Default Codex task template:
 
 ```text
 {status} {auto}
@@ -492,7 +561,7 @@ Default global template:
 Supported variables:
 
 ```text
-{title}    user-configured agent title
+{title}    user-configured task title
 {auto}     generated title from the first submitted message
 {codex}    live Codex title
 {status}   verbatim live Codex status, falling back to lifecycle status
@@ -500,7 +569,7 @@ Supported variables:
 {group}   flat group name
 ```
 
-Example agent/default templates:
+Example task templates:
 
 ```text
 {title}
@@ -520,27 +589,30 @@ If a variable is unavailable, render a stable fallback rather than an empty brok
 {status} -> unknown
 ```
 
-Generated titles are computed for every agent when `title_hook_command` is
-configured. The first non-empty message submitted to the Codex PTY runs the
-hook from the agent workspace, sends JSON on stdin, and stores the first non-empty
-stdout line as the agent's generated title. The hook payload includes
-`version`, `event`, `agent_id`, `workspace`, `group`, `status`, `title`, the
-agent `title_template`, `codex_title`, and `first_message`.
+Generated titles are computed when `title_hook_command` is configured and a
+task opts into `{auto}` titles. Codex tasks capture the first non-empty message
+submitted to the Codex PTY. Terminal tasks capture the first typed command after
+their task type title template includes `{auto}`. The hook runs from the task
+workspace, sends JSON on stdin, and stores the first non-empty stdout line as
+the task's generated title. The hook payload includes `version`, `event`,
+`agent_id`, `workspace`, `group`, `status`, `title`, the task `type_id`, task
+`title_template`, `codex_title` when available, and `first_message`.
 
 Weft must not encode provider-specific clients, model names, API keys, or HTTP
 contracts into the runtime. The title hook is just a shell command. If the hook
 times out, exits nonzero, is missing, or writes no title, `{auto}` renders as
-`auto title failed` and Weft does not retry for that agent.
+`auto title failed` and Weft does not retry for that task.
 
 When `{auto}` is added in the edit pane, the UI should make hook readiness
 obvious. If `title_hook_command` is missing, show a configuration error. If the
 title is already generated, explain that it is ready. Otherwise, explain that
 auto title generation will run after the first submitted message. Hook failures
-should be saved on the agent and shown in the footer and edit pane.
+should be saved on the task and shown in the footer and edit pane.
 
 ## Data Model
 
-The state model uses global workspaces, flat groups, and agents.
+The state model uses global workspaces, flat groups, and task rows persisted as
+`agents` in strict v4 state for schema continuity.
 
 Current persisted shape:
 
@@ -579,6 +651,7 @@ type Agent struct {
     ID         string      `json:"id"`
     WorkspaceID string    `json:"workspace_id"`
     GroupID    string      `json:"group_id"`
+    TypeID     string      `json:"type_id,omitempty"`
     Title      string      `json:"title"`
     AutoTitle  string      `json:"auto_title,omitempty"`
     AutoTitleAttempted bool `json:"auto_title_attempted,omitempty"`
@@ -594,12 +667,28 @@ type Agent struct {
 
 Runtime-only details such as PID, PTY handles, socket clients, terminal size,
 and screen cache must not be persisted in `state.json`. They belong to the
-supervisor process and can be reconstructed from state and live PTYs.
+supervisor process and can be reconstructed from state and live PTYs. Missing
+`type_id` on an existing row is repaired to `codex`.
 
-The global title template belongs in config and is copied into new agents:
+Task type defaults belong in config and are copied into new tasks:
 
 ```toml
+default_task_type = "codex"
+
+[task_types.codex]
+label = "Codex"
+kind = "codex"
+command = "codex"
+badge = "[codex]"
 title_template = "{status} {auto}"
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = "exec \"$SHELL\" -l"
+badge = "[shell]"
+title_template = "Shell"
+
 title_hook_command = ""
 title_hook_timeout_seconds = 10
 ```
@@ -617,10 +706,11 @@ codex
 Rules:
 
 - `workspaces` and `agents` focus are valid only while navigation is open.
-- `codex` focus is valid only while Codex is maximized.
-- Opening an agent with `Enter` sets focus to `codex` and closes navigation.
+- `agents` is the persisted/internal focus value for the visible `Tasks` pane.
+- `codex` focus is valid only while `Task Console` is maximized.
+- Opening a task with `Enter` sets focus to `codex` and closes navigation.
 - Reopening navigation moves focus back to the last focused navigation pane.
-- Codex PTY input is blocked unless focus is `codex`.
+- Task PTY input is blocked unless focus is `codex`.
 
 ## CRUD Semantics
 
@@ -650,17 +740,17 @@ Add workspace:
 Remove workspace:
 
 - Remove the workspace from Weft state.
-- Close all running agents in that workspace.
+- Close all running tasks in that workspace.
 - Stop their PTYs.
-- Remove associated groups and agents from state.
+- Remove associated groups and tasks from state.
 - Do not delete filesystem contents.
-- Confirm before removal if any agent is running, ready, or shipping.
+- Confirm before removal if any task is running, ready, or shipping.
 - Dashboard delete confirmations use `Enter` to remove and `Esc` to cancel.
 
 Rename workspace title:
 
 - Workspaces are still identified by path and stable ID.
-- Pressing `r` while focused on the Workspaces pane opens a workspace-title prompt.
+- Pressing `e` while focused on the Workspaces pane opens a workspace-title prompt.
 - Non-empty input stores the optional workspace title override.
 - Blank input clears the override and returns display to the default path title.
 - No CLI command is required for workspace title changes in the first implementation.
@@ -677,60 +767,61 @@ Create group:
 Rename group:
 
 - Updates the flat group name.
-- Keeps all agents in that group.
+- Keeps all tasks in that group.
 - Must remain unique within the workspace.
 
 Delete group:
 
 - Allowed only when empty.
-- If non-empty, prompt the user to move agents first.
+- If non-empty, prompt the user to move tasks first.
 - Deleting the last group in a workspace is allowed.
 - Dashboard confirmation uses `Enter` to delete and `Esc` to cancel.
 
-## Agent CRUD
+## Task CRUD
 
-Create agent:
+Create task:
 
 - Requires an existing selected workspace.
-- Creates an agent in the selected workspace.
-- Always creates a top-level agent with no group, even when the cursor is on a group or grouped agent.
-- Starts a Codex PTY with the agent workspace as the process working directory.
-- Copies the configured global title template into the agent title.
+- Creates a task in the selected workspace.
+- Always creates a top-level task with no group, even when the cursor is on a group or grouped task.
+- Uses the selected task type from the `n` menu or `weft new --type <id>`.
+- Starts the task type command with the task workspace as the process working directory.
+- Copies the task type title template into the task title unless an explicit title is provided.
 
-Rename agent:
+Rename task:
 
-- Opens with the stored agent title template.
-- Updates the agent title template.
-- Does not change the global default title template.
+- Opens with the stored task title template.
+- Updates the task title template.
+- Does not change the task type default title template.
 
-Move agent:
+Move task:
 
-- Moves the agent to another group in the same workspace.
-- Can also clear the group, moving the agent back to a top-level row.
-- Dashboard prompt opens with all existing group names in that workspace, then filters by any matching substring as the user types.
+- Moves the task to another group in the same workspace.
+- Can also clear the group, moving the task back to a top-level row.
+- Dashboard prompt autocompletes existing group names in that workspace after the user types any matching substring.
 - Does not restart the PTY.
 - Cross-workspace moves are out of scope for the first implementation.
 
-Reorder agent:
+Reorder task:
 
-- `Shift+Up` and `Shift+Down` reorder the selected agent within its current
-  group, or within the top-level ungrouped area when the agent has no group.
+- `Shift+Up` and `Shift+Down` reorder the selected task within its current
+  group, or within the top-level ungrouped area when the task has no group.
 - Reordering never crosses group boundaries, never changes the workspace, and
   does not restart the PTY.
 
-Close/delete agent:
+Close/delete task:
 
-- Confirmation explains that deleting stops the Codex terminal before removing
-  the agent from Weft.
+- Confirmation explains that deleting stops the terminal before removing
+  the task from Weft.
 - Dashboard confirmation uses `Enter` to delete and `N` or `Esc` to cancel.
 - Stops the PTY if running.
-- Removes the agent from state.
-- If the deleted agent is active, select another agent in the same workspace when one exists.
-- If the deleted agent was the last agent in that workspace, stay in that workspace and show an empty Agents pane.
+- Removes the task from state.
+- If the deleted task is active, select another task in the same workspace when one exists.
+- If the deleted task was the last task in that workspace, stay in that workspace and show an empty Tasks pane.
 
 ## PTY Lifecycle
 
-Each agent owns one Codex PTY session, and that PTY is owned by the supervisor,
+Each task owns one PTY session, and that PTY is owned by the supervisor,
 not by an attached TUI client.
 
 PTY key:
@@ -747,30 +838,43 @@ workspace path
 
 Rules:
 
-- Starting an agent launches Codex in its workspace.
-- Switching agents changes which PTY is rendered in `Agent Live Preview` or `Agent Console`.
-- Codex-focus input is forwarded to Codex agent PTYs as raw bytes, except for
-  the configured drawer key that returns to the dashboard and terminal-generated
-  C-c while Codex reports active work, which is routed through Codex's interrupt
-  path.
-- Forwarded Codex input preserves key order, including Esc, Alt/Meta prefixes,
+- Starting a task launches its configured command in its workspace.
+- Switching tasks changes which PTY is rendered in `Task Live Preview` or `Task Console`.
+- Task-focus input is forwarded to task PTYs as raw bytes, except for the
+  configured drawer key that returns to the dashboard. For Codex tasks,
+  terminal-generated C-c while Codex reports active work is routed through
+  Codex's interrupt path.
+- Terminal task command progress is derived from submitted input and the PTY
+  foreground process group, without injecting shell prompt hooks.
+- Terminal task input must behave like the same shell outside Weft. Enhanced
+  keyboard protocol sequences for ordinary typing and readline controls are
+  decoded before forwarding, so keys such as `C-u` clear the current shell line
+  instead of printing CSI-u bytes.
+- Modifier-only enhanced keyboard events, such as bare Shift or Ctrl press
+  reports, are ignored and must never be forwarded as literal CSI-u text.
+- Command-K in a terminal task clears Weft's captured terminal screen and asks
+  the shell to redraw at the top of the console.
+- Forwarded task input preserves key order, including Esc, Alt/Meta prefixes,
   rapid typed text, and bracketed paste.
-- Moving an agent between groups does not affect its PTY.
-- Top-level agents have no group.
-- Removing a workspace stops every PTY for agents in that workspace.
-- Codex receives input only in Codex Focus State.
-- The active Codex PTY width matches the visible Codex content width inside the
+- Moving a task between groups does not affect its PTY.
+- Top-level tasks have no group.
+- Removing a workspace stops every PTY for tasks in that workspace.
+- A task receives input only in Task Focus State.
+- The active task PTY width matches the visible terminal content width inside the
   frame and the current pane padding, so terminal wrapping aligns with what the
   user sees.
-- The active Codex PTY height matches the visible content rows inside the frame.
+- Terminal task screen buffers are top-aligned when the console grows so a newly
+  opened shell prompt stays at the top instead of being pushed down by blank
+  rows.
+- The active task PTY height matches the visible content rows inside the frame.
 - Cached PTY screen resizes preserve bottom rows first, and terminal
-  top/bottom scrolling regions are honored so Codex chat footers and composers
+  top/bottom scrolling regions are honored so terminal footers and composers
   do not disappear behind the frame.
 - Cached PTY screens preserve cursor visibility and DECSCUSR cursor shape
   requests so Vim-style block/bar/underline cursor changes render in the frame.
 - Closing the TUI client does not stop PTYs.
 - Restarting the supervisor stops PTYs unless a future implementation supports explicit PTY handoff.
-- The active TUI client sends terminal size changes to the supervisor, and the supervisor resizes the active Codex PTY.
+- The active TUI client sends terminal size changes to the supervisor, and the supervisor resizes the active task PTY.
 - When no client is attached, PTYs keep running at their most recent size.
 
 ## Command Semantics
@@ -797,13 +901,13 @@ Global `--clear`:
 
 - closes the current interactive client when run inside a client
 - asks the supervisor to detach the active client when run from another shell
-- does not stop the supervisor or agent PTYs
+- does not stop the supervisor or task PTYs
 
 `weft close --kill`:
 
-- asks for confirmation when any agent PTY is running
+- asks for confirmation when any task PTY is running
 - creates a runtime backup before shutdown
-- stops all agent PTYs
+- stops all task PTYs
 - stops the supervisor
 - preserves config and state
 
@@ -826,7 +930,7 @@ Global `--clear`:
 `weft clear`:
 
 - remains destructive
-- stops the supervisor and all agent PTYs
+- stops the supervisor and all task PTYs
 - creates a runtime backup before deletion
 - deletes Weft runtime state after explicit confirmation
 
@@ -848,6 +952,14 @@ Global `--clear`:
 - removes current config or state when the selected backup did not contain it
 - requires confirmation before stopping a running supervisor unless `--yes` is provided
 
+`weft new [--type <id>] [title]`:
+
+- creates a task in the selected workspace
+- uses `default_task_type` when `--type` is omitted
+- rejects unknown task type IDs
+- applies an explicit title when supplied, otherwise copies the selected task
+  type's `title_template`
+
 `weft doctor keys`:
 
 - interactively captures Backspace, Option+Backspace, and Ctrl+Backspace from the current terminal
@@ -862,11 +974,11 @@ Global `--clear`:
 
 `weft --help`, `weft help`, and `weft -h`:
 
-- show the same Weft ASCII mark used by the empty agent pane, with the woven mark scaled, rendered with normal-width line strokes, and the graph kept the same height as three input strokes converging into one output stroke
+- show the same Weft ASCII mark used by the empty task pane, with the woven mark scaled, rendered with normal-width line strokes, and the graph kept the same height as three input strokes converging into one output stroke
 - show the active Weft version below the mark
 - leave blank space above the mark and a small left inset before the mark
 - advertise `weft` as the dashboard entry point
-- group commands by common dashboard use, agent organization, runtime, and
+- group commands by common dashboard use, task organization, runtime, and
   configuration
 - describe destructive commands explicitly
 - do not include the title-template reference section
@@ -878,12 +990,12 @@ The UI should remain usable in small terminals.
 Minimum behavior:
 
 - The Workspaces pane has a fixed 60-column width when it is rendered beside the
-  Agents pane.
-- At 116 columns and wider, show Workspaces, Agents, and `Agent Live Preview` panes together.
-- At medium widths where a fixed Workspaces pane and useful `Agent Live Preview` cannot
-  both fit, keep Workspaces and Agents visible and hide `Agent Live Preview`.
-- If navigation cannot fit, fall back to a single navigation pane that switches between workspaces and agents.
-- Codex Focus State must always give Codex the full available terminal.
+  Tasks pane.
+- At 116 columns and wider, show Workspaces, Tasks, and `Task Live Preview` panes together.
+- At medium widths where a fixed Workspaces pane and useful `Task Live Preview` cannot
+  both fit, keep Workspaces and Tasks visible and hide `Task Live Preview`.
+- If navigation cannot fit, fall back to a single navigation pane that switches between workspaces and tasks.
+- Task Focus State must always give the active task the full available terminal.
 
 Visual style:
 
@@ -892,7 +1004,7 @@ Visual style:
 - Minimal color.
 - Use bordered cards only for the Workspaces pane.
 - No table layout.
-- No fixed status tags on agent rows.
+- No fixed status tags on task rows.
 
 ## Migration
 
@@ -904,12 +1016,26 @@ defaults inside the current schema.
 
 ## Configuration
 
-Initial config additions:
+Default config:
 
 ```toml
-title_template = "{status} {auto}"
+default_task_type = "codex"
 title_hook_command = ""
 title_hook_timeout_seconds = 10
+
+[task_types.codex]
+label = "Codex"
+kind = "codex"
+command = "codex"
+badge = "[codex]"
+title_template = "{status} {auto}"
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = "exec \"$SHELL\" -l"
+badge = "[shell]"
+title_template = "Shell"
 
 [key_bindings]
 drawer = "C-b"
@@ -920,8 +1046,8 @@ select_next = "j"
 open = "Enter"
 new_workspace = "w"
 new_group = "g"
-new_agent = "n"
-move_agent = "m"
+new_task = "n"
+move_task = "m"
 edit = "e"
 delete = "Backspace"
 help = "?"
@@ -931,8 +1057,9 @@ quit = "C-c"
 Existing generated configs with `delete = "d"` use the current `Backspace`
 default so `d` is not a dashboard delete shortcut.
 
-Only the current config keys are loaded. Unknown keys, including legacy keys
-such as `tmux_session`,
+Only the current config keys are emitted by default. Legacy `codex_command`,
+top-level `title_template`, `new_agent`, and `move_agent` remain loadable
+aliases. Unknown keys, including retired keys such as `tmux_session`,
 `columns`, `new_workdir`, `new_folder`, `focus_toggle`, `close_weft`, `prev`,
 `previous`, `new`, and `close`, are rejected.
 
@@ -944,7 +1071,7 @@ Unit tests:
 - state reset guidance for old tabs/columns, workdir/folder, tmux-pane, and unknown v4 shapes
 - supervisor startup, singleton locking, and shutdown decisions
 - protocol field parsing and structured error formatting
-- validation branches for workspace, group, agent, and config inputs
+- validation branches for workspace, group, task, task type, and config inputs
 - title template rendering variants
 - layout width calculations and rendering breakpoints
 - prompt editing keystroke variants
@@ -957,22 +1084,23 @@ Unit tests:
 Integration tests:
 
 - all dashboard-supported, user-facing functionality at the journey level
-- dashboard performance smoke checks with generous budgets for launch, prompt, agent startup, refresh, and reattach latency
+- dashboard performance smoke checks with generous budgets for launch, prompt, task startup, refresh, and reattach latency
 - launch with empty state
 - launch without tmux installed or on `PATH`
 - start supervisor with `weft --no-attach`
-- attach, detach, and reattach while an agent keeps running
-- add workspace, group, agent
-- open agent with `Enter`
+- attach, detach, and reattach while a task keeps running
+- add workspace, group, task
+- create Codex and configured shell task types
+- open task with `Enter`
 - collapse or open a group with `Enter`
-- verify nav panes collapse and Codex receives input
-- verify focused Agent Console mouse wheel scrollback and drag-copy selection
-- reopen navigation and switch agents
-- remove workspace and verify agents/PTYs close
-- delete every group and agent from a workspace and keep an empty Agents pane
-- persist and reload selected workspace/group/agent state
-- upgrade with no running agents restarts the supervisor automatically
-- upgrade with running agents preserves the old supervisor until agents are
+- verify nav panes collapse and the active task receives input
+- verify focused Task Console mouse wheel scrollback and drag-copy selection
+- reopen navigation and switch tasks
+- remove workspace and verify tasks/PTYs close
+- delete every group and task from a workspace and keep an empty Tasks pane
+- persist and reload selected workspace/group/task state
+- upgrade with no running tasks restarts the supervisor automatically
+- upgrade with running Codex tasks preserves the old supervisor until tasks are
   idle/resumable and the user confirms `U`
 - source/dev binary without `WEFT_ROOT` or `WEFT_HOME` fails before creating default runtime files
 - automatic backups are created before `--clear`, `close --kill`, and idle
@@ -984,8 +1112,8 @@ Integration tests:
   `WEFT_ROOT`
 
 Integration tests should use temporary `WEFT_ROOT`, or temporary `WEFT_HOME`
-and `WEFT_WORKSPACE` when distinct paths are required, plus a fake
-`codex_command`. They should not require tmux.
+and `WEFT_WORKSPACE` when distinct paths are required, plus a fake Codex task
+command. They should not require tmux.
 
 Verification workflow:
 
@@ -1001,9 +1129,9 @@ go build ./cmd/weft
 - Top-level global status summary
 - Nested group names
 - Per-group title templates
-- Per-agent title templates
+- Per-task title templates beyond stored row templates
 - CLI command for workspace title overrides
-- Cross-workspace agent moves
+- Cross-workspace task moves
 - Emoji picker
 - Automatic group classification
 - Multi-select batch operations

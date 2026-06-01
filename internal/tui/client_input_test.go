@@ -13,7 +13,7 @@ func TestClientInputRouterForwardsRawCodexBytesUntilDrawer(t *testing.T) {
 		drawerSequences:    bindingTerminalSequences("C-b"),
 		interruptSequences: terminalInterruptSequences(),
 	}
-	router.codexActive.Store(true)
+	router.SetCodexActive(true)
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -59,7 +59,7 @@ func TestClientInputRouterForwardsCtrlCInsideBracketedPaste(t *testing.T) {
 		drawerSequences:    bindingTerminalSequences("C-b"),
 		interruptSequences: terminalInterruptSequences(),
 	}
-	router.codexActive.Store(true)
+	router.SetCodexActive(true)
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -102,7 +102,7 @@ func TestClientInputRouterHandlesEnhancedDrawerSequence(t *testing.T) {
 		drawerSequences:    bindingTerminalSequences("C-b"),
 		interruptSequences: terminalInterruptSequences(),
 	}
-	router.codexActive.Store(true)
+	router.SetCodexActive(true)
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -142,7 +142,7 @@ func TestClientInputRouterMapsEnhancedCtrlCToCodexInterrupt(t *testing.T) {
 		drawerSequences:    bindingTerminalSequences("C-b"),
 		interruptSequences: terminalInterruptSequences(),
 	}
-	router.codexActive.Store(true)
+	router.SetCodexActive(true)
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -188,7 +188,7 @@ func TestClientInputRouterReturnsMouseSequencesToBubbleTea(t *testing.T) {
 		drawerSequences:    bindingTerminalSequences("C-b"),
 		interruptSequences: terminalInterruptSequences(),
 	}
-	router.codexActive.Store(true)
+	router.SetCodexActive(true)
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -231,7 +231,7 @@ func TestClientInputRouterHoldsSplitMouseSequencesForBubbleTea(t *testing.T) {
 		drawerSequences:    bindingTerminalSequences("C-b"),
 		interruptSequences: terminalInterruptSequences(),
 	}
-	router.codexActive.Store(true)
+	router.SetCodexActive(true)
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -286,6 +286,127 @@ func TestClientInputRouterLeavesDashboardBytesForBubbleTea(t *testing.T) {
 	}
 	if got := string(buf[:n]); got != "n" {
 		t.Fatalf("dashboard bytes = %q, want n", got)
+	}
+}
+
+func TestClientInputRouterDecodesTerminalKeyboardInput(t *testing.T) {
+	router := &clientInputRouter{
+		input:              bytes.NewBufferString("\x1b[101;2u\x1b[99u\x1b[104u\x1b[111u\x1b[117;5u\x02j"),
+		drawer:             []byte{0x02},
+		drawerSequences:    bindingTerminalSequences("C-b"),
+		interruptSequences: terminalInterruptSequences(),
+	}
+	router.SetTaskInputMode(taskInputTerminal)
+	var sent []struct {
+		command string
+		args    map[string]string
+	}
+	router.send = func(command string, args map[string]string) error {
+		sent = append(sent, struct {
+			command string
+			args    map[string]string
+		}{command: command, args: args})
+		return nil
+	}
+
+	buf := make([]byte, 8)
+	n, err := router.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+
+	if got := string(buf[:n]); got != "j" {
+		t.Fatalf("post-drawer bytes should return to Bubble Tea, got %q", got)
+	}
+	if len(sent) != 6 {
+		t.Fatalf("sent commands = %#v", sent)
+	}
+	var forwarded string
+	for _, entry := range sent[:5] {
+		if entry.command != "task_input" {
+			t.Fatalf("terminal key should be task input: %#v", entry)
+		}
+		forwarded += entry.args["encoded"]
+	}
+	if forwarded != "Echo\x15" {
+		t.Fatalf("decoded terminal input = %q, want shifted E plus C-u", forwarded)
+	}
+	if sent[5].command != "toggle_drawer" {
+		t.Fatalf("drawer command = %#v", sent[5])
+	}
+}
+
+func TestClientInputRouterDropsTerminalModifierOnlyEvents(t *testing.T) {
+	router := &clientInputRouter{
+		input:              bytes.NewBufferString("\x1b[57441;2u\x1b[57442;5u\x02j"),
+		drawer:             []byte{0x02},
+		drawerSequences:    bindingTerminalSequences("C-b"),
+		interruptSequences: terminalInterruptSequences(),
+	}
+	router.SetTaskInputMode(taskInputTerminal)
+	var sent []struct {
+		command string
+		args    map[string]string
+	}
+	router.send = func(command string, args map[string]string) error {
+		sent = append(sent, struct {
+			command string
+			args    map[string]string
+		}{command: command, args: args})
+		return nil
+	}
+
+	buf := make([]byte, 8)
+	n, err := router.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+
+	if got := string(buf[:n]); got != "j" {
+		t.Fatalf("post-drawer bytes should return to Bubble Tea, got %q", got)
+	}
+	if len(sent) != 1 || sent[0].command != "toggle_drawer" {
+		t.Fatalf("modifier-only events should be dropped and C-b should exit: %#v", sent)
+	}
+}
+
+func TestClientInputRouterHandlesTerminalCommandKClear(t *testing.T) {
+	router := &clientInputRouter{
+		input:              bytes.NewBufferString("typed\x1b[107;9uafter"),
+		drawer:             []byte{0x02},
+		drawerSequences:    bindingTerminalSequences("C-b"),
+		interruptSequences: terminalInterruptSequences(),
+	}
+	router.SetTaskInputMode(taskInputTerminal)
+	var sent []struct {
+		command string
+		args    map[string]string
+	}
+	router.send = func(command string, args map[string]string) error {
+		sent = append(sent, struct {
+			command string
+			args    map[string]string
+		}{command: command, args: args})
+		return nil
+	}
+
+	buf := make([]byte, 8)
+	_, err := router.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+
+	if len(sent) != 3 {
+		t.Fatalf("sent commands = %#v", sent)
+	}
+	if got := sent[0].args["encoded"]; got != "typed" {
+		t.Fatalf("raw prefix = %q, want typed", got)
+	}
+	if sent[1].command != "task_clear" {
+		t.Fatalf("command-k should clear the focused terminal: %#v", sent[1])
+	}
+	if got := sent[2].args["encoded"]; got != "after" {
+		t.Fatalf("raw suffix = %q, want after", got)
 	}
 }
 

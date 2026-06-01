@@ -26,7 +26,7 @@ type TemplateVariable struct {
 
 func TemplateVariables() []TemplateVariable {
 	return []TemplateVariable{
-		{Name: TitleTemplate, Description: "configured agent title"},
+		{Name: TitleTemplate, Description: "configured task title"},
 		{Name: AutoTemplate, Description: "generated title from first message"},
 		{Name: CodexTemplate, Description: "live Codex title"},
 		{Name: StatusTemplate, Description: "live Codex status"},

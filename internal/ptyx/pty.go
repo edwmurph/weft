@@ -10,6 +10,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/edwmurph/weft/internal/shellx"
+	"golang.org/x/sys/unix"
 )
 
 type Data struct {
@@ -70,6 +71,23 @@ func (s *Session) Kill() {
 	if s.cmd != nil && s.cmd.Process != nil {
 		_ = s.cmd.Process.Kill()
 	}
+}
+
+func (s *Session) ForegroundProcessActive() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.file == nil || s.cmd == nil || s.cmd.Process == nil {
+		return false
+	}
+	foreground, err := unix.IoctlGetInt(int(s.file.Fd()), unix.TIOCGPGRP)
+	if err != nil || foreground <= 0 {
+		return false
+	}
+	processGroup, err := unix.Getpgid(s.cmd.Process.Pid)
+	if err != nil || processGroup <= 0 {
+		return false
+	}
+	return foreground != processGroup
 }
 
 func (s *Session) readLoop(output func(Data)) {

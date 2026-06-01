@@ -761,11 +761,11 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		if state.ActiveWorkspace(st) == nil {
 			content = renderCenteredPaneHelp(width, height, "No workspace selected", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 		} else {
-			content = renderCenteredPaneHelp(width, height, "No agents", "Press "+cfg.KeyBindings.NewAgent+" to create one.")
+			content = renderCenteredPaneHelp(width, height, "No tasks", "Press "+cfg.KeyBindings.NewAgent+" to create one.")
 		}
 	}
 	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))
-	return renderPaneFrame("Agents", "", width, height, st.Focus == state.FocusAgents, content)
+	return renderPaneFrame("Tasks", "", width, height, st.Focus == state.FocusAgents, content)
 }
 
 func scrollPaneContentToLine(content []string, selectedLine int, visibleLines int) []string {
@@ -783,7 +783,7 @@ func scrollPaneContentToLine(content []string, selectedLine int, visibleLines in
 func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width int, nested bool, selected bool, options workspaceRenderOptions) string {
 	title := renderAgentTitleForState(cfg, st, agent)
 	marker := agentMarkerForRender(agent, options.loadingFrame, options.loadingAgents)
-	prefix := marker + " "
+	prefix := marker + " " + taskTypeBadgeCellForAgent(cfg, agent) + " "
 	if nested {
 		prefix = "  " + prefix
 	}
@@ -843,11 +843,11 @@ func agentMarkerForRender(agent state.Agent, loadingFrame string, loadingAgents 
 	case string(state.StatusKilled):
 		return "!"
 	case string(state.StatusReady):
-		return "●"
+		return "·"
 	case string(state.StatusStopped), string(state.StatusSitting):
 		return "◦"
 	default:
-		return "●"
+		return "·"
 	}
 }
 
@@ -950,13 +950,13 @@ func renderCodexFrame(
 	innerWidth := max(0, width-2)
 	agentActive := state.ActiveAgent(st) != nil
 	previewMode := !navCollapsed
-	topLabel := "Agent Live Preview"
+	topLabel := "Task Live Preview"
 	topRightLabel := ""
 	if navCollapsed && active {
-		topLabel = "Agent Console  " + codexCollapsedTopShortcuts(cfg)
+		topLabel = "Task Console  " + codexCollapsedTopShortcuts(cfg)
 		topRightLabel = codexConsoleTopRightLabel(st, toastText)
 	} else if navCollapsed {
-		topLabel = "Agent Console"
+		topLabel = "Task Console"
 	} else if agentActive {
 		topRightLabel = title
 	}
@@ -1079,10 +1079,10 @@ func renderEmptyCodexContent(width int, height int, canCreateAgent bool) []strin
 		content = append(content, "")
 		content = append(content, emptyVersionStyle.Render(centerVisual(version.Label(), logoWidth)))
 		content = append(content, "")
-		content = append(content, centerVisual("No Codex agent open", logoWidth), centerVisual(hint, logoWidth))
+		content = append(content, centerVisual("No task open", logoWidth), centerVisual(hint, logoWidth))
 		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
 	}
-	content = append(content, version.Label(), "No Codex agent open", hint)
+	content = append(content, version.Label(), "No task open", hint)
 	return renderCenteredCodexContent(content, width, height)
 }
 
@@ -1159,9 +1159,9 @@ func codexConsoleReadyIndicator(st state.State) string {
 	if count == 0 {
 		return ""
 	}
-	noun := "agent"
+	noun := "task"
 	if count != 1 {
-		noun = "agents"
+		noun = "tasks"
 	}
 	return workspaceCountNeedsAttentionStyle.Render(fmtInt(count) + " other " + noun + " ready")
 }

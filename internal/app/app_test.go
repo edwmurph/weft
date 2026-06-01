@@ -30,7 +30,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		}
 	}
 	for _, expected := range []string{
-		"Terminal dashboard for Codex agent threads.",
+		"Terminal dashboard for Codex and shell tasks.",
 		weftversion.Label(),
 		"weft [--clear] [--attach|--no-attach]",
 		"weft <command> [--clear]",
@@ -38,7 +38,8 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		"weft <command> --clear       Clear runtime state, then run the command.",
 		"weft version                 Show CLI, supervisor, and dashboard versions.",
 		"weft workspace add <path>    Add a workspace to the dashboard.",
-		"weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.",
+		"weft new [--type id] [title] Create a task.",
+		"weft close --kill [--yes]    Stop the supervisor and all task PTYs.",
 		"weft backup create           Back up config, state, and logs.",
 		"weft doctor keys             Diagnose terminal key encoding.",
 	} {

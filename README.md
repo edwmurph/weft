@@ -1,7 +1,7 @@
 <h1 align="center"><img src="assets/weft-logo.svg" alt="Weft" width="360"></h1>
 
 <p align="center">
-  <strong>A terminal dashboard for Codex agent threads, workspaces, and groups.</strong>
+  <strong>A terminal dashboard for Codex and shell tasks, workspaces, and groups.</strong>
 </p>
 
 <p align="center">
@@ -10,28 +10,28 @@
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-Weft makes parallel Codex work visible. Codex sessions are long-running lines
-of work: editing, testing, waiting for review, or blocked while other sessions
-keep moving. Weft keeps them in one terminal dashboard so you can organize
-agents by workspace and group, check status quickly, and jump back into the
-right console without losing running PTYs.
+Weft makes parallel terminal work visible. Tasks can be integrated Codex
+sessions or configured shell commands: editing, testing, waiting for review, or
+blocked while other tasks keep moving. Weft keeps them in one terminal
+dashboard so you can organize tasks by workspace and group, check status
+quickly, and jump back into the right console without losing running PTYs.
 
 ## Why Weft
 
-- See every Codex agent in one dashboard instead of hunting through terminal
-  tabs.
-- Organize agents into optional groups inside each workspace, such as
+- See every Codex or shell task in one dashboard instead of hunting through
+  terminal tabs.
+- Organize tasks into optional groups inside each workspace, such as
   `release`, `review`, `bugs`, or `experiments`.
-- Track workspace totals for `active` and `needs attention` agents so finished
+- Track workspace totals for `active` and `needs attention` tasks so finished
   or waiting work does not sit idle.
-- Auto-name dashboard agents from their first chat message with a configurable
-  title hook.
-- Detach, upgrade, or reopen the UI while the local supervisor keeps Codex PTYs
+- Auto-name Codex tasks from their first chat message, or opted-in shell tasks
+  from their first command, with a configurable title hook.
+- Detach, upgrade, or reopen the UI while the local supervisor keeps task PTYs
   alive.
-- Keep Codex framed in the terminal: focus one agent for direct input, then
+- Keep terminals framed: focus one task for direct input, then
   return to the dashboard to switch or reorganize.
-- Use the mouse inside the framed `Agent Console`: scroll Codex history and
-  drag-copy visually bounded text without copying Codex's gutter.
+- Use the mouse inside the framed `Task Console`: scroll history and drag-copy
+  visually bounded text without copying terminal gutter padding.
 
 ## Getting Started
 
@@ -44,11 +44,11 @@ brew install edwmurph/tap/weft
 After `brew upgrade weft`, reopen the dashboard with `weft`. If only the client
 needed to reopen, Weft will be current. If the older supervisor is still
 running, the dashboard shows an upgrade banner. Weft waits until open Codex
-agents are idle and have saved Codex session IDs, then shows `U` as the upgrade
+tasks are idle and have saved Codex session IDs, then shows `U` as the upgrade
 action. Confirming that modal closes the idle Codex terminals, restarts the
-supervisor, and runs `codex resume <session-id>` for each agent. Running shell
+supervisor, and runs `codex resume <session-id>` for each task. Running shell
 commands and unsubmitted terminal input are not preserved, so finish important
-work first; the safer habit is still to upgrade after agents are idle or closed.
+work first; the safer habit is still to upgrade after tasks are idle or closed.
 
 Then run Weft from a project directory. On first interactive launch, Weft asks
 whether to add that directory as a workspace:
@@ -88,23 +88,23 @@ weft --clear                 Clear runtime state, then open a fresh dashboard.
 weft <command> --clear       Clear runtime state, then run the command.
 weft --no-attach             Start or reuse the supervisor without opening the dashboard.
 weft refresh                 Request a fresh dashboard snapshot.
-weft status [--json]         Show supervisor, workspace, group, and agent state.
+weft status [--json]         Show supervisor, workspace, group, and task state.
 weft version                 Show CLI, supervisor, and dashboard versions.
-weft doctor                  Check local runtime and Codex command health.
+weft doctor                  Check local runtime and task command health.
 weft doctor keys             Diagnose terminal key encoding.
 
-Agents and organization:
-weft new [title]             Create a Codex agent.
-weft select <id>             Make an agent active.
-weft rename [id] <title>     Rename the selected agent or the given agent.
-weft close [id]              Close the active client or a Codex agent.
+Tasks and organization:
+weft new [--type id] [title] Create a task.
+weft select <id>             Make a task active.
+weft rename [id] <title>     Rename the selected task or the given task.
+weft close [id]              Close the active client or a task.
 weft group add <name>        Add a group in the current workspace.
 weft workspace add <path>    Add a workspace to the dashboard.
-weft move-left               Move the selected agent out of its group.
-weft move-right              Move the selected agent into the selected group.
+weft move-left               Move the selected task out of its group.
+weft move-right              Move the selected task into the selected group.
 
 Runtime and configuration:
-weft close --kill [--yes]    Stop the supervisor and all Codex PTYs.
+weft close --kill [--yes]    Stop the supervisor and all task PTYs.
 weft clear                   Prompt, then delete Weft runtime state.
 weft backup create           Back up config, state, and logs.
 weft backup list             List saved runtime backups.
@@ -115,9 +115,8 @@ weft config init [--force]   Write the default config.
 ```
 
 Run `weft close` without an id to detach the active Weft client while the
-supervisor and Codex PTYs keep running. Pass an id to close a Codex agent. Use
-`weft close --kill` to stop the supervisor and all Codex PTYs after
-confirmation.
+supervisor and task PTYs keep running. Pass an id to close a task. Use `weft
+close --kill` to stop the supervisor and all task PTYs after confirmation.
 
 Use `weft doctor keys` when Option/Alt shortcuts do not behave like the rest of
 your terminal. It compares Backspace, Option+Backspace, and Ctrl+Backspace and
@@ -130,28 +129,59 @@ Backspace, it reports that the running iTerm2 session has not picked up the
 preference yet. For custom iTerm2 settings folders, it tells the user to quit
 and reopen iTerm2 because new tabs may keep using the in-memory profile.
 
-## Agent Titles
+## Task Types And Titles
 
-Agent rows in the dashboard are customizable. Each agent renders from a title
-template, and Weft can call a hook after the first non-empty chat message to
-generate an `{auto}` title for that agent. The hook is a plain shell command, so
-you can plug in your own naming logic while keeping the dashboard focused on the
-saved title.
+Task rows in the dashboard are customizable. Each task has a configured type
+with a label, badge, kind, command, and default title template. `codex` is the
+only checked-in integrated task kind today. Generic `terminal` task types can
+start any shell command, and future integrated kinds such as Claude require a
+checked-in implementation instead of config alone.
 
-New agents copy the global `title_template`, which defaults to
-`{status} {auto}`, into their own title so the edit pane opens with that
-editable template. Titles passed to `weft new` or `weft rename` can still
-include template variables:
+The default config includes `codex` and `shell` task types:
 
-- `{title}`: user-configured agent title
+```toml
+default_task_type = "codex"
+
+[task_types.codex]
+label = "Codex"
+kind = "codex"
+command = "codex"
+badge = "[codex]"
+title_template = "{status} {auto}"
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = "exec \"$SHELL\" -l"
+badge = "[shell]"
+title_template = "Shell"
+```
+
+Task type badges should be plain bracketed text so rows stay readable and
+aligned in terminal fonts. The built-in defaults are `[codex]` and `[shell]`.
+
+Press `n` in the dashboard to choose a task type. `weft new` uses
+`default_task_type` unless `--type <id>` is supplied.
+
+Task titles can call a hook to generate an `{auto}` title. Codex tasks use the
+first non-empty submitted chat message. Terminal task types opt in by using
+`{auto}` in their `title_template`, and the hook input is the first typed shell
+command. The hook is a plain shell command, so you can plug in your own naming
+logic while keeping the dashboard focused on the saved title.
+
+New tasks copy their type's `title_template` into their own title so the edit
+pane opens with that editable template. Titles passed to `weft new`,
+`weft new --type codex`, or `weft rename` can still include template variables:
+
+- `{title}`: user-configured task title
 - `{auto}`: generated title from the first submitted message
 - `{codex}`: live Codex terminal title
-- `{status}`: verbatim live Codex status, falling back to agent lifecycle status
-- `{workspace}`: agent workspace path
-- `{group}`: flat group name, when the agent is in a group
+- `{status}`: verbatim live Codex status, falling back to task lifecycle status
+- `{workspace}`: task workspace path
+- `{group}`: flat group name, when the task is in a group
 
 For example, `weft rename "Codex {status}"` keeps a fixed title while showing
-the current agent status.
+the current task status.
 
 To generate `{auto}` titles from the first chat message, configure a hook
 command:
@@ -161,18 +191,19 @@ title_hook_command = "/path/to/weft/hooks/auto-title-openai.sh"
 title_hook_timeout_seconds = 10
 ```
 
-When `title_hook_command` is configured, the first non-empty message submitted
-to each new Codex agent runs the hook from that agent's workspace. Weft sends
+When `title_hook_command` is configured, the first non-empty Codex message or
+opted-in terminal command runs the hook from that task's workspace. Weft sends
 JSON on stdin with `event`, `agent_id`, `workspace`, `group`, `status`,
-`title`, the agent `title_template`, `codex_title`, and `first_message`, then
-saves the first non-empty stdout line as the generated title.
+`title`, `type_id`, the task `title_template`, `codex_title` when available,
+and `first_message`, then saves the first non-empty stdout line as the
+generated title.
 
-Set an agent title to `{auto}` in the edit pane, or run
-`weft rename <id> "{auto}"`, to display that saved generated title. To make new
-agents start with generated titles, set `title_template = "{auto}"`. Before the
-first message, `{auto}` renders as `waiting for first message`; failed hooks
-render as `auto title failed`, show a footer error, and keep the full error in
-the edit pane.
+Set a task title to `{auto}` in the edit pane, or run `weft rename <id>
+"{auto}"`, to display that saved generated title. To make new shell tasks start
+with generated titles, set the shell task type `title_template = "{auto}"`.
+Before the first message or command, `{auto}` renders as `waiting for first
+message`; failed hooks render as `auto title failed`, show a footer error, and
+keep the full error in the edit pane.
 
 Weft treats hooks as generic shell commands. The checked-in
 `hooks/auto-title-openai.sh` script is one real hook implementation; it reads
@@ -182,35 +213,52 @@ the OpenAI Responses API with `OPENAI_TITLE_MODEL`, defaulting to
 message, so simple greetings like `hi` stay simple. You can replace it with any
 command that follows the same stdin/stdout contract. Set
 `WEFT_OPENAI_ENV_FILE=/path/to/.env` in the hook command when the API key lives
-outside the agent workspace.
+outside the task workspace.
 
-The dashboard has `Workspaces`, `Agents`, and `Agent Live Preview` panes.
-Workspaces and agents live in the left-side navigation panes; the preview stays
-ready on the right as a read-only live lens into the selected agent, with
-cropped lines marked at the right edge. Press
-`Enter` to open the selected thread in the focused `Agent Console`, where Codex
-input is forwarded. Agents can sit directly in a workspace as top-level rows,
-or they can be organized into optional collapsible groups inside the `Agents`
-pane. Use groups for whatever makes the work easier to scan: release tasks,
-experiments, review follow-ups, bug fixes, or blocked investigations. `Enter`
-on a group opens or collapses it. When an agent row is selected,
-`Shift+Up`/`Shift+Down` moves it within its current group or top-level area.
+The dashboard has `Workspaces`, `Tasks`, and `Task Live Preview` panes. Workspaces
+and tasks live in the left-side navigation panes; the preview stays ready on
+the right as a read-only live lens into the selected task, with cropped lines
+marked at the right edge. Press `Enter` to open the selected task in the
+focused `Task Console`, where terminal input is forwarded. Tasks can sit
+directly in a workspace as top-level rows, or they can be organized into
+optional collapsible groups inside the `Tasks` pane. Use groups for whatever
+makes the work easier to scan: release tasks, experiments, review follow-ups,
+bug fixes, or blocked investigations. `Enter` on a group opens or collapses it.
+When a task row is selected, `Shift+Up`/`Shift+Down` moves it within its current
+group or top-level area.
+
+Shell rows use the same spinner as Codex rows while a foreground command is in
+progress, then return to the ready marker when the shell regains control.
 
 Dashboard forms use bordered inputs, compact validation/status lines, and
 state-specific key hints. In the `Workspaces` pane, `w` opens an add-workspace
 path prompt with a scrolling below-input autocomplete menu, arrow-key selection,
-and compact path status. Moving an agent autocompletes known group names after a
+and compact path status. Moving a task autocompletes known group names after a
 matching prefix. Prompt inputs support Option/Alt word movement and deletion
 when the terminal sends Option as Meta/Esc. Alt-modified keys are also preserved
-when forwarded into Codex agent panes. `r` sets an optional card title and blank
+when forwarded into task consoles. `e` sets an optional card title and blank
 input clears it back to the display path.
 
 When the dashboard is open, press `?` for shortcuts. Defaults:
 
 ```toml
-title_template = "{status} {auto}"
+default_task_type = "codex"
 title_hook_command = ""
 title_hook_timeout_seconds = 10
+
+[task_types.codex]
+label = "Codex"
+kind = "codex"
+command = "codex"
+badge = "[codex]"
+title_template = "{status} {auto}"
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = "exec \"$SHELL\" -l"
+badge = "[shell]"
+title_template = "Shell"
 
 [key_bindings]
 drawer = "C-b"
@@ -221,8 +269,8 @@ select_next = "j"
 open = "Enter"
 new_workspace = "w"
 new_group = "g"
-new_agent = "n"
-move_agent = "m"
+new_task = "n"
+move_task = "m"
 edit = "e"
 delete = "Backspace"
 help = "?"
@@ -231,23 +279,23 @@ quit = "C-c"
 
 Existing generated configs with `delete = "d"` use the current `Backspace` default.
 
-In CODEX focus, Weft keeps the `Agent Console` framed while forwarding raw
-terminal input bytes through the active PTY. The configured drawer key, `C-b` by
-default, is the only dashboard key sequence Weft owns while Codex is focused.
-Terminal-generated `C-c` is still delivered through Codex's interrupt path while
-Codex reports active work, matching side-thread interruption behavior instead of
-returning or closing the side thread. Other Codex-owned terminal behavior,
-including Vim mode, Esc timing, bracketed paste, Alt/Meta prefixes,
-`Shift+Enter`, and `Shift+Tab`, reaches Codex unchanged. The framed renderer
-also preserves Codex cursor visibility and block/bar/underline cursor shape
-requests. The client also captures mouse input in focused `Agent Console`:
-trackpad or wheel scrolling moves through Weft's captured Codex scrollback, and
-drag selection starts after Codex's shared visual margin so the highlighted
-cells match the clipboard text while preserving Codex's existing colors under
-the selection overlay. A short toast in the console border confirms the copy.
-Press the drawer key to return to the dashboard. If Codex exits after receiving
-its own input, Weft returns to the dashboard `Agents` pane and marks the agent
-as killed.
+In task focus, Weft keeps the `Task Console` framed while forwarding terminal
+input through the active PTY. The configured drawer key, `C-b` by default, is
+the only dashboard key sequence Weft owns while a task is focused. For Codex
+tasks, terminal-generated `C-c` is still delivered through Codex's interrupt
+path while Codex reports active work, matching side-thread interruption
+behavior instead of returning or closing the side thread. Other terminal task
+behavior, including ordinary typing, readline controls such as `C-u`, Vim mode,
+Esc timing, bracketed paste, Alt/Meta prefixes, and terminal clear via
+Command-K, reaches the task like it would outside Weft. The
+framed renderer also preserves cursor visibility and block/bar/underline cursor
+shape requests. The client also captures mouse input in focused `Task Console`:
+trackpad or wheel scrolling moves through Weft's captured scrollback, and drag
+selection starts after the shared visual margin so the highlighted cells match
+the clipboard text while preserving existing colors under the selection
+overlay. A short toast in the console border confirms the copy. Press the
+drawer key to return to the dashboard. If a task exits after receiving its own
+input, Weft returns to the dashboard `Tasks` pane and marks the task as killed.
 
 ## Config And State
 
@@ -280,13 +328,14 @@ copy of `config.toml`, `state.json`, metadata, and logs when present. `weft
 backup restore <id-or-path> [--yes]` creates a pre-restore backup before
 replacing config and state, and stops the supervisor first when it is running.
 
-The config keys are stable: `codex_command`, `title_template`,
+The config keys are stable: `default_task_type`, `task_types`,
 `title_hook_command`, `title_hook_timeout_seconds`, and `key_bindings`.
-Unknown config keys are rejected so stale local settings are visible. State is
-strict v4 with workspace/group names: `workspaces`, `groups`,
-`selected_workspace_id`, `selected_group_id`, `workspace_id`, and `group_id`.
-Older or unknown state shapes fail with guidance to run `weft clear` when a
-reset is acceptable.
+`codex_command`, `title_template`, `new_agent`, and `move_agent` still load as
+legacy aliases for Codex task configuration and task shortcuts, but new config
+files use `task_types.codex`, `new_task`, and `move_task`. Unknown config keys
+are rejected so stale local settings are visible. State is strict v4 with
+workspace/group names and task type IDs on agent rows. Older or unknown state
+shapes fail with guidance to run `weft clear` when a reset is acceptable.
 
 ## Development
 
@@ -298,7 +347,7 @@ go build ./cmd/weft
 
 Live integration tests use temporary `WEFT_ROOT`, or separate temporary
 `WEFT_HOME` and `WEFT_WORKSPACE` values when they need distinct paths, plus a
-fake `codex_command`. Use
+fake Codex task command. Use
 `WEFT_RUN_INTEGRATION=1 go test ./tests/integration -run TestAttachedDashboardKeyboardAndRenderingE2E -v`
 to see per-step dashboard timing logs.
 

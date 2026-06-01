@@ -153,14 +153,14 @@ func upgradeMessage(supervisorVersion string, clientVersion string, runningAgent
 	if runningAgents == 0 {
 		return fmt.Sprintf("Upgrade ready: client %s is newer than idle supervisor %s; the supervisor can restart safely.", clientVersion, supervisorVersion)
 	}
-	return fmt.Sprintf("Upgrade pending: client %s is newer than supervisor %s. Reopening the dashboard is not enough; wait for idle Codex agents, then upgrade and resume from saved sessions. %d live Codex terminal(s) are open.", clientVersion, supervisorVersion, runningAgents)
+	return fmt.Sprintf("Upgrade pending: client %s is newer than supervisor %s. Reopening the dashboard is not enough; wait for live tasks to finish or become resumable. %d live task terminal(s) are open.", clientVersion, supervisorVersion, runningAgents)
 }
 
 func incompatibleUpgradeMessage(supervisorVersion string, clientVersion string, runningAgents int) string {
 	if runningAgents == 0 {
 		return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Saved layout and metadata remain.", clientVersion, supervisorVersion)
 	}
-	return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Restarting the supervisor will stop %d live Codex terminal(s). Saved layout and metadata remain.", clientVersion, supervisorVersion, runningAgents)
+	return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Restarting the supervisor will stop %d live task terminal(s). Saved layout and metadata remain.", clientVersion, supervisorVersion, runningAgents)
 }
 
 func ErrorResponse(code string, message string) Response {

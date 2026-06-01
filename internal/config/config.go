@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -17,6 +18,10 @@ const (
 	AllowMainRuntimeEnv     = "WEFT_ALLOW_MAIN_RUNTIME"
 	defaultRuntimeDirectory = ".weft"
 	modulePath              = "github.com/edwmurph/weft"
+	DefaultTaskTypeCodex    = "codex"
+	DefaultTaskTypeShell    = "shell"
+	TaskKindCodex           = "codex"
+	TaskKindTerminal        = "terminal"
 )
 
 type KeyBindings struct {
@@ -36,12 +41,24 @@ type KeyBindings struct {
 	Quit         string `toml:"quit"`
 }
 
+type TaskType struct {
+	ID            string `toml:"-"`
+	Label         string `toml:"label"`
+	Kind          string `toml:"kind"`
+	Command       string `toml:"command"`
+	Badge         string `toml:"badge"`
+	Icon          string `toml:"icon"`
+	TitleTemplate string `toml:"title_template"`
+}
+
 type Config struct {
-	CodexCommand            string      `toml:"codex_command"`
-	TitleTemplate           string      `toml:"title_template"`
-	TitleHookCommand        string      `toml:"title_hook_command"`
-	TitleHookTimeoutSeconds int         `toml:"title_hook_timeout_seconds"`
-	KeyBindings             KeyBindings `toml:"key_bindings"`
+	CodexCommand            string              `toml:"codex_command"`
+	TitleTemplate           string              `toml:"title_template"`
+	DefaultTaskType         string              `toml:"default_task_type"`
+	TaskTypes               map[string]TaskType `toml:"task_types"`
+	TitleHookCommand        string              `toml:"title_hook_command"`
+	TitleHookTimeoutSeconds int                 `toml:"title_hook_timeout_seconds"`
+	KeyBindings             KeyBindings         `toml:"key_bindings"`
 }
 
 type Runtime struct {
@@ -85,12 +102,36 @@ func DefaultKeyBindings() KeyBindings {
 }
 
 func DefaultConfig() Config {
+	taskTypes := DefaultTaskTypes()
 	return Config{
 		CodexCommand:            "codex",
 		TitleTemplate:           "{status} {auto}",
+		DefaultTaskType:         DefaultTaskTypeCodex,
+		TaskTypes:               taskTypes,
 		TitleHookCommand:        "",
 		TitleHookTimeoutSeconds: 10,
 		KeyBindings:             DefaultKeyBindings(),
+	}
+}
+
+func DefaultTaskTypes() map[string]TaskType {
+	return map[string]TaskType{
+		DefaultTaskTypeCodex: {
+			ID:            DefaultTaskTypeCodex,
+			Label:         "Codex",
+			Kind:          TaskKindCodex,
+			Command:       "codex",
+			Badge:         "[codex]",
+			TitleTemplate: "{status} {auto}",
+		},
+		DefaultTaskTypeShell: {
+			ID:            DefaultTaskTypeShell,
+			Label:         "Shell",
+			Kind:          TaskKindTerminal,
+			Command:       `exec "$SHELL" -l`,
+			Badge:         "[shell]",
+			TitleTemplate: "Shell",
+		},
 	}
 }
 
@@ -209,10 +250,12 @@ func EnsureConfig(rt Runtime) (Config, error) {
 func LoadConfig(path string) (Config, error) {
 	cfg := DefaultConfig()
 	var raw struct {
-		CodexCommand            string `toml:"codex_command"`
-		TitleTemplate           string `toml:"title_template"`
-		TitleHookCommand        string `toml:"title_hook_command"`
-		TitleHookTimeoutSeconds int    `toml:"title_hook_timeout_seconds"`
+		CodexCommand            string              `toml:"codex_command"`
+		TitleTemplate           string              `toml:"title_template"`
+		DefaultTaskType         string              `toml:"default_task_type"`
+		TaskTypes               map[string]TaskType `toml:"task_types"`
+		TitleHookCommand        string              `toml:"title_hook_command"`
+		TitleHookTimeoutSeconds int                 `toml:"title_hook_timeout_seconds"`
 		KeyBindings             struct {
 			Drawer       string `toml:"drawer"`
 			FocusLeft    string `toml:"focus_left"`
@@ -223,7 +266,9 @@ func LoadConfig(path string) (Config, error) {
 			NewWorkspace string `toml:"new_workspace"`
 			NewGroup     string `toml:"new_group"`
 			NewAgent     string `toml:"new_agent"`
+			NewTask      string `toml:"new_task"`
 			MoveAgent    string `toml:"move_agent"`
+			MoveTask     string `toml:"move_task"`
 			Edit         string `toml:"edit"`
 			Delete       string `toml:"delete"`
 			Help         string `toml:"help"`
@@ -250,9 +295,50 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if raw.CodexCommand != "" {
 		cfg.CodexCommand = raw.CodexCommand
+		codex := cfg.TaskTypes[DefaultTaskTypeCodex]
+		codex.Command = raw.CodexCommand
+		cfg.TaskTypes[DefaultTaskTypeCodex] = codex
 	}
 	if raw.TitleTemplate != "" {
 		cfg.TitleTemplate = raw.TitleTemplate
+		codex := cfg.TaskTypes[DefaultTaskTypeCodex]
+		codex.TitleTemplate = raw.TitleTemplate
+		cfg.TaskTypes[DefaultTaskTypeCodex] = codex
+	}
+	if raw.DefaultTaskType != "" {
+		cfg.DefaultTaskType = raw.DefaultTaskType
+	}
+	for id, rawTaskType := range raw.TaskTypes {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		taskType := cfg.TaskTypes[id]
+		if strings.TrimSpace(taskType.ID) == "" {
+			taskType.ID = id
+		}
+		if strings.TrimSpace(rawTaskType.Label) != "" {
+			taskType.Label = rawTaskType.Label
+		}
+		if strings.TrimSpace(rawTaskType.Kind) != "" {
+			taskType.Kind = rawTaskType.Kind
+		}
+		if strings.TrimSpace(rawTaskType.Command) != "" {
+			taskType.Command = rawTaskType.Command
+		}
+		if strings.TrimSpace(rawTaskType.Badge) != "" {
+			taskType.Badge = rawTaskType.Badge
+		}
+		if strings.TrimSpace(rawTaskType.Icon) != "" {
+			if strings.TrimSpace(rawTaskType.Badge) == "" {
+				taskType.Badge = rawTaskType.Icon
+			}
+			taskType.Icon = rawTaskType.Icon
+		}
+		if strings.TrimSpace(rawTaskType.TitleTemplate) != "" {
+			taskType.TitleTemplate = rawTaskType.TitleTemplate
+		}
+		cfg.TaskTypes[id] = taskType
 	}
 	if raw.TitleHookCommand != "" {
 		cfg.TitleHookCommand = raw.TitleHookCommand
@@ -274,34 +360,105 @@ func LoadConfig(path string) (Config, error) {
 	applyBinding(&cfg.KeyBindings.NewWorkspace, raw.KeyBindings.NewWorkspace)
 	applyBinding(&cfg.KeyBindings.NewGroup, raw.KeyBindings.NewGroup)
 	applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.NewAgent)
+	applyBinding(&cfg.KeyBindings.NewAgent, raw.KeyBindings.NewTask)
 	applyBinding(&cfg.KeyBindings.MoveAgent, raw.KeyBindings.MoveAgent)
+	applyBinding(&cfg.KeyBindings.MoveAgent, raw.KeyBindings.MoveTask)
 	applyBinding(&cfg.KeyBindings.Edit, raw.KeyBindings.Edit)
 	if !strings.EqualFold(strings.TrimSpace(raw.KeyBindings.Delete), "d") {
 		applyBinding(&cfg.KeyBindings.Delete, raw.KeyBindings.Delete)
 	}
 	applyBinding(&cfg.KeyBindings.Help, raw.KeyBindings.Help)
 	applyBinding(&cfg.KeyBindings.Quit, raw.KeyBindings.Quit)
+	if codex, ok := cfg.TaskTypes[DefaultTaskTypeCodex]; ok {
+		cfg.CodexCommand = codex.Command
+		cfg.TitleTemplate = codex.TitleTemplate
+	}
+	cfg.normalizeTaskTypes()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
 }
 
+func (c *Config) normalizeTaskTypes() {
+	if c.TaskTypes == nil {
+		c.TaskTypes = DefaultTaskTypes()
+	}
+	next := make(map[string]TaskType, len(c.TaskTypes))
+	for id, taskType := range c.TaskTypes {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		taskType.ID = id
+		taskType.Label = strings.TrimSpace(taskType.Label)
+		if taskType.Label == "" {
+			taskType.Label = id
+		}
+		taskType.Kind = strings.TrimSpace(taskType.Kind)
+		taskType.Command = strings.TrimSpace(taskType.Command)
+		taskType.Badge = strings.TrimSpace(taskType.Badge)
+		taskType.Icon = strings.TrimSpace(taskType.Icon)
+		if taskType.Badge == "" {
+			if taskType.Icon != "" {
+				taskType.Badge = taskType.Icon
+			} else {
+				taskType.Badge = "[" + id + "]"
+			}
+		}
+		taskType.TitleTemplate = strings.TrimSpace(taskType.TitleTemplate)
+		next[id] = taskType
+	}
+	c.TaskTypes = next
+	c.DefaultTaskType = strings.TrimSpace(c.DefaultTaskType)
+	if c.DefaultTaskType == "" {
+		c.DefaultTaskType = DefaultTaskTypeCodex
+	}
+	if codex, ok := c.TaskTypes[DefaultTaskTypeCodex]; ok {
+		c.CodexCommand = codex.Command
+		c.TitleTemplate = codex.TitleTemplate
+	}
+}
+
 func (c Config) Validate() error {
-	if strings.TrimSpace(c.CodexCommand) == "" {
-		return ConfigError{Message: "codex_command must be a non-empty string"}
-	}
-	if strings.TrimSpace(c.TitleTemplate) == "" {
-		return ConfigError{Message: "title_template must be a non-empty string"}
-	}
+	c.normalizeTaskTypes()
 	if c.TitleHookTimeoutSeconds <= 0 {
 		return ConfigError{Message: "title_hook_timeout_seconds must be greater than zero"}
+	}
+	if _, ok := c.TaskTypes[c.DefaultTaskType]; !ok {
+		return ConfigError{Message: fmt.Sprintf("default_task_type %q is not defined in task_types", c.DefaultTaskType)}
+	}
+	if _, ok := c.TaskTypes[DefaultTaskTypeCodex]; !ok {
+		return ConfigError{Message: "task_types.codex must be defined"}
+	}
+	for id, taskType := range c.TaskTypes {
+		if !validTaskTypeID(id) {
+			return ConfigError{Message: fmt.Sprintf("task type id %q must contain only letters, numbers, dash, or underscore", id)}
+		}
+		if strings.TrimSpace(taskType.Kind) == "" {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.kind must be a non-empty string", id)}
+		}
+		if taskType.Kind != TaskKindCodex && taskType.Kind != TaskKindTerminal {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.kind %q is not supported; use %q for generic commands or a checked-in integrated type", id, taskType.Kind, TaskKindTerminal)}
+		}
+		if taskType.Kind == TaskKindCodex && id != DefaultTaskTypeCodex {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.kind %q is reserved for the checked-in codex task type", id, TaskKindCodex)}
+		}
+		if strings.TrimSpace(taskType.Command) == "" {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.command must be a non-empty string", id)}
+		}
+		if strings.TrimSpace(taskType.Badge) == "" {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.badge must be a non-empty string", id)}
+		}
+		if strings.TrimSpace(taskType.TitleTemplate) == "" {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.title_template must be a non-empty string", id)}
+		}
 	}
 	for name, value := range map[string]string{
 		"drawer": c.KeyBindings.Drawer, "focus_left": c.KeyBindings.FocusLeft, "focus_right": c.KeyBindings.FocusRight,
 		"select_prev": c.KeyBindings.SelectPrev, "select_next": c.KeyBindings.SelectNext, "open": c.KeyBindings.Open,
-		"new_workspace": c.KeyBindings.NewWorkspace, "new_group": c.KeyBindings.NewGroup, "new_agent": c.KeyBindings.NewAgent,
-		"move_agent": c.KeyBindings.MoveAgent, "edit": c.KeyBindings.Edit, "delete": c.KeyBindings.Delete,
+		"new_workspace": c.KeyBindings.NewWorkspace, "new_group": c.KeyBindings.NewGroup, "new_task": c.KeyBindings.NewAgent,
+		"move_task": c.KeyBindings.MoveAgent, "edit": c.KeyBindings.Edit, "delete": c.KeyBindings.Delete,
 		"help": c.KeyBindings.Help, "quit": c.KeyBindings.Quit,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -311,22 +468,77 @@ func (c Config) Validate() error {
 	return nil
 }
 
+func validTaskTypeID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func (c Config) TaskType(id string) (TaskType, bool) {
+	c.normalizeTaskTypes()
+	taskType, ok := c.TaskTypes[strings.TrimSpace(id)]
+	return taskType, ok
+}
+
+func (c Config) TaskTypeOrDefault(id string) TaskType {
+	c.normalizeTaskTypes()
+	if taskType, ok := c.TaskTypes[strings.TrimSpace(id)]; ok {
+		return taskType
+	}
+	if taskType, ok := c.TaskTypes[c.DefaultTaskType]; ok {
+		return taskType
+	}
+	return c.TaskTypes[DefaultTaskTypeCodex]
+}
+
+func (c Config) OrderedTaskTypes() []TaskType {
+	c.normalizeTaskTypes()
+	keys := make([]string, 0, len(c.TaskTypes))
+	for id := range c.TaskTypes {
+		keys = append(keys, id)
+	}
+	sort.Strings(keys)
+	ordered := make([]TaskType, 0, len(keys))
+	for _, id := range keys {
+		ordered = append(ordered, c.TaskTypes[id])
+	}
+	return ordered
+}
+
 func DefaultConfigText() string {
 	return `# Weft global runtime configuration.
 # Run ` + "`weft config info`" + ` to see the runtime directory, state file, and
 # supervisor socket.
 
-# Command launched inside each Codex PTY owned by the supervisor.
-codex_command = "codex"
+default_task_type = "codex"
 
-# Default title template copied into new agents.
-title_template = "{status} {auto}"
-
-# Optional command hook for generated titles. Weft sends each agent's first
-# submitted Codex message to this command as JSON on stdin and uses the first
-# non-empty stdout line as the generated title for {auto}.
+# Optional command hook for generated titles. Weft sends each Codex task's first
+# submitted message, or each opted-in terminal task's first command, to this
+# command as JSON on stdin and uses the first non-empty stdout line as the
+# generated title for {auto}.
 title_hook_command = ""
 title_hook_timeout_seconds = 10
+
+[task_types.codex]
+label = "Codex"
+kind = "codex"
+command = "codex"
+badge = "[codex]"
+title_template = "{status} {auto}"
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = "exec \"$SHELL\" -l"
+badge = "[shell]"
+title_template = "Shell"
 
 [key_bindings]
 drawer = "C-b"
@@ -337,8 +549,8 @@ select_next = "j"
 open = "Enter"
 new_workspace = "w"
 new_group = "g"
-new_agent = "n"
-move_agent = "m"
+new_task = "n"
+move_task = "m"
 edit = "e"
 delete = "Backspace"
 help = "?"
