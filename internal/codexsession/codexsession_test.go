@@ -79,6 +79,51 @@ func TestBuildReportAllowsFreshUnsubmittedCodexWithoutSession(t *testing.T) {
 	}
 }
 
+func TestBuildUpgradeReportClassifiesTerminalActivity(t *testing.T) {
+	now := state.NowISO()
+	cfg := config.DefaultConfig()
+	cfg.TaskTypes["logs"] = config.TaskType{
+		ID:            "logs",
+		Label:         "Logs",
+		Kind:          config.TaskKindTerminal,
+		Command:       "tail -f app.log",
+		Badge:         "[logs]",
+		TitleTemplate: "Logs",
+	}
+	cfg.TaskTypes["watch"] = config.TaskType{
+		ID:            "watch",
+		Label:         "Watch",
+		Kind:          config.TaskKindTerminal,
+		Command:       "watch make test",
+		Badge:         "[watch]",
+		TitleTemplate: "Watch",
+	}
+	st := state.State{
+		Version: state.Version,
+		Tasks: []state.Task{
+			{ID: "shell", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "shell-running", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "logs", TypeID: "logs", Title: "Logs", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "watch", TypeID: "watch", Title: "Watch", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "foreground", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+
+	report := BuildUpgradeReport(st, cfg, func(taskID string) bool {
+		return taskID == "foreground"
+	})
+
+	if report.CanUpgrade() {
+		t.Fatalf("busy terminal tasks should block upgrade: %#v", report)
+	}
+	if len(report.TerminalReady) != 3 || report.TerminalReady[0].ID != "shell" || report.TerminalReady[1].ID != "logs" || report.TerminalReady[2].ID != "watch" {
+		t.Fatalf("idle terminals = %#v", report.TerminalReady)
+	}
+	if len(report.TerminalBusy) != 2 {
+		t.Fatalf("busy terminals = %#v", report.TerminalBusy)
+	}
+}
+
 func TestResumeCommandDefaultsCodexAndQuotesSession(t *testing.T) {
 	got := ResumeCommand("", "session-1")
 	if want := "codex resume 'session-1'"; got != want {

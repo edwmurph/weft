@@ -33,7 +33,7 @@ Runtime-only details such as process ids, PTY handles, socket clients, terminal 
 
 Integrated agent support is checked into Weft. `codex` is currently the only supported agent kind and gets Codex-specific status/title capture, session id capture, interrupt routing, and upgrade resume behavior.
 
-Configured shell command tasks use `kind = "terminal"`. They can start any shell command, but they do not get agent-specific resume or title/status behavior unless Weft adds a dedicated integration for that agent.
+Configured shell command tasks use `kind = "terminal"`. They can start any shell command, but they do not get agent-specific resume or title/status behavior unless Weft adds a dedicated integration for that agent. During dashboard `U`, an idle terminal task can restart as a fresh shell with saved history/cwd. A terminal task running foreground work blocks upgrade until it becomes idle.
 
 ## Source Builds
 

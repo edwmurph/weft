@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -406,9 +407,8 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleTask(t *testing.T) {
 			!strings.Contains(capture, "N cancel") &&
 			!strings.Contains(capture, "Esc cancel") &&
 			strings.Contains(capture, "saved session IDs") &&
-			strings.Contains(capture, "fresh tasks without one") &&
-			strings.Contains(capture, "unsubmitted text are not preserved, so") &&
-			strings.Contains(capture, "work first")
+			strings.Contains(capture, "fresh Codex tasks without one") &&
+			screenContainsWrappedText(capture, "Shell jobs, env mutations, shell variables, and unsubmitted input are not preserved.")
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
 	if !waitForBool(8*time.Second, func() bool {
@@ -489,7 +489,7 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 	directRun(t, newEnv, "send-keys", "-t", pane, "u")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Upgrade supervisor?") &&
-			strings.Contains(capture, "fresh tasks without one")
+			strings.Contains(capture, "fresh Codex tasks without one")
 	})
 	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
 	if !waitForBool(8*time.Second, func() bool {
@@ -519,6 +519,124 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 	if strings.Count(logText, "start:") < 2 {
 		t.Fatalf("fresh Codex task should start before and after restart:\n%s", logText)
 	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade resume restart")
+}
+
+func TestDashboardUpgradeRestartsIdleDefaultShellWithSnapshot(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	workspace := filepath.Join(tmp, "workspace")
+	nested := filepath.Join(workspace, "nested")
+	for _, dir := range []string{runtimeDir, workspace, nested} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	canonicalWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalNested, err := filepath.EvalSymlinks(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	fakeShell, shellLog := writeUpgradeFakeShell(t, tmp, "fake-shell.sh")
+	configText := fmt.Sprintf(`
+default_task_type = "shell"
+
+[task_types.codex]
+command = %q
+`, fakeCodex)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shellEnv := []string{"SHELL=" + fakeShell, "FAKE_SHELL_LOG=" + shellLog}
+	oldEnv := appendUniqueEnv(upgradeEnv(runtimeDir, workspace, bin, "3.9.0"), shellEnv...)
+	newEnv := appendUniqueEnv(baseIntegrationEnv(runtimeDir, workspace, bin), shellEnv...)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = newEnv
+		_ = cmd.Run()
+	})
+
+	runWeft(t, oldEnv, bin, "--no-attach")
+	oldPID := readPID(t, runtimeDir)
+	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
+	runWeft(t, oldEnv, bin, "new", "Shell")
+	st := waitState(t, oldEnv, bin, func(st state.State) bool {
+		return len(st.Tasks) == 1 && st.Tasks[0].TypeID == config.DefaultTaskTypeShell && st.Tasks[0].Status == state.StatusReady
+	})
+	taskID := st.Tasks[0].ID
+
+	pane := "upgrade-shell"
+	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Console") && strings.Contains(capture, "fake-shell:")
+	})
+	directRun(t, newEnv, "send-keys", "-l", "-t", pane, "history-before-upgrade")
+	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "ran:history-before-upgrade")
+	})
+	directRun(t, newEnv, "send-keys", "-l", "-t", pane, "cd nested")
+	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return screenContainsWrappedText(capture, "cwd:"+canonicalNested)
+	})
+	waitState(t, newEnv, bin, func(st state.State) bool {
+		task := state.TaskByID(st, taskID)
+		return task != nil && task.TerminalCWD == canonicalNested
+	})
+
+	directRun(t, newEnv, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") &&
+			screenContainsWrappedText(capture, "Press U to upgrade and restart 1 idle shell task(s) with saved history/cwd")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "u")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Upgrade supervisor?") &&
+			strings.Contains(capture, "restarts idle shell task(s) with saved history/cwd") &&
+			screenContainsWrappedText(capture, "Shell jobs, env mutations, shell variables, and unsubmitted input are not preserved.")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
+	if !waitForBool(8*time.Second, func() bool {
+		data, err := os.ReadFile(filepath.Join(runtimeDir, "weftd.pid"))
+		return err == nil && strings.TrimSpace(string(data)) != oldPID
+	}) {
+		t.Fatalf("supervisor did not restart after shell upgrade confirmation; pid still %q\nscreen:\n%s", oldPID, clientOutput())
+	}
+	st = waitState(t, newEnv, bin, func(st state.State) bool {
+		task := state.TaskByID(st, taskID)
+		return task != nil && task.TypeID == config.DefaultTaskTypeShell && task.Status == state.StatusReady && task.TerminalCWD == canonicalNested
+	})
+	if len(st.Tasks) != 1 {
+		t.Fatalf("shell upgrade should preserve task rows: %#v", st.Tasks)
+	}
+	logData, err := os.ReadFile(shellLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := string(logData)
+	for _, expected := range []string{"start:" + canonicalWorkspace, "start:" + canonicalNested} {
+		if !strings.Contains(logText, expected) {
+			t.Fatalf("fake shell log missing %q:\n%s", expected, logText)
+		}
+	}
+
+	afterOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane+"-after", 150, 36)
+	directRun(t, newEnv, "send-keys", "-t", pane+"-after", "Enter")
+	waitForOutput(t, afterOutput, func(capture string) bool {
+		return screenContainsWrappedText(capture, "history-before-upgrade") &&
+			screenContainsWrappedText(capture, "restarted this idle shell task with saved history/cwd") &&
+			strings.Contains(capture, "fake-shell:")
+	})
 	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade resume restart")
 }
 
@@ -745,6 +863,45 @@ func writeFreshFakeCodex(t *testing.T, dir string, name string) (string, string)
 		t.Fatal(err)
 	}
 	return fakeCodex, codexLog
+}
+
+func writeUpgradeFakeShell(t *testing.T, dir string, name string) (string, string) {
+	t.Helper()
+	shellLog := filepath.Join(dir, "fake-shell.log")
+	fakeShell := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeShell, []byte(
+		"#!/bin/sh\n"+
+			"if [ \"$1\" = \"-lc\" ]; then\n"+
+			"  shift\n"+
+			"  exec /bin/sh -lc \"$1\"\n"+
+			"fi\n"+
+			"emit_cwd() { printf '\\033]7;file://localhost%s\\007' \"$PWD\"; }\n"+
+			"printf 'start:%s\\n' \"$PWD\" >> \"$FAKE_SHELL_LOG\"\n"+
+			"emit_cwd\n"+
+			"printf 'fake-shell:%s\\r\\n$ ' \"$PWD\"\n"+
+			"trap 'exit 0' HUP INT TERM\n"+
+			"while IFS= read -r line; do\n"+
+			"  printf 'cmd:%s:%s\\n' \"$PWD\" \"$line\" >> \"$FAKE_SHELL_LOG\"\n"+
+			"  case \"$line\" in\n"+
+			"    cd\\ *)\n"+
+			"      target=${line#cd }\n"+
+			"      if cd \"$target\"; then\n"+
+			"        emit_cwd\n"+
+			"        printf 'cwd:%s\\r\\n$ ' \"$PWD\"\n"+
+			"      else\n"+
+			"        printf 'cd failed\\r\\n$ '\n"+
+			"      fi\n"+
+			"      ;;\n"+
+			"    *)\n"+
+			"      printf 'ran:%s\\r\\n$ ' \"$line\"\n"+
+			"      ;;\n"+
+			"  esac\n"+
+			"done\n"+
+			"while :; do sleep 1; done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeShell, shellLog
 }
 
 func baseIntegrationEnv(runtimeDir string, workspace string, bin string) []string {

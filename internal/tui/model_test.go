@@ -867,10 +867,11 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 		"supervisor 3.9.0 → " + weftversion.Version,
 		"Enter upgrade",
 		"saved session IDs",
-		"fresh tasks without one",
-		"commands and unsubmitted",
-		"unsubmitted text are not preserved, so",
-		"work first",
+		"fresh Codex tasks without one",
+		"restarts idle shell task(s) with saved history/cwd",
+		"Shell jobs, env",
+		"mutations",
+		"unsubmitted input",
 	} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade confirm missing %q:\n%s", expected, got)
@@ -951,6 +952,165 @@ func TestClientUpgradeAllowsFreshCodexWithoutSession(t *testing.T) {
 	model = updated.(ClientModel)
 	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmUpgradeResume {
 		t.Fatalf("fresh upgrade confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	}
+}
+
+func TestClientUpgradeAllowsIdleShellRestartWithSavedHistoryCWD(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	st.Tasks[0].Title = "Shell"
+	st.Tasks[0].Status = state.StatusReady
+	st.Tasks[0].TerminalCWD = rt.Workspace
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Upgrade ready",
+		"Press U to upgrade and restart 1 idle shell task(s) with",
+		"saved history/cwd",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("shell restart footer missing %q:\n%s", expected, got)
+		}
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmUpgradeResume {
+		t.Fatalf("shell restart confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	}
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{
+		"restarts idle shell task(s) with saved history/cwd",
+		"Shell jobs, env",
+		"mutations",
+		"shell variables",
+		"unsubmitted input",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("shell restart confirm missing %q:\n%s", expected, got)
+		}
+	}
+}
+
+func TestClientUpgradeBlocksRunningShellTask(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	st.Tasks[0].Title = "Shell"
+	st.Tasks[0].Status = state.StatusRunning
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Upgrade pending", "Wait for 1 shell task(s) to become idle"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("running shell footer missing %q:\n%s", expected, got)
+		}
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode == modeConfirm {
+		t.Fatalf("running shell upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	}
+}
+
+func TestTerminalUpgradeSnapshotRestoresHistoryBeforeRestart(t *testing.T) {
+	rt := testRuntime(t)
+	cwd := t.TempDir()
+	now := state.NowISO()
+	st := state.State{
+		Version: state.Version,
+		Workspaces: []state.Workspace{{
+			ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now,
+		}},
+		Tasks: []state.Task{{
+			ID: "shell", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell,
+			Title: "Shell", Status: state.StatusReady, TerminalCWD: cwd,
+			CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	screen := NewTerminalScreen(80, 8)
+	screen.Write("history-before-upgrade\r\n$ ")
+	model := Model{
+		runtime: rt, cfg: config.DefaultConfig(), state: st, width: 80, height: 12,
+		screens: map[string]*TerminalScreen{"shell": screen},
+		visible: map[string]bool{"shell": true},
+	}
+
+	if err := model.PrepareTerminalUpgradeSnapshots([]string{"shell"}); err != nil {
+		t.Fatal(err)
+	}
+
+	restored := Model{
+		runtime: rt, cfg: config.DefaultConfig(), state: st, width: 80, height: 12,
+		screens: map[string]*TerminalScreen{},
+		visible: map[string]bool{},
+	}
+	restored.restoreTerminalUpgradeSnapshots()
+
+	got := restored.screens["shell"].ScrollbackString()
+	for _, expected := range []string{
+		"history-before-upgrade",
+		"restarted this idle shell task with saved history/cwd",
+		"shell variables",
+		"unsubmitted input",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("restored snapshot missing %q:\n%s", expected, got)
+		}
+	}
+	if _, err := os.Stat(terminalUpgradeSnapshotPath(rt.Dir, "shell")); !os.IsNotExist(err) {
+		t.Fatalf("snapshot file should be consumed, stat err = %v", err)
+	}
+}
+
+func TestTerminalOSC7UpdatesTaskCWD(t *testing.T) {
+	rt := testRuntime(t)
+	cwd := t.TempDir()
+	now := state.NowISO()
+	st := state.State{
+		Version: state.Version,
+		Workspaces: []state.Workspace{{
+			ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now,
+		}},
+		Tasks: []state.Task{{
+			ID: "shell", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell,
+			Title: "Shell", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	model := Model{
+		runtime: rt, store: state.NewStore(rt.StatePath), cfg: config.DefaultConfig(), state: st, width: 80, height: 12,
+		screens: map[string]*TerminalScreen{},
+		visible: map[string]bool{},
+	}
+
+	model.applyPTYData(ptyx.Data{TaskID: "shell", Text: "\x1b]7;file://localhost" + cwd + "\x07$ "})
+
+	task := state.TaskByID(model.state, "shell")
+	if task == nil || task.TerminalCWD != cwd {
+		t.Fatalf("terminal cwd = %#v, want %q", task, cwd)
 	}
 }
 

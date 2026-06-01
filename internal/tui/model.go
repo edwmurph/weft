@@ -163,6 +163,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 	}
 	model.syncGroupCursor()
 	model.navWidth = model.targetNavWidth()
+	model.restoreTerminalUpgradeSnapshots()
 	for _, task := range model.state.Tasks {
 		model.startPTY(task.ID)
 	}
@@ -249,10 +250,14 @@ func (m *Model) LiveTaskCount() int {
 
 func (m *Model) PrepareUpgradeResume() codexsession.Report {
 	next, report := codexsession.PrepareResumeState(m.state, m.runtime.Workspace)
+	assigned := report.Assigned
 	if report.Assigned > 0 {
 		m.state = next
 		m.save()
 	}
+	m.refreshTerminalTaskActivity()
+	report = codexsession.BuildUpgradeReport(m.state, m.cfg, m.terminalForegroundProcessActive)
+	report.Assigned = assigned
 	return report
 }
 
@@ -1457,6 +1462,13 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		}
 		if usesCodex {
 			screenStatus = codexScreenStatus(screen)
+		} else if cwd := screen.LastCWD(); cwd != "" && cwd != task.TerminalCWD {
+			m.state = state.WithUpdatedTask(m.state, data.TaskID, func(task state.Task) state.Task {
+				task.TerminalCWD = cwd
+				task.UpdatedAt = state.NowISO()
+				return task
+			})
+			m.save()
 		}
 	}
 	if usesCodex && (data.Title != "" || data.Text != "") {
@@ -2639,6 +2651,9 @@ func (m Model) taskWorkspace(taskID string) string {
 	if task == nil {
 		return m.runtime.Workspace
 	}
+	if cwd := terminalTaskCWD(m.cfg, *task); cwd != "" {
+		return cwd
+	}
 	if workspace := state.WorkspaceForTask(m.state, *task); workspace != nil {
 		return workspace.Path
 	}
@@ -2718,7 +2733,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
 		fmt.Sprintf("%s repaint", cfg.KeyBindings.Repaint),
-		"U upgrade supervisor and resume idle Codex tasks",
+		"U upgrade supervisor, resume Codex, restart idle shells",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),
 		"",

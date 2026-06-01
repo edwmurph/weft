@@ -668,7 +668,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
-		return "Closes idle Codex terminals, restarts the supervisor, then resumes tasks with saved session IDs and starts fresh tasks without one. Running commands and unsubmitted text are not preserved, so finish important work first."
+		return "Closes idle Codex terminals, restarts the supervisor, resumes Codex tasks with saved session IDs, starts fresh Codex tasks without one, and restarts idle shell task(s) with saved history/cwd. Shell jobs, env mutations, shell variables, and unsubmitted input are not preserved."
 	}
 	if confirm == confirmDeleteTask {
 		return "Stops the terminal, then removes this task from Weft."

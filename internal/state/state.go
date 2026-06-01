@@ -66,6 +66,7 @@ type Task struct {
 	CodexStatus         string     `json:"codex_status,omitempty"`
 	CodexSessionID      string     `json:"codex_session_id,omitempty"`
 	CodexInputSubmitted bool       `json:"codex_input_submitted,omitempty"`
+	TerminalCWD         string     `json:"terminal_cwd,omitempty"`
 	Status              TaskStatus `json:"status"`
 	CreatedAt           string     `json:"created_at"`
 	UpdatedAt           string     `json:"updated_at"`

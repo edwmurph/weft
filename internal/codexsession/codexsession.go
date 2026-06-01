@@ -24,16 +24,20 @@ type Session struct {
 }
 
 type Report struct {
-	Total    int
-	Ready    int
-	Fresh    int
-	Assigned int
-	Busy     []state.Task
-	Missing  []state.Task
+	Total         int
+	Ready         int
+	Fresh         int
+	Assigned      int
+	Busy          []state.Task
+	Missing       []state.Task
+	TerminalReady []state.Task
+	TerminalBusy  []state.Task
 }
 
 func (r Report) CanUpgrade() bool {
-	return len(r.Busy) == 0 && len(r.Missing) == 0
+	return len(r.Busy) == 0 &&
+		len(r.Missing) == 0 &&
+		len(r.TerminalBusy) == 0
 }
 
 func PrepareResumeState(st state.State, fallbackWorkspace string) (state.State, Report) {
@@ -101,17 +105,23 @@ func BuildReport(st state.State) Report {
 	return report
 }
 
-func LiveNonCodexTaskCount(st state.State) int {
-	count := 0
+func BuildUpgradeReport(st state.State, cfg config.Config, terminalForegroundActive func(string) bool) Report {
+	report := BuildReport(st)
 	for _, task := range st.Tasks {
 		if state.TaskTypeID(task) == config.DefaultTaskTypeCodex {
 			continue
 		}
-		if taskLiveForRestart(task) {
-			count++
+		if !taskLiveForRestart(task) {
+			continue
 		}
+		taskType, ok := cfg.TaskType(state.TaskTypeID(task))
+		if !ok || taskType.Kind != config.TaskKindTerminal || !TerminalTaskIdleForUpgrade(task) || terminalTaskForegroundActive(task.ID, terminalForegroundActive) {
+			report.TerminalBusy = append(report.TerminalBusy, task)
+			continue
+		}
+		report.TerminalReady = append(report.TerminalReady, task)
 	}
-	return count
+	return report
 }
 
 func taskLiveForRestart(task state.Task) bool {
@@ -130,6 +140,14 @@ func TaskIdleForUpgrade(task state.Task) bool {
 	default:
 		return false
 	}
+}
+
+func TerminalTaskIdleForUpgrade(task state.Task) bool {
+	return task.Status == state.StatusReady
+}
+
+func terminalTaskForegroundActive(taskID string, terminalForegroundActive func(string) bool) bool {
+	return terminalForegroundActive != nil && terminalForegroundActive(taskID)
 }
 
 func TaskFreshForUpgrade(task state.Task) bool {

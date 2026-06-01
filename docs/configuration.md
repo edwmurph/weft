@@ -51,6 +51,8 @@ badge = "[test]"
 title_template = "Tests"
 ```
 
+During dashboard upgrade, any idle terminal task can restart as a fresh task with saved history/cwd. A terminal task running foreground work blocks `U` until it becomes idle. This is not shell resume: Weft keeps prior visible history as read-only scrollback and starts the fresh command from the latest cwd reported by OSC 7, but jobs, environment mutations, shell variables, and unsubmitted input are not preserved.
+
 ## Title Templates
 
 Task rows render a stored title template. New tasks copy the template from their task type unless you provide a title.

@@ -40,12 +40,14 @@ type EnsureResult struct {
 }
 
 type restartRequest struct {
-	executable    string
-	clientVersion string
-	backupID      string
-	runningTasks  int
-	freshTasks    int
-	message       string
+	executable      string
+	clientVersion   string
+	backupID        string
+	runningTasks    int
+	freshTasks      int
+	terminalTasks   int
+	terminalTaskIDs []string
+	message         string
 }
 
 type supervisorControl struct {
@@ -392,15 +394,14 @@ func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorCont
 		return ipc.ErrorResponse("upgrade_incompatible", "Cannot upgrade from the dashboard because the supervisor protocol is incompatible. Use `weft close --kill` when ready.")
 	}
 	report := engine.PrepareUpgradeResume()
-	if blocked := codexsession.LiveNonCodexTaskCount(engine.Snapshot().State); blocked > 0 {
-		return ipc.ErrorResponse("upgrade_resume_blocked", fmt.Sprintf("Upgrade waits until %d non-resumable task(s) stop.", blocked))
-	}
 	if !report.CanUpgrade() {
 		return ipc.ErrorResponse("upgrade_resume_blocked", upgradeResumeBlockedMessage(report))
 	}
 	restart := restartRequestFromRequest(request)
 	restart.runningTasks = report.Ready
 	restart.freshTasks = report.Fresh
+	restart.terminalTasks = len(report.TerminalReady)
+	restart.terminalTaskIDs = tui.TerminalTaskIDs(report.TerminalReady)
 	return triggerResumeUpgrade(rt, engine, control, restart, cancel)
 }
 
@@ -410,7 +411,10 @@ func triggerResumeUpgrade(rt config.Runtime, engine *tui.Model, control *supervi
 		return supervisorSnapshotResponse(engine, fmt.Sprintf("Upgrade canceled: could not create pre-upgrade backup: %v", err))
 	}
 	restart.backupID = backup.ID
-	restart.message = upgradeResumeRestartMessage(restart.runningTasks, restart.freshTasks, backup.ID)
+	if err := engine.PrepareTerminalUpgradeSnapshots(restart.terminalTaskIDs); err != nil {
+		return supervisorSnapshotResponse(engine, fmt.Sprintf("Upgrade canceled: could not save shell history/cwd snapshot: %v", err))
+	}
+	restart.message = upgradeResumeRestartMessage(restart.runningTasks, restart.freshTasks, restart.terminalTasks, backup.ID)
 	control.restartNow = &restart
 	go cancel()
 	return supervisorSnapshotResponse(engine, restart.message)
@@ -448,27 +452,30 @@ func restartNowMessage(restart restartRequest) string {
 	return "Restarting idle supervisor to finish the upgrade. Backup: " + restart.backupID + "."
 }
 
-func upgradeResumeRestartMessage(resumeTasks int, freshTasks int, backupID string) string {
-	if resumeTasks <= 0 && freshTasks <= 0 {
+func upgradeResumeRestartMessage(resumeTasks int, freshTasks int, terminalTasks int, backupID string) string {
+	if resumeTasks <= 0 && freshTasks <= 0 && terminalTasks <= 0 {
 		if backupID == "" {
 			return "Restarting supervisor to finish the upgrade."
 		}
 		return "Restarting supervisor to finish the upgrade. Backup: " + backupID + "."
 	}
-	action := upgradeResumeRestartAction(resumeTasks, freshTasks)
+	action := upgradeResumeRestartAction(resumeTasks, freshTasks, terminalTasks)
 	if backupID == "" {
 		return action + " to finish the supervisor upgrade."
 	}
 	return fmt.Sprintf("%s to finish the supervisor upgrade. Backup: %s.", action, backupID)
 }
 
-func upgradeResumeRestartAction(resumeTasks int, freshTasks int) string {
+func upgradeResumeRestartAction(resumeTasks int, freshTasks int, terminalTasks int) string {
 	actions := []string{}
 	if resumeTasks > 0 {
 		actions = append(actions, fmt.Sprintf("resuming %d idle Codex task(s)", resumeTasks))
 	}
 	if freshTasks > 0 {
 		actions = append(actions, fmt.Sprintf("starting %d fresh Codex task(s)", freshTasks))
+	}
+	if terminalTasks > 0 {
+		actions = append(actions, fmt.Sprintf("restarting %d idle shell task(s) with saved history/cwd", terminalTasks))
 	}
 	return "Closing and " + strings.Join(actions, " and ")
 }
@@ -481,10 +488,13 @@ func upgradeResumeBlockedMessage(report codexsession.Report) string {
 	if len(report.Missing) > 0 {
 		blockers = append(blockers, fmt.Sprintf("%d missing a Codex session id", len(report.Missing)))
 	}
-	if len(blockers) == 0 {
-		return "Upgrade waits for idle, resumable Codex tasks before closing terminals and restarting the supervisor."
+	if len(report.TerminalBusy) > 0 {
+		blockers = append(blockers, fmt.Sprintf("%d shell task(s) not idle", len(report.TerminalBusy)))
 	}
-	return "Upgrade waits for idle, resumable Codex tasks before closing terminals and restarting the supervisor: " + strings.Join(blockers, ", ") + "."
+	if len(blockers) == 0 {
+		return "Upgrade waits for idle, resumable Codex tasks and restartable idle shell task(s) before closing terminals and restarting the supervisor."
+	}
+	return "Upgrade waits for idle, resumable Codex tasks and restartable idle shell task(s) before closing terminals and restarting the supervisor: " + strings.Join(blockers, ", ") + "."
 }
 
 func ReportedVersion() string {

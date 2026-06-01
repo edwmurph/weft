@@ -62,9 +62,9 @@ Run `weft close` without an id to detach the active Weft client while tasks keep
 
 After `brew upgrade weft`, reopen the dashboard with `weft`.
 
-If only the client needed to reopen, Weft is current. If an older background runtime is still running, the dashboard shows an upgrade banner. When running tasks are safe to stop or resume, Weft shows `U` as the upgrade action.
+If only the client needed to reopen, Weft is current. If an older background runtime is still running, the dashboard shows an upgrade banner. When running tasks are safe to resume or restart, Weft shows `U` as the upgrade action.
 
-Codex agent tasks can be resumed after a confirmed dashboard upgrade when Weft has a saved Codex session id. Configured command tasks and unsubmitted input are not resumed, so finish important command work before upgrading.
+Codex agent tasks can be resumed after a confirmed dashboard upgrade when Weft has a saved Codex session id. Terminal tasks can restart only when idle, retaining prior scrollback as read-only history and launching from the latest OSC 7 cwd. This is not shell resume: jobs, environment mutations, shell variables, and unsubmitted input are not preserved, so finish important command work before upgrading.
 
 ## Key Diagnostics
 

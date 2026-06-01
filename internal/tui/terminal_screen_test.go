@@ -22,6 +22,19 @@ func TestTerminalScreenAppliesCursorAddressingWithoutLeakingEscapes(t *testing.T
 	}
 }
 
+func TestTerminalScreenTracksOSC7CWD(t *testing.T) {
+	screen := NewTerminalScreen(40, 5)
+
+	screen.Write("prompt\x1b]7;file://localhost/tmp/weft%20workspace\x07")
+
+	if got, want := screen.LastCWD(), "/tmp/weft workspace"; got != want {
+		t.Fatalf("LastCWD = %q, want %q", got, want)
+	}
+	if strings.Contains(screen.String(), "]7;") {
+		t.Fatalf("screen leaked OSC 7 sequence:\n%q", screen.String())
+	}
+}
+
 func TestTerminalScreenIgnoresKeyboardModeSequences(t *testing.T) {
 	screen := NewTerminalScreen(20, 5)
 

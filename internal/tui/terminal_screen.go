@@ -2,6 +2,7 @@ package tui
 
 import (
 	"image/color"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,7 @@ type TerminalScreen struct {
 	col           int
 	cursorVisible bool
 	cursorShape   terminalCursorShape
+	cwd           string
 	savedRow      int
 	savedCol      int
 	scrollTop     int
@@ -130,6 +132,10 @@ func (s *TerminalScreen) String() string {
 
 func (s *TerminalScreen) ScrollbackString() string {
 	return plainRowsString(s.scrollbackRows())
+}
+
+func (s *TerminalScreen) LastCWD() string {
+	return s.cwd
 }
 
 func plainRowsString(rows [][]terminalCell) string {
@@ -374,6 +380,10 @@ func (s *TerminalScreen) handleOSC(cmd int, data []byte) {
 	case 11:
 		if c, ok := parseOSCColor(oscPayload(cmd, data)); ok {
 			s.defaults.Bg = c
+		}
+	case 7:
+		if cwd, ok := parseOSC7CWD(oscPayload(cmd, data)); ok {
+			s.cwd = cwd
 		}
 	case 110:
 		s.defaults.Fg = nil
@@ -748,6 +758,18 @@ func parseOSCColor(value string) (ansi.Color, bool) {
 		return parseXRGBColor(strings.TrimPrefix(value, "rgba:"))
 	}
 	return nil, false
+}
+
+func parseOSC7CWD(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "file" || strings.TrimSpace(parsed.Path) == "" {
+		return "", false
+	}
+	return parsed.Path, true
 }
 
 func parseHexColor(value string) (ansi.Color, bool) {

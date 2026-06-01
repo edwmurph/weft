@@ -223,6 +223,24 @@ func TestUpgradeStatusRejectsIncompatibleProtocol(t *testing.T) {
 	}
 }
 
+func TestUpgradeResumeRestartMessageIncludesShellRestart(t *testing.T) {
+	got := upgradeResumeRestartMessage(1, 1, 2, "backup-1")
+
+	for _, expected := range []string{
+		"resuming 1 idle Codex task(s)",
+		"starting 1 fresh Codex task(s)",
+		"restarting 2 idle shell task(s) with saved history/cwd",
+		"Backup: backup-1",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("message missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "resume shell") {
+		t.Fatalf("message should not imply shell resume:\n%s", got)
+	}
+}
+
 func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh is required")
