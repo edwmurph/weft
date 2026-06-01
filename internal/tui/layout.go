@@ -66,6 +66,7 @@ var (
 	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	taskReadyStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	taskReadySelectedStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("220")).Bold(true)
 	taskRunningStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
 	taskWorkingStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	taskLoadingStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
@@ -923,10 +924,10 @@ func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int
 	}
 	row := clip(prefix+title, width)
 	if selected {
-		return activeTaskStyle.Render(padVisual(row, width))
+		return selectedTaskRowStyle(task, options.loadingTasks).Render(padVisual(row, width))
 	}
 	if task.ID == st.ActiveTaskID {
-		return activePaneStyle.Render(row)
+		return activeTaskRowStyle(task, options.loadingTasks).Render(row)
 	}
 	return taskRowStyle(task, options.loadingTasks).Render(row)
 }
@@ -991,6 +992,24 @@ func taskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style 
 	default:
 		return taskAttentionStyle
 	}
+}
+
+func selectedTaskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+	if taskRowIsReady(task, loadingTasks) {
+		return taskReadySelectedStyle
+	}
+	return activeTaskStyle
+}
+
+func activeTaskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+	if taskRowIsReady(task, loadingTasks) {
+		return taskReadyStyle
+	}
+	return activePaneStyle
+}
+
+func taskRowIsReady(task state.Task, loadingTasks map[string]bool) bool {
+	return !taskIsLoadingForRender(task, loadingTasks) && titles.CanonicalStatus(task) == string(state.StatusReady)
 }
 
 func taskLoadingStyleForStatus(status string) lipgloss.Style {

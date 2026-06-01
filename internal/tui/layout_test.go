@@ -851,6 +851,38 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	}
 }
 
+func TestReadyTaskColorSurvivesSelectionAndActiveFallback(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	now := state.NowISO()
+	st.Groups = append(st.Groups, state.Group{ID: "next", WorkspaceID: "w", Path: "next", CreatedAt: now, UpdatedAt: now})
+
+	const width = 42
+	rowWidth := width - 2 - (navHorizontalPadding * 2)
+	readyRow := "  · [codex] alpha"
+
+	selected := strings.Join(renderGroupsPane(cfg, st, width, 12, 2), "\n")
+	expectedSelected := taskReadySelectedStyle.Render(padVisual(readyRow, rowWidth))
+	if !strings.Contains(selected, expectedSelected) {
+		t.Fatalf("selected ready task should keep a high-contrast ready style:\n%s", selected)
+	}
+	if strings.Contains(selected, activeTaskStyle.Render(padVisual(readyRow, rowWidth))) {
+		t.Fatalf("selected ready task should not fall back to generic selected styling:\n%s", selected)
+	}
+
+	groupSelected := strings.Join(renderGroupsPane(cfg, st, width, 12, 3), "\n")
+	if !strings.Contains(groupSelected, taskReadyStyle.Render(readyRow)) {
+		t.Fatalf("active ready task should keep ready color when cursor moves to a group:\n%s", groupSelected)
+	}
+	if strings.Contains(groupSelected, activePaneStyle.Render(readyRow)) {
+		t.Fatalf("active ready task should not fall back to generic active styling:\n%s", groupSelected)
+	}
+}
+
 func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Empty()
