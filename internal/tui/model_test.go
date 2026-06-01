@@ -303,7 +303,26 @@ func TestLoadingIndicatorCoversNonIdleTaskStates(t *testing.T) {
 	}
 }
 
-func TestIPCLaunchWorkspaceSelectsExistingWorkspace(t *testing.T) {
+func TestApplyLaunchWorkspaceSelectsExistingWorkspace(t *testing.T) {
+	rt := testRuntime(t)
+	other := t.TempDir()
+	launch := t.TempDir()
+	st := testStateWithWorkspace(t, other)
+	next, _, err := state.AddWorkspace(st, "launch", launch, state.NowISO())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next.SelectedWorkspaceID = "w"
+	model := NewModel(rt, config.DefaultConfig(), next)
+
+	model.ApplyLaunchWorkspace(launch)
+
+	if model.state.SelectedWorkspaceID != "launch" {
+		t.Fatalf("selected workspace = %q, want launch", model.state.SelectedWorkspaceID)
+	}
+}
+
+func TestSnapshotLaunchWorkspaceArgDoesNotReselectWorkspace(t *testing.T) {
 	rt := testRuntime(t)
 	other := t.TempDir()
 	launch := t.TempDir()
@@ -320,8 +339,29 @@ func TestIPCLaunchWorkspaceSelectsExistingWorkspace(t *testing.T) {
 	if !response.OK {
 		t.Fatalf("snapshot response = %#v", response)
 	}
-	if model.state.SelectedWorkspaceID != "launch" {
-		t.Fatalf("selected workspace = %q, want launch", model.state.SelectedWorkspaceID)
+	if model.state.SelectedWorkspaceID != "w" {
+		t.Fatalf("snapshot reselected launch workspace: %#v", model.state)
+	}
+}
+
+func TestNewModelPreservesPersistedWorkspaceSelection(t *testing.T) {
+	rt := testRuntime(t)
+	launch := rt.Workspace
+	other := t.TempDir()
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "other",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces: []state.Workspace{
+			{ID: "launch", Path: launch, CreatedAt: now, UpdatedAt: now},
+			{ID: "other", Path: other, CreatedAt: now, UpdatedAt: now},
+		},
+	})
+
+	if model.state.SelectedWorkspaceID != "other" {
+		t.Fatalf("supervisor start reselected launch workspace: %#v", model.state)
 	}
 }
 
@@ -1768,6 +1808,64 @@ func TestMoveTaskPromptAutocompletesGroupSubstring(t *testing.T) {
 	}
 }
 
+func TestShiftUpDownReordersSelectedWorkspaceInWorkspacesPane(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "beta",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces: []state.Workspace{
+			{ID: "alpha", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
+			{ID: "gamma", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
+		},
+	})
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	model = updated.(Model)
+	if got, want := tuiWorkspaceIDs(model.state.Workspaces), []string{"beta", "alpha", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("shift up workspace order = %#v, want %#v", got, want)
+	}
+	if model.state.SelectedWorkspaceID != "beta" || model.state.Focus != state.FocusWorkspaces {
+		t.Fatalf("selection should follow reordered workspace: %#v", model.state)
+	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
+	model = updated.(Model)
+	if got, want := tuiWorkspaceIDs(model.state.Workspaces), []string{"alpha", "beta", "gamma"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("shift down workspace order = %#v, want %#v", got, want)
+	}
+	if model.state.SelectedWorkspaceID != "beta" || model.state.Focus != state.FocusWorkspaces {
+		t.Fatalf("selection should follow reordered workspace after down: %#v", model.state)
+	}
+}
+
+func TestMovingWorkspaceSelectionClearsStaleGroup(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "alpha",
+		SelectedGroupID:     "alpha-group",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces: []state.Workspace{
+			{ID: "alpha", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
+		},
+		Groups: []state.Group{{ID: "alpha-group", WorkspaceID: "alpha", Path: "alpha", CreatedAt: now, UpdatedAt: now}},
+	})
+
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+
+	if model.state.SelectedWorkspaceID != "beta" || model.state.SelectedGroupID != "" || model.state.SelectedTaskID != "" {
+		t.Fatalf("workspace move should clear stale task/group selection: %#v", model.state)
+	}
+}
+
 func TestShiftUpDownReordersSelectedTaskInTasksPane(t *testing.T) {
 	rt := testRuntime(t)
 	now := state.NowISO()
@@ -1891,6 +1989,75 @@ func TestShiftUpDownReordersSelectedGroupInTasksPane(t *testing.T) {
 	}
 	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "beta" {
 		t.Fatalf("selection should follow reordered group after down: cursor=%d row=%#v", model.groupCursor, row)
+	}
+}
+
+func TestClientShiftUpOnSelectedWorkspaceRequestsReorderWorkspace(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "beta",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces: []state.Workspace{
+			{ID: "alpha", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	requests := make(chan ipc.Request, 1)
+	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
+		requests <- request
+		snapshot := ipc.Snapshot{State: st}
+		return ipc.Response{OK: true, Snapshot: &snapshot}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.snapshot = ipc.Snapshot{State: st}
+	_, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
+	if cmd == nil {
+		t.Fatal("expected client reorder command")
+	}
+	msg := cmd()
+	if response, ok := msg.(clientResponseMsg); !ok || response.err != nil {
+		t.Fatalf("client command response = %#v", msg)
+	}
+	select {
+	case request := <-requests:
+		if request.Command != "reorder_workspace" || request.Args["id"] != "beta" || request.Args["delta"] != "-1" {
+			t.Fatalf("client request = %#v", request)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for client request")
+	}
+}
+
+func TestSupervisorReorderWorkspaceRequestMovesSelectedWorkspace(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "beta",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces: []state.Workspace{
+			{ID: "alpha", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now},
+			{ID: "beta", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
+		},
+	})
+	response, _ := model.HandleSupervisorRequest(ipc.Request{Command: "reorder_workspace", Args: map[string]string{"id": "beta", "delta": "-1"}})
+	if !response.OK {
+		t.Fatalf("reorder_workspace response = %#v", response)
+	}
+	if got, want := tuiWorkspaceIDs(model.state.Workspaces), []string{"beta", "alpha"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("supervisor workspace order = %#v, want %#v", got, want)
+	}
+	if model.state.SelectedWorkspaceID != "beta" || model.state.Focus != state.FocusWorkspaces {
+		t.Fatalf("supervisor workspace selection = %#v", model.state)
 	}
 }
 
@@ -2646,6 +2813,14 @@ func tuiTaskIDs(tasks []state.Task) []string {
 	ids := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+func tuiWorkspaceIDs(workspaces []state.Workspace) []string {
+	ids := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		ids = append(ids, workspace.ID)
 	}
 	return ids
 }

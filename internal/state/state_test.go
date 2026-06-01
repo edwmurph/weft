@@ -545,6 +545,62 @@ func reorderTaskTestState(t *testing.T) State {
 	return st
 }
 
+func TestReorderWorkspacePreservesSelectionAndContents(t *testing.T) {
+	st := stateWithWorkspace(t)
+	now := NowISO()
+	otherPath := t.TempDir()
+	st.Workspaces = append(st.Workspaces,
+		Workspace{ID: "w2", Path: otherPath, Title: "Other", CreatedAt: now, UpdatedAt: now},
+		Workspace{ID: "w3", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now},
+	)
+	st.Groups = append(st.Groups, Group{ID: "other-group", WorkspaceID: "w2", Path: "other", CreatedAt: now, UpdatedAt: now})
+	st.Tasks = append(st.Tasks, Task{ID: "other-task", WorkspaceID: "w2", GroupID: "other-group", Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now})
+	st.SelectedWorkspaceID = "w2"
+	st.SelectedGroupID = "other-group"
+	st.SelectedTaskID = "other-task"
+	st.ActiveTaskID = "a"
+	st.Focus = FocusWorkspaces
+
+	next, moved, err := ReorderWorkspace(st, "w2", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !moved {
+		t.Fatal("expected workspace to move")
+	}
+	if got, want := workspaceIDs(next.Workspaces), []string{"w2", "w", "w3"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("workspace order = %#v, want %#v", got, want)
+	}
+	if next.SelectedWorkspaceID != "w2" || next.SelectedGroupID != "other-group" || next.SelectedTaskID != "other-task" || next.ActiveTaskID != "a" {
+		t.Fatalf("selection did not stay on moved workspace without changing active task: %#v", next)
+	}
+	if workspace := WorkspaceByID(next, "w2"); workspace == nil || workspace.Path != otherPath || workspace.Title != "Other" {
+		t.Fatalf("workspace contents changed: %#v", workspace)
+	}
+	if task := TaskByID(next, "other-task"); task == nil || task.WorkspaceID != "w2" || task.GroupID != "other-group" {
+		t.Fatalf("workspace task changed during reorder: %#v", task)
+	}
+
+	next, moved, err = ReorderWorkspace(next, "w2", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved {
+		t.Fatal("first workspace should not move up")
+	}
+
+	next, moved, err = ReorderWorkspace(next, "w2", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !moved {
+		t.Fatal("expected workspace to move down")
+	}
+	if got, want := workspaceIDs(next.Workspaces), []string{"w", "w2", "w3"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("workspace order after move down = %#v, want %#v", got, want)
+	}
+}
+
 func TestReorderGroupStaysWithinWorkspaceAndPreservesSelection(t *testing.T) {
 	st := stateWithWorkspace(t)
 	now := NowISO()
@@ -652,6 +708,14 @@ func taskIDs(tasks []Task) []string {
 	ids := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+func workspaceIDs(workspaces []Workspace) []string {
+	ids := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		ids = append(ids, workspace.ID)
 	}
 	return ids
 }

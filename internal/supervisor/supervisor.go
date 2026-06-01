@@ -273,8 +273,8 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		if clientID == "" {
 			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required"), request, control), nil
 		}
-		if strings.TrimSpace(request.Args["launch_workspace"]) != "" {
-			engine.HandleSupervisorRequest(ipc.Request{Command: "snapshot", Args: request.Args})
+		if launchWorkspace := strings.TrimSpace(request.Args["launch_workspace"]); launchWorkspace != "" && clients.activeID != clientID {
+			engine.ApplyLaunchWorkspace(launchWorkspace)
 		}
 		if clients.activeID != "" && clients.activeID != clientID {
 			clients.detachID = clients.activeID

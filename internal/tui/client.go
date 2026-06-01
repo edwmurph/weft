@@ -401,6 +401,15 @@ func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) reorderSelectedRow(delta int) (tea.Model, tea.Cmd) {
+	if m.snapshot.State.Focus == state.FocusWorkspaces {
+		if m.newWorkspaceCardSelected || m.snapshot.State.SelectedWorkspaceID == "" {
+			return m, nil
+		}
+		return m, m.request("reorder_workspace", map[string]string{
+			"id":    m.snapshot.State.SelectedWorkspaceID,
+			"delta": strconv.Itoa(delta),
+		})
+	}
 	if m.snapshot.State.Focus != state.FocusTasks {
 		return m, nil
 	}

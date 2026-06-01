@@ -231,15 +231,17 @@ The app has three logical panes.
 
 ## Workspaces Pane
 
-The left pane lists configured workspaces as vertically stacked bordered cards.
+The left pane lists configured workspaces as vertically stacked bordered cards
+in their persisted manual order. When the Workspaces pane is focused,
+`Shift+Up` and `Shift+Down` reorder the selected workspace card.
 
 When there are no configured workspaces, the pane shows centered help text telling
 the user that there are no workspaces and to press the configured add-workspace key.
 
 When at least one workspace exists and there is enough vertical room, render a
-template card under the last workspace card with a plus-sign title and concise
-copy telling the user to press the configured add-workspace key to create a
-workspace. Hovering or clicking the template card selects it: real workspace
+template card under the last workspace card with an italic plus-sign title and
+concise italic copy telling the user to press the configured add-workspace key to
+create a workspace. Hovering or clicking the template card selects it: real workspace
 cards return to their inactive border, and the Tasks pane renders the same
 empty state as no selected workspace while Task Live Preview renders `No task
 selected`. The template card is also selectable by moving down from the last
@@ -360,15 +362,16 @@ The Tasks pane cursor is persisted separately from the active task console.
 Moving the cursor to a group row must survive supervisor refreshes, restarts,
 and upgrades without snapping back to the active task inside that group.
 
-`Shift+Up` and `Shift+Down` reorder the selected task or group row. On a
-selected task row, the task moves within its current group or top-level area
-when possible. At an area boundary, the task moves into the adjacent area:
+`Shift+Up` and `Shift+Down` reorder the selected workspace, task, or group row.
+On a selected workspace card, the workspace moves among the other workspaces.
+On a selected task row, the task moves within its current group or top-level
+area when possible. At an area boundary, the task moves into the adjacent area:
 `Shift+Down` from the last top-level task moves it to the top of the first
 group, and `Shift+Up` from the first task in a group moves it to the end of the
-previous group or top-level area. Reordering never changes the workspace and
-does not restart the task PTY. On a selected group row, the whole group section
-moves among groups in the same workspace. Top-level ungrouped tasks remain
-above group sections.
+previous group or top-level area. Task and group reordering never changes the
+workspace and does not restart the task PTY. On a selected group row, the whole
+group section moves among groups in the same workspace. Top-level ungrouped
+tasks remain above group sections.
 
 ## Task Live Preview And Console
 
@@ -486,7 +489,7 @@ w       Add workspace
 g       Create group in selected workspace
 n       Open the new-task type menu
 m       Move selected task to another group in the same workspace, or clear its group
-Shift+Up/Down Reorder selected task or group
+Shift+Up/Down Reorder selected workspace, task, or group
 e       Edit selected workspace title, group, or task title
 Backspace Delete/remove selected item
 ?       Help
@@ -743,8 +746,9 @@ Rules:
 Add workspace:
 
 - User provides an existing filesystem path.
-- Weft must not auto-add the launch directory during state repair or first supervisor start.
+- Weft must not auto-add or reselect the launch directory during state repair or first supervisor start.
 - When an interactive client opens from a launch directory that is already configured, Weft selects that workspace automatically.
+- Launch-directory selection is a first attach behavior for that client. Repeated attach or retry requests from the same attached client must not reselect the launch workspace after the user has navigated elsewhere.
 - Launch-directory selection happens only when the interactive client attaches. It must not run on every snapshot, navigation, or delete request, because that would keep snapping selection back to the launch workspace and prevent removing stale workspace entries.
 - When an interactive client opens from a launch directory that is not configured, Weft asks whether to add it before mutating state. `Enter` confirms; `Esc` declines.
 - Dashboard prompt opens with the selected workspace's parent directory prefilled.
@@ -826,7 +830,12 @@ Move task:
 - Does not restart the PTY.
 - Cross-workspace moves are out of scope for the first implementation.
 
-Reorder task or group:
+Reorder workspace, task, or group:
+
+- When a workspace card is selected, `Shift+Up` and `Shift+Down` reorder that
+  workspace among the other workspaces.
+- Workspace reordering preserves that workspace's groups, tasks, title override,
+  current task/group selection, and running terminals.
 
 - `Shift+Up` and `Shift+Down` reorder the selected task within its current
   group, or within the top-level ungrouped area when the task has no group.

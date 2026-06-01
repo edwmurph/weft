@@ -736,7 +736,6 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 		return err
 	}
 	args = cloneArgs(args)
-	args["launch_workspace"] = rt.Workspace
 	result, err := supervisor.Ensure(rt)
 	if err != nil {
 		return err

@@ -141,7 +141,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		st.ActiveTaskID = ""
 		if len(st.Workspaces) == 0 {
 			st.Focus = state.FocusWorkspaces
-		} else {
+		} else if st.Focus != state.FocusWorkspaces && st.Focus != state.FocusTasks {
 			st.Focus = state.FocusTasks
 		}
 		st.NavOpen = true
@@ -161,9 +161,6 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		dataCh:            make(chan ptyx.Data, 64),
 		ctx:               ctx, cancel: cancel, input: input, lastNavFocus: lastNav,
 	}
-	if next, ok := state.SelectWorkspaceByPath(model.state, rt.Workspace); ok {
-		model.state = next
-	}
 	model.syncGroupCursor()
 	model.navWidth = model.targetNavWidth()
 	for _, task := range model.state.Tasks {
@@ -175,6 +172,10 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 
 func (m *Model) HandleSupervisorRequest(request ipc.Request) (ipc.Response, tea.Cmd) {
 	return m.handleIPC(request)
+}
+
+func (m *Model) ApplyLaunchWorkspace(path string) {
+	m.applyLaunchWorkspace(path)
 }
 
 func (m *Model) Data() <-chan ptyx.Data {
@@ -572,11 +573,7 @@ func (m *Model) moveSelection(delta int) {
 		current := navigation.IndexByID(workspaceIDs, m.state.SelectedWorkspaceID)
 		next := navigation.MoveIndex(current, len(workspaceIDs), delta)
 		if len(workspaceIDs) > 0 && workspaceIDs[next] != m.state.SelectedWorkspaceID {
-			m.state.SelectedWorkspaceID = workspaceIDs[next]
-			if groups := state.GroupsForWorkspace(m.state, m.state.SelectedWorkspaceID); len(groups) > 0 {
-				m.state.SelectedGroupID = groups[0].ID
-			}
-			m.state.SelectedTaskID = ""
+			m.state = state.SelectWorkspace(m.state, workspaceIDs[next])
 			m.groupCursor = 0
 			m.groupCursorPinned = false
 			m.save()
@@ -611,6 +608,10 @@ func (m *Model) applyGroupCursor(row groupRow) {
 }
 
 func (m *Model) reorderSelectedRow(delta int) {
+	if m.state.Focus == state.FocusWorkspaces {
+		m.reorderSelectedWorkspace(delta)
+		return
+	}
 	if m.state.Focus != state.FocusTasks {
 		return
 	}
@@ -621,6 +622,25 @@ func (m *Model) reorderSelectedRow(delta int) {
 	case groupRowTask:
 		m.reorderSelectedTask(delta)
 	}
+}
+
+func (m *Model) reorderSelectedWorkspace(delta int) {
+	workspaceID := m.state.SelectedWorkspaceID
+	if workspaceID == "" {
+		return
+	}
+	next, moved, err := state.ReorderWorkspace(m.state, workspaceID, delta)
+	if err != nil {
+		m.message = err.Error()
+		return
+	}
+	if !moved {
+		return
+	}
+	m.state = next
+	m.groupCursor = 0
+	m.groupCursorPinned = false
+	m.save()
 }
 
 func (m *Model) reorderSelectedTask(delta int) {
@@ -1769,7 +1789,6 @@ func ipcError(code string, err error) ipc.Response {
 }
 
 func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
-	m.applyLaunchWorkspace(launchWorkspaceArg(request.Args))
 	if request.Command == "snapshot" || request.Command == "status" {
 		m.refreshTerminalTaskActivity()
 	}
@@ -1865,6 +1884,29 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 			m.save()
 		}
 		return m.ipcResponse("reordered group"), nil
+	case "reorder_workspace":
+		delta, err := strconv.Atoi(request.Args["delta"])
+		if err != nil || delta == 0 {
+			return ipc.ErrorResponse("invalid_delta", "delta must be a non-zero integer"), nil
+		}
+		id := request.Args["id"]
+		if id == "" {
+			id = m.state.SelectedWorkspaceID
+		}
+		if id == "" {
+			return ipc.ErrorResponse("workspace_not_found", "workspace not found"), nil
+		}
+		next, moved, err := state.ReorderWorkspace(m.state, id, delta)
+		if err != nil {
+			return ipcError("reorder_workspace_failed", err), nil
+		}
+		if moved {
+			m.state = next
+			m.groupCursor = 0
+			m.groupCursorPinned = false
+			m.save()
+		}
+		return m.ipcResponse("reordered workspace"), nil
 	case "open":
 		cmd := m.openSelection()
 		m.navWidth = m.targetNavWidth()
@@ -2057,13 +2099,6 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	default:
 		return ipc.ErrorResponse("unknown_command", "unknown command: "+request.Command), nil
 	}
-}
-
-func launchWorkspaceArg(args map[string]string) string {
-	if value := strings.TrimSpace(args["launch_workspace"]); value != "" {
-		return value
-	}
-	return ""
 }
 
 func (m *Model) applyLaunchWorkspace(path string) {
@@ -2520,7 +2555,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s new group", cfg.KeyBindings.NewGroup),
 		fmt.Sprintf("%s new task", cfg.KeyBindings.NewTask),
 		fmt.Sprintf("%s move task", cfg.KeyBindings.MoveTask),
-		"Shift+Up/Down reorder selected task or group",
+		"Shift+Up/Down reorder selected workspace, task, or group",
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
 		"U upgrade supervisor and resume idle Codex tasks",

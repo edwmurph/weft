@@ -413,6 +413,114 @@ func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 	})
 }
 
+func TestDashboardReordersWorkspacesE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp, err := os.MkdirTemp("/tmp", "weft-reorder-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	alpha := filepath.Join(tmp, "alpha-project")
+	beta := filepath.Join(tmp, "beta-project")
+	for _, dir := range []string{runtimeDir, alpha, beta} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(codexTaskConfig(fakeCodex)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := baseIntegrationEnv(runtimeDir, alpha, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	pane := "direct-client-workspace-reorder"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, alpha, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add this workspace to Weft?") &&
+			strings.Contains(capture, "Enter yes")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, alpha) != nil
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "w")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Add workspace")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-u")
+	directRun(t, env, "send-keys", "-l", "-t", pane, beta)
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return len(st.Workspaces) == 2 && workspace != nil && st.SelectedWorkspaceID == workspace.ID
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "Left")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return workspace != nil && st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID == workspace.ID
+	})
+	time.Sleep(300 * time.Millisecond)
+	st = waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return workspace != nil && st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID == workspace.ID
+	})
+	if selected := state.WorkspaceByID(st, st.SelectedWorkspaceID); selected == nil || selected.Path != beta {
+		t.Fatalf("new workspace selection bounced back: %#v", st)
+	}
+
+	directRun(t, env, "send-keys", "-t", pane, "k")
+	waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, alpha)
+		return workspace != nil && st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID == workspace.ID
+	})
+	directRun(t, env, "send-keys", "-t", pane, "j")
+	st = waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return workspace != nil && st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID == workspace.ID
+	})
+	time.Sleep(300 * time.Millisecond)
+	st = waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return workspace != nil && st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID == workspace.ID
+	})
+	if selected := state.WorkspaceByID(st, st.SelectedWorkspaceID); selected == nil || selected.Path != beta {
+		t.Fatalf("moving focus to new workspace bounced back: %#v", st)
+	}
+
+	directRun(t, env, "send-keys", "-t", pane, "S-Up")
+	waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return workspace != nil &&
+			st.SelectedWorkspaceID == workspace.ID &&
+			strings.Join(workspacePaths(st.Workspaces), ",") == strings.Join([]string{beta, alpha}, ",")
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "beta-project") &&
+			strings.Contains(capture, "alpha-project") &&
+			stringsAppearInOrder(capture, "beta-project", "alpha-project")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "S-Down")
+	waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return workspace != nil &&
+			st.SelectedWorkspaceID == workspace.ID &&
+			strings.Join(workspacePaths(st.Workspaces), ",") == strings.Join([]string{alpha, beta}, ",")
+	})
+}
+
 func TestDashboardReordersGroupsE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
@@ -2722,6 +2830,14 @@ func groupPaths(groups []state.Group) []string {
 	paths := make([]string, 0, len(groups))
 	for _, group := range groups {
 		paths = append(paths, group.Path)
+	}
+	return paths
+}
+
+func workspacePaths(workspaces []state.Workspace) []string {
+	paths := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		paths = append(paths, workspace.Path)
 	}
 	return paths
 }

@@ -79,6 +79,67 @@ func TestSupervisorRejectsSecondRuntimeForSameHome(t *testing.T) {
 	}
 }
 
+func TestRepeatedAttachDoesNotReselectLaunchWorkspace(t *testing.T) {
+	rt, cfg, store := testRuntime(t)
+	stop := runTestSupervisor(t, rt, cfg, store)
+	defer stop()
+
+	other := filepath.Join(filepath.Dir(rt.Workspace), "other")
+	if err := os.Mkdir(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "add_workspace", Args: map[string]string{"path": rt.Workspace}}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "add_workspace", Args: map[string]string{"path": other}}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	attach := ipc.Request{
+		Command: "attach_client",
+		Args: map[string]string{
+			"client_id":        "dashboard-1",
+			"launch_workspace": rt.Workspace,
+		},
+	}
+	if _, err := ipc.Call(rt.SocketPath, attach, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	status, err := Status(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected := state.WorkspaceByID(*status.State, status.State.SelectedWorkspaceID); selected == nil || selected.Path != rt.Workspace {
+		t.Fatalf("initial attach should select launch workspace: %#v", status.State)
+	}
+
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "focus", Args: map[string]string{"target": string(state.FocusWorkspaces)}}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "nav_move", Args: map[string]string{"delta": "1"}}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	status, err = Status(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherWorkspace := state.WorkspaceByPath(*status.State, other)
+	if otherWorkspace == nil || status.State.SelectedWorkspaceID != otherWorkspace.ID {
+		t.Fatalf("nav move should select other workspace: %#v", status.State)
+	}
+
+	if _, err := ipc.Call(rt.SocketPath, attach, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	status, err = Status(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State.SelectedWorkspaceID != otherWorkspace.ID {
+		t.Fatalf("repeated attach reselected launch workspace: %#v", status.State)
+	}
+}
+
 func TestUpgradeStatusDecisions(t *testing.T) {
 	st := state.Empty()
 	id := "task"

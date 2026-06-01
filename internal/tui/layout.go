@@ -61,6 +61,7 @@ var (
 	workspaceInfoBoxBorderStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	newWorkspaceCardHintStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	taskReadyStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
@@ -601,10 +602,9 @@ func renderNewWorkspaceTemplateCard(cfg config.Config, width int, selected bool,
 		borderStyle = workspaceCardSelectedStyle
 	}
 	innerWidth := max(0, width-2)
-	title := "+ New workspace"
-	top := borderStyle.Render(workspaceCardTopLine(title, width))
+	top := workspaceCardTopLineWithTitleStyle("+ New workspace", width, borderStyle, borderStyle.Italic(true))
 	hint := " Press " + cfg.KeyBindings.NewWorkspace + " to create "
-	body := borderStyle.Render(borderVertical) + mutedStyle.Render(padVisual(clip(hint, innerWidth), innerWidth)) + borderStyle.Render(borderVertical)
+	body := borderStyle.Render(borderVertical) + newWorkspaceCardHintStyle.Render(padVisual(clip(hint, innerWidth), innerWidth)) + borderStyle.Render(borderVertical)
 	bottom := borderStyle.Render(workspaceCardBottomLine(width))
 	return []string{top, body, bottom}
 }
@@ -633,6 +633,17 @@ func workspaceCardTopLine(title string, width int) string {
 	label = clip(label, contentWidth)
 	padding := max(0, contentWidth-lipgloss.Width(label))
 	return borderTopLeft + label + strings.Repeat(borderHorizontal, padding) + borderTopRight
+}
+
+func workspaceCardTopLineWithTitleStyle(title string, width int, borderStyle lipgloss.Style, titleStyle lipgloss.Style) string {
+	if width < 2 {
+		return ""
+	}
+	contentWidth := max(0, width-2)
+	label := " " + strings.TrimSpace(title) + " "
+	label = clip(label, contentWidth)
+	padding := max(0, contentWidth-lipgloss.Width(label))
+	return borderStyle.Render(borderTopLeft) + titleStyle.Render(label) + borderStyle.Render(strings.Repeat(borderHorizontal, padding)+borderTopRight)
 }
 
 func workspaceCardBottomLine(width int) string {

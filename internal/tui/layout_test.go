@@ -757,6 +757,31 @@ func TestRenderWorkspacesPaneEmptyStateIsCenteredHelp(t *testing.T) {
 	}
 }
 
+func TestRenderNewWorkspaceTemplateCardUsesItalicTitleAndHint(t *testing.T) {
+	cfg := config.DefaultConfig()
+	width := 40
+
+	got := strings.Join(renderNewWorkspaceTemplateCard(cfg, width, false, false), "\n")
+	topLine := strings.Split(got, "\n")[0]
+	titleLabel := " + New workspace "
+	expectedTitle := workspaceCardBorderStyle.Italic(true).Render(titleLabel)
+	expectedTopTail := workspaceCardBorderStyle.Render(strings.Repeat(borderHorizontal, width-2-lipgloss.Width(titleLabel)) + borderTopRight)
+	expectedHint := newWorkspaceCardHintStyle.Render(padVisual(clip(" Press w to create ", width-2), width-2))
+
+	if !strings.Contains(topLine, expectedTitle) {
+		t.Fatalf("new workspace card should render italic title %q:\n%s", expectedTitle, got)
+	}
+	if !strings.Contains(topLine, expectedTopTail) {
+		t.Fatalf("new workspace card top border should keep the border style after the title %q:\n%s", expectedTopTail, got)
+	}
+	if !strings.Contains(got, expectedHint) {
+		t.Fatalf("new workspace card should render italic hint %q:\n%s", expectedHint, got)
+	}
+	if stripped := ansi.Strip(got); !strings.Contains(stripped, "+ New workspace") || !strings.Contains(stripped, "Press w to create") {
+		t.Fatalf("new workspace card missing visible copy:\n%s", got)
+	}
+}
+
 func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := state.Repair(state.Empty(), "/tmp/project")

@@ -831,6 +831,37 @@ func SelectWorkspace(st State, workspaceID string) State {
 	return st
 }
 
+func ReorderWorkspace(st State, workspaceID string, delta int) (State, bool, error) {
+	if delta == 0 {
+		return st, false, nil
+	}
+	index := -1
+	for i, workspace := range st.Workspaces {
+		if workspace.ID == workspaceID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return st, false, fmt.Errorf("workspace not found")
+	}
+	target := index - 1
+	if delta > 0 {
+		target = index + 1
+	}
+	if target < 0 || target >= len(st.Workspaces) {
+		return st, false, nil
+	}
+	st.Workspaces[index], st.Workspaces[target] = st.Workspaces[target], st.Workspaces[index]
+	now := NowISO()
+	st.Workspaces[index].UpdatedAt = now
+	st.Workspaces[target].UpdatedAt = now
+	if st.SelectedWorkspaceID != workspaceID {
+		st = SelectWorkspace(st, workspaceID)
+	}
+	return st, true, nil
+}
+
 func SelectWorkspaceByPath(st State, path string) (State, bool) {
 	workspace := WorkspaceByPath(st, path)
 	if workspace == nil {
