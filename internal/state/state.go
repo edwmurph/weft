@@ -15,31 +15,31 @@ import (
 	"time"
 )
 
-const Version = 4
+const Version = 5
 
 const DefaultGroupPath = "inbox"
-const DefaultAgentTitle = "{codex}"
-const DefaultAgentTypeID = "codex"
+const DefaultTaskTitle = "{codex}"
+const DefaultTaskTypeID = "codex"
 
 type Focus string
 
 const (
 	FocusWorkspaces Focus = "workspaces"
-	FocusAgents     Focus = "agents"
-	FocusCodex      Focus = "codex"
+	FocusTasks      Focus = "tasks"
+	FocusConsole    Focus = "console"
 )
 
-type AgentStatus string
+type TaskStatus string
 
 const (
-	StatusStarting AgentStatus = "starting"
-	StatusRunning  AgentStatus = "running"
-	StatusReady    AgentStatus = "ready"
-	StatusSitting  AgentStatus = "sitting"
-	StatusShipping AgentStatus = "shipping"
-	StatusStopped  AgentStatus = "stopped"
-	StatusKilled   AgentStatus = "killed"
-	StatusError    AgentStatus = "error"
+	StatusStarting TaskStatus = "starting"
+	StatusRunning  TaskStatus = "running"
+	StatusReady    TaskStatus = "ready"
+	StatusSitting  TaskStatus = "sitting"
+	StatusShipping TaskStatus = "shipping"
+	StatusStopped  TaskStatus = "stopped"
+	StatusKilled   TaskStatus = "killed"
+	StatusError    TaskStatus = "error"
 )
 
 type Workspace struct {
@@ -59,35 +59,35 @@ type Group struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
-type Agent struct {
-	ID                  string      `json:"id"`
-	WorkspaceID         string      `json:"workspace_id"`
-	GroupID             string      `json:"group_id"`
-	TypeID              string      `json:"type_id,omitempty"`
-	Title               string      `json:"title"`
-	AutoTitle           string      `json:"auto_title,omitempty"`
-	AutoTitleAttempted  bool        `json:"auto_title_attempted,omitempty"`
-	AutoTitleError      string      `json:"auto_title_error,omitempty"`
-	CodexTitle          string      `json:"codex_title,omitempty"`
-	CodexStatus         string      `json:"codex_status,omitempty"`
-	CodexSessionID      string      `json:"codex_session_id,omitempty"`
-	CodexInputSubmitted bool        `json:"codex_input_submitted,omitempty"`
-	Status              AgentStatus `json:"status"`
-	CreatedAt           string      `json:"created_at"`
-	UpdatedAt           string      `json:"updated_at"`
+type Task struct {
+	ID                  string     `json:"id"`
+	WorkspaceID         string     `json:"workspace_id"`
+	GroupID             string     `json:"group_id"`
+	TypeID              string     `json:"type_id,omitempty"`
+	Title               string     `json:"title"`
+	AutoTitle           string     `json:"auto_title,omitempty"`
+	AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
+	AutoTitleError      string     `json:"auto_title_error,omitempty"`
+	CodexTitle          string     `json:"codex_title,omitempty"`
+	CodexStatus         string     `json:"codex_status,omitempty"`
+	CodexSessionID      string     `json:"codex_session_id,omitempty"`
+	CodexInputSubmitted bool       `json:"codex_input_submitted,omitempty"`
+	Status              TaskStatus `json:"status"`
+	CreatedAt           string     `json:"created_at"`
+	UpdatedAt           string     `json:"updated_at"`
 }
 
 type State struct {
 	Version             int         `json:"version"`
-	ActiveAgentID       string      `json:"active_agent_id,omitempty"`
-	SelectedAgentID     string      `json:"selected_agent_id,omitempty"`
+	ActiveTaskID        string      `json:"active_task_id,omitempty"`
+	SelectedTaskID      string      `json:"selected_task_id,omitempty"`
 	SelectedWorkspaceID string      `json:"selected_workspace_id,omitempty"`
 	SelectedGroupID     string      `json:"selected_group_id,omitempty"`
 	Focus               Focus       `json:"focus"`
 	NavOpen             bool        `json:"nav_open"`
 	Workspaces          []Workspace `json:"workspaces"`
 	Groups              []Group     `json:"groups"`
-	Agents              []Agent     `json:"agents"`
+	Tasks               []Task      `json:"tasks"`
 	CollapsedGroupIDs   []string    `json:"collapsed_group_ids,omitempty"`
 }
 
@@ -106,7 +106,7 @@ func NewStore(path string, workspace ...string) *Store {
 }
 
 func Empty() State {
-	return State{Version: Version, Focus: FocusWorkspaces, NavOpen: true, Workspaces: []Workspace{}, Groups: []Group{}, Agents: []Agent{}, CollapsedGroupIDs: []string{}}
+	return State{Version: Version, Focus: FocusWorkspaces, NavOpen: true, Workspaces: []Workspace{}, Groups: []Group{}, Tasks: []Task{}, CollapsedGroupIDs: []string{}}
 }
 
 func NowISO() string {
@@ -182,22 +182,34 @@ func parseState(raw []byte, fallbackWorkspace string) (State, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&st); err != nil {
-		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v4 state: %v", err))
+		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v5 state: %v", err))
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err == nil {
-		return State{}, unsupportedStateError("could not parse strict v4 state: multiple JSON values")
+		return State{}, unsupportedStateError("could not parse strict v5 state: multiple JSON values")
 	} else if !errors.Is(err, io.EOF) {
-		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v4 state: %v", err))
+		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v5 state: %v", err))
 	}
 	if st.Version != Version {
 		return State{}, unsupportedStateError(fmt.Sprintf("unsupported state version %d", st.Version))
+	}
+	if !validFocus(st.Focus) {
+		return State{}, unsupportedStateError(fmt.Sprintf("unsupported focus value %q", st.Focus))
 	}
 	return Repair(st, fallbackWorkspace), nil
 }
 
 func unsupportedStateError(reason string) error {
 	return fmt.Errorf("%s; run `weft clear` to reset", reason)
+}
+
+func validFocus(focus Focus) bool {
+	switch focus {
+	case "", FocusWorkspaces, FocusTasks, FocusConsole:
+		return true
+	default:
+		return false
+	}
 }
 
 func Repair(st State, fallbackWorkspace string) State {
@@ -208,8 +220,8 @@ func Repair(st State, fallbackWorkspace string) State {
 	if st.Groups == nil {
 		st.Groups = []Group{}
 	}
-	if st.Agents == nil {
-		st.Agents = []Agent{}
+	if st.Tasks == nil {
+		st.Tasks = []Task{}
 	}
 	if st.CollapsedGroupIDs == nil {
 		st.CollapsedGroupIDs = []string{}
@@ -253,46 +265,46 @@ func Repair(st State, fallbackWorkspace string) State {
 		groupIDs[group.ID] = group
 	}
 	st.CollapsedGroupIDs = validCollapsedGroupIDs(st.CollapsedGroupIDs, groupIDs)
-	for index := range st.Agents {
-		agent := &st.Agents[index]
-		if strings.TrimSpace(agent.ID) == "" {
-			agent.ID = StableID("agent", agent.WorkspaceID, agent.GroupID, agent.CreatedAt, agent.Title)
+	for index := range st.Tasks {
+		task := &st.Tasks[index]
+		if strings.TrimSpace(task.ID) == "" {
+			task.ID = StableID("task", task.WorkspaceID, task.GroupID, task.CreatedAt, task.Title)
 		}
-		if agent.GroupID != "" {
-			if _, ok := groupIDs[agent.GroupID]; !ok {
-				agent.GroupID = ""
+		if task.GroupID != "" {
+			if _, ok := groupIDs[task.GroupID]; !ok {
+				task.GroupID = ""
 			}
 		}
-		if group, ok := groupIDs[agent.GroupID]; ok {
-			agent.WorkspaceID = group.WorkspaceID
+		if group, ok := groupIDs[task.GroupID]; ok {
+			task.WorkspaceID = group.WorkspaceID
 		}
-		if !workspaces[agent.WorkspaceID] && len(st.Workspaces) > 0 {
-			agent.WorkspaceID = st.Workspaces[0].ID
-			agent.GroupID = ""
+		if !workspaces[task.WorkspaceID] && len(st.Workspaces) > 0 {
+			task.WorkspaceID = st.Workspaces[0].ID
+			task.GroupID = ""
 		}
-		if strings.TrimSpace(agent.Title) == "" {
-			agent.Title = DefaultAgentTitle
+		if strings.TrimSpace(task.Title) == "" {
+			task.Title = DefaultTaskTitle
 		}
-		if strings.TrimSpace(agent.TypeID) == "" {
-			agent.TypeID = DefaultAgentTypeID
+		if strings.TrimSpace(task.TypeID) == "" {
+			task.TypeID = DefaultTaskTypeID
 		}
-		agent.CodexStatus = strings.TrimSpace(agent.CodexStatus)
-		if agent.Status == "" {
-			agent.Status = StatusStopped
+		task.CodexStatus = strings.TrimSpace(task.CodexStatus)
+		if task.Status == "" {
+			task.Status = StatusStopped
 		}
-		if agent.CreatedAt == "" {
-			agent.CreatedAt = NowISO()
+		if task.CreatedAt == "" {
+			task.CreatedAt = NowISO()
 		}
-		if agent.UpdatedAt == "" {
-			agent.UpdatedAt = agent.CreatedAt
+		if task.UpdatedAt == "" {
+			task.UpdatedAt = task.CreatedAt
 		}
 	}
 
-	if st.ActiveAgentID != "" && AgentByID(st, st.ActiveAgentID) == nil {
-		st.ActiveAgentID = ""
+	if st.ActiveTaskID != "" && TaskByID(st, st.ActiveTaskID) == nil {
+		st.ActiveTaskID = ""
 	}
-	if st.SelectedAgentID != "" && AgentByID(st, st.SelectedAgentID) == nil {
-		st.SelectedAgentID = ""
+	if st.SelectedTaskID != "" && TaskByID(st, st.SelectedTaskID) == nil {
+		st.SelectedTaskID = ""
 	}
 	if st.SelectedWorkspaceID == "" || WorkspaceByID(st, st.SelectedWorkspaceID) == nil {
 		if len(st.Workspaces) > 0 {
@@ -304,38 +316,38 @@ func Repair(st State, fallbackWorkspace string) State {
 	if st.SelectedGroupID != "" && (GroupByID(st, st.SelectedGroupID) == nil || groupWorkspace(st, st.SelectedGroupID) != st.SelectedWorkspaceID) {
 		st.SelectedGroupID = ""
 	}
-	if selected := AgentByID(st, st.SelectedAgentID); selected != nil {
+	if selected := TaskByID(st, st.SelectedTaskID); selected != nil {
 		if selected.WorkspaceID != st.SelectedWorkspaceID {
-			st.SelectedAgentID = ""
+			st.SelectedTaskID = ""
 		} else {
 			st.SelectedGroupID = selected.GroupID
 		}
 	}
 
 	if st.NavOpen {
-		if st.Focus != FocusWorkspaces && st.Focus != FocusAgents {
-			st.Focus = FocusAgents
+		if st.Focus != FocusWorkspaces && st.Focus != FocusTasks {
+			st.Focus = FocusTasks
 		}
 	} else {
-		st.Focus = FocusCodex
+		st.Focus = FocusConsole
 	}
-	if st.ActiveAgentID == "" {
+	if st.ActiveTaskID == "" {
 		st.NavOpen = true
-		if st.Focus == FocusCodex {
-			st.Focus = FocusAgents
+		if st.Focus == FocusConsole {
+			st.Focus = FocusTasks
 		}
 	}
 	if st.Focus == "" {
 		if st.NavOpen {
-			st.Focus = FocusAgents
+			st.Focus = FocusTasks
 		} else {
-			st.Focus = FocusCodex
+			st.Focus = FocusConsole
 		}
 	}
-	if st.SelectedAgentID == "" && st.ActiveAgentID != "" {
-		active := AgentByID(st, st.ActiveAgentID)
-		if active != nil && active.WorkspaceID == st.SelectedWorkspaceID && (st.Focus == FocusCodex || !st.NavOpen || st.SelectedGroupID == "") {
-			st.SelectedAgentID = active.ID
+	if st.SelectedTaskID == "" && st.ActiveTaskID != "" {
+		active := TaskByID(st, st.ActiveTaskID)
+		if active != nil && active.WorkspaceID == st.SelectedWorkspaceID && (st.Focus == FocusConsole || !st.NavOpen || st.SelectedGroupID == "") {
+			st.SelectedTaskID = active.ID
 			st.SelectedGroupID = active.GroupID
 		}
 	}
@@ -392,17 +404,17 @@ func writeJSONAtomic(path string, value any) error {
 	return os.Rename(tmpName, path)
 }
 
-func ActiveAgent(st State) *Agent {
-	return AgentByID(st, st.ActiveAgentID)
+func ActiveTask(st State) *Task {
+	return TaskByID(st, st.ActiveTaskID)
 }
 
-func AgentByID(st State, agentID string) *Agent {
-	if agentID == "" {
+func TaskByID(st State, taskID string) *Task {
+	if taskID == "" {
 		return nil
 	}
-	for index := range st.Agents {
-		if st.Agents[index].ID == agentID {
-			return &st.Agents[index]
+	for index := range st.Tasks {
+		if st.Tasks[index].ID == taskID {
+			return &st.Tasks[index]
 		}
 	}
 	return nil
@@ -446,12 +458,12 @@ func ActiveWorkspace(st State) *Workspace {
 	return WorkspaceByID(st, st.SelectedWorkspaceID)
 }
 
-func WorkspaceForAgent(st State, agent Agent) *Workspace {
-	return WorkspaceByID(st, agent.WorkspaceID)
+func WorkspaceForTask(st State, task Task) *Workspace {
+	return WorkspaceByID(st, task.WorkspaceID)
 }
 
-func GroupForAgent(st State, agent Agent) *Group {
-	return GroupByID(st, agent.GroupID)
+func GroupForTask(st State, task Task) *Group {
+	return GroupByID(st, task.GroupID)
 }
 
 func GroupsForWorkspace(st State, workspaceID string) []Group {
@@ -464,61 +476,61 @@ func GroupsForWorkspace(st State, workspaceID string) []Group {
 	return groups
 }
 
-func AgentsForGroup(st State, groupID string) []Agent {
+func TasksForGroup(st State, groupID string) []Task {
 	if groupID == "" {
 		return nil
 	}
-	var agents []Agent
-	for _, agent := range st.Agents {
-		if agent.GroupID == groupID {
-			agents = append(agents, agent)
+	var tasks []Task
+	for _, task := range st.Tasks {
+		if task.GroupID == groupID {
+			tasks = append(tasks, task)
 		}
 	}
-	return agents
+	return tasks
 }
 
-func UngroupedAgentsForWorkspace(st State, workspaceID string) []Agent {
-	var agents []Agent
-	for _, agent := range st.Agents {
-		if agent.WorkspaceID == workspaceID && agent.GroupID == "" {
-			agents = append(agents, agent)
+func UngroupedTasksForWorkspace(st State, workspaceID string) []Task {
+	var tasks []Task
+	for _, task := range st.Tasks {
+		if task.WorkspaceID == workspaceID && task.GroupID == "" {
+			tasks = append(tasks, task)
 		}
 	}
-	return agents
+	return tasks
 }
 
-func AgentCountForGroup(st State, groupID string) int {
+func TaskCountForGroup(st State, groupID string) int {
 	if groupID == "" {
 		return 0
 	}
 	count := 0
-	for _, agent := range st.Agents {
-		if agent.GroupID == groupID {
+	for _, task := range st.Tasks {
+		if task.GroupID == groupID {
 			count++
 		}
 	}
 	return count
 }
 
-func WithUpdatedAgent(st State, agentID string, update func(Agent) Agent) State {
-	for index, agent := range st.Agents {
-		if agent.ID == agentID {
-			updated := update(agent)
+func WithUpdatedTask(st State, taskID string, update func(Task) Task) State {
+	for index, task := range st.Tasks {
+		if task.ID == taskID {
+			updated := update(task)
 			updated.UpdatedAt = NowISO()
-			st.Agents[index] = updated
+			st.Tasks[index] = updated
 			break
 		}
 	}
 	return st
 }
 
-func CloseAgent(st State, agentID string) State {
+func CloseTask(st State, taskID string) State {
 	index := -1
-	removed := Agent{}
-	for i, agent := range st.Agents {
-		if agent.ID == agentID {
+	removed := Task{}
+	for i, task := range st.Tasks {
+		if task.ID == taskID {
 			index = i
-			removed = agent
+			removed = task
 			break
 		}
 	}
@@ -526,97 +538,97 @@ func CloseAgent(st State, agentID string) State {
 		return st
 	}
 	workspaceIndex := 0
-	for i, agent := range st.Agents {
+	for i, task := range st.Tasks {
 		if i == index {
 			break
 		}
-		if agent.WorkspaceID == removed.WorkspaceID {
+		if task.WorkspaceID == removed.WorkspaceID {
 			workspaceIndex++
 		}
 	}
-	st.Agents = append(st.Agents[:index], st.Agents[index+1:]...)
-	if st.SelectedAgentID == agentID {
-		st.SelectedAgentID = ""
+	st.Tasks = append(st.Tasks[:index], st.Tasks[index+1:]...)
+	if st.SelectedTaskID == taskID {
+		st.SelectedTaskID = ""
 	}
-	if st.ActiveAgentID != agentID {
+	if st.ActiveTaskID != taskID {
 		return st
 	}
-	st.ActiveAgentID = ""
-	candidates := agentsForWorkspace(st, removed.WorkspaceID)
+	st.ActiveTaskID = ""
+	candidates := tasksForWorkspace(st, removed.WorkspaceID)
 	if len(candidates) > 0 {
 		nextIndex := workspaceIndex
 		if nextIndex >= len(candidates) {
 			nextIndex = len(candidates) - 1
 		}
 		next := candidates[nextIndex]
-		st.ActiveAgentID = next.ID
-		st.SelectedAgentID = next.ID
+		st.ActiveTaskID = next.ID
+		st.SelectedTaskID = next.ID
 		st.SelectedWorkspaceID = next.WorkspaceID
 		st.SelectedGroupID = next.GroupID
 	} else {
-		st.ActiveAgentID = ""
-		st.SelectedAgentID = ""
+		st.ActiveTaskID = ""
+		st.SelectedTaskID = ""
 		st.NavOpen = true
-		st.Focus = FocusAgents
+		st.Focus = FocusTasks
 		st.SelectedWorkspaceID = removed.WorkspaceID
 		st.SelectedGroupID = removed.GroupID
 	}
 	return st
 }
 
-func ReorderAgent(st State, agentID string, delta int) (State, bool, error) {
+func ReorderTask(st State, taskID string, delta int) (State, bool, error) {
 	if delta == 0 {
 		return st, false, nil
 	}
 	index := -1
-	selected := Agent{}
-	for i, agent := range st.Agents {
-		if agent.ID == agentID {
+	selected := Task{}
+	for i, task := range st.Tasks {
+		if task.ID == taskID {
 			index = i
-			selected = agent
+			selected = task
 			break
 		}
 	}
 	if index < 0 {
-		return st, false, fmt.Errorf("agent not found")
+		return st, false, fmt.Errorf("task not found")
 	}
 	if delta < 0 {
 		for i := index - 1; i >= 0; i-- {
-			if sameAgentOrderArea(st.Agents[i], selected) {
-				return swapAgentsAndSelect(st, index, i, selected), true, nil
+			if sameTaskOrderArea(st.Tasks[i], selected) {
+				return swapTasksAndSelect(st, index, i, selected), true, nil
 			}
 		}
 	} else {
-		for i := index + 1; i < len(st.Agents); i++ {
-			if sameAgentOrderArea(st.Agents[i], selected) {
-				return swapAgentsAndSelect(st, index, i, selected), true, nil
+		for i := index + 1; i < len(st.Tasks); i++ {
+			if sameTaskOrderArea(st.Tasks[i], selected) {
+				return swapTasksAndSelect(st, index, i, selected), true, nil
 			}
 		}
 	}
-	return moveAgentToAdjacentArea(st, index, selected, delta)
+	return moveTaskToAdjacentArea(st, index, selected, delta)
 }
 
-func swapAgentsAndSelect(st State, index int, target int, selected Agent) State {
-	st.Agents[index], st.Agents[target] = st.Agents[target], st.Agents[index]
+func swapTasksAndSelect(st State, index int, target int, selected Task) State {
+	st.Tasks[index], st.Tasks[target] = st.Tasks[target], st.Tasks[index]
 	now := NowISO()
-	st.Agents[index].UpdatedAt = now
-	st.Agents[target].UpdatedAt = now
-	st.ActiveAgentID = selected.ID
-	st.SelectedAgentID = selected.ID
+	st.Tasks[index].UpdatedAt = now
+	st.Tasks[target].UpdatedAt = now
+	st.ActiveTaskID = selected.ID
+	st.SelectedTaskID = selected.ID
 	st.SelectedWorkspaceID = selected.WorkspaceID
 	st.SelectedGroupID = selected.GroupID
 	return st
 }
 
-func sameAgentOrderArea(left Agent, right Agent) bool {
+func sameTaskOrderArea(left Task, right Task) bool {
 	return left.WorkspaceID == right.WorkspaceID && left.GroupID == right.GroupID
 }
 
-func moveAgentToAdjacentArea(st State, index int, selected Agent, delta int) (State, bool, error) {
-	areas := agentOrderAreas(st, selected.WorkspaceID)
+func moveTaskToAdjacentArea(st State, index int, selected Task, delta int) (State, bool, error) {
+	areas := taskOrderAreas(st, selected.WorkspaceID)
 	currentArea := areaIndex(areas, selected.GroupID)
 	if currentArea < 0 {
-		return st, false, fmt.Errorf("agent group not found")
+		return st, false, fmt.Errorf("task group not found")
 	}
 	targetArea := currentArea
 	if delta < 0 {
@@ -630,21 +642,21 @@ func moveAgentToAdjacentArea(st State, index int, selected Agent, delta int) (St
 	targetGroupID := areas[targetArea]
 	selected.GroupID = targetGroupID
 	selected.UpdatedAt = NowISO()
-	agents := append([]Agent{}, st.Agents[:index]...)
-	agents = append(agents, st.Agents[index+1:]...)
-	insertAt := agentAreaInsertIndex(agents, selected.WorkspaceID, targetGroupID, areas, targetArea, delta > 0)
-	agents = append(agents, Agent{})
-	copy(agents[insertAt+1:], agents[insertAt:])
-	agents[insertAt] = selected
-	st.Agents = agents
-	st.ActiveAgentID = selected.ID
-	st.SelectedAgentID = selected.ID
+	tasks := append([]Task{}, st.Tasks[:index]...)
+	tasks = append(tasks, st.Tasks[index+1:]...)
+	insertAt := taskAreaInsertIndex(tasks, selected.WorkspaceID, targetGroupID, areas, targetArea, delta > 0)
+	tasks = append(tasks, Task{})
+	copy(tasks[insertAt+1:], tasks[insertAt:])
+	tasks[insertAt] = selected
+	st.Tasks = tasks
+	st.ActiveTaskID = selected.ID
+	st.SelectedTaskID = selected.ID
 	st.SelectedWorkspaceID = selected.WorkspaceID
 	st.SelectedGroupID = selected.GroupID
 	return st, true, nil
 }
 
-func agentOrderAreas(st State, workspaceID string) []string {
+func taskOrderAreas(st State, workspaceID string) []string {
 	areas := []string{""}
 	for _, group := range GroupsForWorkspace(st, workspaceID) {
 		areas = append(areas, group.ID)
@@ -661,33 +673,33 @@ func areaIndex(areas []string, groupID string) int {
 	return -1
 }
 
-func agentAreaInsertIndex(agents []Agent, workspaceID string, targetGroupID string, areas []string, targetArea int, atStart bool) int {
+func taskAreaInsertIndex(tasks []Task, workspaceID string, targetGroupID string, areas []string, targetArea int, atStart bool) int {
 	if atStart {
-		for index, agent := range agents {
-			if agent.WorkspaceID == workspaceID && agent.GroupID == targetGroupID {
+		for index, task := range tasks {
+			if task.WorkspaceID == workspaceID && task.GroupID == targetGroupID {
 				return index
 			}
 		}
 	} else {
-		for index := len(agents) - 1; index >= 0; index-- {
-			if agents[index].WorkspaceID == workspaceID && agents[index].GroupID == targetGroupID {
+		for index := len(tasks) - 1; index >= 0; index-- {
+			if tasks[index].WorkspaceID == workspaceID && tasks[index].GroupID == targetGroupID {
 				return index + 1
 			}
 		}
 	}
-	insertAt := len(agents)
-	for index, agent := range agents {
-		if agent.WorkspaceID != workspaceID {
+	insertAt := len(tasks)
+	for index, task := range tasks {
+		if task.WorkspaceID != workspaceID {
 			continue
 		}
-		agentArea := areaIndex(areas, agent.GroupID)
-		if agentArea < 0 {
+		taskArea := areaIndex(areas, task.GroupID)
+		if taskArea < 0 {
 			continue
 		}
-		if agentArea > targetArea {
+		if taskArea > targetArea {
 			return index
 		}
-		if agentArea < targetArea {
+		if taskArea < targetArea {
 			insertAt = index + 1
 		}
 	}
@@ -735,11 +747,11 @@ func ReorderGroup(st State, groupID string, delta int) (State, bool, error) {
 	st.Groups[target].UpdatedAt = now
 	st.SelectedWorkspaceID = selected.WorkspaceID
 	st.SelectedGroupID = selected.ID
-	st.SelectedAgentID = ""
+	st.SelectedTaskID = ""
 	return st, true, nil
 }
 
-func MoveAgent(st State, agentID string, groupID string) (State, error) {
+func MoveTask(st State, taskID string, groupID string) (State, error) {
 	var target *Group
 	if groupID != "" {
 		target = GroupByID(st, groupID)
@@ -747,20 +759,20 @@ func MoveAgent(st State, agentID string, groupID string) (State, error) {
 			return st, fmt.Errorf("group not found")
 		}
 	}
-	for index, agent := range st.Agents {
-		if agent.ID != agentID {
+	for index, task := range st.Tasks {
+		if task.ID != taskID {
 			continue
 		}
-		if target != nil && agent.WorkspaceID != target.WorkspaceID {
+		if target != nil && task.WorkspaceID != target.WorkspaceID {
 			return st, fmt.Errorf("cross-workspace moves are not supported")
 		}
-		st.Agents[index].GroupID = groupID
-		st.Agents[index].UpdatedAt = NowISO()
-		st.SelectedAgentID = agentID
+		st.Tasks[index].GroupID = groupID
+		st.Tasks[index].UpdatedAt = NowISO()
+		st.SelectedTaskID = taskID
 		st.SelectedGroupID = groupID
 		return st, nil
 	}
-	return st, fmt.Errorf("agent not found")
+	return st, fmt.Errorf("task not found")
 }
 
 func AddWorkspace(st State, id string, path string, now string) (State, Workspace, error) {
@@ -790,7 +802,7 @@ func AddWorkspace(st State, id string, path string, now string) (State, Workspac
 	st.SelectedWorkspaceID = id
 	st.SelectedGroupID = ""
 	st.NavOpen = true
-	st.Focus = FocusAgents
+	st.Focus = FocusTasks
 	return st, workspace, nil
 }
 
@@ -802,7 +814,7 @@ func SelectWorkspace(st State, workspaceID string) State {
 		return st
 	}
 	st.SelectedWorkspaceID = workspaceID
-	st.SelectedAgentID = ""
+	st.SelectedTaskID = ""
 	st.SelectedGroupID = ""
 	if groups := GroupsForWorkspace(st, workspaceID); len(groups) > 0 {
 		st.SelectedGroupID = groups[0].ID
@@ -818,29 +830,29 @@ func SelectWorkspaceByPath(st State, path string) (State, bool) {
 	return SelectWorkspace(st, workspace.ID), true
 }
 
-func RemoveWorkspace(st State, workspaceID string) (State, []Agent, error) {
+func RemoveWorkspace(st State, workspaceID string) (State, []Task, error) {
 	if WorkspaceByID(st, workspaceID) == nil {
 		return st, nil, fmt.Errorf("workspace not found")
 	}
-	var removed []Agent
-	var agents []Agent
-	for _, agent := range st.Agents {
-		if agent.WorkspaceID == workspaceID {
-			removed = append(removed, agent)
+	var removed []Task
+	var tasks []Task
+	for _, task := range st.Tasks {
+		if task.WorkspaceID == workspaceID {
+			removed = append(removed, task)
 			continue
 		}
-		agents = append(agents, agent)
+		tasks = append(tasks, task)
 	}
-	st.Agents = agents
+	st.Tasks = tasks
 	st.Groups = filterGroups(st.Groups, func(group Group) bool { return group.WorkspaceID != workspaceID })
 	st.Workspaces = filterWorkspaces(st.Workspaces, func(workspace Workspace) bool { return workspace.ID != workspaceID })
-	if st.ActiveAgentID != "" {
-		if AgentByID(st, st.ActiveAgentID) == nil {
-			st.ActiveAgentID = ""
+	if st.ActiveTaskID != "" {
+		if TaskByID(st, st.ActiveTaskID) == nil {
+			st.ActiveTaskID = ""
 		}
 	}
-	if st.SelectedAgentID != "" && AgentByID(st, st.SelectedAgentID) == nil {
-		st.SelectedAgentID = ""
+	if st.SelectedTaskID != "" && TaskByID(st, st.SelectedTaskID) == nil {
+		st.SelectedTaskID = ""
 	}
 	st.SelectedWorkspaceID = ""
 	st.SelectedGroupID = ""
@@ -895,7 +907,7 @@ func AddGroupWithSilent(st State, id string, workspaceID string, path string, no
 	st.SelectedWorkspaceID = workspaceID
 	st.SelectedGroupID = id
 	st.NavOpen = true
-	st.Focus = FocusAgents
+	st.Focus = FocusTasks
 	return st, group, nil
 }
 
@@ -939,7 +951,7 @@ func DeleteGroup(st State, groupID string) (State, error) {
 	if GroupByID(st, groupID) == nil {
 		return st, fmt.Errorf("group not found")
 	}
-	if AgentCountForGroup(st, groupID) > 0 {
+	if TaskCountForGroup(st, groupID) > 0 {
 		return st, fmt.Errorf("group is not empty")
 	}
 	st.Groups = filterGroups(st.Groups, func(group Group) bool { return group.ID != groupID })
@@ -947,8 +959,8 @@ func DeleteGroup(st State, groupID string) (State, error) {
 	if st.SelectedGroupID == groupID {
 		st.SelectedGroupID = ""
 	}
-	if selected := AgentByID(st, st.SelectedAgentID); selected != nil && selected.GroupID == groupID {
-		st.SelectedAgentID = ""
+	if selected := TaskByID(st, st.SelectedTaskID); selected != nil && selected.GroupID == groupID {
+		st.SelectedTaskID = ""
 	}
 	return Repair(st, ""), nil
 }
@@ -974,65 +986,65 @@ func ToggleGroupCollapsed(st State, groupID string) State {
 	return st
 }
 
-func AddAgent(st State, id string, workspaceID string, groupID string, title string, now string) (State, Agent, error) {
-	return AddAgentWithType(st, id, workspaceID, groupID, DefaultAgentTypeID, title, now)
+func AddTask(st State, id string, workspaceID string, groupID string, title string, now string) (State, Task, error) {
+	return AddTaskWithType(st, id, workspaceID, groupID, DefaultTaskTypeID, title, now)
 }
 
-func AddAgentWithType(st State, id string, workspaceID string, groupID string, typeID string, title string, now string) (State, Agent, error) {
+func AddTaskWithType(st State, id string, workspaceID string, groupID string, typeID string, title string, now string) (State, Task, error) {
 	if WorkspaceByID(st, workspaceID) == nil {
-		return st, Agent{}, fmt.Errorf("workspace not found")
+		return st, Task{}, fmt.Errorf("workspace not found")
 	}
 	if groupID != "" {
 		group := GroupByID(st, groupID)
 		if group == nil || group.WorkspaceID != workspaceID {
-			return st, Agent{}, fmt.Errorf("group not found")
+			return st, Task{}, fmt.Errorf("group not found")
 		}
 	}
 	if strings.TrimSpace(title) == "" {
-		title = DefaultAgentTitle
+		title = DefaultTaskTitle
 	}
 	typeID = strings.TrimSpace(typeID)
 	if typeID == "" {
-		typeID = DefaultAgentTypeID
+		typeID = DefaultTaskTypeID
 	}
 	if id == "" {
-		id = StableID("agent", workspaceID, groupID, typeID, now, title)
+		id = StableID("task", workspaceID, groupID, typeID, now, title)
 	}
 	if now == "" {
 		now = NowISO()
 	}
-	agent := Agent{
+	task := Task{
 		ID: id, WorkspaceID: workspaceID, GroupID: groupID,
 		TypeID: typeID, Title: title, Status: StatusStarting, CreatedAt: now, UpdatedAt: now,
 	}
-	st.Agents = append(st.Agents, agent)
-	st.ActiveAgentID = id
-	st.SelectedAgentID = id
+	st.Tasks = append(st.Tasks, task)
+	st.ActiveTaskID = id
+	st.SelectedTaskID = id
 	st.SelectedWorkspaceID = workspaceID
 	st.SelectedGroupID = groupID
-	st.Focus = FocusCodex
+	st.Focus = FocusConsole
 	st.NavOpen = false
-	return st, agent, nil
+	return st, task, nil
 }
 
-func AgentTypeID(agent Agent) string {
-	if id := strings.TrimSpace(agent.TypeID); id != "" {
+func TaskTypeID(task Task) string {
+	if id := strings.TrimSpace(task.TypeID); id != "" {
 		return id
 	}
-	return DefaultAgentTypeID
+	return DefaultTaskTypeID
 }
 
-func RenameAgent(st State, agentID string, title string) (State, error) {
+func RenameTask(st State, taskID string, title string) (State, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return st, fmt.Errorf("title cannot be empty")
 	}
-	if AgentByID(st, agentID) == nil {
-		return st, fmt.Errorf("agent not found")
+	if TaskByID(st, taskID) == nil {
+		return st, fmt.Errorf("task not found")
 	}
-	return WithUpdatedAgent(st, agentID, func(agent Agent) Agent {
-		agent.Title = title
-		return agent
+	return WithUpdatedTask(st, taskID, func(task Task) Task {
+		task.Title = title
+		return task
 	}), nil
 }
 
@@ -1091,14 +1103,14 @@ func validCollapsedGroupIDs(ids []string, groups map[string]Group) []string {
 	return out
 }
 
-func agentsForWorkspace(st State, workspaceID string) []Agent {
-	var agents []Agent
-	for _, agent := range st.Agents {
-		if agent.WorkspaceID == workspaceID {
-			agents = append(agents, agent)
+func tasksForWorkspace(st State, workspaceID string) []Task {
+	var tasks []Task
+	for _, task := range st.Tasks {
+		if task.WorkspaceID == workspaceID {
+			tasks = append(tasks, task)
 		}
 	}
-	return agents
+	return tasks
 }
 
 func removeString(values []string, value string) []string {

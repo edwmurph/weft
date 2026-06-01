@@ -123,11 +123,11 @@ func TestEnhancedKeyboardInputMapsCSIUCtrlC(t *testing.T) {
 			t.Fatalf("ctrl+c should preserve enhanced terminal bytes, got encoded %q want %q", got, raw)
 		}
 		cfg := config.DefaultConfig()
-		active := &state.Agent{ID: "a"}
-		if input.shouldHandleAsKey(cfg, state.FocusCodex, active) {
+		active := &state.Task{ID: "a"}
+		if input.shouldHandleAsKey(cfg, state.FocusConsole, active) {
 			t.Fatalf("ctrl+c should pass through to Codex in Codex focus for %q", raw)
 		}
-		if !input.shouldHandleAsKey(cfg, state.FocusAgents, active) {
+		if !input.shouldHandleAsKey(cfg, state.FocusTasks, active) {
 			t.Fatalf("ctrl+c should remain a Weft key outside Codex focus for %q", raw)
 		}
 	}
@@ -142,8 +142,8 @@ func TestEnhancedKeyboardInputKeepsDrawerKeyForWeftInCodexFocus(t *testing.T) {
 		t.Fatalf("expected ctrl+b key, got %#v", input.key)
 	}
 	cfg := config.DefaultConfig()
-	active := &state.Agent{ID: "a"}
-	if !input.shouldHandleAsKey(cfg, state.FocusCodex, active) {
+	active := &state.Task{ID: "a"}
+	if !input.shouldHandleAsKey(cfg, state.FocusConsole, active) {
 		t.Fatal("configured drawer key should stay owned by Weft in Codex focus")
 	}
 }
@@ -160,7 +160,7 @@ func TestCodexInputArgsSendsPlainCtrlCAsEnhancedCodexKey(t *testing.T) {
 
 func TestRouteCodexInputArgsSendsWorkingCtrlCAsInterruptKey(t *testing.T) {
 	args := map[string]string{"input": "ctrl+c", "encoded": terminalKeyboardCtrlC}
-	routed := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Working", Status: state.StatusRunning}, args)
+	routed := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Working", Status: state.StatusRunning}, args)
 	if got := routed["encoded"]; got != terminalKeyboardInterrupt {
 		t.Fatalf("working ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
 	}
@@ -168,17 +168,17 @@ func TestRouteCodexInputArgsSendsWorkingCtrlCAsInterruptKey(t *testing.T) {
 		t.Fatalf("routeCodexInputArgs mutated original args, got %q", got)
 	}
 
-	crafting := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}, args)
+	crafting := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}, args)
 	if got := crafting["encoded"]; got != terminalKeyboardInterrupt {
 		t.Fatalf("crafting ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
 	}
 
-	waiting := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Waiting", Status: state.StatusRunning}, args)
+	waiting := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Waiting", Status: state.StatusRunning}, args)
 	if got := waiting["encoded"]; got != terminalKeyboardInterrupt {
 		t.Fatalf("waiting ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
 	}
 
-	ready := routeCodexInputArgs(state.Agent{CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}, args)
+	ready := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}, args)
 	if got := ready["encoded"]; got != terminalKeyboardCtrlC {
 		t.Fatalf("ready ctrl+c encoded = %q, want original ctrl+c %q", got, terminalKeyboardCtrlC)
 	}

@@ -18,7 +18,7 @@ import (
 	weftversion "github.com/edwmurph/weft/internal/version"
 )
 
-func TestEmptyDashboardStartsInAgentsFocus(t *testing.T) {
+func TestEmptyDashboardStartsInTasksFocus(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 
@@ -47,7 +47,7 @@ func TestLoadingTickContinuesOnlyWhenLivePreviewHasTask(t *testing.T) {
 		t.Fatal("empty live preview should not keep the loading ticker active")
 	}
 
-	activeState := testStateWithAgent(rt.Workspace)
+	activeState := testStateWithTask(rt.Workspace)
 	activeState.NavOpen = true
 	model = NewModel(rt, cfg, activeState)
 	updated, cmd = model.Update(loadingTick{})
@@ -95,19 +95,19 @@ func TestNewTaskKeyOpensTypeMenuAndCreatesDefaultTask(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
-	if len(model.state.Agents) != 1 {
-		t.Fatalf("agents = %#v", model.state.Agents)
+	if len(model.state.Tasks) != 1 {
+		t.Fatalf("tasks = %#v", model.state.Tasks)
 	}
-	if model.state.Agents[0].TypeID != config.DefaultTaskTypeShell {
-		t.Fatalf("new task type = %q", model.state.Agents[0].TypeID)
+	if model.state.Tasks[0].TypeID != config.DefaultTaskTypeShell {
+		t.Fatalf("new task type = %q", model.state.Tasks[0].TypeID)
 	}
-	if model.state.Agents[0].Title != "Shell" {
-		t.Fatalf("new task title = %q", model.state.Agents[0].Title)
+	if model.state.Tasks[0].Title != "Shell" {
+		t.Fatalf("new task title = %q", model.state.Tasks[0].Title)
 	}
-	if model.state.Agents[0].GroupID != "" {
-		t.Fatalf("new task should be top-level: %#v", model.state.Agents[0])
+	if model.state.Tasks[0].GroupID != "" {
+		t.Fatalf("new task should be top-level: %#v", model.state.Tasks[0])
 	}
-	if model.state.Focus != state.FocusCodex || model.state.NavOpen {
+	if model.state.Focus != state.FocusConsole || model.state.NavOpen {
 		t.Fatalf("focus/nav = %s/%t", model.state.Focus, model.state.NavOpen)
 	}
 }
@@ -160,14 +160,14 @@ func TestTaskTypeBadgeCellUsesConfiguredColumnWidth(t *testing.T) {
 	}
 }
 
-func TestNewAgentRequiresWorkspace(t *testing.T) {
+func TestNewTaskRequiresWorkspace(t *testing.T) {
 	model := NewModel(testRuntime(t), config.DefaultConfig(), state.Empty())
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	model = updated.(Model)
 
-	if cmd != nil || len(model.state.Agents) != 0 {
-		t.Fatalf("new agent should be blocked without workspace, cmd=%v agents=%#v", cmd, model.state.Agents)
+	if cmd != nil || len(model.state.Tasks) != 0 {
+		t.Fatalf("new task should be blocked without workspace, cmd=%v tasks=%#v", cmd, model.state.Tasks)
 	}
 	if model.message != "add a workspace first" {
 		t.Fatalf("message = %q", model.message)
@@ -179,53 +179,53 @@ func TestNewAgentRequiresWorkspace(t *testing.T) {
 	}
 }
 
-func TestApplyPTYDataUsesAgentID(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestApplyPTYDataUsesTaskID(t *testing.T) {
+	model := testModelWithTask(t)
 
-	model.applyPTYData(ptyx.Data{AgentID: "a", Text: "hello\n", Title: "Fake Codex Ready"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "hello\n", Title: "Fake Codex Ready"})
 
 	if screen := model.screens["a"]; screen == nil || !screen.HasVisibleContent() {
-		t.Fatalf("agent screen was not updated: %#v", model.screens)
+		t.Fatalf("task screen was not updated: %#v", model.screens)
 	}
 	if !model.visible["a"] {
-		t.Fatalf("agent should be marked visible: %#v", model.visible)
+		t.Fatalf("task should be marked visible: %#v", model.visible)
 	}
-	if got := model.state.Agents[0].CodexTitle; got != "Fake Codex Ready" {
+	if got := model.state.Tasks[0].CodexTitle; got != "Fake Codex Ready" {
 		t.Fatalf("CodexTitle = %q", got)
 	}
 }
 
 func TestApplyPTYDataMarksRequestUserInputScreenReady(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 
-	model.applyPTYData(ptyx.Data{AgentID: "a", Title: "Fake Codex Running"})
-	model.applyPTYData(ptyx.Data{AgentID: "a", Text: "\033[2J\033[HQuestion 1\nPick a path\n1 unanswered question\nEnter to submit answer\n"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HQuestion 1\nPick a path\n1 unanswered question\nEnter to submit answer\n"})
 
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil {
-		t.Fatal("agent missing")
+	task := state.TaskByID(model.state, "a")
+	if task == nil {
+		t.Fatal("task missing")
 	}
-	if agent.CodexStatus != "Ready" || agent.Status != state.StatusReady {
-		t.Fatalf("agent status = %s/%q, want ready/Ready", agent.Status, agent.CodexStatus)
+	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
+		t.Fatalf("task status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
 	}
-	if got := model.renderAgentTitle(*agent); got != "alpha" {
+	if got := model.renderTaskTitle(*task); got != "alpha" {
 		t.Fatalf("configured title should remain unchanged, got %q", got)
 	}
 
-	agent.Title = "{status}"
-	if got := renderAgentTitleForState(model.cfg, model.state, *agent); got != "Ready" {
+	task.Title = "{status}"
+	if got := renderTaskTitleForState(model.cfg, model.state, *task); got != "Ready" {
 		t.Fatalf("status title = %q, want Ready", got)
 	}
 
-	model.applyPTYData(ptyx.Data{AgentID: "a", Text: "\033[2J\033[Hworking again\n"})
-	agent = state.AgentByID(model.state, "a")
-	if agent == nil || agent.CodexStatus != "" || agent.Status != state.StatusRunning {
-		t.Fatalf("agent status after clearing prompt = %#v", agent)
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[Hworking again\n"})
+	task = state.TaskByID(model.state, "a")
+	if task == nil || task.CodexStatus != "" || task.Status != state.StatusRunning {
+		t.Fatalf("task status after clearing prompt = %#v", task)
 	}
 }
 
-func TestSnapshotMarksActiveAgentsLoadingUntilReady(t *testing.T) {
-	st := testStateWithAgent(t.TempDir())
+func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
+	st := testStateWithTask(t.TempDir())
 	model := Model{
 		cfg:     config.DefaultConfig(),
 		state:   st,
@@ -234,69 +234,69 @@ func TestSnapshotMarksActiveAgentsLoadingUntilReady(t *testing.T) {
 	}
 
 	snapshot := model.Snapshot()
-	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
-		t.Fatalf("loading agent ids = %#v", snapshot.LoadingAgentIDs)
+	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
+		t.Fatalf("loading task ids = %#v", snapshot.LoadingTaskIDs)
 	}
 
-	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
+	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
 	snapshot = model.Snapshot()
-	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
-		t.Fatalf("ready agent should keep loading until visible content: %#v", snapshot.LoadingAgentIDs)
+	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
+		t.Fatalf("ready task should keep loading until visible content: %#v", snapshot.LoadingTaskIDs)
 	}
 
 	model.screens["a"].Write("ready\n")
 	snapshot = model.Snapshot()
-	if len(snapshot.LoadingAgentIDs) != 0 {
-		t.Fatalf("ready agent should not be marked loading: %#v", snapshot.LoadingAgentIDs)
+	if len(snapshot.LoadingTaskIDs) != 0 {
+		t.Fatalf("ready task should not be marked loading: %#v", snapshot.LoadingTaskIDs)
 	}
 
-	model.state.Agents[0].CodexTitle = "Fake Codex Waiting"
+	model.state.Tasks[0].CodexTitle = "Fake Codex Waiting"
 	snapshot = model.Snapshot()
-	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
-		t.Fatalf("waiting agent should be marked loading: %#v", snapshot.LoadingAgentIDs)
+	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
+		t.Fatalf("waiting task should be marked loading: %#v", snapshot.LoadingTaskIDs)
 	}
 
-	model.state.Agents[0].CodexTitle = "Fake Codex Working"
+	model.state.Tasks[0].CodexTitle = "Fake Codex Working"
 	snapshot = model.Snapshot()
-	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
-		t.Fatalf("working agent should be marked loading: %#v", snapshot.LoadingAgentIDs)
+	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
+		t.Fatalf("working task should be marked loading: %#v", snapshot.LoadingTaskIDs)
 	}
 }
 
 func TestLoadingIndicatorCoversNonIdleTaskStates(t *testing.T) {
 	for _, tt := range []struct {
-		name  string
-		agent state.Agent
-		want  bool
+		name string
+		task state.Task
+		want bool
 	}{
 		{
-			name:  "codex waiting title",
-			agent: state.Agent{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Waiting"},
-			want:  true,
+			name: "codex waiting title",
+			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Waiting"},
+			want: true,
 		},
 		{
-			name:  "terminal waiting status",
-			agent: state.Agent{ID: "a", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.AgentStatus("waiting")},
-			want:  true,
+			name: "terminal waiting status",
+			task: state.Task{ID: "a", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.TaskStatus("waiting")},
+			want: true,
 		},
 		{
-			name:  "ready",
-			agent: state.Agent{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Ready"},
-			want:  false,
+			name: "ready",
+			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Ready"},
+			want: false,
 		},
 		{
-			name:  "idle",
-			agent: state.Agent{ID: "a", Title: "Codex", Status: state.AgentStatus("idle")},
-			want:  false,
+			name: "idle",
+			task: state.Task{ID: "a", Title: "Codex", Status: state.TaskStatus("idle")},
+			want: false,
 		},
 		{
-			name:  "killed",
-			agent: state.Agent{ID: "a", Title: "Codex", Status: state.StatusKilled},
-			want:  false,
+			name: "killed",
+			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusKilled},
+			want: false,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := agentStatusShowsLoadingIndicator(tt.agent); got != tt.want {
+			if got := taskStatusShowsLoadingIndicator(tt.task); got != tt.want {
 				t.Fatalf("loading indicator = %t, want %t", got, tt.want)
 			}
 		})
@@ -345,8 +345,8 @@ func TestClientPromptsToAddMissingLaunchWorkspace(t *testing.T) {
 			t.Fatalf("launch workspace prompt should not include %q:\n%s", unexpected, got)
 		}
 	}
-	if strings.Contains(got, "New agents will start from this directory.") {
-		t.Fatalf("launch workspace prompt should not include agent-start explanation:\n%s", got)
+	if strings.Contains(got, "New tasks will start from this directory.") {
+		t.Fatalf("launch workspace prompt should not include task-start explanation:\n%s", got)
 	}
 }
 
@@ -416,49 +416,49 @@ func TestLaunchWorkspaceConfirmationIgnoresYAndN(t *testing.T) {
 	}
 }
 
-func TestDeleteAgentConfirmationEnterSubmitsYIgnoredAndNCancels(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestDeleteTaskConfirmationEnterSubmitsYIgnoredAndNCancels(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.mode = modeConfirm
-	model.confirm = confirmDeleteAgent
+	model.confirm = confirmDeleteTask
 	model.pendingID = "a"
 
 	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	model = updated.(Model)
-	if cmd != nil || model.mode != modeConfirm || len(model.state.Agents) != 1 {
-		t.Fatalf("y should be ignored for delete confirm, mode=%s cmd=%#v agents=%d", model.mode, cmd, len(model.state.Agents))
+	if cmd != nil || model.mode != modeConfirm || len(model.state.Tasks) != 1 {
+		t.Fatalf("y should be ignored for delete confirm, mode=%s cmd=%#v tasks=%d", model.mode, cmd, len(model.state.Tasks))
 	}
 
 	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	model = updated.(Model)
-	if cmd != nil || model.mode != modeNormal || len(model.state.Agents) != 1 {
-		t.Fatalf("n should cancel delete confirm, mode=%s cmd=%#v agents=%d", model.mode, cmd, len(model.state.Agents))
+	if cmd != nil || model.mode != modeNormal || len(model.state.Tasks) != 1 {
+		t.Fatalf("n should cancel delete confirm, mode=%s cmd=%#v tasks=%d", model.mode, cmd, len(model.state.Tasks))
 	}
 
 	model.mode = modeConfirm
-	model.confirm = confirmDeleteAgent
+	model.confirm = confirmDeleteTask
 	model.pendingID = "a"
 	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeNormal {
 		t.Fatalf("enter should submit delete confirm, mode=%s cmd=%#v", model.mode, cmd)
 	}
-	if len(model.state.Agents) != 0 {
-		t.Fatalf("agent should be removed after enter: %#v", model.state.Agents)
+	if len(model.state.Tasks) != 0 {
+		t.Fatalf("task should be removed after enter: %#v", model.state.Tasks)
 	}
 }
 
-func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestDeleteTaskConfirmationExplainsStopAndDelete(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
 	model = updated.(Model)
 
-	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteAgent || model.pendingID != "a" {
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteTask || model.pendingID != "a" {
 		t.Fatalf("delete confirm state mode=%s confirm=%s pending=%s cmd=%v", model.mode, model.confirm, model.pendingID, cmd)
 	}
 	got := ansi.Strip(model.View())
@@ -471,12 +471,12 @@ func TestDeleteAgentConfirmationExplainsStopAndDelete(t *testing.T) {
 		"N Esc",
 	} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("delete agent confirm missing %q:\n%s", expected, got)
+			t.Fatalf("delete task confirm missing %q:\n%s", expected, got)
 		}
 	}
 	for _, unexpected := range []string{"Y stop and delete", "N cancel", "Esc cancel"} {
 		if strings.Contains(got, unexpected) {
-			t.Fatalf("delete agent confirm should not show %q:\n%s", unexpected, got)
+			t.Fatalf("delete task confirm should not show %q:\n%s", unexpected, got)
 		}
 	}
 }
@@ -496,46 +496,46 @@ func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {
 			t.Fatalf("%s should not cancel with n", confirm)
 		}
 	}
-	if !confirmKeySubmits(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyEnter}) {
-		t.Fatal("delete agent should submit with enter")
+	if !confirmKeySubmits(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyEnter}) {
+		t.Fatal("delete task should submit with enter")
 	}
-	if confirmKeySubmits(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}) {
-		t.Fatal("delete agent should not submit with y")
+	if confirmKeySubmits(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}) {
+		t.Fatal("delete task should not submit with y")
 	}
-	if !confirmKeyCancels(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyEsc}) {
-		t.Fatal("delete agent should cancel with esc")
+	if !confirmKeyCancels(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyEsc}) {
+		t.Fatal("delete task should cancel with esc")
 	}
-	if !confirmKeyCancels(confirmDeleteAgent, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}) {
-		t.Fatal("delete agent should cancel with n")
+	if !confirmKeyCancels(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}) {
+		t.Fatal("delete task should cancel with n")
 	}
 }
 
 func TestDefaultDeleteShortcutNoLongerUsesD(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	model = updated.(Model)
 
-	if cmd != nil || model.mode == modeConfirm || model.confirm == confirmDeleteAgent {
+	if cmd != nil || model.mode == modeConfirm || model.confirm == confirmDeleteTask {
 		t.Fatalf("d should not start delete confirmation mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
 	}
 }
 
 func TestBackspaceDeleteShortcutAcceptsCtrlHSequence(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlH})
 	model = updated.(Model)
 
-	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteAgent || model.pendingID != "a" {
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmDeleteTask || model.pendingID != "a" {
 		t.Fatalf("ctrl+h backspace confirm state mode=%s confirm=%s pending=%s cmd=%v", model.mode, model.confirm, model.pendingID, cmd)
 	}
 }
@@ -628,23 +628,23 @@ func TestClientRequestArgsOnlySelectLaunchWorkspaceOnAttach(t *testing.T) {
 	}
 }
 
-func testClientUpgrade(supervisorVersion string, runningAgents int) *ipc.Upgrade {
+func testClientUpgrade(supervisorVersion string, runningTasks int) *ipc.Upgrade {
 	return &ipc.Upgrade{
 		ClientVersion:     weftversion.Version,
 		SupervisorVersion: supervisorVersion,
 		Compatible:        true,
 		RestartRequired:   true,
-		RunningAgents:     runningAgents,
+		RunningTasks:      runningTasks,
 		Message:           fmt.Sprintf("Upgrade pending: client %s is newer than supervisor %s.", weftversion.Version, supervisorVersion),
 	}
 }
 
 func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	rt := testRuntime(t)
-	st := testStateWithAgent(rt.Workspace)
-	st.Agents[0].CodexTitle = "Fake Codex Ready"
-	st.Agents[0].CodexSessionID = "session-alpha"
-	st.Focus = state.FocusAgents
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].CodexTitle = "Fake Codex Ready"
+	st.Tasks[0].CodexSessionID = "session-alpha"
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
 	model.width = 160
@@ -657,7 +657,7 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 		SupervisorVersion: "3.9.0",
 	})
 
-	if model.upgrade == nil || model.upgrade.RunningAgents != 1 {
+	if model.upgrade == nil || model.upgrade.RunningTasks != 1 {
 		t.Fatalf("upgrade = %#v", model.upgrade)
 	}
 	got := ansi.Strip(model.View())
@@ -703,12 +703,12 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	}
 }
 
-func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
+func TestClientUpgradeWaitsUntilTaskIsIdleAndResumable(t *testing.T) {
 	rt := testRuntime(t)
-	st := testStateWithAgent(rt.Workspace)
-	st.Agents[0].CodexTitle = "Fake Codex Working"
-	st.Agents[0].CodexInputSubmitted = true
-	st.Focus = state.FocusAgents
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].CodexTitle = "Fake Codex Working"
+	st.Tasks[0].CodexInputSubmitted = true
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
 	model.width = 160
@@ -728,7 +728,7 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 		}
 	}
 	if strings.Contains(got, "Press U to upgrade") {
-		t.Fatalf("upgrade action should not show while agent is working:\n%s", got)
+		t.Fatalf("upgrade action should not show while task is working:\n%s", got)
 	}
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = updated.(ClientModel)
@@ -739,9 +739,9 @@ func TestClientUpgradeWaitsUntilAgentIsIdleAndResumable(t *testing.T) {
 
 func TestClientUpgradeAllowsFreshCodexWithoutSession(t *testing.T) {
 	rt := testRuntime(t)
-	st := testStateWithAgent(rt.Workspace)
-	st.Agents[0].CodexTitle = "Fake Codex Ready"
-	st.Focus = state.FocusAgents
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].CodexTitle = "Fake Codex Ready"
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
 	model.width = 160
@@ -774,12 +774,12 @@ func TestClientUpgradeAllowsFreshCodexWithoutSession(t *testing.T) {
 	}
 }
 
-func TestSnapshotShowsActiveAgentStartError(t *testing.T) {
+func TestSnapshotShowsActiveTaskStartError(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
-	st := testStateWithAgent(rt.Workspace)
-	st.Agents[0].Status = state.StatusError
-	st.Agents[0].CodexTitle = "fork/exec /missing/zsh: no such file or directory"
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].Status = state.StatusError
+	st.Tasks[0].CodexTitle = "fork/exec /missing/zsh: no such file or directory"
 
 	model := NewModel(rt, cfg, state.Empty())
 	model.state = st
@@ -804,7 +804,7 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 		{Type: tea.KeyCtrlD},
 		{Type: tea.KeyCtrlQ},
 	} {
-		model := testModelWithAgent(t)
+		model := testModelWithTask(t)
 		defer killPTYs(model)
 
 		updated, cmd := model.handleKey(msg)
@@ -816,57 +816,57 @@ func TestCodexFocusOnlyHandlesGlobalShortcuts(t *testing.T) {
 		if model.mode != modeNormal {
 			t.Fatalf("%s changed mode to %s", msg.String(), model.mode)
 		}
-		if model.state.Focus != state.FocusCodex {
+		if model.state.Focus != state.FocusConsole {
 			t.Fatalf("%s changed focus to %s", msg.String(), model.state.Focus)
 		}
-		if len(model.state.Agents) != 1 {
-			t.Fatalf("%s changed agents: %#v", msg.String(), model.state.Agents)
+		if len(model.state.Tasks) != 1 {
+			t.Fatalf("%s changed tasks: %#v", msg.String(), model.state.Tasks)
 		}
 	}
 
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlB})
 	model = updated.(Model)
-	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
+	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
 		t.Fatalf("C-b should open dashboard, got %s/%t", model.state.Focus, model.state.NavOpen)
 	}
 
-	model.state.Focus = state.FocusCodex
+	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
-	model.state.Agents[0].CodexTitle = "Fake Codex Working"
+	model.state.Tasks[0].CodexTitle = "Fake Codex Working"
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
 	if model.message != "" {
 		t.Fatalf("C-c should forward while Codex has focus, message=%q", model.message)
 	}
 
-	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
-	model.screens[model.state.Agents[0].ID] = NewTerminalScreen(model.ptyWidth(), model.ptyHeight())
-	model.screens[model.state.Agents[0].ID].Write("ready\n")
+	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
+	model.screens[model.state.Tasks[0].ID] = NewTerminalScreen(model.ptyWidth(), model.ptyHeight())
+	model.screens[model.state.Tasks[0].ID].Write("ready\n")
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	model = updated.(Model)
-	if model.message != "" || model.state.Focus != state.FocusCodex {
+	if model.message != "" || model.state.Focus != state.FocusConsole {
 		t.Fatalf("C-c should still forward while Codex is ready, message=%q focus=%s", model.message, model.state.Focus)
 	}
 }
 
-func TestActivePTYExitReturnsToAgentsPane(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestActivePTYExitReturnsToTasksPane(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.width = 120
 	model.navWidth = 0
-	model.state.Focus = state.FocusCodex
+	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
-	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
+	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
 
-	model.applyPTYData(ptyx.Data{AgentID: "a", Err: os.ErrClosed})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Err: os.ErrClosed})
 
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.Status != state.StatusStopped || agent.CodexTitle != "Codex exited" {
-		t.Fatalf("agent after PTY exit = %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.Status != state.StatusStopped || task.CodexTitle != "Codex exited" {
+		t.Fatalf("task after PTY exit = %#v", task)
 	}
-	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
+	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
 		t.Fatalf("PTY exit should recover to Tasks pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
 	}
 	if model.ptys["a"] != nil {
@@ -877,28 +877,28 @@ func TestActivePTYExitReturnsToAgentsPane(t *testing.T) {
 	}
 }
 
-func TestRecentCtrlCPTYExitMarksAgentKilled(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestRecentCtrlCPTYExitMarksTaskKilled(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.width = 120
 	model.navWidth = 0
-	model.state.Focus = state.FocusCodex
+	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
-	model.recordAgentInterrupt("a")
+	model.recordTaskInterrupt("a")
 
-	model.applyPTYData(ptyx.Data{AgentID: "a", Err: os.ErrClosed})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Err: os.ErrClosed})
 
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.Status != state.StatusKilled || agent.CodexTitle != "Codex killed" {
-		t.Fatalf("agent after interrupted PTY exit = %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.Status != state.StatusKilled || task.CodexTitle != "Codex killed" {
+		t.Fatalf("task after interrupted PTY exit = %#v", task)
 	}
-	if model.state.Focus != state.FocusAgents || !model.state.NavOpen {
+	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
 		t.Fatalf("interrupted PTY exit should recover to Tasks pane, focus/nav=%s/%t", model.state.Focus, model.state.NavOpen)
 	}
 }
 
 func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.width = 100
 	model.navWidth = 0
@@ -907,7 +907,7 @@ func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
 		t.Fatalf("focused pty width = %d, want visible content width %d", got, want)
 	}
 
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.navWidth = 60
 	if got, want := model.ptyWidth(), 36; got != want {
@@ -916,7 +916,7 @@ func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
 }
 
 func TestPTYHeightMatchesVisibleCodexContentHeight(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.height = 32
 
@@ -931,22 +931,22 @@ func TestPTYHeightMatchesVisibleCodexContentHeight(t *testing.T) {
 }
 
 func TestIPCCodexFocusResizesScreenToVisibleConsoleWidth(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.width = 160
 	model.height = 32
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.navWidth = model.targetNavWidth()
-	agentID := model.state.ActiveAgentID
-	model.screens[agentID] = NewTerminalScreen(model.ptyWidth(), model.ptyHeight())
+	taskID := model.state.ActiveTaskID
+	model.screens[taskID] = NewTerminalScreen(model.ptyWidth(), model.ptyHeight())
 
-	splitWidth := model.screens[agentID].cols
+	splitWidth := model.screens[taskID].cols
 	if splitWidth >= 80 {
 		t.Fatalf("test setup expected narrow split screen, got %d", splitWidth)
 	}
 
-	response, _ := model.handleIPC(ipc.Request{Command: "focus", Args: map[string]string{"target": string(state.FocusCodex)}})
+	response, _ := model.handleIPC(ipc.Request{Command: "focus", Args: map[string]string{"target": string(state.FocusConsole)}})
 	if !response.OK {
 		t.Fatalf("focus response failed: %#v", response)
 	}
@@ -954,29 +954,29 @@ func TestIPCCodexFocusResizesScreenToVisibleConsoleWidth(t *testing.T) {
 	if got, want := model.navWidth, 0; got != want {
 		t.Fatalf("codex focus nav width = %d, want %d", got, want)
 	}
-	if got, want := model.screens[agentID].cols, 157; got != want {
+	if got, want := model.screens[taskID].cols, 157; got != want {
 		t.Fatalf("focused screen width = %d, want visible console width %d", got, want)
 	}
 }
 
 func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
-	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix ")})
+	cmd := model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix ")})
 	if cmd != nil {
 		t.Fatal("hook should not run before Enter")
 	}
-	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("loginx")})
-	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyBackspace})
-	cmd = model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("loginx")})
+	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyBackspace})
+	cmd = model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
-	if agent := state.AgentByID(model.state, "a"); agent == nil || !agent.AutoTitleAttempted || !agent.CodexInputSubmitted {
-		t.Fatalf("agent should be marked attempted and submitted: %#v", agent)
+	if task := state.TaskByID(model.state, "a"); task == nil || !task.AutoTitleAttempted || !task.CodexInputSubmitted {
+		t.Fatalf("task should be marked attempted and submitted: %#v", task)
 	}
 
 	msg := titleHookMessageFromCmd(t, cmd)
@@ -984,7 +984,7 @@ func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 		t.Fatal(msg.err)
 	}
 	model.applyTitleHook(msg)
-	if got := state.AgentByID(model.state, "a").AutoTitle; got != "Generated title" {
+	if got := state.TaskByID(model.state, "a").AutoTitle; got != "Generated title" {
 		t.Fatalf("auto title = %q", got)
 	}
 	raw, err := os.ReadFile(payloadPath)
@@ -997,40 +997,40 @@ func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 }
 
 func TestTitleHookCaptureTracksAltBackspaceAsPreviousTokenDelete(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 
-	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix loginx")})
-	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
-	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix "; got != want {
+	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix loginx")})
+	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyBackspace, Alt: true})
+	if got, want := string(model.codexInputBuffers[model.state.Tasks[0].ID]), "fix "; got != want {
 		t.Fatalf("direct capture buffer = %q, want %q", got, want)
 	}
 
-	model.codexInputBuffers[model.state.Agents[0].ID] = []rune("fix loginx")
-	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})
-	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix "; got != want {
+	model.codexInputBuffers[model.state.Tasks[0].ID] = []rune("fix loginx")
+	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyCtrlH, Alt: true})
+	if got, want := string(model.codexInputBuffers[model.state.Tasks[0].ID]), "fix "; got != want {
 		t.Fatalf("direct alt ctrl-h capture buffer = %q, want %q", got, want)
 	}
 
-	model.codexInputBuffers[model.state.Agents[0].ID] = []rune("fix loginx")
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "alt+backspace"})
-	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix "; got != want {
+	model.codexInputBuffers[model.state.Tasks[0].ID] = []rune("fix loginx")
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "alt+backspace"})
+	if got, want := string(model.codexInputBuffers[model.state.Tasks[0].ID]), "fix "; got != want {
 		t.Fatalf("forwarded capture buffer = %q, want %q", got, want)
 	}
 }
 
 func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
 	model.cfg.TitleTemplate = "{status} {auto}"
-	model.state.Agents[0].Title = model.cfg.TitleTemplate
+	model.state.Tasks[0].Title = model.cfg.TitleTemplate
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "fix"})
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "space"})
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "login"})
-	cmd := model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "enter"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "text", "text": "fix"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "space"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "text", "text": "login"})
+	cmd := model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "enter"})
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
@@ -1040,11 +1040,11 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 	}
 	model.applyTitleHook(msg)
 
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.AutoTitle != "Generated title" {
-		t.Fatalf("auto title = %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.AutoTitle != "Generated title" {
+		t.Fatalf("auto title = %#v", task)
 	}
-	if got := model.renderAgentTitle(*agent); got != "running Generated title" {
+	if got := model.renderTaskTitle(*task); got != "running Generated title" {
 		t.Fatalf("rendered title = %q", got)
 	}
 	raw, err := os.ReadFile(payloadPath)
@@ -1057,16 +1057,16 @@ func TestTitleHookCapturesSupervisorForwardedInput(t *testing.T) {
 }
 
 func TestTitleHookCapturesRawKeyboardProtocolInput(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
 	model.cfg.TitleTemplate = "{status} {auto}"
-	model.state.Agents[0].Title = model.cfg.TitleTemplate
+	model.state.Tasks[0].Title = model.cfg.TitleTemplate
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
 	sendRaw := func(raw string) tea.Cmd {
 		t.Helper()
-		return model.captureCodexInputArgs(model.state.Agents[0], map[string]string{
+		return model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{
 			"encoded": raw,
 			"input":   codexInputRaw,
 		})
@@ -1083,8 +1083,8 @@ func TestTitleHookCapturesRawKeyboardProtocolInput(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
-	if agent := state.AgentByID(model.state, "a"); agent == nil || !agent.AutoTitleAttempted {
-		t.Fatalf("agent should be marked attempted: %#v", agent)
+	if task := state.TaskByID(model.state, "a"); task == nil || !task.AutoTitleAttempted {
+		t.Fatalf("task should be marked attempted: %#v", task)
 	}
 	msg := cmd().(titleHookMsg)
 	if msg.err != nil {
@@ -1092,11 +1092,11 @@ func TestTitleHookCapturesRawKeyboardProtocolInput(t *testing.T) {
 	}
 	model.applyTitleHook(msg)
 
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.AutoTitle != "Generated title" {
-		t.Fatalf("auto title = %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.AutoTitle != "Generated title" {
+		t.Fatalf("auto title = %#v", task)
 	}
-	if got := model.renderAgentTitle(*agent); got != "running Generated title" {
+	if got := model.renderTaskTitle(*task); got != "running Generated title" {
 		t.Fatalf("rendered title = %q", got)
 	}
 	raw, err := os.ReadFile(payloadPath)
@@ -1109,32 +1109,32 @@ func TestTitleHookCapturesRawKeyboardProtocolInput(t *testing.T) {
 }
 
 func TestTitleHookRawCaptureIgnoresVimEscapeAndMetaCommands(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": "fix login"})
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": "\x1b"})
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": "\x1bb"})
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputRaw, "encoded": " now"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": codexInputRaw, "encoded": "fix login"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": codexInputRaw, "encoded": "\x1b"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": codexInputRaw, "encoded": "\x1bb"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": codexInputRaw, "encoded": " now"})
 
-	if got, want := string(model.codexInputBuffers[model.state.Agents[0].ID]), "fix login now"; got != want {
+	if got, want := string(model.codexInputBuffers[model.state.Tasks[0].ID]), "fix login now"; got != want {
 		t.Fatalf("raw capture buffer = %q, want %q", got, want)
 	}
 }
 
 func TestTitleHookBuffersShiftEnterUntilSubmit(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated title\\n'"
 
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "first"})
-	cmd := model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": codexInputShiftEnter})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "text", "text": "first"})
+	cmd := model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": codexInputShiftEnter})
 	if cmd != nil {
 		t.Fatal("shift enter should not submit the first message")
 	}
-	model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "text", "text": "second"})
-	cmd = model.captureCodexInputArgs(model.state.Agents[0], map[string]string{"input": "enter"})
+	model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "text", "text": "second"})
+	cmd = model.captureCodexInputArgs(model.state.Tasks[0], map[string]string{"input": "enter"})
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
@@ -1152,29 +1152,29 @@ func TestTitleHookBuffersShiftEnterUntilSubmit(t *testing.T) {
 }
 
 func TestTitleHookDoesNotRetryAfterAttempt(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.cfg.TitleHookCommand = "false"
 
-	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
-	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
+	cmd := model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected first hook attempt")
 	}
 	if msg := cmd().(titleHookMsg); msg.err == nil {
 		t.Fatal("expected hook error")
 	}
-	model.captureCodexInput(*state.AgentByID(model.state, "a"), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("second")})
-	cmd = model.captureCodexInput(*state.AgentByID(model.state, "a"), tea.KeyMsg{Type: tea.KeyEnter})
+	model.captureCodexInput(*state.TaskByID(model.state, "a"), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("second")})
+	cmd = model.captureCodexInput(*state.TaskByID(model.state, "a"), tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Fatal("hook should not retry after first attempt")
 	}
 }
 
 func TestRenameToAutoWithoutHookReportsConfigurationError(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.prompt = promptEditAgent
+	model.prompt = promptEditTask
 	model.pendingID = "a"
 
 	cmd := model.applyPrompt("{auto}")
@@ -1182,12 +1182,12 @@ func TestRenameToAutoWithoutHookReportsConfigurationError(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("missing hook should not start hook command")
 	}
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.Title != "{auto}" {
-		t.Fatalf("agent not renamed: %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.Title != "{auto}" {
+		t.Fatalf("task not renamed: %#v", task)
 	}
-	if agent.AutoTitleError != "title_hook_command is not configured" {
-		t.Fatalf("auto title error = %q", agent.AutoTitleError)
+	if task.AutoTitleError != "title_hook_command is not configured" {
+		t.Fatalf("auto title error = %q", task.AutoTitleError)
 	}
 	if !strings.Contains(model.message, "title_hook_command") {
 		t.Fatalf("message = %q", model.message)
@@ -1195,16 +1195,16 @@ func TestRenameToAutoWithoutHookReportsConfigurationError(t *testing.T) {
 }
 
 func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Generated before rename\\n'"
 
-	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("summarize this bug")})
+	cmd := model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("summarize this bug")})
 	if cmd != nil {
 		t.Fatal("plain title should not run hook while capturing input")
 	}
-	cmd = model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	cmd = model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("hook should run on first message even before {auto} is used")
 	}
@@ -1214,16 +1214,16 @@ func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
 	}
 	model.applyTitleHook(msg)
 
-	model.prompt = promptEditAgent
+	model.prompt = promptEditTask
 	model.pendingID = "a"
 	cmd = model.applyPrompt("{auto}")
 	if cmd != nil {
 		t.Fatal("rename to auto should only reveal saved auto title")
 	}
-	if got := state.AgentByID(model.state, "a").AutoTitle; got != "Generated before rename" {
+	if got := state.TaskByID(model.state, "a").AutoTitle; got != "Generated before rename" {
 		t.Fatalf("auto title = %q", got)
 	}
-	if got := model.renderAgentTitle(*state.AgentByID(model.state, "a")); got != "Generated before rename" {
+	if got := model.renderTaskTitle(*state.TaskByID(model.state, "a")); got != "Generated before rename" {
 		t.Fatalf("rendered title = %q", got)
 	}
 	raw, err := os.ReadFile(payloadPath)
@@ -1236,12 +1236,12 @@ func TestRenameToAutoUsesSavedAutoTitle(t *testing.T) {
 }
 
 func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.cfg.TitleHookCommand = "printf 'bad config' >&2; exit 2"
 
-	model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
-	cmd := model.captureCodexInput(model.state.Agents[0], tea.KeyMsg{Type: tea.KeyEnter})
+	model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
+	cmd := model.captureCodexInput(model.state.Tasks[0], tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
@@ -1251,18 +1251,18 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 	}
 	model.applyTitleHook(msg)
 
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || !strings.Contains(agent.AutoTitleError, "bad config") {
-		t.Fatalf("agent auto title error = %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || !strings.Contains(task.AutoTitleError, "bad config") {
+		t.Fatalf("task auto title error = %#v", task)
 	}
 	if !strings.Contains(model.message, "auto title hook failed") {
 		t.Fatalf("message = %q", model.message)
 	}
 
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
-	model.prompt = promptEditAgent
+	model.prompt = promptEditTask
 	model.mode = modeInput
 	model.pendingID = "a"
 	model.input.SetValue("{auto}")
@@ -1274,7 +1274,7 @@ func TestTitleHookFailureIsReportedInFooterAndRenamePane(t *testing.T) {
 }
 
 func TestActiveOutputPreservesTerminalStyles(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	screen := NewTerminalScreen(20, 3)
 	screen.Write("\x1b[48;2;1;2;3m input \x1b[0m")
@@ -1291,7 +1291,7 @@ func TestActiveOutputPreservesTerminalStyles(t *testing.T) {
 }
 
 func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	screen := NewTerminalScreen(20, 3)
 	screen.Write("prompt")
@@ -1302,7 +1302,7 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 		t.Fatalf("codex-focused output should paint terminal cursor:\n%q", output)
 	}
 
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	output = model.activeOutput()
 	if strings.Contains(output, "48;2;255;255;255") {
@@ -1310,15 +1310,15 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 	}
 }
 
-func TestEditAgentPromptPreviewsEditedTitle(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestEditTaskPromptPreviewsEditedTitle(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.cfg.TitleTemplate = "{auto}"
-	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
-	model.state.Focus = state.FocusAgents
+	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
-	model.prompt = promptEditAgent
+	model.prompt = promptEditTask
 	model.mode = modeInput
 	model.pendingID = "a"
 	model.input.SetValue("{codex}")
@@ -1339,13 +1339,13 @@ func TestEditAgentPromptPreviewsEditedTitle(t *testing.T) {
 	}
 }
 
-func TestEditAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestEditTaskPromptPrefillsStoredTaskTitleTemplate(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Agents[0].Title = "{status} {auto}"
-	model.state.Agents[0].AutoTitle = "Fix login"
-	model.state.Agents[0].CodexTitle = "Fake Codex Ready"
-	model.state.Focus = state.FocusAgents
+	model.state.Tasks[0].Title = "{status} {auto}"
+	model.state.Tasks[0].AutoTitle = "Fix login"
+	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
 
@@ -1355,14 +1355,14 @@ func TestEditAgentPromptPrefillsStoredAgentTitleTemplate(t *testing.T) {
 	if cmd != nil {
 		t.Fatalf("rename prompt should not start command, got %#v", cmd)
 	}
-	if model.mode != modeInput || model.prompt != promptEditAgent || model.pendingID != "a" {
+	if model.mode != modeInput || model.prompt != promptEditTask || model.pendingID != "a" {
 		t.Fatalf("prompt state = mode:%s prompt:%s pending:%s", model.mode, model.prompt, model.pendingID)
 	}
 	if got, want := model.input.Value(), "{status} {auto}"; got != want {
 		t.Fatalf("edit prompt value = %q, want stored title template %q", got, want)
 	}
-	if got := model.renderAgentTitle(model.state.Agents[0]); got != "Ready Fix login" {
-		t.Fatalf("agent row title = %q", got)
+	if got := model.renderTaskTitle(model.state.Tasks[0]); got != "Ready Fix login" {
+		t.Fatalf("task row title = %q", got)
 	}
 }
 
@@ -1407,9 +1407,9 @@ func TestWorkspaceRenamePromptSetsAndClearsTitleOverride(t *testing.T) {
 }
 
 func TestDashboardEditShortcutIgnoresLegacyRenameKey(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
 
@@ -1431,11 +1431,11 @@ func TestEditGroupPromptTogglesSilentAndSaves(t *testing.T) {
 		Version:             state.Version,
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "g",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []state.Group{{ID: "g", WorkspaceID: "w", Path: "release", Silent: false, CreatedAt: now, UpdatedAt: now}},
-		Agents:              []state.Agent{},
+		Tasks:               []state.Task{},
 	}
 	model := NewModel(rt, cfg, st)
 	defer killPTYs(model)
@@ -1473,11 +1473,11 @@ func TestCreateGroupPromptCanCreateSilentGroup(t *testing.T) {
 	st := state.State{
 		Version:             state.Version,
 		SelectedWorkspaceID: "w",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []state.Group{},
-		Agents:              []state.Agent{},
+		Tasks:               []state.Task{},
 	}
 	model := NewModel(rt, cfg, st)
 	defer killPTYs(model)
@@ -1671,17 +1671,17 @@ func TestWorkspacePromptSuggestionMenuSupportsArrowSelection(t *testing.T) {
 	}
 }
 
-func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestMoveTaskPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
-	model.state.Agents[0].GroupID = ""
+	model.state.Tasks[0].GroupID = ""
 	model.groupCursor = 1
 	now := state.NowISO()
 	model.state.Groups = append(model.state.Groups, state.Group{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now})
 
-	model.startPrompt(promptMoveAgent, "")
+	model.startPrompt(promptMoveTask, "")
 	got := ansi.Strip(model.View())
 	highlighted := promptCurrentSuggestion(model.promptContext(), model.input.Value(), model.promptSuggestionIndex)
 	for _, expected := range []string{"Move task", "Top-level task", "> " + highlighted, "Enter choose", "Tab choose", "Esc close suggestions"} {
@@ -1698,15 +1698,15 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	if got := model.input.Value(); got != highlighted {
 		t.Fatalf("blank move prompt enter chose %q, want %q", got, highlighted)
 	}
-	if agent := state.AgentByID(model.state, "a"); agent == nil || agent.GroupID != "" {
-		t.Fatalf("choosing a suggestion should not submit the move: %#v", agent)
+	if task := state.TaskByID(model.state, "a"); task == nil || task.GroupID != "" {
+		t.Fatalf("choosing a suggestion should not submit the move: %#v", task)
 	}
 	got = ansi.Strip(model.View())
 	if !strings.Contains(got, "Enter move") || strings.Contains(got, "Esc close suggestions") {
 		t.Fatalf("chosen blank suggestion should close suggestions and advertise submit:\n%s", got)
 	}
 
-	model.startPrompt(promptMoveAgent, "rel")
+	model.startPrompt(promptMoveTask, "rel")
 	if got, want := model.input.MatchedSuggestions(), []string{"release"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("matched groups = %#v, want %#v", got, want)
 	}
@@ -1735,12 +1735,12 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	if model.mode != modeNormal {
 		t.Fatalf("valid move should close prompt, mode=%s", model.mode)
 	}
-	if agent := state.AgentByID(model.state, "a"); agent == nil || agent.GroupID != "release" {
-		t.Fatalf("agent was not moved to release: %#v", agent)
+	if task := state.TaskByID(model.state, "a"); task == nil || task.GroupID != "release" {
+		t.Fatalf("task was not moved to release: %#v", task)
 	}
 
 	model.groupCursor = 3
-	model.startPrompt(promptMoveAgent, "missing")
+	model.startPrompt(promptMoveTask, "missing")
 	updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if model.mode != modeInput || model.message != "Group not found" {
@@ -1748,10 +1748,10 @@ func TestMoveAgentPromptAutocompletesKnownGroupsAndKeepsInvalidInputOpen(t *test
 	}
 }
 
-func TestMoveAgentPromptAutocompletesGroupSubstring(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestMoveTaskPromptAutocompletesGroupSubstring(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 2
 	now := state.NowISO()
@@ -1760,7 +1760,7 @@ func TestMoveAgentPromptAutocompletesGroupSubstring(t *testing.T) {
 		state.Group{ID: "rollout", WorkspaceID: "w", Path: "release-rollout", CreatedAt: now, UpdatedAt: now},
 	)
 
-	model.startPrompt(promptMoveAgent, "out")
+	model.startPrompt(promptMoveTask, "out")
 	if got, want := promptMatchedSuggestions(model.promptContext(), model.input.Value()), []string{"release-rollout"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("substring matched groups = %#v, want %#v", got, want)
 	}
@@ -1783,17 +1783,17 @@ func TestMoveAgentPromptAutocompletesGroupSubstring(t *testing.T) {
 	}
 }
 
-func TestShiftUpDownReordersSelectedAgentInAgentsPane(t *testing.T) {
+func TestShiftUpDownReordersSelectedTaskInTasksPane(t *testing.T) {
 	rt := testRuntime(t)
 	now := state.NowISO()
 	model := NewModel(rt, config.DefaultConfig(), state.State{
 		Version:             state.Version,
-		ActiveAgentID:       "b",
+		ActiveTaskID:        "b",
 		SelectedWorkspaceID: "w",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
-		Agents: []state.Agent{
+		Tasks: []state.Task{
 			{ID: "a", WorkspaceID: "w", Title: "Alpha", Status: state.StatusReady, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
 			{ID: "b", WorkspaceID: "w", Title: "Beta", Status: state.StatusReady, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: now},
 		},
@@ -1802,38 +1802,38 @@ func TestShiftUpDownReordersSelectedAgentInAgentsPane(t *testing.T) {
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
 	model = updated.(Model)
-	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"b", "a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"b", "a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("shift up order = %#v, want %#v", got, want)
 	}
-	if model.groupCursor != 1 || model.state.ActiveAgentID != "b" {
-		t.Fatalf("selection should follow reordered agent: cursor=%d active=%q", model.groupCursor, model.state.ActiveAgentID)
+	if model.groupCursor != 1 || model.state.ActiveTaskID != "b" {
+		t.Fatalf("selection should follow reordered task: cursor=%d active=%q", model.groupCursor, model.state.ActiveTaskID)
 	}
 
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
 	model = updated.(Model)
-	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"a", "b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"a", "b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("shift down order = %#v, want %#v", got, want)
 	}
-	if model.groupCursor != 2 || model.state.ActiveAgentID != "b" {
-		t.Fatalf("selection should follow reordered agent: cursor=%d active=%q", model.groupCursor, model.state.ActiveAgentID)
+	if model.groupCursor != 2 || model.state.ActiveTaskID != "b" {
+		t.Fatalf("selection should follow reordered task: cursor=%d active=%q", model.groupCursor, model.state.ActiveTaskID)
 	}
 }
 
-func TestShiftUpDownMovesSelectedAgentAcrossAdjacentGroups(t *testing.T) {
+func TestShiftUpDownMovesSelectedTaskAcrossAdjacentGroups(t *testing.T) {
 	rt := testRuntime(t)
 	now := state.NowISO()
 	model := NewModel(rt, config.DefaultConfig(), state.State{
 		Version:             state.Version,
-		ActiveAgentID:       "top-b",
+		ActiveTaskID:        "top-b",
 		SelectedWorkspaceID: "w",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
 			{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now},
 			{ID: "review", WorkspaceID: "w", Path: "review", CreatedAt: now, UpdatedAt: now},
 		},
-		Agents: []state.Agent{
+		Tasks: []state.Task{
 			{ID: "top-a", WorkspaceID: "w", Title: "Top A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 			{ID: "top-b", WorkspaceID: "w", Title: "Top B", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 			{ID: "release-a", WorkspaceID: "w", GroupID: "release", Title: "Release A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
@@ -1845,37 +1845,37 @@ func TestShiftUpDownMovesSelectedAgentAcrossAdjacentGroups(t *testing.T) {
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyShiftDown})
 	model = updated.(Model)
-	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("ungrouped order after crossing down = %#v, want %#v", got, want)
 	}
-	if got, want := tuiAgentIDs(state.AgentsForGroup(model.state, "release")), []string{"top-b", "release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := tuiTaskIDs(state.TasksForGroup(model.state, "release")), []string{"top-b", "release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("release order after crossing down = %#v, want %#v", got, want)
 	}
-	if row := model.currentGroupRow(); row.kind != groupRowAgent || row.agentID != "top-b" || row.groupID != "release" {
+	if row := model.currentGroupRow(); row.kind != groupRowTask || row.taskID != "top-b" || row.groupID != "release" {
 		t.Fatalf("selection should follow task into release: cursor=%d row=%#v", model.groupCursor, row)
 	}
 
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyShiftUp})
 	model = updated.(Model)
-	if got, want := tuiAgentIDs(state.UngroupedAgentsForWorkspace(model.state, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := tuiTaskIDs(state.UngroupedTasksForWorkspace(model.state, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("ungrouped order after crossing up = %#v, want %#v", got, want)
 	}
-	if got, want := tuiAgentIDs(state.AgentsForGroup(model.state, "release")), []string{"release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := tuiTaskIDs(state.TasksForGroup(model.state, "release")), []string{"release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("release order after crossing up = %#v, want %#v", got, want)
 	}
-	if row := model.currentGroupRow(); row.kind != groupRowAgent || row.agentID != "top-b" || row.groupID != "" {
+	if row := model.currentGroupRow(); row.kind != groupRowTask || row.taskID != "top-b" || row.groupID != "" {
 		t.Fatalf("selection should follow task back to top-level: cursor=%d row=%#v", model.groupCursor, row)
 	}
 }
 
-func TestShiftUpDownReordersSelectedGroupInAgentsPane(t *testing.T) {
+func TestShiftUpDownReordersSelectedGroupInTasksPane(t *testing.T) {
 	rt := testRuntime(t)
 	now := state.NowISO()
 	model := NewModel(rt, config.DefaultConfig(), state.State{
 		Version:             state.Version,
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "beta",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
@@ -1895,7 +1895,7 @@ func TestShiftUpDownReordersSelectedGroupInAgentsPane(t *testing.T) {
 	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "beta" {
 		t.Fatalf("selection should follow reordered group: cursor=%d row=%#v", model.groupCursor, row)
 	}
-	if model.state.SelectedAgentID != "" || model.state.SelectedGroupID != "beta" {
+	if model.state.SelectedTaskID != "" || model.state.SelectedGroupID != "beta" {
 		t.Fatalf("group selection state = %#v", model.state)
 	}
 
@@ -1916,7 +1916,7 @@ func TestClientShiftUpOnSelectedGroupRequestsReorderGroup(t *testing.T) {
 		Version:             state.Version,
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "beta",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
@@ -1962,7 +1962,7 @@ func TestSupervisorReorderGroupRequestMovesSelectedGroup(t *testing.T) {
 		Version:             state.Version,
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "beta",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
@@ -1982,16 +1982,16 @@ func TestSupervisorReorderGroupRequestMovesSelectedGroup(t *testing.T) {
 	}
 }
 
-func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveAgent(t *testing.T) {
+func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveTask(t *testing.T) {
 	rt := testRuntime(t)
 	now := state.NowISO()
 	model := NewModel(rt, config.DefaultConfig(), state.State{
 		Version:             state.Version,
-		ActiveAgentID:       "planning-agent",
-		SelectedAgentID:     "planning-agent",
+		ActiveTaskID:        "planning-task",
+		SelectedTaskID:      "planning-task",
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "planning",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
@@ -1999,15 +1999,15 @@ func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveAgent(t *testing.T) {
 			{ID: "planning", WorkspaceID: "w", Path: "planning", CreatedAt: now, UpdatedAt: now},
 			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
 		},
-		Agents: []state.Agent{
+		Tasks: []state.Task{
 			{ID: "progress-a", WorkspaceID: "w", GroupID: "in-progress", Title: "Progress A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 			{ID: "progress-b", WorkspaceID: "w", GroupID: "in-progress", Title: "Progress B", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "planning-agent", WorkspaceID: "w", GroupID: "planning", Title: "Planning", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "planning-task", WorkspaceID: "w", GroupID: "planning", Title: "Planning", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
 		},
 	})
 
-	if row := model.currentGroupRow(); row.kind != groupRowAgent || row.agentID != "planning-agent" {
-		t.Fatalf("initial cursor row = %#v, want planning agent", row)
+	if row := model.currentGroupRow(); row.kind != groupRowTask || row.taskID != "planning-task" {
+		t.Fatalf("initial cursor row = %#v, want planning task", row)
 	}
 
 	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyUp})
@@ -2020,7 +2020,7 @@ func TestGroupCursorSyncDoesNotSnapGroupRowsBackToActiveAgent(t *testing.T) {
 		t.Fatalf("sync should keep planning group row, got %#v", row)
 	}
 
-	model.syncGroupCursorToAgent("planning-agent")
+	model.syncGroupCursorToTask("planning-task")
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
 	if row := model.currentGroupRow(); row.kind != groupRowGroup || row.groupID != "shipit" {
@@ -2037,19 +2037,19 @@ func TestGroupCursorSyncRestoresPersistedGroupRow(t *testing.T) {
 	now := state.NowISO()
 	model := NewModel(rt, config.DefaultConfig(), state.State{
 		Version:             state.Version,
-		ActiveAgentID:       "planning-agent",
+		ActiveTaskID:        "planning-task",
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "planning",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
 			{ID: "in-progress", WorkspaceID: "w", Path: "in progress", CreatedAt: now, UpdatedAt: now},
 			{ID: "planning", WorkspaceID: "w", Path: "planning", CreatedAt: now, UpdatedAt: now},
 		},
-		Agents: []state.Agent{
+		Tasks: []state.Task{
 			{ID: "progress-a", WorkspaceID: "w", GroupID: "in-progress", Title: "Progress A", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "planning-agent", WorkspaceID: "w", GroupID: "planning", Title: "Planning", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
+			{ID: "planning-task", WorkspaceID: "w", GroupID: "planning", Title: "Planning", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
 		},
 	})
 
@@ -2058,24 +2058,24 @@ func TestGroupCursorSyncRestoresPersistedGroupRow(t *testing.T) {
 	}
 }
 
-func TestSnapshotSyncsGroupCursorToSelectedAgent(t *testing.T) {
+func TestSnapshotSyncsGroupCursorToSelectedTask(t *testing.T) {
 	now := state.NowISO()
 	st := state.State{
 		Version:             state.Version,
-		ActiveAgentID:       "release-agent",
-		SelectedAgentID:     "release-agent",
+		ActiveTaskID:        "release-task",
+		SelectedTaskID:      "release-task",
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "release",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
 			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
 			{ID: "release", WorkspaceID: "w", Path: "release queue", CreatedAt: now, UpdatedAt: now},
 		},
-		Agents: []state.Agent{
-			{ID: "ship-agent", WorkspaceID: "w", GroupID: "shipit", Title: "ship", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "release-agent", WorkspaceID: "w", GroupID: "release", Title: "release", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		Tasks: []state.Task{
+			{ID: "ship-task", WorkspaceID: "w", GroupID: "shipit", Title: "ship", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "release-task", WorkspaceID: "w", GroupID: "release", Title: "release", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 		},
 	}
 	model := Model{
@@ -2085,7 +2085,7 @@ func TestSnapshotSyncsGroupCursorToSelectedAgent(t *testing.T) {
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
 		terminalCommands:  map[string]time.Time{},
-		agentInterrupts:   map[string]time.Time{},
+		taskInterrupts:    map[string]time.Time{},
 		sessionCaptures:   map[string]time.Time{},
 	}
 	model.groupCursor = 2
@@ -2093,7 +2093,7 @@ func TestSnapshotSyncsGroupCursorToSelectedAgent(t *testing.T) {
 
 	snapshot := model.Snapshot()
 	row := currentGroupRowForState(snapshot.State, snapshot.GroupCursor)
-	if row.kind != groupRowAgent || row.agentID != "release-agent" {
+	if row.kind != groupRowTask || row.taskID != "release-task" {
 		t.Fatalf("snapshot cursor row = %#v, cursor=%d", row, snapshot.GroupCursor)
 	}
 }
@@ -2262,7 +2262,7 @@ func TestPromptInputSupportsTerminalOptionWordSequences(t *testing.T) {
 		t.Fatalf("ctrl-h value = %q, want %q", got, want)
 	}
 
-	for _, prompt := range []promptKind{promptWorkspace, promptGroup, promptWorkspaceTitle, promptEditGroup, promptEditAgent, promptMoveAgent} {
+	for _, prompt := range []promptKind{promptWorkspace, promptGroup, promptWorkspaceTitle, promptEditGroup, promptEditTask, promptMoveTask} {
 		model.startPrompt(prompt, "/alpha-beta/gamma_delta")
 		updated, _ = model.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'➜'}})
 		model = updated.(Model)
@@ -2309,11 +2309,11 @@ func TestWorkspacePromptShowsInvalidPathStatus(t *testing.T) {
 }
 
 func TestIPCNewCopiesConfiguredTitleTemplate(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.cfg.TitleTemplate = "{status} {auto}"
-	model.state.Agents = nil
-	model.state.ActiveAgentID = ""
+	model.state.Tasks = nil
+	model.state.ActiveTaskID = ""
 
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{}})
 	defer killPTYs(model)
@@ -2321,16 +2321,16 @@ func TestIPCNewCopiesConfiguredTitleTemplate(t *testing.T) {
 	if !response.OK || cmd == nil {
 		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
 	}
-	if len(model.state.Agents) != 1 || model.state.Agents[0].Title != model.cfg.TaskTypes[config.DefaultTaskTypeCodex].TitleTemplate {
-		t.Fatalf("agents = %#v", model.state.Agents)
+	if len(model.state.Tasks) != 1 || model.state.Tasks[0].Title != model.cfg.TaskTypes[config.DefaultTaskTypeCodex].TitleTemplate {
+		t.Fatalf("tasks = %#v", model.state.Tasks)
 	}
 }
 
 func TestIPCNewCreatesRequestedTaskType(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Agents = nil
-	model.state.ActiveAgentID = ""
+	model.state.Tasks = nil
+	model.state.ActiveTaskID = ""
 
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"type": config.DefaultTaskTypeShell}})
 	defer killPTYs(model)
@@ -2338,20 +2338,20 @@ func TestIPCNewCreatesRequestedTaskType(t *testing.T) {
 	if !response.OK || cmd == nil {
 		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
 	}
-	if len(model.state.Agents) != 1 {
-		t.Fatalf("agents = %#v", model.state.Agents)
+	if len(model.state.Tasks) != 1 {
+		t.Fatalf("tasks = %#v", model.state.Tasks)
 	}
-	agent := model.state.Agents[0]
-	if agent.TypeID != config.DefaultTaskTypeShell || agent.Title != "Shell" {
-		t.Fatalf("shell task = %#v", agent)
+	task := model.state.Tasks[0]
+	if task.TypeID != config.DefaultTaskTypeShell || task.Title != "Shell" {
+		t.Fatalf("shell task = %#v", task)
 	}
 }
 
 func TestTerminalTaskInputBypassesCodexCapture(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
-	model.state.Focus = state.FocusCodex
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
 
 	cmd := model.applyCodexInput(map[string]string{"input": "text", "text": "hello", "encoded": "hello"})
@@ -2359,17 +2359,17 @@ func TestTerminalTaskInputBypassesCodexCapture(t *testing.T) {
 	if cmd != nil {
 		t.Fatalf("terminal input should not start title hook command, got %#v", cmd)
 	}
-	if got := string(model.codexInputBuffers[model.state.Agents[0].ID]); got != "hello" {
+	if got := string(model.codexInputBuffers[model.state.Tasks[0].ID]); got != "hello" {
 		t.Fatalf("terminal input should track the pending command line without starting a title hook, got %q", got)
 	}
 }
 
 func TestTerminalTaskCommandShowsLoadingUntilForegroundReturns(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
-	model.state.Agents[0].Status = state.StatusReady
-	model.state.Focus = state.FocusCodex
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Tasks[0].Status = state.StatusReady
+	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
 
 	if cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "sleep 10"}); cmd != nil {
@@ -2379,32 +2379,32 @@ func TestTerminalTaskCommandShowsLoadingUntilForegroundReturns(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("terminal command should start loading tick")
 	}
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.Status != state.StatusRunning {
-		t.Fatalf("terminal command should mark task running: %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.Status != state.StatusRunning {
+		t.Fatalf("terminal command should mark task running: %#v", task)
 	}
 	snapshot := model.Snapshot()
-	if len(snapshot.LoadingAgentIDs) != 1 || snapshot.LoadingAgentIDs[0] != "a" {
-		t.Fatalf("terminal command loading ids = %#v", snapshot.LoadingAgentIDs)
+	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
+		t.Fatalf("terminal command loading ids = %#v", snapshot.LoadingTaskIDs)
 	}
 
 	model.terminalCommands["a"] = time.Now().Add(-terminalCommandLoadingFloor - time.Millisecond)
 	model.refreshTerminalTaskActivity()
-	agent = state.AgentByID(model.state, "a")
-	if agent == nil || agent.Status != state.StatusReady {
-		t.Fatalf("terminal command should become ready when no foreground job is active: %#v", agent)
+	task = state.TaskByID(model.state, "a")
+	if task == nil || task.Status != state.StatusReady {
+		t.Fatalf("terminal command should become ready when no foreground job is active: %#v", task)
 	}
 }
 
 func TestTerminalTaskAutoTitleCapturesFirstCommandWhenOptedIn(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	payloadPath := filepath.Join(t.TempDir(), "payload.json")
 	model.cfg.TitleHookCommand = "cat > " + shellQuote(payloadPath) + "; printf 'Shell title\\n'"
-	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
-	model.state.Agents[0].Title = "{auto}"
-	model.state.Agents[0].Status = state.StatusReady
-	model.state.Focus = state.FocusCodex
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Tasks[0].Title = "{auto}"
+	model.state.Tasks[0].Status = state.StatusReady
+	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
 
 	if cmd := model.applyTaskInput(map[string]string{"input": codexInputRaw, "encoded": "echo stale"}); cmd != nil {
@@ -2426,9 +2426,9 @@ func TestTerminalTaskAutoTitleCapturesFirstCommandWhenOptedIn(t *testing.T) {
 		t.Fatal(msg.err)
 	}
 	model.applyTitleHook(msg)
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.AutoTitle != "Shell title" {
-		t.Fatalf("auto title = %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.AutoTitle != "Shell title" {
+		t.Fatalf("auto title = %#v", task)
 	}
 	raw, err := os.ReadFile(payloadPath)
 	if err != nil {
@@ -2457,10 +2457,10 @@ func titleHookMessageFromCmd(t *testing.T, cmd tea.Cmd) titleHookMsg {
 }
 
 func TestTerminalTaskClearResetsVisibleScreen(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
-	model.state.Focus = state.FocusCodex
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
 	screen := NewTerminalScreen(20, 3)
 	screen.Write("old output")
@@ -2475,26 +2475,26 @@ func TestTerminalTaskClearResetsVisibleScreen(t *testing.T) {
 }
 
 func TestTerminalTaskPTYTitleDoesNotBecomeLoading(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Agents[0].TypeID = config.DefaultTaskTypeShell
-	model.state.Agents[0].Status = state.StatusReady
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.state.Tasks[0].Status = state.StatusReady
 
-	model.applyPTYData(ptyx.Data{AgentID: "a", Title: "zsh", Text: "prompt"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "zsh", Text: "prompt"})
 
-	agent := state.AgentByID(model.state, "a")
-	if agent == nil || agent.Status != state.StatusReady {
-		t.Fatalf("terminal task should stay ready after shell title output: %#v", agent)
+	task := state.TaskByID(model.state, "a")
+	if task == nil || task.Status != state.StatusReady {
+		t.Fatalf("terminal task should stay ready after shell title output: %#v", task)
 	}
-	if model.agentLoading("a") {
+	if model.taskLoading("a") {
 		t.Fatalf("terminal task should not show loading after PTY title")
 	}
 }
 
 func TestEnterOnGroupTogglesCollapse(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.groupCursor = 1
 
@@ -2504,7 +2504,7 @@ func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 		t.Fatalf("group should collapse: %#v", model.state.CollapsedGroupIDs)
 	}
 	if rows := model.groupRows(); len(rows) != 2 {
-		t.Fatalf("collapsed group should hide agents, rows=%#v", rows)
+		t.Fatalf("collapsed group should hide tasks, rows=%#v", rows)
 	}
 
 	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2514,58 +2514,58 @@ func TestEnterOnGroupTogglesCollapse(t *testing.T) {
 	}
 }
 
-func TestNewAgentAlwaysCreatesTopLevelWhenGroupSelected(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestNewTaskAlwaysCreatesTopLevelWhenGroupSelected(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
-	model.state.ActiveAgentID = ""
+	model.state.ActiveTaskID = ""
 	model.groupCursor = 1
 
-	cmd := model.newAgent("Grouped")
+	cmd := model.newTask("Grouped")
 	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
-	if got := model.state.Agents[len(model.state.Agents)-1].GroupID; got != "" {
-		t.Fatalf("group row should create top-level agent, got group %q", got)
+	if got := model.state.Tasks[len(model.state.Tasks)-1].GroupID; got != "" {
+		t.Fatalf("group row should create top-level task, got group %q", got)
 	}
 }
 
-func TestNewAgentAlwaysCreatesTopLevelWhenAgentSelected(t *testing.T) {
-	model := testModelWithAgent(t)
+func TestNewTaskAlwaysCreatesTopLevelWhenTaskSelected(t *testing.T) {
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.state.NavOpen = true
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.syncGroupCursor()
 
-	cmd := model.newAgent("Top-level")
+	cmd := model.newTask("Top-level")
 	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
 	}
-	if got := model.state.Agents[len(model.state.Agents)-1].GroupID; got != "" {
-		t.Fatalf("grouped agent row should create top-level agent, got group %q", got)
+	if got := model.state.Tasks[len(model.state.Tasks)-1].GroupID; got != "" {
+		t.Fatalf("grouped task row should create top-level task, got group %q", got)
 	}
 }
 
 func TestIPCFocusRejectsGroupsAlias(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 
 	response, _ := model.handleIPC(ipc.Request{Command: "focus", Args: map[string]string{"target": "groups"}})
 
-	if response.OK || response.Message != "focus target must be workspaces, tasks, or codex" {
+	if response.OK || response.Message != "focus target must be workspaces, tasks, or console" {
 		t.Fatalf("focus groups response = %#v", response)
 	}
 }
 
 func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
-	model := testModelWithAgent(t)
+	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.width = 120
 	model.height = 32
-	model.state.Focus = state.FocusAgents
+	model.state.Focus = state.FocusTasks
 	model.state.NavOpen = true
 	model.navWidth = model.targetNavWidth()
 
@@ -2594,7 +2594,7 @@ func TestNavWidthAnimatesOnDrawerToggle(t *testing.T) {
 	}
 }
 
-func testModelWithAgent(t *testing.T) Model {
+func testModelWithTask(t *testing.T) Model {
 	t.Helper()
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
@@ -2602,22 +2602,22 @@ func testModelWithAgent(t *testing.T) Model {
 	codexType := cfg.TaskTypes[config.DefaultTaskTypeCodex]
 	codexType.Command = "cat"
 	cfg.TaskTypes[config.DefaultTaskTypeCodex] = codexType
-	st := testStateWithAgent(rt.Workspace)
+	st := testStateWithTask(rt.Workspace)
 	return NewModel(rt, cfg, st)
 }
 
-func testStateWithAgent(workspace string) state.State {
+func testStateWithTask(workspace string) state.State {
 	now := state.NowISO()
 	return state.State{
 		Version:             state.Version,
-		ActiveAgentID:       "a",
+		ActiveTaskID:        "a",
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "f",
-		Focus:               state.FocusCodex,
+		Focus:               state.FocusConsole,
 		NavOpen:             false,
 		Workspaces:          []state.Workspace{{ID: "w", Path: workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []state.Group{{ID: "f", WorkspaceID: "w", Path: "inbox", CreatedAt: now, UpdatedAt: now}},
-		Agents:              []state.Agent{{ID: "a", WorkspaceID: "w", GroupID: "f", Title: "alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
+		Tasks:               []state.Task{{ID: "a", WorkspaceID: "w", GroupID: "f", Title: "alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
 	}
 }
 
@@ -2636,10 +2636,10 @@ func killPTYs(model Model) {
 	}
 }
 
-func tuiAgentIDs(agents []state.Agent) []string {
-	ids := make([]string, 0, len(agents))
-	for _, agent := range agents {
-		ids = append(ids, agent.ID)
+func tuiTaskIDs(tasks []state.Task) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
 	}
 	return ids
 }

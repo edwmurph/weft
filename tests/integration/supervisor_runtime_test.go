@@ -90,36 +90,47 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 	runWeft(t, env, bin, "workspace", "add", workspace)
 	runWeft(t, env, bin, "new", "Alpha")
 	first := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
+		return len(st.Tasks) == 1 && st.Tasks[0].Status == state.StatusRunning
 	})
-	firstID := first.Agents[0].ID
+	firstID := first.Tasks[0].ID
 	runWeft(t, env, bin, "group", "add", "release")
 	runWeft(t, env, bin, "new", "Beta")
 	runWeft(t, env, bin, "move-right")
 	runWeft(t, env, bin, "rename", "Renamed")
 	runWeft(t, env, bin, "select", firstID)
 	afterOps := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 2 && st.ActiveAgentID == firstID
+		return len(st.Tasks) == 2 && st.ActiveTaskID == firstID
 	})
+	statusJSON := runWeft(t, env, bin, "status", "--json")
+	for _, expected := range []string{`"version":5`, `"active_task_id":"` + firstID + `"`, `"selected_task_id":`, `"tasks":[`} {
+		if !strings.Contains(statusJSON, expected) {
+			t.Fatalf("status json missing %q:\n%s", expected, statusJSON)
+		}
+	}
+	for _, forbidden := range []string{"active_agent_id", "selected_agent_id", `"agents"`} {
+		if strings.Contains(statusJSON, forbidden) {
+			t.Fatalf("status json should not contain legacy %s:\n%s", forbidden, statusJSON)
+		}
+	}
 	foundRenamed := false
-	for index := range afterOps.Agents {
-		agent := &afterOps.Agents[index]
-		group := groupForAgent(afterOps, agent)
-		if agent.Title == "Renamed" && group != nil && group.Path == "release" {
+	for index := range afterOps.Tasks {
+		task := &afterOps.Tasks[index]
+		group := groupForTask(afterOps, task)
+		if task.Title == "Renamed" && group != nil && group.Path == "release" {
 			foundRenamed = true
 		}
 	}
 	if !foundRenamed {
-		t.Fatalf("renamed agent not found in release group: %#v", afterOps)
+		t.Fatalf("renamed task not found in release group: %#v", afterOps)
 	}
 
 	runWeft(t, env, bin, "close")
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 2 && st.ActiveAgentID == firstID
+		return len(st.Tasks) == 2 && st.ActiveTaskID == firstID
 	})
 	runWeft(t, env, bin, "close", firstID)
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1
+		return len(st.Tasks) == 1
 	})
 }
 
@@ -255,7 +266,7 @@ func TestSourceCheckoutCWDLaunchesIsolatedRuntime(t *testing.T) {
 	}
 }
 
-func TestUpgradeSimulationNoRunningAgentsRestartsSupervisor(t *testing.T) {
+func TestUpgradeSimulationNoRunningTasksRestartsSupervisor(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -284,7 +295,7 @@ func TestUpgradeSimulationNoRunningAgentsRestartsSupervisor(t *testing.T) {
 	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade auto restart")
 }
 
-func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
+func TestUpgradeSimulationWithRunningTaskPreservesSupervisor(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -305,13 +316,13 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
 	runWeft(t, oldEnv, bin, "new", "Alpha")
 	waitState(t, oldEnv, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
+		return len(st.Tasks) == 1 && st.Tasks[0].Status == state.StatusRunning
 	})
 
 	out := runWeft(t, newEnv, bin, "--no-attach")
 	newPID := readPID(t, runtimeDir)
 	if oldPID != newPID {
-		t.Fatalf("running-agent upgrade should preserve supervisor, old pid %q new pid %q\n%s", oldPID, newPID, out)
+		t.Fatalf("running-task upgrade should preserve supervisor, old pid %q new pid %q\n%s", oldPID, newPID, out)
 	}
 	if !strings.Contains(out, "1 live task terminal") {
 		t.Fatalf("running upgrade output missing live-terminal warning:\n%s", out)
@@ -336,7 +347,7 @@ func TestUpgradeSimulationWithRunningAgentPreservesSupervisor(t *testing.T) {
 	}
 }
 
-func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
+func TestDashboardUpgradeResumeRestartsAndResumesIdleTask(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -359,16 +370,16 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
 	runWeft(t, oldEnv, bin, "new", "Alpha")
 	st := waitState(t, oldEnv, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Agents[0].Status == state.StatusRunning &&
-			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+		return len(st.Tasks) == 1 &&
+			st.Tasks[0].Status == state.StatusRunning &&
+			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 	})
-	if st.Agents[0].CodexSessionID == "" {
+	if st.Tasks[0].CodexSessionID == "" {
 		logData, _ := os.ReadFile(resumeLog)
-		t.Fatalf("agent did not capture Codex session id: %#v\nfake log:\n%s", st.Agents[0], logData)
+		t.Fatalf("task did not capture Codex session id: %#v\nfake log:\n%s", st.Tasks[0], logData)
 	}
-	agentID := st.Agents[0].ID
-	sessionID := st.Agents[0].CodexSessionID
+	taskID := st.Tasks[0].ID
+	sessionID := st.Tasks[0].CodexSessionID
 
 	pane := "upgrade-resume"
 	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
@@ -383,7 +394,7 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 	}
 	directRun(t, newEnv, "send-keys", "-t", pane, "C-b")
 	waitState(t, newEnv, bin, func(st state.State) bool {
-		return st.Focus == state.FocusAgents && st.NavOpen
+		return st.Focus == state.FocusTasks && st.NavOpen
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workspaces") &&
@@ -412,14 +423,14 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleAgent(t *testing.T) {
 		t.Fatalf("supervisor did not restart after upgrade confirmation; pid still %q\nscreen:\n%s", oldPID, clientOutput())
 	}
 	st = waitState(t, newEnv, bin, func(st state.State) bool {
-		agent := state.AgentByID(st, agentID)
-		return agent != nil &&
-			agent.Status == state.StatusRunning &&
-			agent.CodexSessionID == sessionID &&
-			strings.Contains(agent.CodexTitle, "Ready")
+		task := state.TaskByID(st, taskID)
+		return task != nil &&
+			task.Status == state.StatusRunning &&
+			task.CodexSessionID == sessionID &&
+			strings.Contains(task.CodexTitle, "Ready")
 	})
-	if len(st.Agents) != 1 {
-		t.Fatalf("upgrade resume should preserve task rows: %#v", st.Agents)
+	if len(st.Tasks) != 1 {
+		t.Fatalf("upgrade resume should preserve task rows: %#v", st.Tasks)
 	}
 	if !waitForBool(4*time.Second, func() bool {
 		data, err := os.ReadFile(resumeLog)
@@ -458,13 +469,13 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
 	runWeft(t, oldEnv, bin, "new", "Fresh")
 	st := waitState(t, oldEnv, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Agents[0].Status == state.StatusRunning &&
-			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+		return len(st.Tasks) == 1 &&
+			st.Tasks[0].Status == state.StatusRunning &&
+			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 	})
-	agentID := st.Agents[0].ID
-	if st.Agents[0].CodexSessionID != "" {
-		t.Fatalf("fresh agent should not have a Codex session id: %#v", st.Agents[0])
+	taskID := st.Tasks[0].ID
+	if st.Tasks[0].CodexSessionID != "" {
+		t.Fatalf("fresh task should not have a Codex session id: %#v", st.Tasks[0])
 	}
 
 	pane := "upgrade-fresh"
@@ -493,14 +504,14 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 		t.Fatalf("supervisor did not restart after fresh upgrade confirmation; pid still %q\nscreen:\n%s", oldPID, clientOutput())
 	}
 	st = waitState(t, newEnv, bin, func(st state.State) bool {
-		agent := state.AgentByID(st, agentID)
-		return agent != nil &&
-			agent.Status == state.StatusRunning &&
-			agent.CodexSessionID == "" &&
-			strings.Contains(agent.CodexTitle, "Ready")
+		task := state.TaskByID(st, taskID)
+		return task != nil &&
+			task.Status == state.StatusRunning &&
+			task.CodexSessionID == "" &&
+			strings.Contains(task.CodexTitle, "Ready")
 	})
-	if len(st.Agents) != 1 {
-		t.Fatalf("fresh upgrade should preserve task rows: %#v", st.Agents)
+	if len(st.Tasks) != 1 {
+		t.Fatalf("fresh upgrade should preserve task rows: %#v", st.Tasks)
 	}
 	data, err := os.ReadFile(codexLog)
 	if err != nil {
@@ -535,7 +546,7 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 	runWeft(t, env, bin, "workspace", "add", workspace)
 	runWeft(t, env, bin, "new", "Alpha")
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
+		return len(st.Tasks) == 1 && st.Tasks[0].Status == state.StatusRunning
 	})
 
 	out := runWeft(t, env, bin, "--clear", "--no-attach")
@@ -546,7 +557,7 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 	}
 	assertBackupWithReason(t, runtimeDir, workspace, "pre-clear")
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 0 && len(st.Workspaces) == 0
+		return len(st.Tasks) == 0 && len(st.Workspaces) == 0
 	})
 }
 
@@ -569,7 +580,7 @@ func TestCloseKillCreatesBackup(t *testing.T) {
 	runWeft(t, env, bin, "workspace", "add", workspace)
 	runWeft(t, env, bin, "new", "Alpha")
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning
+		return len(st.Tasks) == 1 && st.Tasks[0].Status == state.StatusRunning
 	})
 
 	out := runWeft(t, env, bin, "close", "--kill", "--yes")

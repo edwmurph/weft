@@ -18,10 +18,10 @@ const (
 	codexPreviewRightPadding = 1
 	navHorizontalPadding     = 1
 	fixedWorkspacePaneWidth  = 60
-	minAgentsPaneWidth       = 28
-	defaultAgentsPaneWidth   = 48
+	minTasksPaneWidth        = 28
+	defaultTasksPaneWidth    = 48
 	minCodexPaneWidth        = 28
-	minTwoPaneNavWidth       = fixedWorkspacePaneWidth + minAgentsPaneWidth
+	minTwoPaneNavWidth       = fixedWorkspacePaneWidth + minTasksPaneWidth
 	minThreePaneWidth        = minTwoPaneNavWidth + minCodexPaneWidth
 	borderHorizontal         = "─"
 	borderVertical           = "│"
@@ -34,7 +34,7 @@ const (
 var (
 	mutedStyle                        = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	headerStyle                       = lipgloss.NewStyle().Underline(true)
-	activeAgentStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
+	activeTaskStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117"))
 	activePaneStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	groupHeaderStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	modalStyle                        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
@@ -63,20 +63,20 @@ var (
 	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	agentReadyStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
-	agentRunningStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
-	agentWorkingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	agentLoadingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	agentShippingStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
-	agentAttentionStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
-	agentErrorStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	taskReadyStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	taskRunningStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
+	taskWorkingStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	taskLoadingStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
+	taskShippingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	taskAttentionStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	taskErrorStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 )
 
 type workspaceRenderOptions struct {
 	loadingText              string
 	loadingFrame             string
 	previewHeaderAnimation   string
-	loadingAgents            map[string]bool
+	loadingTasks             map[string]bool
 	workspaceFooterText      string
 	workspaceInfoText        string
 	newWorkspaceCardSelected bool
@@ -134,8 +134,8 @@ func workspaceNavFrameWidth(st state.State, width int) int {
 	if width < minThreePaneWidth {
 		return width
 	}
-	agentsWidth := min(defaultAgentsPaneWidth, width-fixedWorkspacePaneWidth-minCodexPaneWidth)
-	return fixedWorkspacePaneWidth + max(minAgentsPaneWidth, agentsWidth)
+	tasksWidth := min(defaultTasksPaneWidth, width-fixedWorkspacePaneWidth-minCodexPaneWidth)
+	return fixedWorkspacePaneWidth + max(minTasksPaneWidth, tasksWidth)
 }
 
 func renderWorkspace(
@@ -179,13 +179,13 @@ func renderLoadingWorkspaceWithNavWidth(
 	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, groupCursor, workspaceRenderOptions{loadingText: loadingText})
 }
 
-func renderWorkspaceWithNavWidthAndAgents(
+func renderWorkspaceWithNavWidthAndTasks(
 	cfg config.Config,
 	st state.State,
 	codexTitle string,
 	codexContent string,
 	loadingFrame string,
-	loadingAgents map[string]bool,
+	loadingTasks map[string]bool,
 	width int,
 	height int,
 	message string,
@@ -193,18 +193,18 @@ func renderWorkspaceWithNavWidthAndAgents(
 	groupCursor int,
 ) string {
 	return renderWorkspaceView(cfg, st, codexTitle, codexContent, width, height, message, navWidth, groupCursor, workspaceRenderOptions{
-		loadingFrame:  loadingFrame,
-		loadingAgents: loadingAgents,
+		loadingFrame: loadingFrame,
+		loadingTasks: loadingTasks,
 	})
 }
 
-func renderLoadingWorkspaceWithNavWidthAndAgents(
+func renderLoadingWorkspaceWithNavWidthAndTasks(
 	cfg config.Config,
 	st state.State,
 	codexTitle string,
 	loadingText string,
 	loadingFrame string,
-	loadingAgents map[string]bool,
+	loadingTasks map[string]bool,
 	width int,
 	height int,
 	message string,
@@ -212,9 +212,9 @@ func renderLoadingWorkspaceWithNavWidthAndAgents(
 	groupCursor int,
 ) string {
 	return renderWorkspaceView(cfg, st, codexTitle, "", width, height, message, navWidth, groupCursor, workspaceRenderOptions{
-		loadingText:   loadingText,
-		loadingFrame:  loadingFrame,
-		loadingAgents: loadingAgents,
+		loadingText:  loadingText,
+		loadingFrame: loadingFrame,
+		loadingTasks: loadingTasks,
 	})
 }
 
@@ -242,7 +242,7 @@ func renderWorkspaceView(
 	}
 	if navWidth <= 0 {
 		codexState := codexFrameStateForSelection(st, groupCursor)
-		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusCodex, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation), "\n")
+		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusConsole, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation), "\n")
 	}
 	if codexWidth <= 0 {
 		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
@@ -260,23 +260,23 @@ func renderWorkspaceView(
 }
 
 func codexFrameStateForSelection(st state.State, groupCursor int) state.State {
-	if st.Focus == state.FocusCodex {
+	if st.Focus == state.FocusConsole {
 		return st
 	}
 	if st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID != "" {
 		return st
 	}
-	if st.Focus == state.FocusAgents {
+	if st.Focus == state.FocusTasks {
 		row := currentGroupRowForState(st, groupCursor)
-		if row.kind == groupRowAgent {
-			if st.ActiveAgentID == row.agentID {
+		if row.kind == groupRowTask {
+			if st.ActiveTaskID == row.taskID {
 				return st
 			}
-			st.ActiveAgentID = ""
+			st.ActiveTaskID = ""
 			return st
 		}
 	}
-	st.ActiveAgentID = ""
+	st.ActiveTaskID = ""
 	return st
 }
 
@@ -285,7 +285,7 @@ func renderNavSection(cfg config.Config, st state.State, width int, height int, 
 		return nil
 	}
 	if width >= minTwoPaneNavWidth {
-		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, width-minAgentsPaneWidth))
+		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, width-minTasksPaneWidth))
 		groupWidth := width - workspaceWidth
 		workspaces := renderWorkspacesPaneWithOptions(cfg, st, workspaceWidth, height, options)
 		groups := renderGroupsPaneWithOptions(cfg, st, groupWidth, height, groupCursor, options)
@@ -310,7 +310,7 @@ func workspacesPaneAreaFor(st state.State, width int, height int, navWidth int) 
 		return consoleArea{}, false
 	}
 	if navWidth >= minTwoPaneNavWidth {
-		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, navWidth-minAgentsPaneWidth))
+		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, navWidth-minTasksPaneWidth))
 		if workspaceWidth <= 0 {
 			return consoleArea{}, false
 		}
@@ -349,7 +349,7 @@ func tasksPaneAreaFor(st state.State, width int, height int, navWidth int) (cons
 		return consoleArea{}, false
 	}
 	if navWidth >= minTwoPaneNavWidth {
-		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, navWidth-minAgentsPaneWidth))
+		workspaceWidth := min(fixedWorkspacePaneWidth, max(0, navWidth-minTasksPaneWidth))
 		groupWidth := navWidth - workspaceWidth
 		if groupWidth <= 0 {
 			return consoleArea{}, false
@@ -678,16 +678,16 @@ func workspacePathIssue(path string) string {
 
 func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspaceCardCounts {
 	counts := workspaceCardCounts{}
-	for _, agent := range st.Agents {
-		if agent.WorkspaceID != workspaceID {
+	for _, task := range st.Tasks {
+		if task.WorkspaceID != workspaceID {
 			continue
 		}
 		counts.total++
-		if workspaceCardAgentActive(agent) {
+		if workspaceCardTaskActive(task) {
 			counts.active++
 			continue
 		}
-		if group := state.GroupByID(st, agent.GroupID); group != nil && group.Silent && workspaceCardAgentSilenced(agent) {
+		if group := state.GroupByID(st, task.GroupID); group != nil && group.Silent && workspaceCardTaskSilenced(task) {
 			counts.silenced++
 			continue
 		}
@@ -696,12 +696,12 @@ func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspa
 	return counts
 }
 
-func workspaceCardAgentActive(agent state.Agent) bool {
-	return agentStatusIndicatesActivity(agent)
+func workspaceCardTaskActive(task state.Task) bool {
+	return taskStatusIndicatesActivity(task)
 }
 
-func workspaceCardAgentSilenced(agent state.Agent) bool {
-	switch titles.CanonicalStatus(agent) {
+func workspaceCardTaskSilenced(task state.Task) bool {
+	switch titles.CanonicalStatus(task) {
 	case string(state.StatusReady), string(state.StatusSitting), string(state.StatusStopped):
 		return true
 	default:
@@ -783,8 +783,8 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 	selectedLine := -1
 	rowWidth := max(0, width-2-(navHorizontalPadding*2))
 	if state.ActiveWorkspace(st) != nil {
-		selected := (rowIndex == groupCursor && st.Focus == state.FocusAgents) || options.newTaskRowSelected
-		taskRow := renderNewTaskTemplateRow(cfg, rowWidth, selected, st.Focus == state.FocusAgents)
+		selected := (rowIndex == groupCursor && st.Focus == state.FocusTasks) || options.newTaskRowSelected
+		taskRow := renderNewTaskTemplateRow(cfg, rowWidth, selected, st.Focus == state.FocusTasks)
 		if rowIndex == groupCursor {
 			selectedLine = len(content)
 		}
@@ -792,12 +792,12 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		content = append(content, "")
 		rowIndex++
 	}
-	for _, agent := range state.UngroupedAgentsForWorkspace(st, st.SelectedWorkspaceID) {
-		agentRow := renderAgentRow(cfg, st, agent, rowWidth, false, rowIndex == groupCursor && st.Focus == state.FocusAgents, options)
+	for _, task := range state.UngroupedTasksForWorkspace(st, st.SelectedWorkspaceID) {
+		taskRow := renderTaskRow(cfg, st, task, rowWidth, false, rowIndex == groupCursor && st.Focus == state.FocusTasks, options)
 		if rowIndex == groupCursor {
 			selectedLine = len(content)
 		}
-		content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
+		content = append(content, strings.Repeat(" ", navHorizontalPadding)+taskRow)
 		rowIndex++
 	}
 	for _, group := range state.GroupsForWorkspace(st, st.SelectedWorkspaceID) {
@@ -814,12 +814,12 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 			silentMarker = "⊘ "
 		}
 		loadingMarker := ""
-		if collapsed && groupHasLoadingAgent(st, group.ID, options.loadingAgents) {
+		if collapsed && groupHasLoadingTask(st, group.ID, options.loadingTasks) {
 			loadingMarker = loadingFrameForRender(options.loadingFrame) + " "
 		}
-		groupRow := rowLine(indicator+loadingMarker+silentMarker+group.Path+" ("+fmtInt(state.AgentCountForGroup(st, group.ID))+")", "", rowWidth)
-		if rowIndex == groupCursor && st.Focus == state.FocusAgents {
-			groupRow = activeAgentStyle.Render(padVisual(groupRow, rowWidth))
+		groupRow := rowLine(indicator+loadingMarker+silentMarker+group.Path+" ("+fmtInt(state.TaskCountForGroup(st, group.ID))+")", "", rowWidth)
+		if rowIndex == groupCursor && st.Focus == state.FocusTasks {
+			groupRow = activeTaskStyle.Render(padVisual(groupRow, rowWidth))
 		} else {
 			groupRow = groupHeaderStyle.Render(groupRow)
 		}
@@ -831,12 +831,12 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		if collapsed {
 			continue
 		}
-		for _, agent := range state.AgentsForGroup(st, group.ID) {
-			agentRow := renderAgentRow(cfg, st, agent, rowWidth, true, rowIndex == groupCursor && st.Focus == state.FocusAgents, options)
+		for _, task := range state.TasksForGroup(st, group.ID) {
+			taskRow := renderTaskRow(cfg, st, task, rowWidth, true, rowIndex == groupCursor && st.Focus == state.FocusTasks, options)
 			if rowIndex == groupCursor {
 				selectedLine = len(content)
 			}
-			content = append(content, strings.Repeat(" ", navHorizontalPadding)+agentRow)
+			content = append(content, strings.Repeat(" ", navHorizontalPadding)+taskRow)
 			rowIndex++
 		}
 	}
@@ -844,7 +844,7 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 		content = renderCenteredPaneHelp(width, height, "No workspace selected", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
 	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))
-	return renderPaneFrame("Tasks", "", width, height, st.Focus == state.FocusAgents, content)
+	return renderPaneFrame("Tasks", "", width, height, st.Focus == state.FocusTasks, content)
 }
 
 func renderNewTaskTemplateRow(cfg config.Config, width int, selected bool, focused bool) string {
@@ -853,7 +853,7 @@ func renderNewTaskTemplateRow(cfg config.Config, width int, selected bool, focus
 	}
 	row := "+ New task  Press " + cfg.KeyBindings.NewTask + " to create"
 	if selected && focused {
-		return activeAgentStyle.Italic(true).Render(padVisual(clip(row, width), width))
+		return activeTaskStyle.Italic(true).Render(padVisual(clip(row, width), width))
 	}
 	if selected {
 		return activePaneStyle.Italic(true).Render(padVisual(clip(row, width), width))
@@ -861,9 +861,9 @@ func renderNewTaskTemplateRow(cfg config.Config, width int, selected bool, focus
 	return newTaskRowStyle.Render(padVisual(clip(row, width), width))
 }
 
-func groupHasLoadingAgent(st state.State, groupID string, loadingAgents map[string]bool) bool {
-	for _, agent := range state.AgentsForGroup(st, groupID) {
-		if agentIsLoadingForRender(agent, loadingAgents) {
+func groupHasLoadingTask(st state.State, groupID string, loadingTasks map[string]bool) bool {
+	for _, task := range state.TasksForGroup(st, groupID) {
+		if taskIsLoadingForRender(task, loadingTasks) {
 			return true
 		}
 	}
@@ -896,66 +896,66 @@ func scrollPaneContentToRangeWithOffset(content []string, selectedLine int, sele
 	return content[start:], start
 }
 
-func renderAgentRow(cfg config.Config, st state.State, agent state.Agent, width int, nested bool, selected bool, options workspaceRenderOptions) string {
-	title := renderAgentTitleForState(cfg, st, agent)
-	marker := agentMarkerForRender(agent, options.loadingFrame, options.loadingAgents)
-	prefix := marker + " " + taskTypeBadgeCellForAgent(cfg, agent) + " "
+func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int, nested bool, selected bool, options workspaceRenderOptions) string {
+	title := renderTaskTitleForState(cfg, st, task)
+	marker := taskMarkerForRender(task, options.loadingFrame, options.loadingTasks)
+	prefix := marker + " " + taskTypeBadgeCellForTask(cfg, task) + " "
 	if nested {
 		prefix = "  " + prefix
 	}
 	row := clip(prefix+title, width)
 	if selected {
-		return activeAgentStyle.Render(padVisual(row, width))
+		return activeTaskStyle.Render(padVisual(row, width))
 	}
-	if agent.ID == st.ActiveAgentID {
+	if task.ID == st.ActiveTaskID {
 		return activePaneStyle.Render(row)
 	}
-	return agentRowStyle(agent, options.loadingAgents).Render(row)
+	return taskRowStyle(task, options.loadingTasks).Render(row)
 }
 
-func agentRowStyle(agent state.Agent, loadingAgents map[string]bool) lipgloss.Style {
-	status := titles.CanonicalStatus(agent)
-	if agentIsLoadingForRender(agent, loadingAgents) {
-		return agentLoadingStyleForStatus(status)
+func taskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+	status := titles.CanonicalStatus(task)
+	if taskIsLoadingForRender(task, loadingTasks) {
+		return taskLoadingStyleForStatus(status)
 	}
 	switch status {
 	case string(state.StatusReady):
-		return agentReadyStyle
+		return taskReadyStyle
 	case string(state.StatusRunning):
-		return agentRunningStyle
+		return taskRunningStyle
 	case "working":
-		return agentWorkingStyle
+		return taskWorkingStyle
 	case string(state.StatusShipping):
-		return agentShippingStyle
+		return taskShippingStyle
 	case string(state.StatusError):
-		return agentErrorStyle
+		return taskErrorStyle
 	case string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
-		return agentAttentionStyle
+		return taskAttentionStyle
 	default:
-		return agentAttentionStyle
+		return taskAttentionStyle
 	}
 }
 
-func agentLoadingStyleForStatus(status string) lipgloss.Style {
+func taskLoadingStyleForStatus(status string) lipgloss.Style {
 	switch status {
 	case string(state.StatusRunning):
-		return agentRunningStyle
+		return taskRunningStyle
 	case "waiting":
-		return agentWorkingStyle
+		return taskWorkingStyle
 	case "working":
-		return agentWorkingStyle
+		return taskWorkingStyle
 	case string(state.StatusShipping):
-		return agentShippingStyle
+		return taskShippingStyle
 	default:
-		return agentLoadingStyle
+		return taskLoadingStyle
 	}
 }
 
-func agentMarkerForRender(agent state.Agent, loadingFrame string, loadingAgents map[string]bool) string {
-	if agentIsLoadingForRender(agent, loadingAgents) {
+func taskMarkerForRender(task state.Task, loadingFrame string, loadingTasks map[string]bool) string {
+	if taskIsLoadingForRender(task, loadingTasks) {
 		return loadingFrameForRender(loadingFrame)
 	}
-	switch titles.CanonicalStatus(agent) {
+	switch titles.CanonicalStatus(task) {
 	case string(state.StatusError):
 		return "!"
 	case string(state.StatusKilled):
@@ -969,8 +969,8 @@ func agentMarkerForRender(agent state.Agent, loadingFrame string, loadingAgents 
 	}
 }
 
-func agentIsLoadingForRender(agent state.Agent, loadingAgents map[string]bool) bool {
-	return agentStatusShowsLoadingIndicator(agent) || loadingAgents[agent.ID]
+func taskIsLoadingForRender(task state.Task, loadingTasks map[string]bool) bool {
+	return taskStatusShowsLoadingIndicator(task) || loadingTasks[task.ID]
 }
 
 func loadingFrameForRender(frame string) string {
@@ -980,7 +980,7 @@ func loadingFrameForRender(frame string) string {
 	return loadingFrames[0]
 }
 
-func loadingAgentSet(ids []string) map[string]bool {
+func loadingTaskSet(ids []string) map[string]bool {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -1067,14 +1067,14 @@ func renderCodexFrame(
 	}
 	palette := paletteFor(active)
 	innerWidth := max(0, width-2)
-	agentActive := state.ActiveAgent(st) != nil
-	if !agentActive {
+	taskActive := state.ActiveTask(st) != nil
+	if !taskActive {
 		loadingText = ""
 	}
 	previewMode := !navCollapsed
 	topLabel := "Task Live Preview"
 	topRightLabel := ""
-	if previewMode && agentActive {
+	if previewMode && taskActive {
 		topLabel = previewTopLabel(previewHeaderAnimation)
 	}
 	if navCollapsed && active {
@@ -1082,14 +1082,14 @@ func renderCodexFrame(
 		topRightLabel = codexConsoleTopRightLabel(st, toastText)
 	} else if navCollapsed {
 		topLabel = "Task Console"
-	} else if agentActive {
+	} else if taskActive {
 		topRightLabel = previewTopRightLabel(title, toastText)
 	}
 	lines := []string{
 		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, topRightLabel, max(0, innerWidth-2)), innerWidth)),
 	}
 	contentHeight := max(0, height-2)
-	empty := !agentActive
+	empty := !taskActive
 	contentWidth := codexLineContentWidth(innerWidth, previewMode)
 	messageLines := renderStatusBanner(message, contentWidth, min(3, contentHeight))
 	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText, codexEmptyTitle(previewMode))
@@ -1110,7 +1110,7 @@ func renderCodexFrame(
 		lines = append(lines, palette.border.Render(borderVertical)+leftPadding+renderedLine+rightPadding+palette.border.Render(borderVertical))
 	}
 	rightLabel := ""
-	if agentActive && navCollapsed {
+	if taskActive && navCollapsed {
 		rightLabel = title
 	}
 	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))
@@ -1196,7 +1196,7 @@ func codexEmptyTitle(previewMode bool) string {
 	return "No task open"
 }
 
-func renderCodexContent(content string, width int, height int, empty bool, canCreateAgent bool, loadingText string, emptyTitle string) []string {
+func renderCodexContent(content string, width int, height int, empty bool, canCreateTask bool, loadingText string, emptyTitle string) []string {
 	if height <= 0 {
 		return nil
 	}
@@ -1204,7 +1204,7 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 		return renderCenteredCodexContent([]string{loadingText}, width, height)
 	}
 	if empty {
-		return renderEmptyCodexContent(width, height, canCreateAgent, emptyTitle)
+		return renderEmptyCodexContent(width, height, canCreateTask, emptyTitle)
 	}
 	lines := lastLines(content, height)
 	for len(lines) < height {
@@ -1213,13 +1213,13 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 	return lines
 }
 
-func renderEmptyCodexContent(width int, height int, canCreateAgent bool, titles ...string) []string {
+func renderEmptyCodexContent(width int, height int, canCreateTask bool, titles ...string) []string {
 	title := "No task open"
 	if len(titles) > 0 && strings.TrimSpace(titles[0]) != "" {
 		title = strings.TrimSpace(titles[0])
 	}
 	hint := "Press n to create one."
-	if !canCreateAgent {
+	if !canCreateTask {
 		hint = "Add a workspace first."
 	}
 	content := []string{}
@@ -1307,7 +1307,7 @@ func codexConsoleTopRightLabel(st state.State, toastText string) string {
 }
 
 func codexConsoleReadyIndicator(st state.State) string {
-	count := otherReadyAgentCount(st)
+	count := otherReadyTaskCount(st)
 	if count == 0 {
 		return ""
 	}
@@ -1318,17 +1318,17 @@ func codexConsoleReadyIndicator(st state.State) string {
 	return workspaceCountNeedsAttentionStyle.Render(fmtInt(count) + " other " + noun + " ready")
 }
 
-func otherReadyAgentCount(st state.State) int {
-	active := state.ActiveAgent(st)
+func otherReadyTaskCount(st state.State) int {
+	active := state.ActiveTask(st)
 	if active == nil {
 		return 0
 	}
 	count := 0
-	for _, agent := range st.Agents {
-		if agent.ID == active.ID {
+	for _, task := range st.Tasks {
+		if task.ID == active.ID {
 			continue
 		}
-		if titles.CanonicalStatus(agent) == string(state.StatusReady) {
+		if titles.CanonicalStatus(task) == string(state.StatusReady) {
 			count++
 		}
 	}
@@ -1496,8 +1496,8 @@ func lineAt(lines []string, index int, width int) string {
 	return padVisual(clip(lines[index], width), width)
 }
 
-func workspaceForRender(st state.State, agent state.Agent) state.Workspace {
-	if workspace := state.WorkspaceForAgent(st, agent); workspace != nil {
+func workspaceForRender(st state.State, task state.Task) state.Workspace {
+	if workspace := state.WorkspaceForTask(st, task); workspace != nil {
 		return *workspace
 	}
 	return state.Workspace{}

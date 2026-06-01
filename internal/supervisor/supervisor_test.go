@@ -81,32 +81,32 @@ func TestSupervisorRejectsSecondRuntimeForSameHome(t *testing.T) {
 
 func TestUpgradeStatusDecisions(t *testing.T) {
 	st := state.Empty()
-	id := "agent"
+	id := "task"
 	now := state.NowISO()
 	st.Workspaces = []state.Workspace{{ID: "w", Path: "/tmp/work", CreatedAt: now, UpdatedAt: now}}
-	st.Agents = []state.Agent{{ID: id, WorkspaceID: "w", Title: "Alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}}
+	st.Tasks = []state.Task{{ID: id, WorkspaceID: "w", Title: "Alpha", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}}
 	response := ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.ProtocolVersion, SupervisorVersion: "3.9.0"}
 
 	upgrade := ipc.UpgradeStatus(response, "4.0.0")
 	if upgrade == nil {
 		t.Fatal("expected upgrade status")
 	}
-	if !upgrade.Compatible || !upgrade.RestartRequired || upgrade.RunningAgents != 1 {
+	if !upgrade.Compatible || !upgrade.RestartRequired || upgrade.RunningTasks != 1 {
 		t.Fatalf("upgrade status = %#v", upgrade)
 	}
 	response.Upgrade = upgrade
 	if ShouldAutoRestart(response) {
-		t.Fatal("running agents must block automatic restart")
+		t.Fatal("running tasks must block automatic restart")
 	}
 
-	st.Agents[0].Status = state.StatusReady
+	st.Tasks[0].Status = state.StatusReady
 	response = ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.ProtocolVersion, SupervisorVersion: "3.9.0"}
 	response = AnnotateUpgrade(response, false)
 	if ShouldAutoRestart(response) {
-		t.Fatal("ready agents must block automatic restart")
+		t.Fatal("ready tasks must block automatic restart")
 	}
 
-	st.Agents[0].Status = state.StatusStopped
+	st.Tasks[0].Status = state.StatusStopped
 	response = ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.ProtocolVersion, SupervisorVersion: "3.9.0"}
 	response = AnnotateUpgrade(response, false)
 	if !ShouldAutoRestart(response) {
@@ -168,14 +168,14 @@ func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "new", Args: map[string]string{"title": "Fake"}}, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	var agentID string
+	var taskID string
 	waitFor(t, "fake codex running", func() bool {
 		response, err := Status(rt)
-		if err != nil || response.State == nil || len(response.State.Agents) != 1 {
+		if err != nil || response.State == nil || len(response.State.Tasks) != 1 {
 			return false
 		}
-		agentID = response.State.Agents[0].ID
-		return response.State.Agents[0].Status == state.StatusRunning && fileExists(pidPath)
+		taskID = response.State.Tasks[0].ID
+		return response.State.Tasks[0].Status == state.StatusRunning && fileExists(pidPath)
 	})
 
 	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "snapshot"}, 2*time.Second); err != nil {
@@ -186,19 +186,19 @@ func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	}
 	waitFor(t, "second fake codex running", func() bool {
 		response, err := Status(rt)
-		return err == nil && response.State != nil && len(response.State.Agents) == 2
+		return err == nil && response.State != nil && len(response.State.Tasks) == 2
 	})
-	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "select", Args: map[string]string{"id": agentID}}, 2*time.Second); err != nil {
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "select", Args: map[string]string{"id": taskID}}, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	selected, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "snapshot"}, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selected.Snapshot == nil || selected.Snapshot.State.ActiveAgentID != agentID {
-		t.Fatalf("selected snapshot active agent = %#v, want %s", selected.Snapshot, agentID)
+	if selected.Snapshot == nil || selected.Snapshot.State.ActiveTaskID != taskID {
+		t.Fatalf("selected snapshot active task = %#v, want %s", selected.Snapshot, taskID)
 	}
-	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "focus", Args: map[string]string{"target": string(state.FocusCodex)}}, 2*time.Second); err != nil {
+	if _, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "focus", Args: map[string]string{"target": string(state.FocusConsole)}}, 2*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	for _, request := range []ipc.Request{

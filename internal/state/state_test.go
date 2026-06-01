@@ -35,7 +35,7 @@ func TestStoreRejectsLegacyStateWithoutArchiving(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected legacy state error")
 	}
-	for _, expected := range []string{"strict v4 state", "run `weft clear` to reset"} {
+	for _, expected := range []string{"strict v5 state", "run `weft clear` to reset"} {
 		if !strings.Contains(err.Error(), expected) {
 			t.Fatalf("error missing %q: %v", expected, err)
 		}
@@ -52,7 +52,7 @@ func TestStoreRejectsLegacyStateWithoutArchiving(t *testing.T) {
 	}
 }
 
-func TestStoreRejectsUnknownV4StateWithoutArchiving(t *testing.T) {
+func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	workspace := filepath.Join(dir, "workspace")
@@ -60,12 +60,12 @@ func TestStoreRejectsUnknownV4StateWithoutArchiving(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(`{
-  "version": 4,
-  "focus": "agents",
+  "version": 5,
+  "focus": "tasks",
   "nav_open": true,
   "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
   "groups": [],
-  "agents": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "tmux_pane_id": "%1", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "tmux_pane_id": "%1", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
   "tabs": []
 }`), 0o600); err != nil {
 		t.Fatal(err)
@@ -85,59 +85,159 @@ func TestStoreRejectsUnknownV4StateWithoutArchiving(t *testing.T) {
 	}
 }
 
-func TestCloseAgentSelectsNextAgent(t *testing.T) {
-	st := testState(t)
-	st.ActiveAgentID = "b"
-
-	st = CloseAgent(st, "b")
-
-	if st.ActiveAgentID != "c" {
-		t.Fatalf("ActiveAgentID = %q", st.ActiveAgentID)
+func TestStoreRejectsV4TaskStateWithoutMigration(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	workspace := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if len(st.Agents) != 2 {
-		t.Fatalf("agents = %#v", st.Agents)
+	if err := os.WriteFile(path, []byte(`{
+  "version": 4,
+  "focus": "tasks",
+  "nav_open": true,
+  "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "groups": [],
+  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "collapsed_group_ids": []
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewStore(path, workspace).Ensure()
+	if err == nil {
+		t.Fatal("expected version error")
+	}
+	for _, expected := range []string{"unsupported state version 4", "run `weft clear` to reset"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error missing %q: %v", expected, err)
+		}
 	}
 }
 
-func TestCloseLastAgentInWorkspaceStaysInCurrentWorkspace(t *testing.T) {
+func TestStoreRejectsLegacyFocusValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	workspace := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{
+  "version": 5,
+  "focus": "agents",
+  "nav_open": true,
+  "workspaces": [],
+  "groups": [],
+  "tasks": [],
+  "collapsed_group_ids": []
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewStore(path, workspace).Ensure()
+	if err == nil {
+		t.Fatal("expected focus error")
+	}
+	for _, expected := range []string{`unsupported focus value "agents"`, "run `weft clear` to reset"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("error missing %q: %v", expected, err)
+		}
+	}
+}
+
+func TestStoreReadsStrictV5TaskState(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	workspace := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{
+  "version": 5,
+  "active_task_id": "a",
+  "selected_task_id": "a",
+  "selected_workspace_id": "w",
+  "focus": "console",
+  "nav_open": false,
+  "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "groups": [],
+  "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
+  "collapsed_group_ids": []
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := NewStore(path, workspace).Ensure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Version != Version || st.ActiveTaskID != "a" || st.SelectedTaskID != "a" || st.Focus != FocusConsole || len(st.Tasks) != 1 {
+		t.Fatalf("strict v5 state = %#v", st)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"active_agent_id", "selected_agent_id", `"agents"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("strict v5 state should not write legacy %s:\n%s", forbidden, raw)
+		}
+	}
+}
+
+func TestCloseTaskSelectsNextTask(t *testing.T) {
+	st := testState(t)
+	st.ActiveTaskID = "b"
+
+	st = CloseTask(st, "b")
+
+	if st.ActiveTaskID != "c" {
+		t.Fatalf("ActiveTaskID = %q", st.ActiveTaskID)
+	}
+	if len(st.Tasks) != 2 {
+		t.Fatalf("tasks = %#v", st.Tasks)
+	}
+}
+
+func TestCloseLastTaskInWorkspaceStaysInCurrentWorkspace(t *testing.T) {
 	st := testState(t)
 	now := NowISO()
 	otherWorkspace := Workspace{ID: "w2", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now}
 	otherGroup := Group{ID: "g2", WorkspaceID: otherWorkspace.ID, Path: "inbox", CreatedAt: now, UpdatedAt: now}
 	st.Workspaces = append(st.Workspaces, otherWorkspace)
 	st.Groups = append(st.Groups, otherGroup)
-	st.Agents = []Agent{
+	st.Tasks = []Task{
 		{ID: "only", WorkspaceID: "w", GroupID: "f", Title: "Only", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
 		{ID: "other", WorkspaceID: "w2", GroupID: "g2", Title: "Other", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
 	}
-	st.ActiveAgentID = "only"
+	st.ActiveTaskID = "only"
 
-	st = CloseAgent(st, "only")
+	st = CloseTask(st, "only")
 
-	if st.SelectedWorkspaceID != "w" || st.ActiveAgentID != "" {
+	if st.SelectedWorkspaceID != "w" || st.ActiveTaskID != "" {
 		t.Fatalf("state switched away from current workspace: %#v", st)
 	}
 }
 
-func TestWorkspaceCanHaveNoGroupsAndUngroupedAgents(t *testing.T) {
+func TestWorkspaceCanHaveNoGroupsAndUngroupedTasks(t *testing.T) {
 	st := stateWithWorkspace(t)
 	if len(st.Workspaces) != 1 || len(st.Groups) != 0 {
 		t.Fatalf("workspace state = %#v", st)
 	}
 
-	next, agent, err := AddAgent(st, "a", st.SelectedWorkspaceID, "", "Codex", NowISO())
+	next, task, err := AddTask(st, "a", st.SelectedWorkspaceID, "", "Codex", NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.GroupID != "" {
-		t.Fatalf("new agent should be ungrouped: %#v", agent)
+	if task.GroupID != "" {
+		t.Fatalf("new task should be ungrouped: %#v", task)
 	}
-	if ungrouped := UngroupedAgentsForWorkspace(next, st.SelectedWorkspaceID); len(ungrouped) != 1 {
-		t.Fatalf("ungrouped agents = %#v", ungrouped)
+	if ungrouped := UngroupedTasksForWorkspace(next, st.SelectedWorkspaceID); len(ungrouped) != 1 {
+		t.Fatalf("ungrouped tasks = %#v", ungrouped)
 	}
-	next = CloseAgent(next, agent.ID)
-	if len(next.Agents) != 0 || next.SelectedWorkspaceID != st.SelectedWorkspaceID || next.SelectedGroupID != "" {
-		t.Fatalf("closed ungrouped agent state = %#v", next)
+	next = CloseTask(next, task.ID)
+	if len(next.Tasks) != 0 || next.SelectedWorkspaceID != st.SelectedWorkspaceID || next.SelectedGroupID != "" {
+		t.Fatalf("closed ungrouped task state = %#v", next)
 	}
 }
 
@@ -161,47 +261,47 @@ func TestWorkspaceTitleOverrideCanBeSetAndCleared(t *testing.T) {
 	}
 }
 
-func TestAddAgentDefaultsTitleToCodexTemplate(t *testing.T) {
+func TestAddTaskDefaultsTitleToCodexTemplate(t *testing.T) {
 	st := stateWithWorkspace(t)
 
-	_, agent, err := AddAgent(st, "a", st.SelectedWorkspaceID, "", "", NowISO())
+	_, task, err := AddTask(st, "a", st.SelectedWorkspaceID, "", "", NowISO())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.Title != DefaultAgentTitle {
-		t.Fatalf("agent title = %q", agent.Title)
+	if task.Title != DefaultTaskTitle {
+		t.Fatalf("task title = %q", task.Title)
 	}
-	if agent.TypeID != DefaultAgentTypeID {
-		t.Fatalf("agent type = %q", agent.TypeID)
+	if task.TypeID != DefaultTaskTypeID {
+		t.Fatalf("task type = %q", task.TypeID)
 	}
 }
 
-func TestAddAgentWithTypeStoresTaskType(t *testing.T) {
+func TestAddTaskWithTypeStoresTaskType(t *testing.T) {
 	st := stateWithWorkspace(t)
 	now := NowISO()
 
-	_, agent, err := AddAgentWithType(st, "", st.SelectedWorkspaceID, "", "shell", "Shell", now)
+	_, task, err := AddTaskWithType(st, "", st.SelectedWorkspaceID, "", "shell", "Shell", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.TypeID != "shell" || agent.Title != "Shell" {
-		t.Fatalf("agent = %#v", agent)
+	if task.TypeID != "shell" || task.Title != "Shell" {
+		t.Fatalf("task = %#v", task)
 	}
-	if want := StableID("agent", st.SelectedWorkspaceID, "", "shell", now, "Shell"); agent.ID != want {
-		t.Fatalf("typed agent id = %q, want %q", agent.ID, want)
+	if want := StableID("task", st.SelectedWorkspaceID, "", "shell", now, "Shell"); task.ID != want {
+		t.Fatalf("typed task id = %q, want %q", task.ID, want)
 	}
 }
 
-func TestRepairDefaultsLegacyAgentsToCodexType(t *testing.T) {
+func TestRepairDefaultsLegacyTasksToCodexType(t *testing.T) {
 	st := testState(t)
-	st.Agents[0].TypeID = ""
+	st.Tasks[0].TypeID = ""
 
 	repaired := Repair(st, t.TempDir())
 
-	if got := repaired.Agents[0].TypeID; got != DefaultAgentTypeID {
+	if got := repaired.Tasks[0].TypeID; got != DefaultTaskTypeID {
 		t.Fatalf("repaired type = %q", got)
 	}
-	if got := AgentTypeID(Agent{ID: "legacy"}); got != DefaultAgentTypeID {
+	if got := TaskTypeID(Task{ID: "legacy"}); got != DefaultTaskTypeID {
 		t.Fatalf("legacy helper type = %q", got)
 	}
 }
@@ -223,14 +323,14 @@ func TestRemoveLastWorkspaceLeavesEmptyState(t *testing.T) {
 	}
 
 	if len(removed) != 0 {
-		t.Fatalf("removed agents = %#v", removed)
+		t.Fatalf("removed tasks = %#v", removed)
 	}
 	if len(next.Workspaces) != 0 || next.SelectedWorkspaceID != "" || next.Focus != FocusWorkspaces || !next.NavOpen {
 		t.Fatalf("state should allow no workspaces: %#v", next)
 	}
 }
 
-func TestGroupValidationAndMoveAgent(t *testing.T) {
+func TestGroupValidationAndMoveTask(t *testing.T) {
 	st := testState(t)
 
 	if _, _, err := AddGroup(st, "bad", st.SelectedWorkspaceID, "bad/path", NowISO()); err == nil {
@@ -240,23 +340,23 @@ func TestGroupValidationAndMoveAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err = MoveAgent(next, "a", group.ID)
+	next, err = MoveTask(next, "a", group.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent := AgentByID(next, "a"); agent == nil || agent.GroupID != group.ID {
-		t.Fatalf("agent not moved: %#v", agent)
+	if task := TaskByID(next, "a"); task == nil || task.GroupID != group.ID {
+		t.Fatalf("task not moved: %#v", task)
 	}
 	if _, err := DeleteGroup(next, group.ID); err == nil {
 		t.Fatal("expected non-empty group delete error")
 	}
 
-	next, err = MoveAgent(next, "a", "")
+	next, err = MoveTask(next, "a", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent := AgentByID(next, "a"); agent == nil || agent.GroupID != "" {
-		t.Fatalf("agent not moved to top-level: %#v", agent)
+	if task := TaskByID(next, "a"); task == nil || task.GroupID != "" {
+		t.Fatalf("task not moved to top-level: %#v", task)
 	}
 	next, err = DeleteGroup(next, group.ID)
 	if err != nil {
@@ -304,11 +404,11 @@ func TestRepairDefaultsGroupSilentFalse(t *testing.T) {
 	now := NowISO()
 	st := State{
 		Version:    Version,
-		Focus:      FocusAgents,
+		Focus:      FocusTasks,
 		NavOpen:    true,
 		Workspaces: []Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
 		Groups:     []Group{{ID: "g", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now}},
-		Agents:     []Agent{},
+		Tasks:      []Task{},
 	}
 	repaired := Repair(st, "/tmp/project")
 	group := GroupByID(repaired, "g")
@@ -331,111 +431,111 @@ func TestAddGroupWithSilentSetsSilent(t *testing.T) {
 	}
 }
 
-func TestReorderAgentMovesWithinAndAcrossAdjacentAreas(t *testing.T) {
-	st := reorderAgentTestState(t)
+func TestReorderTaskMovesWithinAndAcrossAdjacentAreas(t *testing.T) {
+	st := reorderTaskTestState(t)
 
-	next, moved, err := ReorderAgent(st, "release-b", -1)
+	next, moved, err := ReorderTask(st, "release-b", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !moved {
-		t.Fatal("expected grouped agent to move")
+		t.Fatal("expected grouped task to move")
 	}
-	if got, want := agentIDs(AgentsForGroup(next, "release")), []string{"release-b", "release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(TasksForGroup(next, "release")), []string{"release-b", "release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("release group order = %#v, want %#v", got, want)
 	}
-	if got, want := agentIDs(UngroupedAgentsForWorkspace(next, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(UngroupedTasksForWorkspace(next, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("ungrouped order changed = %#v, want %#v", got, want)
 	}
-	if next.ActiveAgentID != "release-b" || next.SelectedGroupID != "release" {
-		t.Fatalf("selection did not follow moved grouped agent: %#v", next)
+	if next.ActiveTaskID != "release-b" || next.SelectedGroupID != "release" {
+		t.Fatalf("selection did not follow moved grouped task: %#v", next)
 	}
 
-	next, moved, err = ReorderAgent(next, "top-b", -1)
+	next, moved, err = ReorderTask(next, "top-b", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !moved {
-		t.Fatal("expected ungrouped agent to move")
+		t.Fatal("expected ungrouped task to move")
 	}
-	if got, want := agentIDs(UngroupedAgentsForWorkspace(next, "w")), []string{"top-b", "top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(UngroupedTasksForWorkspace(next, "w")), []string{"top-b", "top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("ungrouped order = %#v, want %#v", got, want)
 	}
 
-	next, moved, err = ReorderAgent(next, "top-b", -1)
+	next, moved, err = ReorderTask(next, "top-b", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if moved {
-		t.Fatal("first ungrouped agent should not move up")
+		t.Fatal("first ungrouped task should not move up")
 	}
 
-	st = reorderAgentTestState(t)
-	next, moved, err = ReorderAgent(st, "top-b", 1)
+	st = reorderTaskTestState(t)
+	next, moved, err = ReorderTask(st, "top-b", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !moved {
-		t.Fatal("expected last ungrouped agent to move into first group")
+		t.Fatal("expected last ungrouped task to move into first group")
 	}
-	if got, want := agentIDs(UngroupedAgentsForWorkspace(next, "w")), []string{"top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(UngroupedTasksForWorkspace(next, "w")), []string{"top-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("ungrouped order after crossing down = %#v, want %#v", got, want)
 	}
-	if got, want := agentIDs(AgentsForGroup(next, "release")), []string{"top-b", "release-a", "release-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(TasksForGroup(next, "release")), []string{"top-b", "release-a", "release-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("release order after top-level crossing down = %#v, want %#v", got, want)
 	}
-	if agent := AgentByID(next, "top-b"); agent == nil || agent.GroupID != "release" {
-		t.Fatalf("agent did not move into release: %#v", agent)
+	if task := TaskByID(next, "top-b"); task == nil || task.GroupID != "release" {
+		t.Fatalf("task did not move into release: %#v", task)
 	}
-	if next.ActiveAgentID != "top-b" || next.SelectedGroupID != "release" {
-		t.Fatalf("selection did not follow agent into group: %#v", next)
+	if next.ActiveTaskID != "top-b" || next.SelectedGroupID != "release" {
+		t.Fatalf("selection did not follow task into group: %#v", next)
 	}
 
-	next, moved, err = ReorderAgent(next, "top-b", -1)
+	next, moved, err = ReorderTask(next, "top-b", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !moved {
-		t.Fatal("expected first grouped agent to move back to top-level")
+		t.Fatal("expected first grouped task to move back to top-level")
 	}
-	if got, want := agentIDs(UngroupedAgentsForWorkspace(next, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(UngroupedTasksForWorkspace(next, "w")), []string{"top-a", "top-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("ungrouped order after crossing up = %#v, want %#v", got, want)
 	}
-	if agent := AgentByID(next, "top-b"); agent == nil || agent.GroupID != "" {
-		t.Fatalf("agent did not move back to top-level: %#v", agent)
+	if task := TaskByID(next, "top-b"); task == nil || task.GroupID != "" {
+		t.Fatalf("task did not move back to top-level: %#v", task)
 	}
 	if next.SelectedGroupID != "" {
-		t.Fatalf("selection should follow top-level agent: %#v", next)
+		t.Fatalf("selection should follow top-level task: %#v", next)
 	}
 
-	st = reorderAgentTestState(t)
-	next, moved, err = ReorderAgent(st, "release-b", 1)
+	st = reorderTaskTestState(t)
+	next, moved, err = ReorderTask(st, "release-b", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !moved {
-		t.Fatal("expected last release agent to move into next group")
+		t.Fatal("expected last release task to move into next group")
 	}
-	if got, want := agentIDs(AgentsForGroup(next, "release")), []string{"release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(TasksForGroup(next, "release")), []string{"release-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("release order after crossing into next group = %#v, want %#v", got, want)
 	}
-	if got, want := agentIDs(AgentsForGroup(next, "review")), []string{"release-b", "review-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(TasksForGroup(next, "review")), []string{"release-b", "review-a"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("review order after crossing into next group = %#v, want %#v", got, want)
 	}
 
-	next, moved, err = ReorderAgent(next, "release-b", -1)
+	next, moved, err = ReorderTask(next, "release-b", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !moved {
-		t.Fatal("expected first review agent to move back into previous group")
+		t.Fatal("expected first review task to move back into previous group")
 	}
-	if got, want := agentIDs(AgentsForGroup(next, "release")), []string{"release-a", "release-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := taskIDs(TasksForGroup(next, "release")), []string{"release-a", "release-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("release order after crossing back up = %#v, want %#v", got, want)
 	}
 }
 
-func reorderAgentTestState(t *testing.T) State {
+func reorderTaskTestState(t *testing.T) State {
 	t.Helper()
 	st := stateWithWorkspace(t)
 	now := NowISO()
@@ -443,7 +543,7 @@ func reorderAgentTestState(t *testing.T) State {
 		{ID: "release", WorkspaceID: "w", Path: "release", CreatedAt: now, UpdatedAt: now},
 		{ID: "review", WorkspaceID: "w", Path: "review", CreatedAt: now, UpdatedAt: now},
 	}
-	st.Agents = []Agent{
+	st.Tasks = []Task{
 		{ID: "top-a", WorkspaceID: "w", GroupID: "", Title: "Top A", Status: StatusRunning, CreatedAt: "2026-01-01T00:03:00Z", UpdatedAt: now},
 		{ID: "release-a", WorkspaceID: "w", GroupID: "release", Title: "Release A", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z", UpdatedAt: now},
 		{ID: "review-a", WorkspaceID: "w", GroupID: "review", Title: "Review A", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z", UpdatedAt: now},
@@ -456,8 +556,8 @@ func reorderAgentTestState(t *testing.T) State {
 func TestReorderGroupStaysWithinWorkspaceAndPreservesSelection(t *testing.T) {
 	st := stateWithWorkspace(t)
 	now := NowISO()
-	st.ActiveAgentID = "active"
-	st.SelectedAgentID = "active"
+	st.ActiveTaskID = "active"
+	st.SelectedTaskID = "active"
 	st.SelectedGroupID = "review"
 	st.CollapsedGroupIDs = []string{"review"}
 	st.Workspaces = append(st.Workspaces, Workspace{ID: "w2", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now})
@@ -468,7 +568,7 @@ func TestReorderGroupStaysWithinWorkspaceAndPreservesSelection(t *testing.T) {
 		{ID: "other-b", WorkspaceID: "w2", Path: "other b", CreatedAt: now, UpdatedAt: now},
 		{ID: "qa", WorkspaceID: "w", Path: "qa", CreatedAt: now, UpdatedAt: now},
 	}
-	st.Agents = []Agent{
+	st.Tasks = []Task{
 		{ID: "active", WorkspaceID: "w", GroupID: "review", Title: "Active", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
 		{ID: "other", WorkspaceID: "w2", GroupID: "other-a", Title: "Other", Status: StatusRunning, CreatedAt: now, UpdatedAt: now},
 	}
@@ -486,14 +586,14 @@ func TestReorderGroupStaysWithinWorkspaceAndPreservesSelection(t *testing.T) {
 	if got, want := groupIDs(GroupsForWorkspace(next, "w2")), []string{"other-a", "other-b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("other workspace order = %#v, want %#v", got, want)
 	}
-	if next.SelectedWorkspaceID != "w" || next.SelectedGroupID != "review" || next.SelectedAgentID != "" || next.ActiveAgentID != "active" {
-		t.Fatalf("selection did not stay on moved group without changing active agent: %#v", next)
+	if next.SelectedWorkspaceID != "w" || next.SelectedGroupID != "review" || next.SelectedTaskID != "" || next.ActiveTaskID != "active" {
+		t.Fatalf("selection did not stay on moved group without changing active task: %#v", next)
 	}
 	if !IsGroupCollapsed(next, "review") {
 		t.Fatalf("collapsed group state was not preserved: %#v", next.CollapsedGroupIDs)
 	}
-	if agent := AgentByID(next, "active"); agent == nil || agent.GroupID != "review" || agent.WorkspaceID != "w" {
-		t.Fatalf("agent changed during group reorder: %#v", agent)
+	if task := TaskByID(next, "active"); task == nil || task.GroupID != "review" || task.WorkspaceID != "w" {
+		t.Fatalf("task changed during group reorder: %#v", task)
 	}
 
 	next, moved, err = ReorderGroup(next, "review", -1)
@@ -532,14 +632,14 @@ func testState(t *testing.T) State {
 	now := NowISO()
 	return State{
 		Version:             Version,
-		ActiveAgentID:       "a",
+		ActiveTaskID:        "a",
 		SelectedWorkspaceID: workspaceID,
 		SelectedGroupID:     groupID,
-		Focus:               FocusAgents,
+		Focus:               FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []Workspace{{ID: workspaceID, Path: dir, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []Group{{ID: groupID, WorkspaceID: workspaceID, Path: "inbox", CreatedAt: now, UpdatedAt: now}},
-		Agents: []Agent{
+		Tasks: []Task{
 			{ID: "a", WorkspaceID: workspaceID, GroupID: groupID, Title: "A", Status: StatusRunning, CreatedAt: "2026-01-01T00:00:00Z"},
 			{ID: "b", WorkspaceID: workspaceID, GroupID: groupID, Title: "B", Status: StatusRunning, CreatedAt: "2026-01-01T00:01:00Z"},
 			{ID: "c", WorkspaceID: workspaceID, GroupID: groupID, Title: "C", Status: StatusRunning, CreatedAt: "2026-01-01T00:02:00Z"},
@@ -556,10 +656,10 @@ func stateWithWorkspace(t *testing.T) State {
 	return st
 }
 
-func agentIDs(agents []Agent) []string {
-	ids := make([]string, 0, len(agents))
-	for _, agent := range agents {
-		ids = append(ids, agent.ID)
+func taskIDs(tasks []Task) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
 	}
 	return ids
 }

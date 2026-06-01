@@ -265,8 +265,8 @@ func closeWeft(command string, args []string) error {
 	}
 	if *kill {
 		response, err := supervisor.Status(rt)
-		if err == nil && runningAgentCount(response.State) > 0 && !*yes {
-			fmt.Printf("Stopping the Weft supervisor will stop %d running task terminal(s). Saved layout and metadata remain.\n", runningAgentCount(response.State))
+		if err == nil && runningTaskCount(response.State) > 0 && !*yes {
+			fmt.Printf("Stopping the Weft supervisor will stop %d running task terminal(s). Saved layout and metadata remain.\n", runningTaskCount(response.State))
 			if !confirm("Stop supervisor and running task terminals? [y/N] ") {
 				fmt.Println("Close canceled.")
 				return nil
@@ -325,7 +325,7 @@ func status(args []string) error {
 		return json.NewEncoder(os.Stdout).Encode(st)
 	}
 	fmt.Printf("supervisor: down (%v)\n", err)
-	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\ntasks: %d\n", rt.Workspace, rt.Dir, displayFocus(st.Focus), len(st.Workspaces), len(st.Groups), len(st.Agents))
+	fmt.Printf("launch workspace: %s\nruntime dir: %s\nfocus: %s\nworkspaces: %d\ngroups: %d\ntasks: %d\n", rt.Workspace, rt.Dir, displayFocus(st.Focus), len(st.Workspaces), len(st.Groups), len(st.Tasks))
 	return nil
 }
 
@@ -390,8 +390,8 @@ func upgradeSummary(upgrade *ipc.Upgrade) string {
 	if !upgrade.Compatible {
 		return "incompatible supervisor restart required"
 	}
-	if upgrade.RunningAgents > 0 {
-		return fmt.Sprintf("upgrade pending, wait for idle/resumable tasks (%d live)", upgrade.RunningAgents)
+	if upgrade.RunningTasks > 0 {
+		return fmt.Sprintf("upgrade pending, wait for idle/resumable tasks (%d live)", upgrade.RunningTasks)
 	}
 	return "upgrade ready"
 }
@@ -562,7 +562,7 @@ func backupRestore(args []string) error {
 	response, statusErr := supervisor.Status(rt)
 	supervisorRunning := statusErr == nil
 	if supervisorRunning && !yes {
-		running := runningAgentCount(response.State)
+		running := runningTaskCount(response.State)
 		if running > 0 {
 			fmt.Printf("Restoring a backup requires stopping the Weft supervisor and %d running task terminal(s).\n", running)
 		} else {
@@ -660,7 +660,7 @@ func doctor(args []string) error {
 	fmt.Printf("info launch workspace: %s\n", rt.Workspace)
 	fmt.Printf("info runtime dir: %s\n", rt.Dir)
 	fmt.Printf("ok config: %s\n", rt.ConfigPath)
-	fmt.Printf("ok state: %s (%d workspaces, %d groups, %d tasks)\n", rt.StatePath, len(st.Workspaces), len(st.Groups), len(st.Agents))
+	fmt.Printf("ok state: %s (%d workspaces, %d groups, %d tasks)\n", rt.StatePath, len(st.Workspaces), len(st.Groups), len(st.Tasks))
 	if _, err := supervisor.Status(rt); err == nil {
 		fmt.Println("ok supervisor: running")
 	} else {
@@ -816,13 +816,13 @@ func safeDevRuntimeCommand(rt config.Runtime) string {
 	return fmt.Sprintf("%s=%s go -C %s run ./cmd/weft --clear", config.RootEnv, worktree, worktree)
 }
 
-func runningAgentCount(st *state.State) int {
+func runningTaskCount(st *state.State) int {
 	if st == nil {
 		return 0
 	}
 	count := 0
-	for _, agent := range st.Agents {
-		switch agent.Status {
+	for _, task := range st.Tasks {
+		switch task.Status {
 		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
 			count++
 		}
@@ -872,7 +872,7 @@ func displayFocus(focus state.Focus) string {
 	if focus == state.FocusWorkspaces {
 		return "workspaces"
 	}
-	if focus == state.FocusAgents {
+	if focus == state.FocusTasks {
 		return "tasks"
 	}
 	return string(focus)

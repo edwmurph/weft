@@ -65,7 +65,7 @@ type ClientModel struct {
 	newWorkspaceCardSelected bool
 	newTaskRowSelected       bool
 	codexScrollOffset        int
-	codexScrollAgentID       string
+	codexScrollTaskID        string
 	inputRouter              *clientInputRouter
 }
 
@@ -193,10 +193,10 @@ func (m ClientModel) dashboardState() state.State {
 		st.NavOpen = true
 		st.SelectedWorkspaceID = ""
 		st.SelectedGroupID = ""
-		st.SelectedAgentID = ""
+		st.SelectedTaskID = ""
 	}
 	if m.newTaskRowSelected {
-		st.Focus = state.FocusAgents
+		st.Focus = state.FocusTasks
 		st.NavOpen = true
 	}
 	return st
@@ -204,7 +204,7 @@ func (m ClientModel) dashboardState() state.State {
 
 func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 	return workspaceRenderOptions{
-		loadingAgents:            loadingAgentSet(m.snapshot.LoadingAgentIDs),
+		loadingTasks:             loadingTaskSet(m.snapshot.LoadingTaskIDs),
 		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State),
 		workspaceInfoText:        m.workspaceInfoHeaderText(),
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
@@ -230,20 +230,20 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleNewTaskKey(msg)
 	}
 
-	if m.snapshot.State.Focus == state.FocusCodex &&
-		state.ActiveAgent(m.snapshot.State) != nil &&
+	if m.snapshot.State.Focus == state.FocusConsole &&
+		state.ActiveTask(m.snapshot.State) != nil &&
 		m.inputRouter != nil &&
 		!m.inputRouter.TaskInputActive() {
-		m.snapshot.State.Focus = state.FocusAgents
+		m.snapshot.State.Focus = state.FocusTasks
 		m.snapshot.State.NavOpen = true
 	}
 	if bindingMatches(m.cfg.KeyBindings.Drawer, msg) {
 		return m, m.request("toggle_drawer", nil)
 	}
-	if m.snapshot.State.Focus == state.FocusCodex && state.ActiveAgent(m.snapshot.State) != nil {
+	if m.snapshot.State.Focus == state.FocusConsole && state.ActiveTask(m.snapshot.State) != nil {
 		return m, nil
 	}
-	if m.snapshot.State.Focus == state.FocusCodex {
+	if m.snapshot.State.Focus == state.FocusConsole {
 		return m, m.request("toggle_drawer", nil)
 	}
 	if bindingMatches(m.cfg.KeyBindings.Quit, msg) {
@@ -271,7 +271,7 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.FocusRight, msg):
 		m.newWorkspaceCardSelected = false
 		m.newTaskRowSelected = false
-		return m, m.request("focus", map[string]string{"target": string(state.FocusAgents)})
+		return m, m.request("focus", map[string]string{"target": string(state.FocusTasks)})
 	case msg.Type == tea.KeyShiftUp:
 		return m.reorderSelectedRow(-1)
 	case msg.Type == tea.KeyShiftDown:
@@ -318,8 +318,8 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case bindingMatches(m.cfg.KeyBindings.MoveTask, msg):
 		m.newWorkspaceCardSelected = false
 		m.newTaskRowSelected = false
-		if agent := m.selectedAgent(); agent != nil {
-			m.startPrompt(promptMoveAgent, "")
+		if task := m.selectedTask(); task != nil {
+			m.startPrompt(promptMoveTask, "")
 		}
 	case bindingMatches(m.cfg.KeyBindings.Edit, msg):
 		m.newWorkspaceCardSelected = false
@@ -375,7 +375,7 @@ func (m ClientModel) isNewTaskRowSelected() bool {
 	if m.newTaskRowSelected && m.newTaskRowVisible() {
 		return true
 	}
-	return m.snapshot.State.Focus == state.FocusAgents &&
+	return m.snapshot.State.Focus == state.FocusTasks &&
 		currentGroupRowForState(m.snapshot.State, m.snapshot.GroupCursor).kind == groupRowNewTask
 }
 
@@ -401,7 +401,7 @@ func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m ClientModel) reorderSelectedRow(delta int) (tea.Model, tea.Cmd) {
-	if m.snapshot.State.Focus != state.FocusAgents {
+	if m.snapshot.State.Focus != state.FocusTasks {
 		return m, nil
 	}
 	row := currentGroupRowForState(m.snapshot.State, m.snapshot.GroupCursor)
@@ -411,23 +411,23 @@ func (m ClientModel) reorderSelectedRow(delta int) (tea.Model, tea.Cmd) {
 			"id":    row.groupID,
 			"delta": strconv.Itoa(delta),
 		})
-	case groupRowAgent:
-		return m.reorderSelectedAgent(delta)
+	case groupRowTask:
+		return m.reorderSelectedTask(delta)
 	default:
 		return m, nil
 	}
 }
 
-func (m ClientModel) reorderSelectedAgent(delta int) (tea.Model, tea.Cmd) {
-	if m.snapshot.State.Focus != state.FocusAgents {
+func (m ClientModel) reorderSelectedTask(delta int) (tea.Model, tea.Cmd) {
+	if m.snapshot.State.Focus != state.FocusTasks {
 		return m, nil
 	}
-	agent := m.selectedAgent()
-	if agent == nil {
+	task := m.selectedTask()
+	if task == nil {
 		return m, nil
 	}
-	return m, m.request("reorder_agent", map[string]string{
-		"id":    agent.ID,
+	return m, m.request("reorder_task", map[string]string{
+		"id":    task.ID,
 		"delta": strconv.Itoa(delta),
 	})
 }
@@ -560,11 +560,11 @@ func (m ClientModel) applyPrompt(value string) tea.Cmd {
 		return m.request("rename_group", map[string]string{"id": m.pendingID, "path": value, "silent": fmt.Sprintf("%t", m.editGroupSilent)})
 	case promptWorkspaceTitle:
 		return m.request("rename_workspace", map[string]string{"id": m.pendingID, "title": value})
-	case promptEditAgent:
+	case promptEditTask:
 		return m.request("rename", map[string]string{"id": m.pendingID, "title": value})
-	case promptMoveAgent:
-		if agent := m.selectedAgent(); agent != nil {
-			return m.request("move", map[string]string{"id": agent.ID, "group": value})
+	case promptMoveTask:
+		if task := m.selectedTask(); task != nil {
+			return m.request("move", map[string]string{"id": task.ID, "group": value})
 		}
 	}
 	return nil
@@ -578,7 +578,7 @@ func (m *ClientModel) applyConfirm() tea.Cmd {
 		return m.request("remove_workspace", map[string]string{"id": m.pendingID})
 	case confirmDeleteGroup:
 		return m.request("remove_group", map[string]string{"id": m.pendingID})
-	case confirmDeleteAgent:
+	case confirmDeleteTask:
 		return m.request("close", map[string]string{"id": m.pendingID})
 	case confirmUpgradeResume:
 		return m.request("upgrade_resume", nil)
@@ -685,11 +685,11 @@ func (m ClientModel) workspaceInfoHeaderText() string {
 
 func (m *ClientModel) syncCodexScroll() {
 	activeID := ""
-	if active := state.ActiveAgent(m.snapshot.State); active != nil {
+	if active := state.ActiveTask(m.snapshot.State); active != nil {
 		activeID = active.ID
 	}
-	if activeID == "" || activeID != m.codexScrollAgentID {
-		m.codexScrollAgentID = activeID
+	if activeID == "" || activeID != m.codexScrollTaskID {
+		m.codexScrollTaskID = activeID
 		m.codexScrollOffset = 0
 		return
 	}
@@ -701,13 +701,13 @@ func (m *ClientModel) syncInputRouter() {
 		return
 	}
 	active := m.mode == modeNormal &&
-		m.snapshot.State.Focus == state.FocusCodex &&
-		state.ActiveAgent(m.snapshot.State) != nil
+		m.snapshot.State.Focus == state.FocusConsole &&
+		state.ActiveTask(m.snapshot.State) != nil
 	if !active {
 		m.inputRouter.SetTaskInputMode(taskInputNone)
 		return
 	}
-	if agent := state.ActiveAgent(m.snapshot.State); agent != nil && agentUsesCodexIntegration(m.cfg, *agent) {
+	if task := state.ActiveTask(m.snapshot.State); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
 		m.inputRouter.SetTaskInputMode(taskInputCodex)
 		return
 	}
@@ -724,8 +724,8 @@ func (m *ClientModel) ensureLoadingTick() tea.Cmd {
 
 func (m ClientModel) hasLoadingAnimation() bool {
 	return strings.TrimSpace(m.snapshot.LoadingText) != "" ||
-		len(m.snapshot.LoadingAgentIDs) > 0 ||
-		m.mode == modeNormal && m.snapshot.State.NavOpen && state.ActiveAgent(m.snapshot.State) != nil
+		len(m.snapshot.LoadingTaskIDs) > 0 ||
+		m.mode == modeNormal && m.snapshot.State.NavOpen && state.ActiveTask(m.snapshot.State) != nil
 }
 
 func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State) string {
@@ -837,24 +837,24 @@ func (m ClientModel) renderInputModal() string {
 }
 
 func (m ClientModel) promptContext() promptContext {
-	return promptContextFor(m.prompt, m.pendingID, m.snapshot.State, m.selectedAgent())
+	return promptContextFor(m.prompt, m.pendingID, m.snapshot.State, m.selectedTask())
 }
 
 func (m ClientModel) renderPromptExtra(input textinput.Model, width int) []string {
-	return renderPromptExtraForState(m.cfg, m.snapshot.State, m.prompt, m.selectedAgent(), input, width)
+	return renderPromptExtraForState(m.cfg, m.snapshot.State, m.prompt, m.selectedTask(), input, width)
 }
 
 func (m ClientModel) renderConfirmModal() string {
 	width := max(36, min(m.width-16, 72))
-	return renderConfirmPrompt(m.confirm, confirmTarget(m.confirm, m.snapshot.State, m.pendingID, m.renderAgentTitle), width)
+	return renderConfirmPrompt(m.confirm, confirmTarget(m.confirm, m.snapshot.State, m.pendingID, m.renderTaskTitle), width)
 }
 
-func (m ClientModel) selectedAgent() *state.Agent {
-	return selectedAgentForState(m.snapshot.State, m.snapshot.GroupCursor)
+func (m ClientModel) selectedTask() *state.Task {
+	return selectedTaskForState(m.snapshot.State, m.snapshot.GroupCursor)
 }
 
-func (m ClientModel) renderAgentTitle(agent state.Agent) string {
-	return renderAgentTitleForState(m.cfg, m.snapshot.State, agent)
+func (m ClientModel) renderTaskTitle(task state.Task) string {
+	return renderTaskTitleForState(m.cfg, m.snapshot.State, task)
 }
 
 func (m ClientModel) messageText() string {

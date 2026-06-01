@@ -21,7 +21,7 @@ const (
 	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
-func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
+func TestFreshDashboardNewTaskFallsBackWhenShellMissing(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -119,10 +119,10 @@ func TestFreshDashboardNewAgentFallsBackWhenShellMissing(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	st := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 && st.Agents[0].Status != state.StatusStarting
+		return len(st.Tasks) == 1 && st.Tasks[0].Status != state.StatusStarting
 	})
-	if st.Agents[0].Status != state.StatusRunning {
-		t.Fatalf("agent should start even when SHELL is invalid, status=%s title=%q\nscreen:\n%s", st.Agents[0].Status, st.Agents[0].CodexTitle, clientOutput())
+	if st.Tasks[0].Status != state.StatusRunning {
+		t.Fatalf("task should start even when SHELL is invalid, status=%s title=%q\nscreen:\n%s", st.Tasks[0].Status, st.Tasks[0].CodexTitle, clientOutput())
 	}
 	waitForEscapedCapture(t, env, pane, func(capture string) bool {
 		return strings.Contains(capture, keyboardProtocolSetup)
@@ -201,12 +201,12 @@ title_template = "Shell"
 	})
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	st := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Agents[0].TypeID == "shell" &&
-			st.Agents[0].Status == state.StatusReady
+		return len(st.Tasks) == 1 &&
+			st.Tasks[0].TypeID == "shell" &&
+			st.Tasks[0].Status == state.StatusReady
 	})
-	if st.Agents[0].CodexSessionID != "" {
-		t.Fatalf("shell task should not capture Codex session id: %#v", st.Agents[0])
+	if st.Tasks[0].CodexSessionID != "" {
+		t.Fatalf("shell task should not capture Codex session id: %#v", st.Tasks[0])
 	}
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "shell-ready") &&
@@ -294,12 +294,12 @@ title_template = "Shell"
 
 	runWeft(t, env, bin, "new", "--type", "shell")
 	st := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Agents[0].TypeID == "shell" &&
-			st.Agents[0].Status == state.StatusReady
+		return len(st.Tasks) == 1 &&
+			st.Tasks[0].TypeID == "shell" &&
+			st.Tasks[0].Status == state.StatusReady
 	})
-	if st.Agents[0].GroupID != "" {
-		t.Fatalf("new shell task should start top-level: %#v", st.Agents[0])
+	if st.Tasks[0].GroupID != "" {
+		t.Fatalf("new shell task should start top-level: %#v", st.Tasks[0])
 	}
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, collapsedCodexToolbar) &&
@@ -310,11 +310,11 @@ title_template = "Shell"
 	runWeft(t, env, bin, "move-right")
 	st = waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Groups) == 1 &&
-			len(st.Agents) == 1 &&
-			st.Agents[0].GroupID == st.Groups[0].ID
+			len(st.Tasks) == 1 &&
+			st.Tasks[0].GroupID == st.Groups[0].ID
 	})
 	time.Sleep(200 * time.Millisecond)
-	if st.Focus == state.FocusCodex {
+	if st.Focus == state.FocusConsole {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 	}
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -337,7 +337,7 @@ title_template = "Shell"
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "repro (1)") &&
-			agentLineHasLoadingFrame(capture, "repro (1)") &&
+			taskLineHasLoadingFrame(capture, "repro (1)") &&
 			!strings.Contains(capture, "[shell] Shell")
 	})
 }
@@ -491,7 +491,7 @@ func TestDashboardReordersGroupsE2E(t *testing.T) {
 			selected := state.GroupByID(st, st.SelectedGroupID)
 			return selected != nil &&
 				selected.Path == "middle" &&
-				st.SelectedAgentID == "" &&
+				st.SelectedTaskID == "" &&
 				groupOrderMatches(st, []string{"zulu", "middle", "alpha"})
 		})
 		assertRenderedOrder("zulu", "middle", "alpha")
@@ -501,28 +501,28 @@ func TestDashboardReordersGroupsE2E(t *testing.T) {
 			selected := state.GroupByID(st, st.SelectedGroupID)
 			return selected != nil &&
 				selected.Path == "middle" &&
-				st.SelectedAgentID == "" &&
+				st.SelectedTaskID == "" &&
 				groupOrderMatches(st, []string{"zulu", "alpha", "middle"})
 		})
 		assertRenderedOrder("zulu", "alpha", "middle")
 	})
 
-	var agentID string
+	var taskID string
 	timedStep(t, "shift arrows move selected task across group boundaries", func() {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		st := waitState(t, env, bin, func(st state.State) bool {
-			active := state.ActiveAgent(st)
+			active := state.ActiveTask(st)
 			if active != nil {
-				agentID = active.ID
+				taskID = active.ID
 			}
-			return len(st.Agents) == 1 &&
+			return len(st.Tasks) == 1 &&
 				active != nil &&
 				active.GroupID == "" &&
-				st.Focus == state.FocusCodex
+				st.Focus == state.FocusConsole
 		})
-		if agentID == "" {
-			t.Fatalf("created task id missing: %#v", st.Agents)
+		if taskID == "" {
+			t.Fatalf("created task id missing: %#v", st.Tasks)
 		}
 
 		directRun(t, env, "send-keys", "-l", "-t", pane, "preview-probe")
@@ -532,9 +532,9 @@ func TestDashboardReordersGroupsE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.ActiveAgentID == agentID &&
-				st.SelectedAgentID == agentID &&
-				st.Focus == state.FocusAgents &&
+			return st.ActiveTaskID == taskID &&
+				st.SelectedTaskID == taskID &&
+				st.Focus == state.FocusTasks &&
 				st.NavOpen
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -544,19 +544,19 @@ func TestDashboardReordersGroupsE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "S-Down")
 		waitState(t, env, bin, func(st state.State) bool {
 			group := groupByPath(st, "zulu")
-			agent := findAgent(st, agentID)
+			task := findTask(st, taskID)
 			return group != nil &&
-				agent != nil &&
-				agent.GroupID == group.ID &&
-				st.SelectedAgentID == agentID &&
+				task != nil &&
+				task.GroupID == group.ID &&
+				st.SelectedTaskID == taskID &&
 				st.SelectedGroupID == group.ID
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Up")
 		waitState(t, env, bin, func(st state.State) bool {
 			group := groupByPath(st, "zulu")
 			return group != nil &&
-				st.Focus == state.FocusAgents &&
-				st.SelectedAgentID == "" &&
+				st.Focus == state.FocusTasks &&
+				st.SelectedTaskID == "" &&
 				st.SelectedGroupID == group.ID
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -567,16 +567,16 @@ func TestDashboardReordersGroupsE2E(t *testing.T) {
 		waitState(t, env, bin, func(st state.State) bool {
 			group := groupByPath(st, "zulu")
 			return group != nil &&
-				st.SelectedAgentID == agentID &&
+				st.SelectedTaskID == taskID &&
 				st.SelectedGroupID == group.ID
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "S-Up")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, agentID)
-			return agent != nil &&
-				agent.GroupID == "" &&
-				st.SelectedAgentID == agentID &&
+			task := findTask(st, taskID)
+			return task != nil &&
+				task.GroupID == "" &&
+				st.SelectedTaskID == taskID &&
 				st.SelectedGroupID == ""
 		})
 	})
@@ -608,7 +608,7 @@ func TestDashboardReordersGroupsE2E(t *testing.T) {
 	})
 }
 
-func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
+func TestBottomShipitGroupTaskCanBeReachedE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -653,19 +653,19 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
-		active := state.ActiveAgent(st)
+		active := state.ActiveTask(st)
 		return active != nil &&
 			active.GroupID == "" &&
 			active.Status == state.StatusRunning
 	})
-	runWeft(t, env, bin, "rename", "Ship Agent")
+	runWeft(t, env, bin, "rename", "Ship Task")
 	waitState(t, env, bin, func(st state.State) bool {
-		active := state.ActiveAgent(st)
-		return active != nil && active.Title == "Ship Agent"
+		active := state.ActiveTask(st)
+		return active != nil && active.Title == "Ship Task"
 	})
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitState(t, env, bin, func(st state.State) bool {
-		return st.Focus == state.FocusAgents && st.NavOpen
+		return st.Focus == state.FocusTasks && st.NavOpen
 	})
 	directRun(t, env, "send-keys", "-t", pane, "m")
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -680,7 +680,7 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
 		group := groupByPath(st, "shipit")
-		active := state.ActiveAgent(st)
+		active := state.ActiveTask(st)
 		return group != nil &&
 			active != nil &&
 			active.GroupID == group.ID
@@ -689,7 +689,7 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "k")
 	time.Sleep(250 * time.Millisecond)
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "shipit") && !agentRowVisible(capture, "Ship Agent")
+		return strings.Contains(capture, "shipit") && !taskRowVisible(capture, "Ship Task")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -714,7 +714,7 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	})
 	directRun(t, env, "send-keys", "-t", pane, "j")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "shipit-later") && agentRowVisible(capture, "Ship Agent")
+		return strings.Contains(capture, "shipit-later") && taskRowVisible(capture, "Ship Task")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "C-c")
 	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
@@ -722,7 +722,7 @@ func TestBottomShipitGroupAgentCanBeReachedE2E(t *testing.T) {
 	}
 }
 
-func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
+func TestTasksPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -746,7 +746,7 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 		runWeft(t, env, bin, "new", title)
 		runWeft(t, env, bin, "move-right")
 	}
-	runWeft(t, env, bin, "new", "Planning Agent")
+	runWeft(t, env, bin, "new", "Planning Task")
 	pane := "planning-cursor-client"
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 130, 18)
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -755,7 +755,7 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	})
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitState(t, env, bin, func(st state.State) bool {
-		return st.Focus == state.FocusAgents && st.NavOpen
+		return st.Focus == state.FocusTasks && st.NavOpen
 	})
 	directRun(t, env, "send-keys", "-t", pane, "m")
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -765,19 +765,19 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
 		group := groupByPath(st, "planning")
-		active := state.ActiveAgent(st)
-		return group != nil && active != nil && active.Title == "Planning Agent" && active.GroupID == group.ID
+		active := state.ActiveTask(st)
+		return group != nil && active != nil && active.Title == "Planning Task" && active.GroupID == group.ID
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return !strings.Contains(capture, "Move task") &&
 			strings.Contains(capture, "planning (1)") &&
-			agentRowVisible(capture, "Planning Agent")
+			taskRowVisible(capture, "Planning Task")
 	})
 
 	directRun(t, env, "send-keys", "-t", pane, "k")
 	time.Sleep(250 * time.Millisecond)
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "planning") && agentRowVisible(capture, "Planning Agent")
+		return strings.Contains(capture, "planning") && taskRowVisible(capture, "Planning Task")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -796,7 +796,7 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	runWeft(t, env, bin, "--no-attach")
 	clientOutput, clientDone = startDirectDashboardClient(t, env, bin, workspace, pane+"-reattach", 130, 18)
 	waitState(t, env, bin, func(st state.State) bool {
-		return st.Focus == state.FocusAgents && st.NavOpen
+		return st.Focus == state.FocusTasks && st.NavOpen
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Workspaces") &&
@@ -814,7 +814,7 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Variables") && strings.Contains(capture, "Planning Agent")
+		return strings.Contains(capture, "Variables") && strings.Contains(capture, "Planning Task")
 	})
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "Escape")
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -826,7 +826,7 @@ func TestAgentsPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	}
 }
 
-func TestAgentConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
+func TestTaskConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -854,8 +854,8 @@ func TestAgentConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
-		active := state.ActiveAgent(st)
-		return active != nil && active.Status == state.StatusRunning && st.Focus == state.FocusCodex
+		active := state.ActiveTask(st)
+		return active != nil && active.Status == state.StatusRunning && st.Focus == state.FocusConsole
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "history line 80")
@@ -882,7 +882,7 @@ func TestAgentConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitState(t, env, bin, func(st state.State) bool {
-		return st.Focus == state.FocusAgents && st.NavOpen
+		return st.Focus == state.FocusTasks && st.NavOpen
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Task Live Preview") &&
@@ -1148,7 +1148,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	})
 
 	var firstID string
-	timedStep(t, "keyboard n creates agent", func() {
+	timedStep(t, "keyboard n creates task", func() {
 		started := time.Now()
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
@@ -1164,9 +1164,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatalf("startup placeholder took too long: %s", placeholderDuration.Round(time.Millisecond))
 		}
 		st := waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 1 && st.Agents[0].Status == state.StatusRunning && st.Focus == state.FocusCodex
+			return len(st.Tasks) == 1 && st.Tasks[0].Status == state.StatusRunning && st.Focus == state.FocusConsole
 		})
-		firstID = st.Agents[0].ID
+		firstID = st.Tasks[0].ID
 		if !waitForBool(2*time.Second, func() bool {
 			_, err := os.Stat(startupMarker)
 			return err == nil
@@ -1191,7 +1191,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		loadingNavCapture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Tasks") &&
 				strings.Contains(capture, "Fake Codex Ready") &&
-				agentLineHasLoadingFrame(capture, "Fake Codex Ready")
+				taskLineHasLoadingFrame(capture, "Fake Codex Ready")
 		})
 		if strings.Contains(loadingNavCapture, "• Fake Codex Ready") {
 			t.Fatalf("loading task row should not keep the static bullet marker:\n%s", loadingNavCapture)
@@ -1246,8 +1246,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "lj")
 		time.Sleep(250 * time.Millisecond)
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && agent.GroupID == "" && st.Focus == state.FocusCodex
+			task := findTask(st, firstID)
+			return task != nil && task.GroupID == "" && st.Focus == state.FocusConsole
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
@@ -1261,8 +1261,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				!strings.Contains(capture, "Other Weft sessions")
 		})
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && agent.AutoTitle == "Auto hook title" && agent.AutoTitleAttempted
+			task := findTask(st, firstID)
+			return task != nil && task.AutoTitle == "Auto hook title" && task.AutoTitleAttempted
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
@@ -1343,8 +1343,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "interrupt signal")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Working")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Working")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:interrupt signal") &&
@@ -1366,16 +1366,16 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatal("enhanced ctrl+c should not quit Weft in Task Console")
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Ready")
 		})
 	})
 
 	timedStep(t, "C-b opens dashboard", func() {
 		writeClientInput(t, "\x1b[98;5u")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		time.Sleep(250 * time.Millisecond)
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Tasks") &&
 				strings.Contains(capture, "Fake Codex Ready")
@@ -1393,8 +1393,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "{auto}")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && agent.Title == "{auto}" && agent.AutoTitle == "Auto hook title"
+			task := findTask(st, firstID)
+			return task != nil && task.Title == "{auto}" && task.AutoTitle == "Auto hook title"
 		})
 		payload, err := os.ReadFile(titleHookPayload)
 		if err != nil {
@@ -1405,7 +1405,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 	})
 
-	timedStep(t, "group prompt and move agent update structure", func() {
+	timedStep(t, "group prompt and move task update structure", func() {
 		directRun(t, env, "send-keys", "-t", pane, "g")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Create group")
@@ -1431,17 +1431,17 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			group := groupForAgent(st, agent)
-			return agent != nil && group != nil && group.Path == "release-flow"
+			task := findTask(st, firstID)
+			group := groupForTask(st, task)
+			return task != nil && group != nil && group.Path == "release-flow"
 		})
 		assertDashboardNotCorrupt(t, clientOutput(), false)
 	})
 
 	timedStep(t, "edit modal saves status template", func() {
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "e")
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -1451,8 +1451,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-l", "-t", pane, "Codex {status}")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && agent.Title == "Codex {status}"
+			task := findTask(st, firstID)
+			return task != nil && task.Title == "Codex {status}"
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Ready") && !strings.Contains(capture, "Edit task")
@@ -1462,23 +1462,23 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	timedStep(t, "status template follows Codex activity", func() {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
 		directRun(t, env, "send-keys", "-l", "-t", pane, "status check")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Working")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Working")
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:status check")
 		})
 		assertDashboardNotCorrupt(t, capture, false)
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Ready")
 		})
@@ -1486,66 +1486,66 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 
 	timedStep(t, "status template passes through Codex live statuses", func() {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
 		directRun(t, env, "send-keys", "-l", "-t", pane, "crafting status")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Crafting")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Crafting")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Crafting") && !strings.Contains(capture, "Codex running")
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
 		directRun(t, env, "send-keys", "-l", "-t", pane, "waiting status")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Waiting")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Waiting")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Waiting") &&
 				strings.Contains(capture, "1 active") &&
 				strings.Contains(capture, "0 needs attention") &&
 				!strings.Contains(capture, "Codex running") &&
-				agentLineHasLoadingFrame(capture, "Codex Waiting")
+				taskLineHasLoadingFrame(capture, "Codex Waiting")
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
 		directRun(t, env, "send-keys", "-l", "-t", pane, "ready status")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && strings.Contains(agent.CodexTitle, "Ready")
+			task := findTask(st, firstID)
+			return task != nil && strings.Contains(task.CodexTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		readyCapture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Ready")
 		})
-		if agentLineHasLoadingFrame(readyCapture, "Codex Ready") {
+		if taskLineHasLoadingFrame(readyCapture, "Codex Ready") {
 			t.Fatalf("ready Codex row should keep the static marker:\n%s", readyCapture)
 		}
 	})
 
 	timedStep(t, "plan-mode request input renders ready status", func() {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusCodex })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
 		directRun(t, env, "send-keys", "-l", "-t", pane, "plan answer")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstID)
-			return agent != nil && agent.Status == state.StatusReady && agent.CodexStatus == "Ready" && strings.Contains(agent.CodexTitle, "Running")
+			task := findTask(st, firstID)
+			return task != nil && task.Status == state.StatusReady && task.CodexStatus == "Ready" && strings.Contains(task.CodexTitle, "Running")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
-		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusAgents && st.NavOpen })
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Codex Ready") &&
 				strings.Contains(capture, "1 needs attention") &&
@@ -1577,7 +1577,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				!strings.Contains(capture, "Esc cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "n")
-		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 1 })
+		waitState(t, env, bin, func(st state.State) bool { return len(st.Tasks) == 1 })
 		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete task") &&
@@ -1586,7 +1586,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				!strings.Contains(capture, "N cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
-		waitState(t, env, bin, func(st state.State) bool { return len(st.Agents) == 0 })
+		waitState(t, env, bin, func(st state.State) bool { return len(st.Tasks) == 0 })
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No task selected")
 		})
@@ -1602,7 +1602,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 0 && len(st.Groups) == 0 && st.SelectedWorkspaceID != ""
+			return len(st.Tasks) == 0 && len(st.Groups) == 0 && st.SelectedWorkspaceID != ""
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "+ New task") &&
@@ -1614,17 +1614,17 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusCodex &&
-				strings.Contains(st.Agents[0].CodexTitle, "Ready")
+			return len(st.Tasks) == 1 &&
+				st.Focus == state.FocusConsole &&
+				strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-l", "-t", pane, "interrupt")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusCodex &&
-				st.Agents[0].Status == state.StatusRunning &&
-				strings.Contains(st.Agents[0].CodexTitle, "Working")
+			return len(st.Tasks) == 1 &&
+				st.Focus == state.FocusConsole &&
+				st.Tasks[0].Status == state.StatusRunning &&
+				strings.Contains(st.Tasks[0].CodexTitle, "Working")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:interrupt") &&
@@ -1637,10 +1637,10 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatal("C-c in Task Console should not quit Weft")
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusCodex &&
-				st.Agents[0].Status == state.StatusRunning &&
-				strings.Contains(st.Agents[0].CodexTitle, "Ready")
+			return len(st.Tasks) == 1 &&
+				st.Focus == state.FocusConsole &&
+				st.Tasks[0].Status == state.StatusRunning &&
+				strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, collapsedCodexToolbar) &&
@@ -1652,19 +1652,19 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			t.Fatal("C-c in ready Task Console should still not quit Weft")
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 1 &&
-				st.Focus == state.FocusCodex &&
-				st.Agents[0].Status == state.StatusRunning &&
-				strings.Contains(st.Agents[0].CodexTitle, "Ready")
+			return len(st.Tasks) == 1 &&
+				st.Focus == state.FocusConsole &&
+				st.Tasks[0].Status == state.StatusRunning &&
+				strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusAgents && st.NavOpen
+			return st.Focus == state.FocusTasks && st.NavOpen
 		})
 	})
 }
 
-func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
+func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -1700,11 +1700,11 @@ func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	st := waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Focus == state.FocusCodex &&
-			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+		return len(st.Tasks) == 1 &&
+			st.Focus == state.FocusConsole &&
+			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 	})
-	firstAgentID := st.Agents[0].ID
+	firstTaskID := st.Tasks[0].ID
 	capture := waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Exit-on-interrupt Codex Ready") &&
 			strings.Contains(capture, collapsedCodexToolbar)
@@ -1715,12 +1715,12 @@ func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 
 	directRun(t, env, "send-keys", "-t", pane, "C-c")
 	st = waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.ActiveAgentID == firstAgentID &&
-			st.Focus == state.FocusAgents &&
+		return len(st.Tasks) == 1 &&
+			st.ActiveTaskID == firstTaskID &&
+			st.Focus == state.FocusTasks &&
 			st.NavOpen &&
-			st.Agents[0].Status == state.StatusKilled &&
-			st.Agents[0].CodexTitle == "Codex killed"
+			st.Tasks[0].Status == state.StatusKilled &&
+			st.Tasks[0].CodexTitle == "Codex killed"
 	})
 	if clientExited(clientDone) {
 		t.Fatal("C-c that exits Codex should not quit Weft")
@@ -1733,18 +1733,18 @@ func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	st = waitState(t, env, bin, func(st state.State) bool {
-		active := state.ActiveAgent(st)
-		return len(st.Agents) == 2 &&
+		active := state.ActiveTask(st)
+		return len(st.Tasks) == 2 &&
 			active != nil &&
-			active.ID != firstAgentID &&
-			st.Focus == state.FocusCodex &&
+			active.ID != firstTaskID &&
+			st.Focus == state.FocusConsole &&
 			strings.Contains(active.CodexTitle, "Ready")
 	})
-	secondAgentID := st.ActiveAgentID
+	secondTaskID := st.ActiveTaskID
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitState(t, env, bin, func(st state.State) bool {
-		return st.ActiveAgentID == secondAgentID &&
-			st.Focus == state.FocusAgents &&
+		return st.ActiveTaskID == secondTaskID &&
+			st.Focus == state.FocusTasks &&
 			st.NavOpen
 	})
 	if clientExited(clientDone) {
@@ -1752,7 +1752,7 @@ func TestAgentConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	}
 }
 
-func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
+func TestTaskConsoleCtrlCSideWorkE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
 	}
@@ -1788,9 +1788,9 @@ func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
 	directRun(t, env, "send-keys", "-t", pane, "n")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Focus == state.FocusCodex &&
-			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+		return len(st.Tasks) == 1 &&
+			st.Focus == state.FocusConsole &&
+			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 	})
 	directRun(t, env, "send-keys", "-l", "-t", pane, "/side")
 	time.Sleep(100 * time.Millisecond)
@@ -1805,10 +1805,10 @@ func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Focus == state.FocusCodex &&
-			st.Agents[0].Status == state.StatusRunning &&
-			strings.Contains(st.Agents[0].CodexTitle, "Working")
+		return len(st.Tasks) == 1 &&
+			st.Focus == state.FocusConsole &&
+			st.Tasks[0].Status == state.StatusRunning &&
+			strings.Contains(st.Tasks[0].CodexTitle, "Working")
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "received:side-work") &&
@@ -1822,7 +1822,7 @@ func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
 			strings.Contains(wrongCapture, "enhanced ctrl-c returned main thread") ||
 			strings.Contains(wrongCapture, "Codex killed")
 	}) {
-		t.Fatalf("C-c during side work returned/closed the side agent instead of interrupting it:\n%s", wrongCapture)
+		t.Fatalf("C-c during side work returned/closed the side task instead of interrupting it:\n%s", wrongCapture)
 	}
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "interrupted side work") &&
@@ -1834,10 +1834,10 @@ func TestAgentConsoleCtrlCSideWorkE2E(t *testing.T) {
 			!strings.Contains(capture, "C-c")
 	})
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Focus == state.FocusCodex &&
-			st.Agents[0].Status == state.StatusRunning &&
-			strings.Contains(st.Agents[0].CodexTitle, "Ready")
+		return len(st.Tasks) == 1 &&
+			st.Focus == state.FocusConsole &&
+			st.Tasks[0].Status == state.StatusRunning &&
+			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
 	})
 	if clientExited(clientDone) {
 		t.Fatal("C-c during side work should not quit Weft")
@@ -1894,7 +1894,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Workspaces) == 0 && len(st.Agents) == 0
+			return len(st.Workspaces) == 0 && len(st.Tasks) == 0
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No workspaces") &&
@@ -1999,12 +1999,12 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 	})
 
-	var firstAgentID string
-	var secondAgentID string
-	timedStep(t, "group lifecycle and grouped agent journeys run through the dashboard", func() {
+	var firstTaskID string
+	var secondTaskID string
+	timedStep(t, "group lifecycle and grouped task journeys run through the dashboard", func() {
 		directRun(t, env, "send-keys", "-t", pane, "Right")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusAgents
+			return st.Focus == state.FocusTasks
 		})
 		directRun(t, env, "send-keys", "-t", pane, "g")
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -2059,16 +2059,16 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		st := waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 1 &&
-				st.Agents[0].GroupID == "" &&
-				st.Agents[0].Status == state.StatusRunning &&
-				st.Focus == state.FocusCodex
+			return len(st.Tasks) == 1 &&
+				st.Tasks[0].GroupID == "" &&
+				st.Tasks[0].Status == state.StatusRunning &&
+				st.Focus == state.FocusConsole
 		})
-		firstAgentID = st.Agents[0].ID
+		firstTaskID = st.Tasks[0].ID
 
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusAgents && st.NavOpen
+			return st.Focus == state.FocusTasks && st.NavOpen
 		})
 		directRun(t, env, "send-keys", "-t", pane, "m")
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -2078,8 +2078,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			group := groupByPath(st, "renamed")
-			agent := findAgent(st, firstAgentID)
-			return group != nil && agent != nil && agent.GroupID == group.ID
+			task := findTask(st, firstTaskID)
+			return group != nil && task != nil && task.GroupID == group.ID
 		})
 		directRun(t, env, "send-keys", "-t", pane, "k")
 		time.Sleep(250 * time.Millisecond)
@@ -2091,8 +2091,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			group := groupByPath(st, "renamed")
-			agent := findAgent(st, firstAgentID)
-			return group != nil && agent != nil && agent.GroupID == group.ID
+			task := findTask(st, firstTaskID)
+			return group != nil && task != nil && task.GroupID == group.ID
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "j")
@@ -2127,8 +2127,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstAgentID)
-			return agent != nil && agent.GroupID == ""
+			task := findTask(st, firstTaskID)
+			return task != nil && task.GroupID == ""
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "j")
@@ -2146,43 +2146,43 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "n")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			active := state.ActiveAgent(st)
+			active := state.ActiveTask(st)
 			if active != nil {
-				secondAgentID = active.ID
+				secondTaskID = active.ID
 			}
-			return len(st.Agents) == 2 &&
+			return len(st.Tasks) == 2 &&
 				active != nil &&
-				active.ID != firstAgentID &&
+				active.ID != firstTaskID &&
 				active.GroupID == "" &&
-				st.Focus == state.FocusCodex
+				st.Focus == state.FocusConsole
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusAgents && st.NavOpen
+			return st.Focus == state.FocusTasks && st.NavOpen
 		})
 		directRun(t, env, "send-keys", "-t", pane, "S-Up")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 2 &&
-				secondAgentID != "" &&
-				st.Agents[0].ID == secondAgentID &&
-				st.Agents[1].ID == firstAgentID &&
-				st.ActiveAgentID == secondAgentID
+			return len(st.Tasks) == 2 &&
+				secondTaskID != "" &&
+				st.Tasks[0].ID == secondTaskID &&
+				st.Tasks[1].ID == firstTaskID &&
+				st.ActiveTaskID == secondTaskID
 		})
 		directRun(t, env, "send-keys", "-t", pane, "S-Down")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Agents) == 2 &&
-				st.Agents[0].ID == firstAgentID &&
-				st.Agents[1].ID == secondAgentID &&
-				st.ActiveAgentID == secondAgentID
+			return len(st.Tasks) == 2 &&
+				st.Tasks[0].ID == firstTaskID &&
+				st.Tasks[1].ID == secondTaskID &&
+				st.ActiveTaskID == secondTaskID
 		})
 		directRun(t, env, "send-keys", "-t", pane, "k")
 		time.Sleep(250 * time.Millisecond)
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			first := findAgent(st, firstAgentID)
-			second := findAgent(st, secondAgentID)
-			return st.ActiveAgentID == firstAgentID &&
-				st.Focus == state.FocusCodex &&
+			first := findTask(st, firstTaskID)
+			second := findTask(st, secondTaskID)
+			return st.ActiveTaskID == firstTaskID &&
+				st.Focus == state.FocusConsole &&
 				first != nil &&
 				second != nil &&
 				strings.Contains(first.CodexTitle, "Ready") &&
@@ -2197,7 +2197,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		}
 	})
 
-	timedStep(t, "refresh and second attach preserve selected running agent", func() {
+	timedStep(t, "refresh and second attach preserve selected running task", func() {
 		out := runWeft(t, env, bin, "refresh")
 		if !strings.Contains(out, "refreshed Weft dashboard") {
 			t.Fatalf("refresh output missing message:\n%s", out)
@@ -2211,18 +2211,18 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			t.Fatalf("first client did not detach after second attach")
 		}
 		waitState(t, env, bin, func(st state.State) bool {
-			agent := findAgent(st, firstAgentID)
-			return agent != nil &&
-				st.ActiveAgentID == firstAgentID &&
-				agent.Status == state.StatusRunning &&
-				len(st.Agents) == 2
+			task := findTask(st, firstTaskID)
+			return task != nil &&
+				st.ActiveTaskID == firstTaskID &&
+				task.Status == state.StatusRunning &&
+				len(st.Tasks) == 2
 		})
 	})
 
 	timedStep(t, "workspace deletion removes empty and active workspaces", func() {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
-			return st.Focus == state.FocusAgents && st.NavOpen
+			return st.Focus == state.FocusTasks && st.NavOpen
 		})
 		time.Sleep(250 * time.Millisecond)
 		directRun(t, env, "send-keys", "-t", pane, "Left")
@@ -2242,11 +2242,11 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		if selected.Path == beta {
 			waitState(t, env, bin, func(st state.State) bool {
-				return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, beta) == nil && len(st.Agents) == 2
+				return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, beta) == nil && len(st.Tasks) == 2
 			})
 		} else {
 			waitState(t, env, bin, func(st state.State) bool {
-				return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, alpha) == nil && len(st.Agents) == 0
+				return len(st.Workspaces) == 1 && state.WorkspaceByPath(st, alpha) == nil && len(st.Tasks) == 0
 			})
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -2257,7 +2257,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
-			return len(st.Workspaces) == 0 && len(st.Groups) == 0 && len(st.Agents) == 0
+			return len(st.Workspaces) == 0 && len(st.Groups) == 0 && len(st.Tasks) == 0
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "No workspaces") &&
@@ -2334,11 +2334,11 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 			!strings.Contains(capture, "C-c")
 	})
 	waitState(t, env, bin, func(st state.State) bool {
-		return len(st.Agents) == 1 &&
-			st.Agents[0].Status == state.StatusRunning &&
-			st.Focus == state.FocusCodex
+		return len(st.Tasks) == 1 &&
+			st.Tasks[0].Status == state.StatusRunning &&
+			st.Focus == state.FocusConsole
 	})
-	assertPerformanceBudget(t, "first agent content visible", time.Since(started), 4*time.Second)
+	assertPerformanceBudget(t, "first task content visible", time.Since(started), 4*time.Second)
 
 	started = time.Now()
 	out := runWeft(t, env, bin, "refresh")
@@ -2353,7 +2353,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 		return strings.Contains(capture, collapsedCodexToolbar) ||
 			strings.Contains(capture, "Fake Codex dashboard ready")
 	})
-	assertPerformanceBudget(t, "reattach renders running agent", time.Since(started), 8*time.Second)
+	assertPerformanceBudget(t, "reattach renders running task", time.Since(started), 8*time.Second)
 	if !waitForBool(8*time.Second, func() bool { return clientExited(firstClientDone) }) {
 		t.Fatalf("first client did not detach after second attach")
 	}
@@ -2578,7 +2578,7 @@ func assertDashboardNotCorrupt(t *testing.T, capture string, empty bool) {
 		t.Fatalf("Task Console should not advertise C-c ownership:\n%s", capture)
 	}
 	if !empty && strings.Contains(capture, "No task selected") {
-		t.Fatalf("dashboard kept empty state after agent was created:\n%s", capture)
+		t.Fatalf("dashboard kept empty state after task was created:\n%s", capture)
 	}
 }
 
@@ -2619,7 +2619,7 @@ func loadingLineIsCentered(capture string) bool {
 	return false
 }
 
-func agentLineHasLoadingFrame(capture string, title string) bool {
+func taskLineHasLoadingFrame(capture string, title string) bool {
 	for _, line := range strings.Split(capture, "\n") {
 		if !strings.Contains(line, title) {
 			continue
@@ -2633,7 +2633,7 @@ func agentLineHasLoadingFrame(capture string, title string) bool {
 	return false
 }
 
-func agentRowVisible(capture string, title string) bool {
+func taskRowVisible(capture string, title string) bool {
 	markers := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "·", "◦", "!"}
 	for _, line := range strings.Split(capture, "\n") {
 		if !strings.Contains(line, title) {
@@ -2688,21 +2688,21 @@ func assertCodexBoxNotDrifted(t *testing.T, capture string) {
 	}
 }
 
-func findAgent(st state.State, id string) *state.Agent {
-	for index := range st.Agents {
-		if st.Agents[index].ID == id {
-			return &st.Agents[index]
+func findTask(st state.State, id string) *state.Task {
+	for index := range st.Tasks {
+		if st.Tasks[index].ID == id {
+			return &st.Tasks[index]
 		}
 	}
 	return nil
 }
 
-func groupForAgent(st state.State, agent *state.Agent) *state.Group {
-	if agent == nil {
+func groupForTask(st state.State, task *state.Task) *state.Group {
+	if task == nil {
 		return nil
 	}
 	for index := range st.Groups {
-		if st.Groups[index].ID == agent.GroupID {
+		if st.Groups[index].ID == task.GroupID {
 			return &st.Groups[index]
 		}
 	}

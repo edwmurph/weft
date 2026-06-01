@@ -263,7 +263,7 @@ func TestLoadConfigRejectsRemovedConfigAliases(t *testing.T) {
 			body:     `title_template = "{title}"`,
 			expected: []string{"unknown config key", "title_template", "task_types.codex.title_template"},
 		},
-		"task key bindings": {
+		"agent key binding aliases": {
 			body: `
 [key_bindings]
 new_agent = "A"

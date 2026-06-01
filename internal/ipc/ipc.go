@@ -41,7 +41,7 @@ type Upgrade struct {
 	Compatible        bool   `json:"compatible"`
 	RestartRequired   bool   `json:"restart_required"`
 	AutoRestarted     bool   `json:"auto_restarted,omitempty"`
-	RunningAgents     int    `json:"running_agents"`
+	RunningTasks      int    `json:"running_tasks"`
 	Message           string `json:"message,omitempty"`
 	BackupID          string `json:"backup_id,omitempty"`
 }
@@ -54,7 +54,7 @@ type Snapshot struct {
 	CodexScrollback      string      `json:"codex_scrollback,omitempty"`
 	CodexScrollbackLines []string    `json:"codex_scrollback_lines,omitempty"`
 	LoadingText          string      `json:"loading_text,omitempty"`
-	LoadingAgentIDs      []string    `json:"loading_agent_ids,omitempty"`
+	LoadingTaskIDs       []string    `json:"loading_task_ids,omitempty"`
 	Message              string      `json:"message,omitempty"`
 	NavWidth             int         `json:"nav_width"`
 	GroupCursor          int         `json:"group_cursor"`
@@ -101,7 +101,7 @@ func UpgradeStatus(response Response, clientVersion string) *Upgrade {
 	if supervisorVersion == "" || supervisorVersion == clientVersion {
 		return nil
 	}
-	running := RunningAgentCount(responseState(response))
+	running := RunningTaskCount(responseState(response))
 	compatible := response.ProtocolVersion == ProtocolVersion
 	message := upgradeMessage(supervisorVersion, clientVersion, running)
 	if !compatible {
@@ -112,7 +112,7 @@ func UpgradeStatus(response Response, clientVersion string) *Upgrade {
 		SupervisorVersion: supervisorVersion,
 		Compatible:        compatible,
 		RestartRequired:   true,
-		RunningAgents:     running,
+		RunningTasks:      running,
 		Message:           message,
 	}
 }
@@ -122,16 +122,16 @@ func ShouldAutoRestart(response Response) bool {
 		responseState(response) != nil &&
 		response.Upgrade.Compatible &&
 		response.Upgrade.RestartRequired &&
-		response.Upgrade.RunningAgents == 0
+		response.Upgrade.RunningTasks == 0
 }
 
-func RunningAgentCount(st *state.State) int {
+func RunningTaskCount(st *state.State) int {
 	if st == nil {
 		return 0
 	}
 	count := 0
-	for _, agent := range st.Agents {
-		switch agent.Status {
+	for _, task := range st.Tasks {
+		switch task.Status {
 		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
 			count++
 		}
@@ -149,18 +149,18 @@ func responseState(response Response) *state.State {
 	return nil
 }
 
-func upgradeMessage(supervisorVersion string, clientVersion string, runningAgents int) string {
-	if runningAgents == 0 {
+func upgradeMessage(supervisorVersion string, clientVersion string, runningTasks int) string {
+	if runningTasks == 0 {
 		return fmt.Sprintf("Upgrade ready: client %s is newer than idle supervisor %s; the supervisor can restart safely.", clientVersion, supervisorVersion)
 	}
-	return fmt.Sprintf("Upgrade pending: client %s is newer than supervisor %s. Reopening the dashboard is not enough; wait for live tasks to finish or become resumable. %d live task terminal(s) are open.", clientVersion, supervisorVersion, runningAgents)
+	return fmt.Sprintf("Upgrade pending: client %s is newer than supervisor %s. Reopening the dashboard is not enough; wait for live tasks to finish or become resumable. %d live task terminal(s) are open.", clientVersion, supervisorVersion, runningTasks)
 }
 
-func incompatibleUpgradeMessage(supervisorVersion string, clientVersion string, runningAgents int) string {
-	if runningAgents == 0 {
+func incompatibleUpgradeMessage(supervisorVersion string, clientVersion string, runningTasks int) string {
+	if runningTasks == 0 {
 		return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Saved layout and metadata remain.", clientVersion, supervisorVersion)
 	}
-	return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Restarting the supervisor will stop %d live task terminal(s). Saved layout and metadata remain.", clientVersion, supervisorVersion, runningAgents)
+	return fmt.Sprintf("Weft client %s found incompatible supervisor %s. Restarting the supervisor will stop %d live task terminal(s). Saved layout and metadata remain.", clientVersion, supervisorVersion, runningTasks)
 }
 
 func ErrorResponse(code string, message string) Response {

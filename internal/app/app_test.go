@@ -277,7 +277,7 @@ func TestBackupRestoreCreatesPreRestoreBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	originalConfig := []byte("[task_types.codex]\ncommand = \"codex\"\ntitle_template = \"{title}\"\n")
-	originalState := []byte("{\"version\":4,\"focus\":\"workspaces\",\"nav_open\":true,\"workspaces\":[],\"groups\":[],\"agents\":[],\"collapsed_group_ids\":[]}\n")
+	originalState := []byte("{\"version\":5,\"focus\":\"workspaces\",\"nav_open\":true,\"workspaces\":[],\"groups\":[],\"tasks\":[],\"collapsed_group_ids\":[]}\n")
 	if err := os.WriteFile(rt.ConfigPath, originalConfig, 0o600); err != nil {
 		t.Fatal(err)
 	}

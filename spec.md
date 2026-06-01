@@ -46,10 +46,11 @@ The core workflow is:
 ## Current And Legacy Boundary
 
 Current Weft behavior is the workspace, group, and typed task model backed by
-one local supervisor. The persisted state still names task rows `agents` for
-the v4 schema, but the user-facing product language is `tasks`. The supervisor
-owns all task PTYs, saves current state, captures Codex session IDs for Codex
-tasks, and performs the dashboard `U` upgrade/resume flow through the
+one local supervisor. Persisted state is the strict v5 task schema, with
+`tasks`, `active_task_id`, `selected_task_id`, and focus values of
+`workspaces`, `tasks`, or `console`. The supervisor owns all task PTYs, saves
+current state, captures Codex session IDs for Codex tasks, and performs the
+dashboard `U` upgrade/resume flow through the
 supervisor-owned `upgrade_resume` IPC command. Resuming Codex tasks with
 `codex resume <session-id>` after an explicit dashboard upgrade is part of the
 current product contract, not legacy compatibility. Generic terminal tasks are
@@ -618,7 +619,7 @@ submitted to the Codex PTY. Terminal tasks capture the first typed command after
 their task type title template includes `{auto}`. The hook runs from the task
 workspace, sends JSON on stdin, and stores the first non-empty stdout line as
 the task's generated title. The hook payload includes `version`, `event`,
-`agent_id`, `workspace`, `group`, `status`, `title`, the task `type_id`, task
+`task_id`, `workspace`, `group`, `status`, `title`, the task `type_id`, task
 `title_template`, `codex_title` when available, and `first_message`.
 
 Weft must not encode provider-specific clients, model names, API keys, or HTTP
@@ -635,23 +636,24 @@ should be saved on the task and shown in the footer and edit pane.
 ## Data Model
 
 The state model uses global workspaces, flat groups, and task rows persisted as
-`agents` in strict v4 state for schema continuity.
+`tasks` in strict v5 state. Weft rejects v4 `agents` state and other legacy
+shapes with reset guidance instead of migrating them.
 
 Current persisted shape:
 
 ```go
 type State struct {
     Version             int         `json:"version"`
-    ActiveAgentID       string      `json:"active_agent_id,omitempty"`
-    SelectedAgentID     string      `json:"selected_agent_id,omitempty"`
+    ActiveTaskID        string      `json:"active_task_id,omitempty"`
+    SelectedTaskID      string      `json:"selected_task_id,omitempty"`
     SelectedWorkspaceID string      `json:"selected_workspace_id,omitempty"`
     SelectedGroupID     string      `json:"selected_group_id,omitempty"`
     Focus               Focus       `json:"focus"`
     NavOpen             bool        `json:"nav_open"`
     Workspaces          []Workspace `json:"workspaces"`
     Groups              []Group     `json:"groups"`
-    Agents              []Agent     `json:"agents"`
-    CollapsedGroupIDs []string `json:"collapsed_group_ids,omitempty"`
+    Tasks               []Task      `json:"tasks"`
+    CollapsedGroupIDs   []string    `json:"collapsed_group_ids,omitempty"`
 }
 
 type Workspace struct {
@@ -663,29 +665,30 @@ type Workspace struct {
 }
 
 type Group struct {
-    ID        string `json:"id"`
+    ID          string `json:"id"`
     WorkspaceID string `json:"workspace_id"`
-    Path      string `json:"path"`
-    CreatedAt string `json:"created_at"`
-    UpdatedAt string `json:"updated_at"`
+    Path        string `json:"path"`
+    Silent      bool   `json:"silent,omitempty"`
+    CreatedAt   string `json:"created_at"`
+    UpdatedAt   string `json:"updated_at"`
 }
 
-type Agent struct {
-    ID         string      `json:"id"`
-    WorkspaceID string    `json:"workspace_id"`
-    GroupID    string      `json:"group_id"`
-    TypeID     string      `json:"type_id,omitempty"`
-    Title      string      `json:"title"`
-    AutoTitle  string      `json:"auto_title,omitempty"`
-    AutoTitleAttempted bool `json:"auto_title_attempted,omitempty"`
-    AutoTitleError string `json:"auto_title_error,omitempty"`
-    CodexTitle string      `json:"codex_title,omitempty"`
-    CodexStatus string     `json:"codex_status,omitempty"`
-    CodexSessionID string  `json:"codex_session_id,omitempty"`
+type Task struct {
+    ID                  string     `json:"id"`
+    WorkspaceID         string     `json:"workspace_id"`
+    GroupID             string     `json:"group_id"`
+    TypeID              string     `json:"type_id,omitempty"`
+    Title               string     `json:"title"`
+    AutoTitle           string     `json:"auto_title,omitempty"`
+    AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
+    AutoTitleError      string     `json:"auto_title_error,omitempty"`
+    CodexTitle          string     `json:"codex_title,omitempty"`
+    CodexStatus         string     `json:"codex_status,omitempty"`
+    CodexSessionID      string     `json:"codex_session_id,omitempty"`
     CodexInputSubmitted bool `json:"codex_input_submitted,omitempty"`
-    Status     AgentStatus `json:"status"`
-    CreatedAt  string      `json:"created_at"`
-    UpdatedAt  string      `json:"updated_at"`
+    Status              TaskStatus `json:"status"`
+    CreatedAt           string     `json:"created_at"`
+    UpdatedAt           string     `json:"updated_at"`
 }
 ```
 
@@ -723,18 +726,18 @@ Focus values:
 
 ```text
 workspaces
-agents
-codex
+tasks
+console
 ```
 
 Rules:
 
-- `workspaces` and `agents` focus are valid only while navigation is open.
-- `agents` is the persisted/internal focus value for the visible `Tasks` pane.
-- `codex` focus is valid only while `Task Console` is maximized.
-- Opening a task with `Enter` sets focus to `codex` and closes navigation.
+- `workspaces` and `tasks` focus are valid only while navigation is open.
+- `tasks` is the persisted/internal focus value for the visible `Tasks` pane.
+- `console` focus is valid only while `Task Console` is maximized.
+- Opening a task with `Enter` sets focus to `console` and closes navigation.
 - Reopening navigation moves focus back to the last focused navigation pane.
-- Task PTY input is blocked unless focus is `codex`.
+- Task PTY input is blocked unless focus is `console`.
 
 ## CRUD Semantics
 
@@ -858,7 +861,7 @@ not by an attached TUI client.
 PTY key:
 
 ```text
-agent_id
+task_id
 ```
 
 PTY working directory:

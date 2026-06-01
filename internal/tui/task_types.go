@@ -9,20 +9,20 @@ import (
 	"github.com/edwmurph/weft/internal/state"
 )
 
-func taskTypeForAgent(cfg config.Config, agent state.Agent) config.TaskType {
-	return cfg.TaskTypeOrDefault(state.AgentTypeID(agent))
+func taskTypeForTask(cfg config.Config, task state.Task) config.TaskType {
+	return cfg.TaskTypeOrDefault(state.TaskTypeID(task))
 }
 
-func agentUsesCodexIntegration(cfg config.Config, agent state.Agent) bool {
-	return taskTypeForAgent(cfg, agent).Kind == config.TaskKindCodex
+func taskUsesCodexIntegration(cfg config.Config, task state.Task) bool {
+	return taskTypeForTask(cfg, task).Kind == config.TaskKindCodex
 }
 
-func taskTypeBadgeForAgent(cfg config.Config, agent state.Agent) string {
-	return taskTypeBadge(taskTypeForAgent(cfg, agent))
+func taskTypeBadgeForTask(cfg config.Config, task state.Task) string {
+	return taskTypeBadge(taskTypeForTask(cfg, task))
 }
 
-func taskTypeBadgeCellForAgent(cfg config.Config, agent state.Agent) string {
-	return taskTypeBadgeCell(cfg, taskTypeForAgent(cfg, agent))
+func taskTypeBadgeCellForTask(cfg config.Config, task state.Task) string {
+	return taskTypeBadgeCell(cfg, taskTypeForTask(cfg, task))
 }
 
 func taskTypeBadge(taskType config.TaskType) string {

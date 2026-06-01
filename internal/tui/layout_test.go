@@ -16,7 +16,7 @@ import (
 
 func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	st := layoutState("/tmp/project")
-	if got := workspaceNavFrameWidth(st, 140); got != fixedWorkspacePaneWidth+defaultAgentsPaneWidth {
+	if got := workspaceNavFrameWidth(st, 140); got != fixedWorkspacePaneWidth+defaultTasksPaneWidth {
 		t.Fatalf("wide nav width = %d", got)
 	}
 	if got := workspaceNavFrameWidth(st, minThreePaneWidth); got != minTwoPaneNavWidth {
@@ -63,7 +63,7 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
-	output := "output from a selected agent that is intentionally long enough to be cropped by the preview lens"
+	output := "output from a selected task that is intentionally long enough to be cropped by the preview lens"
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", output, 140, 24, "", minTwoPaneNavWidth, 2)
 
@@ -91,10 +91,10 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	stripped := ansi.Strip(got)
 	lines := strings.Split(stripped, "\n")
 	if len(lines) == 0 || !strings.Contains(lines[0], "Task Live Preview ·") || !strings.Contains(lines[0], "alpha") {
-		t.Fatalf("preview top border should include pane title and agent title:\n%s", stripped)
+		t.Fatalf("preview top border should include pane title and task title:\n%s", stripped)
 	}
 	if strings.Contains(lines[len(lines)-1], "alpha") {
-		t.Fatalf("preview bottom border should not include agent title:\n%s", stripped)
+		t.Fatalf("preview bottom border should not include task title:\n%s", stripped)
 	}
 	if strings.Contains(stripped, "● Live") || strings.Contains(stripped, " Live─") {
 		t.Fatalf("preview should not render live indicator text:\n%s", stripped)
@@ -103,10 +103,10 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 		t.Fatalf("wide preview should reserve a right-edge crop marker with right padding:\n%s", stripped)
 	}
 	if strings.Contains(stripped, "cropped by the preview lens…") {
-		t.Fatalf("preview should not attach generic clipping ellipsis to agent text:\n%s", stripped)
+		t.Fatalf("preview should not attach generic clipping ellipsis to task text:\n%s", stripped)
 	}
 	if strings.Contains(got, "ready") {
-		t.Fatalf("agent rows should not render fixed status tags unless template asks for them:\n%s", got)
+		t.Fatalf("task rows should not render fixed status tags unless template asks for them:\n%s", got)
 	}
 }
 
@@ -140,7 +140,7 @@ func TestRenderTaskPreviewRejectsMismatchedCursorContent(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
-	st.Agents = append(st.Agents, state.Agent{
+	st.Tasks = append(st.Tasks, state.Task{
 		ID:          "b",
 		WorkspaceID: "w",
 		GroupID:     "f",
@@ -169,12 +169,12 @@ func TestRenderTaskPreviewHeaderUsesAnimationFrame(t *testing.T) {
 	lines := strings.Split(stripped, "\n")
 
 	if len(lines) == 0 || !strings.Contains(lines[0], "Task Live Preview ●") || !strings.Contains(lines[0], "alpha") {
-		t.Fatalf("preview top border should include animation frame and agent title:\n%s", stripped)
+		t.Fatalf("preview top border should include animation frame and task title:\n%s", stripped)
 	}
 
-	st.ActiveAgentID = ""
-	st.SelectedAgentID = ""
-	st.Agents = nil
+	st.ActiveTaskID = ""
+	st.SelectedTaskID = ""
+	st.Tasks = nil
 	got = renderWorkspaceView(cfg, st, "Task", "No task open.", 140, 24, "", minTwoPaneNavWidth, 1, workspaceRenderOptions{
 		previewHeaderAnimation: "●",
 	})
@@ -295,9 +295,9 @@ func TestRenderWorkspacesPaneShowsUpgradeFooterAtBottom(t *testing.T) {
 	st := layoutState("/tmp/project")
 
 	got := ansi.Strip(strings.Join(renderWorkspacesPaneWithOptions(cfg, st, 60, 12, workspaceRenderOptions{
-		workspaceFooterText: "Upgrade ready: client 7.5.5, supervisor 7.4.0.\nPress U to upgrade and resume 1 idle agent.",
+		workspaceFooterText: "Upgrade ready: client 7.5.5, supervisor 7.4.0.\nPress U to upgrade and resume 1 idle task.",
 	}), "\n"))
-	for _, expected := range []string{"Upgrade ready: client 7.5.5, supervisor 7.4.0.", "Press U to upgrade and resume 1 idle agent."} {
+	for _, expected := range []string{"Upgrade ready: client 7.5.5, supervisor 7.4.0.", "Press U to upgrade and resume 1 idle task."} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade footer missing %q:\n%s", expected, got)
 		}
@@ -419,7 +419,7 @@ func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 		Focus:               state.FocusWorkspaces,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
-		Agents: []state.Agent{
+		Tasks: []state.Task{
 			{ID: "starting", WorkspaceID: "w", Title: "Starting", Status: state.StatusStarting, CreatedAt: now, UpdatedAt: now},
 			{ID: "running", WorkspaceID: "w", Title: "Running", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
 			{ID: "waiting", WorkspaceID: "w", Title: "Waiting", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
@@ -480,7 +480,7 @@ func TestRenderWorkspaceCardCountsColorOnlyNonzeroValues(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCardCountsSilenceIdleAgentsInSilentGroups(t *testing.T) {
+func TestWorkspaceCardCountsSilenceIdleTasksInSilentGroups(t *testing.T) {
 	now := state.NowISO()
 	st := state.State{
 		Version:             state.Version,
@@ -491,7 +491,7 @@ func TestWorkspaceCardCountsSilenceIdleAgentsInSilentGroups(t *testing.T) {
 		Groups: []state.Group{
 			{ID: "g", WorkspaceID: "w", Path: "release", Silent: true, CreatedAt: now, UpdatedAt: now},
 		},
-		Agents: []state.Agent{
+		Tasks: []state.Task{
 			{ID: "ready", WorkspaceID: "w", GroupID: "g", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 			{ID: "stopped", WorkspaceID: "w", GroupID: "g", Title: "Stopped", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
 			{ID: "error", WorkspaceID: "w", GroupID: "g", Title: "Error", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
@@ -523,15 +523,15 @@ func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 		t.Fatalf("narrow workspace focus should show workspaces pane:\n%s", got)
 	}
 	if strings.Contains(got, "Tasks") {
-		t.Fatalf("narrow nav should use one pane, got agents too:\n%s", got)
+		t.Fatalf("narrow nav should use one pane, got tasks too:\n%s", got)
 	}
 }
 
-func TestRenderAgentsPaneShowsGroupCountInline(t *testing.T) {
+func TestRenderTasksPaneShowsGroupCountInline(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
-	st.Agents = append(st.Agents, state.Agent{
+	st.Tasks = append(st.Tasks, state.Task{
 		ID:          "b",
 		WorkspaceID: "w",
 		GroupID:     "f",
@@ -550,17 +550,17 @@ func TestRenderAgentsPaneShowsGroupCountInline(t *testing.T) {
 	}
 }
 
-func TestRenderAgentsPaneShowsCollapsedGroupLoadingChild(t *testing.T) {
+func TestRenderTasksPaneShowsCollapsedGroupLoadingChild(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.CollapsedGroupIDs = []string{"f"}
-	st.Agents[0].TypeID = config.DefaultTaskTypeShell
-	st.Agents[0].Status = state.StatusRunning
+	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	st.Tasks[0].Status = state.StatusRunning
 
 	got := ansi.Strip(strings.Join(renderGroupsPaneWithOptions(cfg, st, 40, 12, 0, workspaceRenderOptions{
-		loadingFrame:  "⠼",
-		loadingAgents: map[string]bool{"a": true},
+		loadingFrame: "⠼",
+		loadingTasks: map[string]bool{"a": true},
 	}), "\n"))
 
 	if !strings.Contains(got, "▸ ⠼ inbox (1)") {
@@ -571,39 +571,39 @@ func TestRenderAgentsPaneShowsCollapsedGroupLoadingChild(t *testing.T) {
 	}
 }
 
-func TestRenderAgentsPaneShowsTopLevelAgentsAndEmptyState(t *testing.T) {
+func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	st := layoutState("/tmp/project")
 	st.SelectedGroupID = ""
 	st.Groups = nil
-	st.Agents[0].GroupID = ""
+	st.Tasks[0].GroupID = ""
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 60, 0)
 	stripped := ansi.Strip(got)
 	if !strings.Contains(stripped, "Tasks") || !strings.Contains(stripped, "+ New task") || !strings.Contains(stripped, "· [codex] alpha") || strings.Contains(stripped, "▾") {
-		t.Fatalf("top-level agent rendering mismatch:\n%s", got)
+		t.Fatalf("top-level task rendering mismatch:\n%s", got)
 	}
 	if strings.Index(stripped, "+ New task") > strings.Index(stripped, "· [codex] alpha") {
 		t.Fatalf("new task row should render above task rows:\n%s", stripped)
 	}
 
-	st.Agents = nil
-	st.ActiveAgentID = ""
+	st.Tasks = nil
+	st.ActiveTaskID = ""
 	got = renderWorkspaceWithNavWidth(cfg, st, "Task", "", 100, 18, "", 60, 0)
 	stripped = ansi.Strip(got)
 	if !strings.Contains(stripped, "+ New task") || !strings.Contains(stripped, "Press n to create") || strings.Contains(stripped, "No tasks") {
-		t.Fatalf("empty agents pane missing new task row:\n%s", got)
+		t.Fatalf("empty tasks pane missing new task row:\n%s", got)
 	}
 
 	st = state.Repair(state.Empty(), "/tmp/project")
 	got = strings.Join(renderGroupsPane(cfg, st, 40, 12, 0), "\n")
 	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create") {
-		t.Fatalf("no-workspace agents pane should explain workspace requirement:\n%s", got)
+		t.Fatalf("no-workspace tasks pane should explain workspace requirement:\n%s", got)
 	}
 }
 
-func TestRenderAgentsPaneScrollsSelectedBottomGroupAgentIntoView(t *testing.T) {
+func TestRenderTasksPaneScrollsSelectedBottomGroupTaskIntoView(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.TitleTemplate = "{title}"
 	now := state.NowISO()
@@ -611,8 +611,8 @@ func TestRenderAgentsPaneScrollsSelectedBottomGroupAgentIntoView(t *testing.T) {
 		Version:             state.Version,
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "shipit",
-		ActiveAgentID:       "ship",
-		Focus:               state.FocusAgents,
+		ActiveTaskID:        "ship",
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
 		Groups: []state.Group{
@@ -622,21 +622,21 @@ func TestRenderAgentsPaneScrollsSelectedBottomGroupAgentIntoView(t *testing.T) {
 			{ID: "delta", WorkspaceID: "w", Path: "delta", CreatedAt: now, UpdatedAt: now},
 			{ID: "shipit", WorkspaceID: "w", Path: "shipit", CreatedAt: now, UpdatedAt: now},
 		},
-		Agents: []state.Agent{{ID: "ship", WorkspaceID: "w", GroupID: "shipit", Title: "Ship Agent", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
+		Tasks: []state.Task{{ID: "ship", WorkspaceID: "w", GroupID: "shipit", Title: "Ship Task", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now}},
 	}
 
 	groupSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 5), "\n"))
-	if !strings.Contains(groupSelected, "shipit") || strings.Contains(groupSelected, "Ship Agent") {
+	if !strings.Contains(groupSelected, "shipit") || strings.Contains(groupSelected, "Ship Task") {
 		t.Fatalf("shipit group should sit at the bottom before moving into its hidden child:\n%s", groupSelected)
 	}
 
-	agentSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 6), "\n"))
-	if !strings.Contains(agentSelected, "shipit") || !strings.Contains(agentSelected, "Ship Agent") {
-		t.Fatalf("selected bottom group agent should scroll into view:\n%s", agentSelected)
+	taskSelected := ansi.Strip(strings.Join(renderGroupsPane(cfg, st, 32, 11, 6), "\n"))
+	if !strings.Contains(taskSelected, "shipit") || !strings.Contains(taskSelected, "Ship Task") {
+		t.Fatalf("selected bottom group task should scroll into view:\n%s", taskSelected)
 	}
 }
 
-func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
+func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(previous)
@@ -650,11 +650,11 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		Focus:               state.FocusWorkspaces,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
-		Agents: []state.Agent{
+		Tasks: []state.Task{
 			{ID: "loading", WorkspaceID: "w", Title: "Booting", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
 			{ID: "working", WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
 			{ID: "waiting", WorkspaceID: "w", Title: "Approval", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
-			{ID: "terminal-waiting", TypeID: config.DefaultTaskTypeShell, WorkspaceID: "w", Title: "Shell Awaiting", Status: state.AgentStatus("waiting"), CreatedAt: now, UpdatedAt: now},
+			{ID: "terminal-waiting", TypeID: config.DefaultTaskTypeShell, WorkspaceID: "w", Title: "Shell Awaiting", Status: state.TaskStatus("waiting"), CreatedAt: now, UpdatedAt: now},
 			{ID: "ready", WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "failed", WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
 			{ID: "stopped", WorkspaceID: "w", Title: "Paused", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
@@ -663,8 +663,8 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	}
 
 	got := strings.Join(renderGroupsPaneWithOptions(cfg, st, 42, 14, 99, workspaceRenderOptions{
-		loadingFrame:  "⠼",
-		loadingAgents: map[string]bool{"loading": true},
+		loadingFrame: "⠼",
+		loadingTasks: map[string]bool{"loading": true},
 	}), "\n")
 	stripped := ansi.Strip(got)
 	if !strings.Contains(stripped, "⠼ [codex] Booting") || strings.Contains(stripped, "· [codex] Booting") {
@@ -692,22 +692,22 @@ func TestRenderAgentsPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		t.Fatalf("killed row should use the attention marker:\n%s", stripped)
 	}
 	for _, expected := range []string{
-		agentRunningStyle.Render("⠼ [codex] Booting"),
-		agentWorkingStyle.Render("⠼ [codex] Review"),
-		agentLoadingStyle.Render("⠼ [codex] Approval"),
-		agentLoadingStyle.Render("⠼ [shell] Shell Awaiting"),
-		agentReadyStyle.Render("· [codex] Respond"),
-		agentErrorStyle.Render("! [codex] Broken"),
-		agentAttentionStyle.Render("◦ [codex] Paused"),
-		agentAttentionStyle.Render("! [codex] Killed"),
+		taskRunningStyle.Render("⠼ [codex] Booting"),
+		taskWorkingStyle.Render("⠼ [codex] Review"),
+		taskLoadingStyle.Render("⠼ [codex] Approval"),
+		taskLoadingStyle.Render("⠼ [shell] Shell Awaiting"),
+		taskReadyStyle.Render("· [codex] Respond"),
+		taskErrorStyle.Render("! [codex] Broken"),
+		taskAttentionStyle.Render("◦ [codex] Paused"),
+		taskAttentionStyle.Render("! [codex] Killed"),
 	} {
 		if !strings.Contains(got, expected) {
-			t.Fatalf("agents pane missing styled row %q:\n%s", expected, got)
+			t.Fatalf("tasks pane missing styled row %q:\n%s", expected, got)
 		}
 	}
 	for _, forbidden := range []string{"running", "working", "error"} {
 		if strings.Contains(strings.ToLower(stripped), forbidden) {
-			t.Fatalf("agent rows should not render fixed status text %q:\n%s", forbidden, stripped)
+			t.Fatalf("task rows should not render fixed status text %q:\n%s", forbidden, stripped)
 		}
 	}
 }
@@ -735,17 +735,17 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	got := renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
 
 	if strings.Contains(got, "Press n to create one.") || !strings.Contains(got, "Add a workspace first.") {
-		t.Fatalf("workspace should not advertise agent creation before a workspace exists:\n%s", got)
+		t.Fatalf("workspace should not advertise task creation before a workspace exists:\n%s", got)
 	}
 
 	st = layoutState("/tmp/project")
-	st.Agents = nil
-	st.ActiveAgentID = ""
-	st.Focus = state.FocusAgents
+	st.Tasks = nil
+	st.ActiveTaskID = ""
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	got = renderWorkspace(cfg, st, "Task", "No task open.", 80, 24, "", "/tmp/project")
 	if !strings.Contains(got, "Press n to create") {
-		t.Fatalf("workspace missing agent creation hint:\n%s", got)
+		t.Fatalf("workspace missing task creation hint:\n%s", got)
 	}
 	lines := strings.Split(got, "\n")
 	if strings.Contains(lines[len(lines)-1], "Codex") {
@@ -802,9 +802,9 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
-	st.Focus = state.FocusCodex
+	st.Focus = state.FocusConsole
 	st.NavOpen = false
-	st.Agents[0].Status = state.StatusStarting
+	st.Tasks[0].Status = state.StatusStarting
 
 	got := renderLoadingWorkspaceWithNavWidth(cfg, st, "alpha", "⠋ Starting Codex", 80, 24, "", 0, 0)
 	lines := strings.Split(ansi.Strip(got), "\n")
@@ -825,7 +825,7 @@ func TestRenderWorkspaceLoadingStateIsCentered(t *testing.T) {
 func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
-	st.Focus = state.FocusCodex
+	st.Focus = state.FocusConsole
 	st.NavOpen = false
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 80, 24, "", 0, 0)
@@ -848,15 +848,15 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if strings.Contains(got, "Task Live Preview") || strings.Contains(got, "● Live") {
 		t.Fatalf("focused codex pane should not render live preview UI:\n%s", got)
 	}
-	st.Agents[0].Status = state.StatusRunning
-	st.Agents[0].CodexTitle = "Fake Codex Working"
+	st.Tasks[0].Status = state.StatusRunning
+	st.Tasks[0].CodexTitle = "Fake Codex Working"
 	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 80, 24, "", 0, 0)
 	if !strings.Contains(got, "C-b dashboard") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("working codex toolbar should only advertise dashboard return:\n%s", got)
 	}
 }
 
-func TestAgentConsoleReadyIndicatorCountsOtherGlobalReadyAgents(t *testing.T) {
+func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(previous)
@@ -864,33 +864,33 @@ func TestAgentConsoleReadyIndicatorCountsOtherGlobalReadyAgents(t *testing.T) {
 	cfg := config.DefaultConfig()
 	now := state.NowISO()
 	st := layoutState("/tmp/project")
-	st.Focus = state.FocusCodex
+	st.Focus = state.FocusConsole
 	st.NavOpen = false
-	st.Agents = append(st.Agents,
-		state.Agent{ID: "b", WorkspaceID: "w", Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-		state.Agent{ID: "c", WorkspaceID: "w2", Title: "gamma", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
-		state.Agent{ID: "d", WorkspaceID: "w", Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+	st.Tasks = append(st.Tasks,
+		state.Task{ID: "b", WorkspaceID: "w", Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "c", WorkspaceID: "w2", Title: "gamma", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "d", WorkspaceID: "w", Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
 	)
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
 	if !strings.Contains(ansi.Strip(got), "2 other tasks ready") {
-		t.Fatalf("console should show ready indicator for other global agents:\n%s", got)
+		t.Fatalf("console should show ready indicator for other global tasks:\n%s", got)
 	}
 	if !strings.Contains(got, workspaceCountNeedsAttentionStyle.Render("2 other tasks ready")) {
 		t.Fatalf("ready indicator should use needs-attention styling:\n%q", got)
 	}
 
-	st.Agents = st.Agents[:1]
+	st.Tasks = st.Tasks[:1]
 	got = renderWorkspaceWithNavWidth(cfg, st, "alpha", "output", 100, 18, "", 0, 0)
 	if strings.Contains(ansi.Strip(got), "other task") {
-		t.Fatalf("console should hide ready indicator when no other agents are ready:\n%s", got)
+		t.Fatalf("console should hide ready indicator when no other tasks are ready:\n%s", got)
 	}
 }
 
 func TestCodexLeftPaddingStaysBeforeLeadingANSIStyle(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
-	st.Focus = state.FocusCodex
+	st.Focus = state.FocusConsole
 	st.NavOpen = false
 
 	got := renderWorkspaceWithNavWidth(cfg, st, "alpha", "\x1b[48;2;1;2;3mZ\x1b[m", 40, 8, "", 0, 0)
@@ -948,13 +948,13 @@ func layoutState(workspace string) state.State {
 	now := state.NowISO()
 	return state.State{
 		Version:             state.Version,
-		ActiveAgentID:       "a",
+		ActiveTaskID:        "a",
 		SelectedWorkspaceID: "w",
 		SelectedGroupID:     "f",
-		Focus:               state.FocusAgents,
+		Focus:               state.FocusTasks,
 		NavOpen:             true,
 		Workspaces:          []state.Workspace{{ID: "w", Path: workspace, CreatedAt: now, UpdatedAt: now}},
 		Groups:              []state.Group{{ID: "f", WorkspaceID: "w", Path: "inbox", CreatedAt: now, UpdatedAt: now}},
-		Agents:              []state.Agent{{ID: "a", WorkspaceID: "w", GroupID: "f", Title: "alpha", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now}},
+		Tasks:               []state.Task{{ID: "a", WorkspaceID: "w", GroupID: "f", Title: "alpha", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now}},
 	}
 }

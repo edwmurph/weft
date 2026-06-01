@@ -26,10 +26,10 @@ type promptStatus struct {
 }
 
 type promptContext struct {
-	prompt        promptKind
-	pendingID     string
-	state         state.State
-	selectedAgent *state.Agent
+	prompt       promptKind
+	pendingID    string
+	state        state.State
+	selectedTask *state.Task
 }
 
 type promptInputAction int
@@ -336,9 +336,9 @@ func promptPlaceholder(prompt promptKind) string {
 	switch prompt {
 	case promptWorkspace:
 		return "~/code/project"
-	case promptGroup, promptEditGroup, promptMoveAgent:
+	case promptGroup, promptEditGroup, promptMoveTask:
 		return "release"
-	case promptWorkspaceTitle, promptEditAgent:
+	case promptWorkspaceTitle, promptEditTask:
 		return "Codex {status}"
 	default:
 		return ""
@@ -346,7 +346,7 @@ func promptPlaceholder(prompt promptKind) string {
 }
 
 func promptHasAutocomplete(prompt promptKind) bool {
-	return prompt == promptWorkspace || prompt == promptMoveAgent
+	return prompt == promptWorkspace || prompt == promptMoveTask
 }
 
 func refreshPromptInput(input *textinput.Model, ctx promptContext) {
@@ -360,7 +360,7 @@ func promptSuggestions(ctx promptContext, value string) []string {
 	switch ctx.prompt {
 	case promptWorkspace:
 		return workspacePathSuggestions(value)
-	case promptMoveAgent:
+	case promptMoveTask:
 		return groupNameSuggestions(ctx)
 	default:
 		return nil
@@ -375,7 +375,7 @@ func promptMatchedSuggestions(ctx promptContext, value string) []string {
 	switch ctx.prompt {
 	case promptWorkspace:
 		return suggestions
-	case promptMoveAgent:
+	case promptMoveTask:
 		return filterPromptSuggestions(suggestions, value)
 	default:
 		return nil
@@ -582,9 +582,9 @@ func promptTitle(prompt promptKind) string {
 		return "Rename workspace"
 	case promptEditGroup:
 		return "Edit group"
-	case promptEditAgent:
+	case promptEditTask:
 		return "Edit task"
-	case promptMoveAgent:
+	case promptMoveTask:
 		return "Move task"
 	default:
 		return "Input"
@@ -595,7 +595,7 @@ func promptLabel(prompt promptKind) string {
 	switch prompt {
 	case promptWorkspace:
 		return "Path"
-	case promptGroup, promptEditGroup, promptMoveAgent:
+	case promptGroup, promptEditGroup, promptMoveTask:
 		return "Group"
 	default:
 		return "Title"
@@ -606,7 +606,7 @@ func promptHint(prompt promptKind) string {
 	switch prompt {
 	case promptWorkspaceTitle:
 		return "Blank uses the path title."
-	case promptMoveAgent:
+	case promptMoveTask:
 		return "Blank makes the task top-level."
 	default:
 		return ""
@@ -644,7 +644,7 @@ func confirmTitle(confirm confirmKind) string {
 		return "Delete workspace"
 	case confirmDeleteGroup:
 		return "Delete group"
-	case confirmDeleteAgent:
+	case confirmDeleteTask:
 		return "Delete task"
 	case confirmUpgradeResume:
 		return "Upgrade supervisor?"
@@ -660,7 +660,7 @@ func confirmTargetLabel(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
 		return "Supervisor"
 	}
-	if confirm == confirmDeleteAgent {
+	if confirm == confirmDeleteTask {
 		return "Task"
 	}
 	return "Target"
@@ -670,7 +670,7 @@ func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
 		return "Closes idle Codex terminals, restarts the supervisor, then resumes tasks with saved session IDs and starts fresh tasks without one. Running commands and unsubmitted text are not preserved, so finish important work first."
 	}
-	if confirm == confirmDeleteAgent {
+	if confirm == confirmDeleteTask {
 		return "Stops the terminal, then removes this task from Weft."
 	}
 	return ""
@@ -683,13 +683,13 @@ func renderConfirmActions(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
 		return modalKeyStyle.Render("Enter") + " upgrade  " + modalKeyStyle.Render("Esc")
 	}
-	if confirm == confirmDeleteAgent {
+	if confirm == confirmDeleteTask {
 		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("N") + " " + modalKeyStyle.Render("Esc")
 	}
 	return modalKeyStyle.Render("Enter") + " delete  " + modalKeyStyle.Render("Esc")
 }
 
-func confirmTarget(confirm confirmKind, st state.State, pendingID string, renderAgentTitle func(state.Agent) string) string {
+func confirmTarget(confirm confirmKind, st state.State, pendingID string, renderTaskTitle func(state.Task) string) string {
 	switch confirm {
 	case confirmAddLaunchWorkspace:
 		return pendingID
@@ -701,9 +701,9 @@ func confirmTarget(confirm confirmKind, st state.State, pendingID string, render
 		if group := state.GroupByID(st, pendingID); group != nil {
 			return group.Path
 		}
-	case confirmDeleteAgent:
-		if agent := state.AgentByID(st, pendingID); agent != nil {
-			return renderAgentTitle(*agent)
+	case confirmDeleteTask:
+		if task := state.TaskByID(st, pendingID); task != nil {
+			return renderTaskTitle(*task)
 		}
 	case confirmUpgradeResume:
 		return pendingID
@@ -796,12 +796,12 @@ func inspectPromptStatus(ctx promptContext, raw string) promptStatus {
 			return promptStatus{message: "Blank uses path title", style: mutedStyle}
 		}
 		return promptStatus{message: "Ready", style: modalSuccessStyle}
-	case promptEditAgent:
+	case promptEditTask:
 		if raw == "" {
 			return promptStatus{message: "Title required", style: modalWarningStyle}
 		}
 		return promptStatus{message: "Ready", style: modalSuccessStyle}
-	case promptMoveAgent:
+	case promptMoveTask:
 		if raw == "" {
 			return promptStatus{message: "Top-level task", style: mutedStyle}
 		}
@@ -822,12 +822,12 @@ func promptSubmitBlocker(ctx promptContext, value string) string {
 		}
 	case promptGroup, promptEditGroup:
 		return validateGroupPrompt(ctx, value)
-	case promptEditAgent:
+	case promptEditTask:
 		if value == "" {
 			return "Title required"
 		}
-	case promptMoveAgent:
-		if ctx.selectedAgent == nil {
+	case promptMoveTask:
+		if ctx.selectedTask == nil {
 			return "Select a task first"
 		}
 		if value != "" && promptMoveGroup(ctx, value) == nil {
@@ -852,9 +852,9 @@ func promptSubmitActionLabel(ctx promptContext, value string) string {
 			return "clear"
 		}
 		return "save"
-	case promptEditGroup, promptEditAgent:
+	case promptEditGroup, promptEditTask:
 		return "save"
-	case promptMoveAgent:
+	case promptMoveTask:
 		if value == "" {
 			return "top-level"
 		}
@@ -892,10 +892,10 @@ func validateGroupPrompt(ctx promptContext, value string) string {
 }
 
 func promptMoveGroup(ctx promptContext, value string) *state.Group {
-	if ctx.selectedAgent == nil {
+	if ctx.selectedTask == nil {
 		return nil
 	}
-	for _, group := range state.GroupsForWorkspace(ctx.state, ctx.selectedAgent.WorkspaceID) {
+	for _, group := range state.GroupsForWorkspace(ctx.state, ctx.selectedTask.WorkspaceID) {
 		if group.Path == value {
 			return &group
 		}
@@ -904,10 +904,10 @@ func promptMoveGroup(ctx promptContext, value string) *state.Group {
 }
 
 func groupNameSuggestions(ctx promptContext) []string {
-	if ctx.selectedAgent == nil {
+	if ctx.selectedTask == nil {
 		return nil
 	}
-	groups := state.GroupsForWorkspace(ctx.state, ctx.selectedAgent.WorkspaceID)
+	groups := state.GroupsForWorkspace(ctx.state, ctx.selectedTask.WorkspaceID)
 	suggestions := make([]string, 0, len(groups))
 	for _, group := range groups {
 		suggestions = append(suggestions, group.Path)

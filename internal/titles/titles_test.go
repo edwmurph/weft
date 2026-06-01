@@ -6,169 +6,169 @@ import (
 	"github.com/edwmurph/weft/internal/state"
 )
 
-func TestRenderAgentDefaultTemplateUsesConfiguredTitle(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Plan", CodexTitle: "Plan Ready", Status: state.StatusRunning}
+func TestRenderTaskDefaultTemplateUsesConfiguredTitle(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Plan", CodexTitle: "Plan Ready", Status: state.StatusRunning}
 
-	if got := RenderAgent(agent, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "inbox"}, "{title}"); got != "Plan" {
+	if got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "inbox"}, "{title}"); got != "Plan" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderAgentSupportsLiveVariables(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", AutoTitle: "Fix Login", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
+func TestRenderTaskSupportsLiveVariables(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex", AutoTitle: "Fix Login", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
 
-	got := RenderAgent(agent, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workspace} {group}: {auto} {status} {codex}")
+	got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workspace} {group}: {auto} {status} {codex}")
 
 	if got != "/tmp/project ship: Fix Login Working Fake Codex Working" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderAgentUsesWorkspaceVariable(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusRunning}
+func TestRenderTaskUsesWorkspaceVariable(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex", Status: state.StatusRunning}
 
-	got := RenderAgent(agent, state.Workspace{Path: "/tmp/project"}, state.Group{}, "{workspace}")
+	got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{}, "{workspace}")
 
 	if got != "/tmp/project" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderAgentDoesNotSupportLegacyWorkspaceVariable(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusRunning}
+func TestRenderTaskDoesNotSupportLegacyWorkspaceVariable(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex", Status: state.StatusRunning}
 
-	got := RenderAgent(agent, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workdir} {folder}")
+	got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workdir} {folder}")
 
 	if got != "{workdir} {folder}" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderAgentRendersVariablesInsideBaseTitle(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex {status}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
+func TestRenderTaskRendersVariablesInsideBaseTitle(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex {status}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, "{title}"); got != "Codex Ready" {
+	if got := RenderTask(task, state.Workspace{}, state.Group{}, "{title}"); got != "Codex Ready" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
 
-	if got := RenderStatus(agent); got != "Working" {
+	if got := RenderStatus(task); got != "Working" {
 		t.Fatalf("got %q", got)
 	}
-	if got := CanonicalStatus(agent); got != "working" {
+	if got := CanonicalStatus(task); got != "working" {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	agent.CodexTitle = "Fake Codex Waiting"
-	if got := RenderStatus(agent); got != "Waiting" {
+	task.CodexTitle = "Fake Codex Waiting"
+	if got := RenderStatus(task); got != "Waiting" {
 		t.Fatalf("got %q", got)
 	}
-	if got := CanonicalStatus(agent); got != "waiting" {
+	if got := CanonicalStatus(task); got != "waiting" {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	agent.CodexTitle = "Fake Codex Crafting"
-	if got := RenderStatus(agent); got != "Crafting" {
+	task.CodexTitle = "Fake Codex Crafting"
+	if got := RenderStatus(task); got != "Crafting" {
 		t.Fatalf("got %q", got)
 	}
-	if got := CanonicalStatus(agent); got != "crafting" {
+	if got := CanonicalStatus(task); got != "crafting" {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	agent.CodexTitle = "Exploring"
-	if got := RenderStatus(agent); got != "Exploring" {
+	task.CodexTitle = "Exploring"
+	if got := RenderStatus(task); got != "Exploring" {
 		t.Fatalf("got %q", got)
 	}
-	if got := CanonicalStatus(agent); got != "exploring" {
+	if got := CanonicalStatus(task); got != "exploring" {
 		t.Fatalf("canonical status = %q", got)
 	}
 }
 
 func TestRenderStatusUsesScreenDerivedCodexStatus(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Running", CodexStatus: "Ready", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Running", CodexStatus: "Ready", Status: state.StatusRunning}
 
-	if got := RenderStatus(agent); got != "Ready" {
+	if got := RenderStatus(task); got != "Ready" {
 		t.Fatalf("got %q", got)
 	}
-	if got := CanonicalStatus(agent); got != "ready" {
+	if got := CanonicalStatus(task); got != "ready" {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	agent.CodexTitle = "Fake Codex Working"
-	if got := RenderStatus(agent); got != "Working" {
+	task.CodexTitle = "Fake Codex Working"
+	if got := RenderStatus(task); got != "Working" {
 		t.Fatalf("live title status should win, got %q", got)
 	}
 }
 
 func TestStatusIndicatesActivityForUnlistedCodexStatus(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}
 
-	if !StatusIndicatesActivity(agent) {
+	if !StatusIndicatesActivity(task) {
 		t.Fatal("unlisted live Codex status should be active")
 	}
 
-	agent.CodexTitle = "Fake Codex Waiting"
-	if !StatusIndicatesActivity(agent) {
+	task.CodexTitle = "Fake Codex Waiting"
+	if !StatusIndicatesActivity(task) {
 		t.Fatal("waiting Codex status should be active")
 	}
 
-	agent.CodexTitle = "Fake Codex Ready"
-	if StatusIndicatesActivity(agent) {
+	task.CodexTitle = "Fake Codex Ready"
+	if StatusIndicatesActivity(task) {
 		t.Fatal("ready Codex status should not be active")
 	}
 
-	agent.CodexTitle = "Fake Codex Running"
-	agent.CodexStatus = "Ready"
-	if StatusIndicatesActivity(agent) {
+	task.CodexTitle = "Fake Codex Running"
+	task.CodexStatus = "Ready"
+	if StatusIndicatesActivity(task) {
 		t.Fatal("screen-derived ready status should not be active")
 	}
 
-	agent.CodexTitle = "Fake Codex Waiting"
-	agent.CodexStatus = "Ready"
-	if StatusIndicatesActivity(agent) {
+	task.CodexTitle = "Fake Codex Waiting"
+	task.CodexStatus = "Ready"
+	if StatusIndicatesActivity(task) {
 		t.Fatal("screen-derived ready status should still override waiting title status")
 	}
 }
 
-func TestRenderStatusTemplateFallsBackToAgentStatus(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusStopped}
+func TestRenderStatusTemplateFallsBackToTaskStatus(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex", Status: state.StatusStopped}
 
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusStopped) {
+	if got := RenderTask(task, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusStopped) {
 		t.Fatalf("got %q", got)
 	}
 
-	agent.Status = state.StatusKilled
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusKilled) {
+	task.Status = state.StatusKilled
+	if got := RenderTask(task, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusKilled) {
 		t.Fatalf("got %q", got)
 	}
 
-	agent.Status = state.StatusReady
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusReady) {
+	task.Status = state.StatusReady
+	if got := RenderTask(task, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusReady) {
 		t.Fatalf("got %q", got)
 	}
 
-	agent.Status = state.StatusRunning
-	agent.CodexTitle = "Codex"
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusRunning) {
+	task.Status = state.StatusRunning
+	task.CodexTitle = "Codex"
+	if got := RenderTask(task, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusRunning) {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestRenderAutoTemplateFallsBackToPending(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Codex", Status: state.StatusRunning}
 
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, AutoTemplate); got != AutoPending {
+	if got := RenderTask(task, state.Workspace{}, state.Group{}, AutoTemplate); got != AutoPending {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestRenderAutoTemplateShowsFailureState(t *testing.T) {
-	agent := state.Agent{ID: "abc", Title: "Codex", AutoTitleError: "OPENAI_API_KEY is required", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Codex", AutoTitleError: "OPENAI_API_KEY is required", Status: state.StatusRunning}
 
-	if got := RenderAgent(agent, state.Workspace{}, state.Group{}, AutoTemplate); got != AutoFailed {
+	if got := RenderTask(task, state.Workspace{}, state.Group{}, AutoTemplate); got != AutoFailed {
 		t.Fatalf("got %q", got)
 	}
 }

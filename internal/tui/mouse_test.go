@@ -189,10 +189,10 @@ func TestClientMouseDragCopiesConsoleSelection(t *testing.T) {
 		height: 8,
 		snapshot: ipc.Snapshot{
 			State: state.State{
-				Focus:         state.FocusCodex,
-				ActiveAgentID: "a",
-				Workspaces:    []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Agents:        []state.Agent{{ID: "a", WorkspaceID: "w"}},
+				Focus:        state.FocusConsole,
+				ActiveTaskID: "a",
+				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w"}},
 			},
 			CodexTitle:      "Codex",
 			CodexContent:    "alpha beta",
@@ -255,20 +255,20 @@ func TestClientMouseDragCopiesTaskPreviewSelection(t *testing.T) {
 		height: 8,
 		snapshot: ipc.Snapshot{
 			State: state.State{
-				Focus:               state.FocusAgents,
+				Focus:               state.FocusTasks,
 				NavOpen:             true,
-				ActiveAgentID:       "a",
-				SelectedAgentID:     "a",
+				ActiveTaskID:        "a",
+				SelectedTaskID:      "a",
 				SelectedWorkspaceID: "w",
 				Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Agents:              []state.Agent{{ID: "a", WorkspaceID: "w"}},
+				Tasks:               []state.Task{{ID: "a", WorkspaceID: "w"}},
 			},
 			NavWidth:        minTwoPaneNavWidth,
 			CodexTitle:      "Codex",
 			CodexContent:    "alpha beta",
 			CodexPlainLines: []string{"alpha beta"},
 			CodexScrollback: "alpha beta",
-			LoadingAgentIDs: nil,
+			LoadingTaskIDs:  nil,
 			CodexScrollbackLines: []string{
 				"alpha beta",
 			},
@@ -314,7 +314,7 @@ func TestClientMouseDragCopiesTaskPreviewSelection(t *testing.T) {
 	if copied != "beta" {
 		t.Fatalf("copied = %q", copied)
 	}
-	if model.snapshot.State.Focus != state.FocusAgents || !model.snapshot.State.NavOpen {
+	if model.snapshot.State.Focus != state.FocusTasks || !model.snapshot.State.NavOpen {
 		t.Fatalf("preview copy should keep dashboard focus/nav, got %s/%t", model.snapshot.State.Focus, model.snapshot.State.NavOpen)
 	}
 	if model.toastText != "Copied 4 characters" {
@@ -332,10 +332,10 @@ func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
 		height: 8,
 		snapshot: ipc.Snapshot{
 			State: state.State{
-				Focus:         state.FocusCodex,
-				ActiveAgentID: "a",
-				Workspaces:    []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Agents:        []state.Agent{{ID: "a", WorkspaceID: "w"}},
+				Focus:        state.FocusConsole,
+				ActiveTaskID: "a",
+				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w"}},
 			},
 			CodexTitle:           "Codex",
 			CodexContent:         strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
@@ -388,13 +388,13 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 		height: 8,
 		snapshot: ipc.Snapshot{
 			State: state.State{
-				Focus:               state.FocusAgents,
+				Focus:               state.FocusTasks,
 				NavOpen:             true,
-				ActiveAgentID:       "a",
-				SelectedAgentID:     "a",
+				ActiveTaskID:        "a",
+				SelectedTaskID:      "a",
 				SelectedWorkspaceID: "w",
 				Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Agents:              []state.Agent{{ID: "a", WorkspaceID: "w"}},
+				Tasks:               []state.Task{{ID: "a", WorkspaceID: "w"}},
 			},
 			NavWidth:             minTwoPaneNavWidth,
 			CodexTitle:           "Codex",
@@ -428,7 +428,7 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 	if !strings.Contains(view, "history line 02") || strings.Contains(view, "history line 10") {
 		t.Fatalf("preview should show older scrollback instead of bottom:\n%s", view)
 	}
-	if model.snapshot.State.Focus != state.FocusAgents || !model.snapshot.State.NavOpen {
+	if model.snapshot.State.Focus != state.FocusTasks || !model.snapshot.State.NavOpen {
 		t.Fatalf("preview scroll should keep dashboard focus/nav, got %s/%t", model.snapshot.State.Focus, model.snapshot.State.NavOpen)
 	}
 }
@@ -436,7 +436,7 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
-	st := testStateWithAgent(rt.Workspace)
+	st := testStateWithTask(rt.Workspace)
 	st.Focus = state.FocusWorkspaces
 	st.NavOpen = true
 	model := NewClientModel(rt, cfg)
@@ -510,8 +510,8 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
-	st := testStateWithAgent(rt.Workspace)
-	st.Focus = state.FocusAgents
+	st := testStateWithTask(rt.Workspace)
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, cfg)
 	model.width = 120
@@ -597,7 +597,7 @@ func TestClientHoverSelectsNewTaskRowAndEnterOpensMenu(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 	st := testStateWithWorkspace(t, rt.Workspace)
-	st.Focus = state.FocusAgents
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, cfg)
 	model.width = 120
@@ -624,7 +624,7 @@ func TestClientHoverSelectsNewTaskRowAndEnterOpensMenu(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("hovering the new task row should select it through the supervisor")
 	}
-	if !model.newTaskRowSelected || model.snapshot.State.Focus != state.FocusAgents || model.snapshot.GroupCursor != 0 {
+	if !model.newTaskRowSelected || model.snapshot.State.Focus != state.FocusTasks || model.snapshot.GroupCursor != 0 {
 		t.Fatalf("new task row should be selected, selected=%t focus=%s cursor=%d", model.newTaskRowSelected, model.snapshot.State.Focus, model.snapshot.GroupCursor)
 	}
 	got := ansi.Strip(model.View())

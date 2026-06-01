@@ -43,14 +43,14 @@ func NormalizeCodexTitle(title string) string {
 	return title
 }
 
-func RenderStatus(agent state.Agent) string {
-	switch agent.Status {
+func RenderStatus(task state.Task) string {
+	switch task.Status {
 	case state.StatusStarting, state.StatusStopped, state.StatusKilled, state.StatusError, state.StatusSitting, state.StatusShipping:
-		return string(agent.Status)
+		return string(task.Status)
 	}
-	titleStatus := CodexActivityStatus(agent.CodexTitle)
-	screenStatus := strings.TrimSpace(agent.CodexStatus)
-	if screenStatus != "" && !CodexTitleIndicatesActivity(agent.CodexTitle) {
+	titleStatus := CodexActivityStatus(task.CodexTitle)
+	screenStatus := strings.TrimSpace(task.CodexStatus)
+	if screenStatus != "" && !CodexTitleIndicatesActivity(task.CodexTitle) {
 		return screenStatus
 	}
 	if titleStatus != "" {
@@ -59,24 +59,24 @@ func RenderStatus(agent state.Agent) string {
 	if screenStatus != "" {
 		return screenStatus
 	}
-	if agent.Status != "" {
-		return string(agent.Status)
+	if task.Status != "" {
+		return string(task.Status)
 	}
 	return "unknown"
 }
 
-func CanonicalStatus(agent state.Agent) string {
-	return strings.ToLower(RenderStatus(agent))
+func CanonicalStatus(task state.Task) string {
+	return strings.ToLower(RenderStatus(task))
 }
 
-func StatusIndicatesActivity(agent state.Agent) bool {
-	switch CanonicalStatus(agent) {
+func StatusIndicatesActivity(task state.Task) bool {
+	switch CanonicalStatus(task) {
 	case string(state.StatusStarting), string(state.StatusRunning), "waiting", "working", string(state.StatusShipping):
 		return true
 	case string(state.StatusReady), "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
 		return false
 	default:
-		return CodexActivityStatus(agent.CodexTitle) != ""
+		return CodexActivityStatus(task.CodexTitle) != ""
 	}
 }
 
@@ -137,23 +137,23 @@ func codexStatusCandidate(token string) bool {
 	return false
 }
 
-func RenderAgent(agent state.Agent, workspace state.Workspace, group state.Group, template string) string {
+func RenderTask(task state.Task, workspace state.Workspace, group state.Group, template string) string {
 	if strings.TrimSpace(template) == "" {
 		template = TitleTemplate
 	}
-	title := strings.TrimSpace(agent.Title)
+	title := strings.TrimSpace(task.Title)
 	if title == "" {
 		title = PendingTitle
 	}
-	codexTitle := NormalizeCodexTitle(agent.CodexTitle)
+	codexTitle := NormalizeCodexTitle(task.CodexTitle)
 	if codexTitle == "" {
 		codexTitle = PendingTitle
 	}
 	values := map[string]string{
 		TitleTemplate:     title,
-		AutoTemplate:      renderAutoTitle(agent),
+		AutoTemplate:      renderAutoTitle(task),
 		CodexTemplate:     codexTitle,
-		StatusTemplate:    RenderStatus(agent),
+		StatusTemplate:    RenderStatus(task),
 		WorkspaceTemplate: fallback(workspace.Path, PendingTitle),
 		GroupTemplate:     fallback(group.Path, PendingTitle),
 	}
@@ -167,14 +167,14 @@ func RenderAgent(agent state.Agent, workspace state.Workspace, group state.Group
 	return rendered
 }
 
-func renderAutoTitle(agent state.Agent) string {
-	if title := strings.TrimSpace(agent.AutoTitle); title != "" {
+func renderAutoTitle(task state.Task) string {
+	if title := strings.TrimSpace(task.AutoTitle); title != "" {
 		return title
 	}
-	if strings.TrimSpace(agent.AutoTitleError) != "" {
+	if strings.TrimSpace(task.AutoTitleError) != "" {
 		return AutoFailed
 	}
-	if agent.AutoTitleAttempted {
+	if task.AutoTitleAttempted {
 		return "generating auto title"
 	}
 	return AutoPending

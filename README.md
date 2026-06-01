@@ -193,7 +193,7 @@ title_hook_timeout_seconds = 10
 
 When `title_hook_command` is configured, the first non-empty Codex message or
 opted-in terminal command runs the hook from that task's workspace. Weft sends
-JSON on stdin with `event`, `agent_id`, `workspace`, `group`, `status`,
+JSON on stdin with `event`, `task_id`, `workspace`, `group`, `status`,
 `title`, `type_id`, the task `title_template`, `codex_title` when available,
 and `first_message`, then saves the first non-empty stdout line as the
 generated title.
@@ -338,9 +338,10 @@ Legacy aliases are rejected instead of mapped silently: use
 `key_bindings.new_task` instead of `key_bindings.new_agent`,
 `key_bindings.move_task` instead of `key_bindings.move_agent`, and
 `task_types.<id>.badge` instead of `task_types.<id>.icon`. Unknown config keys
-are rejected so stale local settings are visible. State is strict v4 with
-workspace/group names and task type IDs on agent rows. Older or unknown state
-shapes fail with guidance to run `weft clear` when a reset is acceptable.
+are rejected so stale local settings are visible. State is strict v5 with
+`tasks`, `active_task_id`, `selected_task_id`, and focus values of
+`workspaces`, `tasks`, or `console`. Older or unknown state shapes fail with
+guidance to run `weft clear` when a reset is acceptable.
 
 ## Development
 

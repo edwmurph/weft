@@ -11,12 +11,12 @@ import (
 	"github.com/edwmurph/weft/internal/titles"
 )
 
-func promptContextFor(prompt promptKind, pendingID string, st state.State, selectedAgent *state.Agent) promptContext {
+func promptContextFor(prompt promptKind, pendingID string, st state.State, selectedTask *state.Task) promptContext {
 	return promptContext{
-		prompt:        prompt,
-		pendingID:     pendingID,
-		state:         st,
-		selectedAgent: selectedAgent,
+		prompt:       prompt,
+		pendingID:    pendingID,
+		state:        st,
+		selectedTask: selectedTask,
 	}
 }
 
@@ -28,24 +28,24 @@ func confirmKeyCancels(confirm confirmKind, msg tea.KeyMsg) bool {
 	if msg.Type == tea.KeyEsc || strings.EqualFold(msg.String(), "esc") {
 		return true
 	}
-	if confirm == confirmDeleteAgent {
+	if confirm == confirmDeleteTask {
 		return strings.EqualFold(msg.String(), "n")
 	}
 	return false
 }
 
-func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptKind, selectedAgent *state.Agent, input textinput.Model, width int) []string {
-	if prompt != promptEditAgent {
+func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptKind, selectedTask *state.Task, input textinput.Model, width int) []string {
+	if prompt != promptEditTask {
 		return nil
 	}
 	lines := []string{"", modalLabelStyle.Render("Preview")}
-	if selectedAgent != nil {
-		draft := *selectedAgent
+	if selectedTask != nil {
+		draft := *selectedTask
 		if value := strings.TrimSpace(input.Value()); value != "" {
 			draft.Title = value
 		}
-		lines = append(lines, modalValueStyle.Render(clip(renderAgentBaseTitleForState(st, draft), width)))
-		if notice := autoTitleNotice(cfg, *selectedAgent, draft.Title); notice != "" {
+		lines = append(lines, modalValueStyle.Render(clip(renderTaskBaseTitleForState(st, draft), width)))
+		if notice := autoTitleNotice(cfg, *selectedTask, draft.Title); notice != "" {
 			lines = append(lines, mutedStyle.Render(clip(notice, width)))
 		}
 	}
@@ -69,9 +69,9 @@ func editPromptTargetForState(st state.State, groupCursor int) (promptKind, stri
 		if group := state.GroupByID(st, row.groupID); group != nil {
 			return promptEditGroup, group.ID, group.Path, group.Silent, true
 		}
-	case groupRowAgent:
-		if agent := state.AgentByID(st, row.agentID); agent != nil {
-			return promptEditAgent, agent.ID, agent.Title, false, true
+	case groupRowTask:
+		if task := state.TaskByID(st, row.taskID); task != nil {
+			return promptEditTask, task.ID, task.Title, false, true
 		}
 	}
 	return "", "", "", false, false
@@ -90,18 +90,18 @@ func deleteConfirmTargetForState(st state.State, groupCursor int) (confirmKind, 
 		if group := state.GroupByID(st, row.groupID); group != nil {
 			return confirmDeleteGroup, group.ID, true
 		}
-	case groupRowAgent:
-		if agent := state.AgentByID(st, row.agentID); agent != nil {
-			return confirmDeleteAgent, agent.ID, true
+	case groupRowTask:
+		if task := state.TaskByID(st, row.taskID); task != nil {
+			return confirmDeleteTask, task.ID, true
 		}
 	}
 	return "", "", false
 }
 
-func selectedAgentForState(st state.State, groupCursor int) *state.Agent {
+func selectedTaskForState(st state.State, groupCursor int) *state.Task {
 	row := currentGroupRowForState(st, groupCursor)
-	if row.kind == groupRowAgent {
-		return state.AgentByID(st, row.agentID)
+	if row.kind == groupRowTask {
+		return state.TaskByID(st, row.taskID)
 	}
 	return nil
 }
@@ -122,47 +122,47 @@ func groupRowsForState(st state.State) []groupRow {
 	if state.ActiveWorkspace(st) != nil {
 		rows = append(rows, groupRow{kind: groupRowNewTask})
 	}
-	for _, agent := range state.UngroupedAgentsForWorkspace(st, st.SelectedWorkspaceID) {
-		rows = append(rows, groupRow{kind: groupRowAgent, agentID: agent.ID})
+	for _, task := range state.UngroupedTasksForWorkspace(st, st.SelectedWorkspaceID) {
+		rows = append(rows, groupRow{kind: groupRowTask, taskID: task.ID})
 	}
 	for _, group := range state.GroupsForWorkspace(st, st.SelectedWorkspaceID) {
 		rows = append(rows, groupRow{kind: groupRowGroup, groupID: group.ID})
 		if state.IsGroupCollapsed(st, group.ID) {
 			continue
 		}
-		for _, agent := range state.AgentsForGroup(st, group.ID) {
-			rows = append(rows, groupRow{kind: groupRowAgent, groupID: group.ID, agentID: agent.ID})
+		for _, task := range state.TasksForGroup(st, group.ID) {
+			rows = append(rows, groupRow{kind: groupRowTask, groupID: group.ID, taskID: task.ID})
 		}
 	}
 	return rows
 }
 
-func renderAgentTitleForState(_ config.Config, st state.State, agent state.Agent) string {
-	return renderAgentWithTemplate(st, agent, agent.Title)
+func renderTaskTitleForState(_ config.Config, st state.State, task state.Task) string {
+	return renderTaskWithTemplate(st, task, task.Title)
 }
 
-func renderAgentBaseTitleForState(st state.State, agent state.Agent) string {
-	return renderAgentWithTemplate(st, agent, titles.TitleTemplate)
+func renderTaskBaseTitleForState(st state.State, task state.Task) string {
+	return renderTaskWithTemplate(st, task, titles.TitleTemplate)
 }
 
-func renderAgentWithTemplate(st state.State, agent state.Agent, template string) string {
+func renderTaskWithTemplate(st state.State, task state.Task, template string) string {
 	workspace := state.Workspace{}
 	group := state.Group{}
-	if w := state.WorkspaceForAgent(st, agent); w != nil {
+	if w := state.WorkspaceForTask(st, task); w != nil {
 		workspace = *w
 	}
-	if f := state.GroupForAgent(st, agent); f != nil {
+	if f := state.GroupForTask(st, task); f != nil {
 		group = *f
 	}
-	return titles.RenderAgent(agent, workspace, group, template)
+	return titles.RenderTask(task, workspace, group, template)
 }
 
-func agentStatusIndicatesActivity(agent state.Agent) bool {
-	return titles.StatusIndicatesActivity(agent)
+func taskStatusIndicatesActivity(task state.Task) bool {
+	return titles.StatusIndicatesActivity(task)
 }
 
-func agentStatusShowsLoadingIndicator(agent state.Agent) bool {
-	switch titles.CanonicalStatus(agent) {
+func taskStatusShowsLoadingIndicator(task state.Task) bool {
+	switch titles.CanonicalStatus(task) {
 	case string(state.StatusReady), "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
 		return false
 	default:
@@ -186,20 +186,20 @@ func codexScreenStatus(screen *TerminalScreen) string {
 	return ""
 }
 
-func autoTitleNotice(cfg config.Config, agent state.Agent, draftTitle string) string {
-	if !agentUsesCodexIntegration(cfg, agent) {
+func autoTitleNotice(cfg config.Config, task state.Task, draftTitle string) string {
+	if !taskUsesCodexIntegration(cfg, task) {
 		return ""
 	}
 	if !strings.Contains(draftTitle, titles.AutoTemplate) {
 		return ""
 	}
-	if strings.TrimSpace(agent.AutoTitle) != "" {
+	if strings.TrimSpace(task.AutoTitle) != "" {
 		return "Auto title is ready."
 	}
-	if strings.TrimSpace(agent.AutoTitleError) != "" {
-		return "Auto title error: " + agent.AutoTitleError
+	if strings.TrimSpace(task.AutoTitleError) != "" {
+		return "Auto title error: " + task.AutoTitleError
 	}
-	if agent.AutoTitleAttempted {
+	if task.AutoTitleAttempted {
 		return "Auto title is generating."
 	}
 	if strings.TrimSpace(cfg.TitleHookCommand) == "" {

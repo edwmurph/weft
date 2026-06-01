@@ -27,8 +27,8 @@ type Report struct {
 	Ready    int
 	Fresh    int
 	Assigned int
-	Busy     []state.Agent
-	Missing  []state.Agent
+	Busy     []state.Task
+	Missing  []state.Task
 }
 
 func (r Report) CanUpgrade() bool {
@@ -47,29 +47,29 @@ func AssignMissingSessionIDs(st state.State, fallbackWorkspace string) (state.St
 }
 
 func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh bool) (state.State, int) {
-	earliest := earliestAgentCreatedAt(st)
+	earliest := earliestTaskCreatedAt(st)
 	sessions := recentSessions(earliest.Add(-assignmentLookback))
 	used := usedSessionIDs(st)
 	assigned := 0
-	for index := range st.Agents {
-		agent := &st.Agents[index]
-		if state.AgentTypeID(*agent) != state.DefaultAgentTypeID {
+	for index := range st.Tasks {
+		task := &st.Tasks[index]
+		if state.TaskTypeID(*task) != state.DefaultTaskTypeID {
 			continue
 		}
-		if strings.TrimSpace(agent.CodexSessionID) != "" {
+		if strings.TrimSpace(task.CodexSessionID) != "" {
 			continue
 		}
-		if skipFresh && AgentFreshForUpgrade(*agent) {
+		if skipFresh && TaskFreshForUpgrade(*task) {
 			continue
 		}
-		workspace := workspaceForAgent(st, *agent, fallbackWorkspace)
-		createdAt := parseTime(agent.CreatedAt)
+		workspace := workspaceForTask(st, *task, fallbackWorkspace)
+		createdAt := parseTime(task.CreatedAt)
 		session, ok := matchSession(sessions, workspace, createdAt.Add(-assignmentLookback), used)
 		if !ok {
 			continue
 		}
-		agent.CodexSessionID = session.ID
-		agent.UpdatedAt = state.NowISO()
+		task.CodexSessionID = session.ID
+		task.UpdatedAt = state.NowISO()
 		used[session.ID] = true
 		assigned++
 	}
@@ -78,21 +78,21 @@ func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh
 
 func BuildReport(st state.State) Report {
 	report := Report{}
-	for _, agent := range st.Agents {
-		if state.AgentTypeID(agent) != state.DefaultAgentTypeID {
+	for _, task := range st.Tasks {
+		if state.TaskTypeID(task) != state.DefaultTaskTypeID {
 			continue
 		}
 		report.Total++
-		if AgentFreshForUpgrade(agent) {
+		if TaskFreshForUpgrade(task) {
 			report.Fresh++
 			continue
 		}
-		if !AgentIdleForUpgrade(agent) {
-			report.Busy = append(report.Busy, agent)
+		if !TaskIdleForUpgrade(task) {
+			report.Busy = append(report.Busy, task)
 			continue
 		}
-		if strings.TrimSpace(agent.CodexSessionID) == "" {
-			report.Missing = append(report.Missing, agent)
+		if strings.TrimSpace(task.CodexSessionID) == "" {
+			report.Missing = append(report.Missing, task)
 			continue
 		}
 		report.Ready++
@@ -102,19 +102,19 @@ func BuildReport(st state.State) Report {
 
 func LiveNonCodexTaskCount(st state.State) int {
 	count := 0
-	for _, agent := range st.Agents {
-		if state.AgentTypeID(agent) == state.DefaultAgentTypeID {
+	for _, task := range st.Tasks {
+		if state.TaskTypeID(task) == state.DefaultTaskTypeID {
 			continue
 		}
-		if agentLiveForRestart(agent) {
+		if taskLiveForRestart(task) {
 			count++
 		}
 	}
 	return count
 }
 
-func agentLiveForRestart(agent state.Agent) bool {
-	switch agent.Status {
+func taskLiveForRestart(task state.Task) bool {
+	switch task.Status {
 	case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
 		return true
 	default:
@@ -122,8 +122,8 @@ func agentLiveForRestart(agent state.Agent) bool {
 	}
 }
 
-func AgentIdleForUpgrade(agent state.Agent) bool {
-	switch titles.CanonicalStatus(agent) {
+func TaskIdleForUpgrade(task state.Task) bool {
+	switch titles.CanonicalStatus(task) {
 	case string(state.StatusReady), "idle", string(state.StatusSitting), string(state.StatusStopped), string(state.StatusKilled):
 		return true
 	default:
@@ -131,14 +131,14 @@ func AgentIdleForUpgrade(agent state.Agent) bool {
 	}
 }
 
-func AgentFreshForUpgrade(agent state.Agent) bool {
-	if strings.TrimSpace(agent.CodexSessionID) != "" {
+func TaskFreshForUpgrade(task state.Task) bool {
+	if strings.TrimSpace(task.CodexSessionID) != "" {
 		return false
 	}
-	if agent.CodexInputSubmitted || agent.AutoTitleAttempted {
+	if task.CodexInputSubmitted || task.AutoTitleAttempted {
 		return false
 	}
-	if strings.TrimSpace(agent.AutoTitle) != "" || strings.TrimSpace(agent.AutoTitleError) != "" {
+	if strings.TrimSpace(task.AutoTitle) != "" || strings.TrimSpace(task.AutoTitleError) != "" {
 		return false
 	}
 	return true
@@ -247,13 +247,13 @@ func canonicalWorkspace(path string) string {
 	return normalized
 }
 
-func earliestAgentCreatedAt(st state.State) time.Time {
+func earliestTaskCreatedAt(st state.State) time.Time {
 	var earliest time.Time
-	for _, agent := range st.Agents {
-		if state.AgentTypeID(agent) != state.DefaultAgentTypeID {
+	for _, task := range st.Tasks {
+		if state.TaskTypeID(task) != state.DefaultTaskTypeID {
 			continue
 		}
-		created := parseTime(agent.CreatedAt)
+		created := parseTime(task.CreatedAt)
 		if created.IsZero() {
 			continue
 		}
@@ -269,19 +269,19 @@ func earliestAgentCreatedAt(st state.State) time.Time {
 
 func usedSessionIDs(st state.State) map[string]bool {
 	used := map[string]bool{}
-	for _, agent := range st.Agents {
-		if state.AgentTypeID(agent) != state.DefaultAgentTypeID {
+	for _, task := range st.Tasks {
+		if state.TaskTypeID(task) != state.DefaultTaskTypeID {
 			continue
 		}
-		if id := strings.TrimSpace(agent.CodexSessionID); id != "" {
+		if id := strings.TrimSpace(task.CodexSessionID); id != "" {
 			used[id] = true
 		}
 	}
 	return used
 }
 
-func workspaceForAgent(st state.State, agent state.Agent, fallback string) string {
-	if workspace := state.WorkspaceForAgent(st, agent); workspace != nil {
+func workspaceForTask(st state.State, task state.Task, fallback string) string {
+	if workspace := state.WorkspaceForTask(st, task); workspace != nil {
 		return workspace.Path
 	}
 	return fallback

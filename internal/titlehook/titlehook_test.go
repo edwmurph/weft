@@ -12,15 +12,15 @@ import (
 	"github.com/edwmurph/weft/internal/state"
 )
 
-func TestBuildPayloadUsesAgentContext(t *testing.T) {
-	agent := state.Agent{ID: "a", Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
+func TestBuildPayloadUsesTaskContext(t *testing.T) {
+	task := state.Task{ID: "a", Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
 
-	payload := BuildPayload(agent, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login")
+	payload := BuildPayload(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login")
 
-	if payload.Version != 1 || payload.Event != EventFirstMessage {
+	if payload.Version != 2 || payload.Event != EventFirstMessage {
 		t.Fatalf("payload identity = %#v", payload)
 	}
-	if payload.AgentID != "a" || payload.Workspace != "/tmp/project" || payload.Group != "ship" {
+	if payload.TaskID != "a" || payload.Workspace != "/tmp/project" || payload.Group != "ship" {
 		t.Fatalf("payload context = %#v", payload)
 	}
 	if payload.Status != "Ready" || payload.FirstMessage != "fix login" {
@@ -30,8 +30,10 @@ func TestBuildPayloadUsesAgentContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), "workdir") {
-		t.Fatalf("payload should not include legacy workdir field: %s", raw)
+	for _, forbidden := range []string{"workdir", "agent_id"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("payload should not include legacy %s field: %s", forbidden, raw)
+		}
 	}
 }
 
@@ -51,7 +53,7 @@ func TestRunSendsJSONAndUsesStdoutTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := Payload{Version: 1, Event: EventFirstMessage, AgentID: "a", FirstMessage: "fix login"}
+	payload := Payload{Version: 2, Event: EventFirstMessage, TaskID: "a", FirstMessage: "fix login"}
 
 	got, err := Run(context.Background(), shellQuote(scriptPath), dir, 5*time.Second, payload)
 	if err != nil {
@@ -70,7 +72,7 @@ func TestRunSendsJSONAndUsesStdoutTitle(t *testing.T) {
 }
 
 func TestRunFailsOnEmptyOutput(t *testing.T) {
-	_, err := Run(context.Background(), "printf ''", t.TempDir(), time.Second, Payload{Version: 1})
+	_, err := Run(context.Background(), "printf ''", t.TempDir(), time.Second, Payload{Version: 2})
 
 	if err == nil {
 		t.Fatal("expected empty output error")

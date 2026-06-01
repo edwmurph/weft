@@ -25,7 +25,7 @@ const (
 type Payload struct {
 	Version       int    `json:"version"`
 	Event         string `json:"event"`
-	AgentID       string `json:"agent_id"`
+	TaskID        string `json:"task_id"`
 	TypeID        string `json:"type_id"`
 	Workspace     string `json:"workspace"`
 	Group         string `json:"group,omitempty"`
@@ -36,18 +36,18 @@ type Payload struct {
 	FirstMessage  string `json:"first_message"`
 }
 
-func BuildPayload(agent state.Agent, workspace state.Workspace, group state.Group, titleTemplate string, firstMessage string) Payload {
+func BuildPayload(task state.Task, workspace state.Workspace, group state.Group, titleTemplate string, firstMessage string) Payload {
 	return Payload{
-		Version:       1,
+		Version:       2,
 		Event:         EventFirstMessage,
-		AgentID:       agent.ID,
-		TypeID:        state.AgentTypeID(agent),
+		TaskID:        task.ID,
+		TypeID:        state.TaskTypeID(task),
 		Workspace:     workspace.Path,
 		Group:         group.Path,
-		Status:        titles.RenderStatus(agent),
-		Title:         agent.Title,
+		Status:        titles.RenderStatus(task),
+		Title:         task.Title,
 		TitleTemplate: titleTemplate,
-		CodexTitle:    titles.NormalizeCodexTitle(agent.CodexTitle),
+		CodexTitle:    titles.NormalizeCodexTitle(task.CodexTitle),
 		FirstMessage:  firstMessage,
 	}
 }

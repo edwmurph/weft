@@ -2,6 +2,13 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Task schema cutover
+
+- Request: Hard-cut persisted/internal `agent` schema names to `task` names without compatibility aliases, while preserving dashboard `U`, supervisor-owned `upgrade_resume`, and Codex session resume.
+- Suggestions: Bump persisted state to strict v5 with `tasks`, `active_task_id`, `selected_task_id`, and focus `tasks`/`console`; reject v4/`agents` state with `weft clear` guidance; emit title-hook payload version 2 with `task_id`; rename Go helpers and IPC fields from agent to task.
+- Outcome: Implemented in `.worktrees/task-schema-cutover`; awaiting review.
+- Evidence: `internal/state`, `internal/ipc`, `internal/titlehook`, `internal/tui`, `tests/integration`, `README.md`, `spec.md`, `AGENTS.md`.
+
 ## 2026-06-01 - Config alias cutover
 
 - Request: Hard-cut remaining config aliases so stale local config fails instead of silently mapping into current task configuration.

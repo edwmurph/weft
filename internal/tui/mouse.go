@@ -59,7 +59,7 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if next, cmd, handled := m.handleTaskMouse(event); handled {
 		return next, cmd
 	}
-	active := state.ActiveAgent(m.snapshot.State)
+	active := state.ActiveTask(m.snapshot.State)
 	if active == nil {
 		m.mouseSelection = consoleSelection{}
 		return m, nil
@@ -176,11 +176,11 @@ func (m ClientModel) handleTaskMouse(event tea.MouseEvent) (ClientModel, tea.Cmd
 	}
 	area, ok := m.newTaskRowArea()
 	if ok && mouseInConsoleArea(event, area) {
-		alreadySelected := m.newTaskRowSelected && m.snapshot.State.Focus == state.FocusAgents
+		alreadySelected := m.newTaskRowSelected && m.snapshot.State.Focus == state.FocusTasks
 		m.mouseSelection = consoleSelection{}
 		m.newWorkspaceCardSelected = false
 		m.newTaskRowSelected = true
-		m.snapshot.State.Focus = state.FocusAgents
+		m.snapshot.State.Focus = state.FocusTasks
 		m.snapshot.State.NavOpen = true
 		m.snapshot.GroupCursor = 0
 		if event.Action == tea.MouseActionPress || !alreadySelected {
@@ -231,10 +231,10 @@ func (m ClientModel) codexSelectionAreaForOffset(offset int) (consoleArea, bool)
 
 func (m ClientModel) canSelectCodexContent() bool {
 	st := codexFrameStateForSelection(m.dashboardState(), m.snapshot.GroupCursor)
-	if state.ActiveAgent(st) == nil {
+	if state.ActiveTask(st) == nil {
 		return false
 	}
-	return st.Focus == state.FocusCodex || st.NavOpen
+	return st.Focus == state.FocusConsole || st.NavOpen
 }
 
 func (m ClientModel) codexPlainLines() []string {
