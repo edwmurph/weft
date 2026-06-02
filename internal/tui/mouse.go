@@ -8,6 +8,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
 )
 
@@ -72,6 +73,11 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if !mouseInConsoleArea(event, frameArea) {
 			return m, nil
+		}
+		if m.shouldForwardConsoleWheelToTask(*active) {
+			if encoded, ok := terminalMouseWheelInput(event); ok {
+				return m, m.request("task_input", map[string]string{"encoded": encoded, "input": codexInputRaw})
+			}
 		}
 		return m.scrollCodexHistory(event), nil
 	}
@@ -198,6 +204,12 @@ func (m ClientModel) handleTaskMouse(event tea.MouseEvent) (ClientModel, tea.Cmd
 	return m, nil, false
 }
 
+func (m ClientModel) shouldForwardConsoleWheelToTask(active state.Task) bool {
+	return m.snapshot.State.Focus == state.FocusConsole &&
+		m.snapshot.ActiveTaskInAlternateScreen &&
+		taskTypeForTask(m.cfg, active).Kind == config.TaskKindTerminal
+}
+
 func (m ClientModel) newTaskRowArea() (consoleArea, bool) {
 	return newTaskTemplateRowAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth)
 }
@@ -321,6 +333,30 @@ func (m ClientModel) scrollCodexHistory(event tea.MouseEvent) ClientModel {
 		m.codexScrollOffset = max(0, m.codexScrollOffset-delta)
 	}
 	return m
+}
+
+func terminalMouseWheelInput(event tea.MouseEvent) (string, bool) {
+	if event.Action != tea.MouseActionPress {
+		return "", false
+	}
+	var button ansi.MouseButton
+	switch event.Button {
+	case tea.MouseButtonWheelUp:
+		button = ansi.MouseWheelUp
+	case tea.MouseButtonWheelDown:
+		button = ansi.MouseWheelDown
+	case tea.MouseButtonWheelLeft:
+		button = ansi.MouseWheelLeft
+	case tea.MouseButtonWheelRight:
+		button = ansi.MouseWheelRight
+	default:
+		return "", false
+	}
+	encoded := ansi.EncodeMouseButton(button, false, event.Shift, event.Alt, event.Ctrl)
+	if encoded == 0xff {
+		return "", false
+	}
+	return ansi.MouseSgr(encoded, event.X, event.Y, false), true
 }
 
 func (m ClientModel) maxCodexScrollOffset() int {

@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -335,7 +336,7 @@ func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
 				Focus:        state.FocusConsole,
 				ActiveTaskID: "a",
 				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w"}},
+				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
 			},
 			CodexTitle:           "Codex",
 			CodexContent:         strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
@@ -381,6 +382,93 @@ func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
 	}
 }
 
+func TestClientMouseWheelForwardsFocusedTerminalAlternateScreen(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	st := state.State{
+		Focus:        state.FocusConsole,
+		ActiveTaskID: "a",
+		Workspaces:   []state.Workspace{{ID: "w", Path: rt.Workspace}},
+		Tasks:        []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
+	}
+	requests := make(chan ipc.Request, 1)
+	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
+		requests <- request
+		snapshot := ipc.Snapshot{State: st, ActiveTaskInAlternateScreen: true}
+		return ipc.Response{OK: true, Snapshot: &snapshot}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	model := ClientModel{
+		cfg:      cfg,
+		runtime:  rt,
+		clientID: "client",
+		width:    80,
+		height:   8,
+		snapshot: ipc.Snapshot{
+			State:                       st,
+			CodexTitle:                  "Shell",
+			CodexContent:                "pager page 1",
+			CodexPlainLines:             []string{"pager page 1"},
+			CodexScrollback:             "pager page 1",
+			CodexScrollbackLines:        []string{"pager page 1"},
+			ActiveTaskInAlternateScreen: true,
+		},
+	}
+	area, ok := model.codexFrameArea()
+	if !ok {
+		t.Fatal("expected codex frame area")
+	}
+
+	updated, cmd := model.handleMouse(tea.MouseMsg{
+		X:      area.x + 6,
+		Y:      area.y + 6,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+
+	if cmd == nil {
+		t.Fatal("alternate-screen terminal wheel should forward input")
+	}
+	if model.codexScrollOffset != 0 {
+		t.Fatalf("forwarded wheel should not move Weft scrollback, got offset %d", model.codexScrollOffset)
+	}
+	if response, ok := cmd().(clientResponseMsg); !ok || response.err != nil {
+		t.Fatalf("client command response = %#v", response)
+	}
+	select {
+	case request := <-requests:
+		if request.Command != "task_input" {
+			t.Fatalf("request command = %q, want task_input", request.Command)
+		}
+		if got, want := request.Args["encoded"], "\x1b[<64;7;7M"; got != want {
+			t.Fatalf("encoded wheel = %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for forwarded wheel request")
+	}
+}
+
+func TestTerminalMouseWheelInputEncodesSGRWheel(t *testing.T) {
+	got, ok := terminalMouseWheelInput(tea.MouseEvent{
+		X:      11,
+		Y:      4,
+		Ctrl:   true,
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	})
+	if !ok {
+		t.Fatal("expected encoded terminal wheel input")
+	}
+	if want := "\x1b[<81;12;5M"; got != want {
+		t.Fatalf("encoded terminal wheel = %q, want %q", got, want)
+	}
+}
+
 func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 	model := ClientModel{
 		cfg:    config.DefaultConfig(),
@@ -394,15 +482,16 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 				SelectedTaskID:      "a",
 				SelectedWorkspaceID: "w",
 				Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Tasks:               []state.Task{{ID: "a", WorkspaceID: "w"}},
+				Tasks:               []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
 			},
-			NavWidth:             minTwoPaneNavWidth,
-			CodexTitle:           "Codex",
-			CodexContent:         strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
-			CodexPlainLines:      []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
-			CodexScrollback:      strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
-			CodexScrollbackLines: []string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
-			GroupCursor:          1,
+			NavWidth:                    minTwoPaneNavWidth,
+			CodexTitle:                  "Codex",
+			CodexContent:                strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
+			CodexPlainLines:             []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+			CodexScrollback:             strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
+			CodexScrollbackLines:        []string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+			GroupCursor:                 1,
+			ActiveTaskInAlternateScreen: true,
 		},
 	}
 	area, ok := model.codexFrameArea()

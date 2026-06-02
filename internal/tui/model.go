@@ -205,19 +205,29 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		title = m.renderTaskTitle(*active)
 	}
 	return ipc.Snapshot{
-		State:                  m.state,
-		CodexTitle:             title,
-		CodexContent:           content,
-		CodexPlainLines:        plainLines,
-		CodexScrollback:        scrollbackContent,
-		CodexScrollbackLines:   scrollbackPlainLines,
-		LoadingText:            loadingText,
-		LoadingTaskIDs:         m.loadingTaskIDs(),
-		TaskOperationStartedAt: m.taskOperationStartedAtForSnapshot(),
-		Message:                m.message,
-		NavWidth:               m.targetNavWidth(),
-		GroupCursor:            m.groupCursor,
+		State:                       m.state,
+		CodexTitle:                  title,
+		CodexContent:                content,
+		CodexPlainLines:             plainLines,
+		CodexScrollback:             scrollbackContent,
+		CodexScrollbackLines:        scrollbackPlainLines,
+		ActiveTaskInAlternateScreen: m.activeTaskInAlternateScreen(),
+		LoadingText:                 loadingText,
+		LoadingTaskIDs:              m.loadingTaskIDs(),
+		TaskOperationStartedAt:      m.taskOperationStartedAtForSnapshot(),
+		Message:                     m.message,
+		NavWidth:                    m.targetNavWidth(),
+		GroupCursor:                 m.groupCursor,
 	}
+}
+
+func (m Model) activeTaskInAlternateScreen() bool {
+	active := state.ActiveTask(m.state)
+	if active == nil {
+		return false
+	}
+	screen := m.screens[active.ID]
+	return screen != nil && screen.InAlternateScreen()
 }
 
 func (m *Model) PrepareUpgradeResume() codexsession.Report {

@@ -59,6 +59,30 @@ func TestTerminalScreenAlternateScreenClearsPreviousContent(t *testing.T) {
 	}
 }
 
+func TestTerminalScreenTracksAlternateScreenMode(t *testing.T) {
+	screen := NewTerminalScreen(20, 5)
+
+	screen.Write("\x1b[?1049h")
+	if !screen.InAlternateScreen() {
+		t.Fatal("screen should enter alternate screen on ?1049h")
+	}
+
+	screen.Write("\x1b[?1049l")
+	if screen.InAlternateScreen() {
+		t.Fatal("screen should exit alternate screen on ?1049l")
+	}
+
+	screen.Write("\x1b[?47h")
+	if !screen.InAlternateScreen() {
+		t.Fatal("screen should enter alternate screen on ?47h")
+	}
+
+	screen.Write("\x1bc")
+	if screen.InAlternateScreen() {
+		t.Fatal("full terminal reset should leave alternate screen mode")
+	}
+}
+
 func TestTerminalScreenWrapsLongPrintableLines(t *testing.T) {
 	screen := NewTerminalScreen(5, 3)
 

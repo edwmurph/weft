@@ -32,23 +32,24 @@ type terminalCursorOverlay struct {
 const terminalScrollbackLimit = 2000
 
 type TerminalScreen struct {
-	cols          int
-	rows          int
-	cells         [][]terminalCell
-	history       [][]terminalCell
-	row           int
-	col           int
-	cursorVisible bool
-	cursorShape   terminalCursorShape
-	cwd           string
-	savedRow      int
-	savedCol      int
-	scrollTop     int
-	scrollBottom  int
-	originMode    bool
-	style         cellbuf.Style
-	defaults      cellbuf.Style
-	parser        *ansi.Parser
+	cols            int
+	rows            int
+	cells           [][]terminalCell
+	history         [][]terminalCell
+	row             int
+	col             int
+	cursorVisible   bool
+	cursorShape     terminalCursorShape
+	cwd             string
+	savedRow        int
+	savedCol        int
+	scrollTop       int
+	scrollBottom    int
+	originMode      bool
+	alternateScreen bool
+	style           cellbuf.Style
+	defaults        cellbuf.Style
+	parser          *ansi.Parser
 }
 
 func NewTerminalScreen(cols int, rows int) *TerminalScreen {
@@ -136,6 +137,10 @@ func (s *TerminalScreen) ScrollbackString() string {
 
 func (s *TerminalScreen) LastCWD() string {
 	return s.cwd
+}
+
+func (s *TerminalScreen) InAlternateScreen() bool {
+	return s.alternateScreen
 }
 
 func plainRowsString(rows [][]terminalCell) string {
@@ -327,6 +332,7 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 	case 'h', 'l':
 		if prefix == '?' {
 			if paramsContain(params, 47, 1047, 1049) {
+				s.alternateScreen = final == 'h'
 				s.history = nil
 				s.resetScrollRegion()
 				s.clearAll()
@@ -353,6 +359,7 @@ func (s *TerminalScreen) handleESC(cmd ansi.Cmd) {
 		s.history = nil
 		s.resetScrollRegion()
 		s.originMode = false
+		s.alternateScreen = false
 		s.cursorVisible = true
 		s.cursorShape = terminalCursorBlock
 		s.clearAll()

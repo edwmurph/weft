@@ -1205,6 +1205,87 @@ func TestTaskConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	assertDashboardNotCorrupt(t, clientOutput(), false)
 }
 
+func TestTaskConsolePagerWheelForwardsToAlternateScreenShellE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	pagerShell := writeAlternateScreenPagerShell(t, tmp, "fake-pager-shell.sh")
+	configText := fmt.Sprintf(`
+default_task_type = "shell"
+
+[task_types.codex]
+command = %q
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = %q
+badge = "[shell]"
+title_template = "Shell"
+`, fakeCodex, shellQuote(pagerShell))
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+
+	pane := "pager-wheel-client"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Tasks")
+	})
+	assertClientEnablesMouseTracking(t, capturePaneEscaped(t, env, pane))
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		active := state.ActiveTask(st)
+		return active != nil && active.TypeID == "shell" && st.Focus == state.FocusConsole
+	})
+	capture := waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "pager page 1") &&
+			strings.Contains(capture, "visible page 1 line 10")
+	})
+	if strings.Contains(capture, "pager page 2") {
+		t.Fatalf("pager advanced before wheel input:\n%s", capture)
+	}
+
+	writeClientInput(t, "\x1b[<64;7;7M")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "pager page 2") &&
+			strings.Contains(capture, "visible page 2 line 10") &&
+			!strings.Contains(capture, "visible page 1 line 10")
+	})
+
+	writeClientInput(t, "\x1b[<65;7;7M")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "pager page 1") &&
+			strings.Contains(capture, "visible page 1 line 10") &&
+			!strings.Contains(capture, "visible page 2 line 10")
+	})
+	assertDashboardNotCorrupt(t, clientOutput(), false)
+}
+
 func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
@@ -3373,6 +3454,42 @@ func writeScrollbackFakeCodex(t *testing.T, dir string, name string) string {
 		t.Fatal(err)
 	}
 	return fakeCodex
+}
+
+func writeAlternateScreenPagerShell(t *testing.T, dir string, name string) string {
+	t.Helper()
+	pager := filepath.Join(dir, name)
+	if err := os.WriteFile(pager, []byte(
+		"#!/bin/bash\n"+
+			"printf '\\033]2;Pager Shell Ready\\007'\n"+
+			"saved_stty=$(stty -g 2>/dev/null || true)\n"+
+			"cleanup() {\n"+
+			"  if [ -n \"$saved_stty\" ]; then stty \"$saved_stty\" 2>/dev/null || true; else stty sane 2>/dev/null || true; fi\n"+
+			"  printf '\\033[?1049l'\n"+
+			"  exit 0\n"+
+			"}\n"+
+			"trap cleanup HUP INT TERM\n"+
+			"stty raw -echo -isig 2>/dev/null || true\n"+
+			"page=1\n"+
+			"render_page() {\n"+
+			"  printf '\\033[?1049h\\033[2J\\033[H'\n"+
+			"  printf 'pager page %s\\r\\n' \"$page\"\n"+
+			"  i=1\n"+
+			"  while [ \"$i\" -le 10 ]; do printf 'visible page %s line %02d\\r\\n' \"$page\" \"$i\"; i=$((i + 1)); done\n"+
+			"}\n"+
+			"render_page\n"+
+			"seq=''\n"+
+			"while IFS= read -r -s -n 1 ch; do\n"+
+			"  if [ \"$ch\" = $'q' ]; then cleanup; fi\n"+
+			"  seq=\"$seq$ch\"\n"+
+			"  if [[ \"$seq\" == *$'\\033[<64;'*M ]]; then page=2; render_page; seq=''; fi\n"+
+			"  if [[ \"$seq\" == *$'\\033[<65;'*M ]]; then page=1; render_page; seq=''; fi\n"+
+			"  if [ \"${#seq}\" -gt 32 ]; then seq=''; fi\n"+
+			"done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return pager
 }
 
 func writeExitOnInterruptFakeCodex(t *testing.T, dir string, name string) string {
