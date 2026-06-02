@@ -15,13 +15,18 @@ import (
 	"github.com/edwmurph/weft/internal/version"
 )
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 type Request struct {
-	ProtocolVersion int               `json:"protocol_version,omitempty"`
-	ClientVersion   string            `json:"client_version,omitempty"`
-	Command         string            `json:"command"`
-	Args            map[string]string `json:"args,omitempty"`
+	ProtocolVersion  int               `json:"protocol_version,omitempty"`
+	ClientVersion    string            `json:"client_version,omitempty"`
+	ClientID         string            `json:"client_id,omitempty"`
+	Width            int               `json:"width,omitempty"`
+	Height           int               `json:"height,omitempty"`
+	LaunchWorkspace  string            `json:"launch_workspace,omitempty"`
+	ClientExecutable string            `json:"client_executable,omitempty"`
+	Command          string            `json:"command"`
+	Args             map[string]string `json:"args,omitempty"`
 }
 
 type Response struct {

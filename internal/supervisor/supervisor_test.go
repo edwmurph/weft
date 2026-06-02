@@ -48,7 +48,7 @@ func TestSupervisorServesHandshakeStatusAndStructuredErrors(t *testing.T) {
 	_, err = ipc.Call(rt.SocketPath, ipc.Request{
 		Command:       "attach_client",
 		ClientVersion: "7.8.0",
-		Args:          map[string]string{"client_id": "dashboard-1"},
+		ClientID:      "dashboard-1",
 	}, time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -162,11 +162,9 @@ func TestRepeatedAttachDoesNotReselectLaunchWorkspace(t *testing.T) {
 	}
 
 	attach := ipc.Request{
-		Command: "attach_client",
-		Args: map[string]string{
-			"client_id":        "dashboard-1",
-			"launch_workspace": rt.Workspace,
-		},
+		Command:         "attach_client",
+		ClientID:        "dashboard-1",
+		LaunchWorkspace: rt.Workspace,
 	}
 	if _, err := ipc.Call(rt.SocketPath, attach, time.Second); err != nil {
 		t.Fatal(err)

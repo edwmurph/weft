@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-02 - IPC metadata hard cutover
+
+- Request: Remove legacy unneeded code with a hard cutover, preserving the current supervisor-owned workspace/group/task model.
+- Suggestions: Move client metadata out of command `Args` into typed IPC request fields, bump the IPC protocol, make old `client_id`/`width`/`height` entries inside command args fail as unsupported arguments, update `spec.md`, and make aggregate live integration waits slightly more tolerant without weakening assertions.
+- Outcome: Implemented and verified in `.worktrees/legacy-prune`; awaiting review.
+- Evidence: `internal/ipc/ipc.go`, `internal/supervisor/supervisor.go`, `internal/tui/client.go`, `internal/tui/client_input.go`, `internal/tui/model.go`, `tests/integration`, `spec.md`; `go run golang.org/x/tools/cmd/deadcode@latest ./...`, `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`.
+- Deferred: None.
+
 ## 2026-06-01 - Strict IPC protocol cutover
 
 - Request: Remove the legacy supervisor IPC compatibility path that accepted raw requests with missing `protocol_version`, and delete the unreachable engine-side `close_client` handler.

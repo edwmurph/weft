@@ -72,7 +72,7 @@ func TestVersionReportIncludesCliSupervisorAndDashboardVersions(t *testing.T) {
 		"cli version: " + weftversion.Version,
 		"supervisor version: 7.8.1",
 		"main dashboard version: 7.8.0",
-		"protocol: cli 1, supervisor 1",
+		fmt.Sprintf("protocol: cli %d, supervisor %d", ipc.ProtocolVersion, ipc.ProtocolVersion),
 		"upgrade: current",
 	} {
 		if !strings.Contains(report, expected) {
@@ -88,7 +88,7 @@ func TestVersionReportHandlesMissingSupervisor(t *testing.T) {
 		"cli version: " + weftversion.Version,
 		"supervisor version: not running",
 		"main dashboard version: not attached",
-		"protocol: cli 1",
+		fmt.Sprintf("protocol: cli %d", ipc.ProtocolVersion),
 	} {
 		if !strings.Contains(report, expected) {
 			t.Fatalf("version report missing %q:\n%s", expected, report)

@@ -112,7 +112,7 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = typed.Width
 		m.height = typed.Height
-		return m, m.request("resize", map[string]string{"width": strconv.Itoa(typed.Width), "height": strconv.Itoa(typed.Height)})
+		return m, m.request("resize", nil)
 	case clientResponseMsg:
 		if typed.err != nil {
 			if typed.command == "attach_client" && typed.response.Error == nil {
@@ -614,14 +614,8 @@ func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
 	width := m.width
 	height := m.height
 	return func() tea.Msg {
-		args = clientRequestArgs(rt, clientID, command, args)
-		if width > 0 {
-			args["width"] = strconv.Itoa(width)
-		}
-		if height > 0 {
-			args["height"] = strconv.Itoa(height)
-		}
-		response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, clientRequestTimeout(command))
+		request := clientRequest(rt, clientID, width, height, command, args)
+		response, err := ipc.Call(rt.SocketPath, request, clientRequestTimeout(command))
 		return clientResponseMsg{command: command, response: response, err: err}
 	}
 }
@@ -633,18 +627,27 @@ func clientRequestTimeout(command string) time.Duration {
 	return 2 * time.Second
 }
 
-func clientRequestArgs(rt config.Runtime, clientID string, command string, args map[string]string) map[string]string {
-	next := cloneArgs(args)
-	next["client_id"] = clientID
+func clientRequest(rt config.Runtime, clientID string, width int, height int, command string, args map[string]string) ipc.Request {
+	request := ipc.Request{
+		Command:  command,
+		Args:     cloneArgs(args),
+		ClientID: clientID,
+	}
+	if width > 0 {
+		request.Width = width
+	}
+	if height > 0 {
+		request.Height = height
+	}
 	if command == "attach_client" {
-		next["launch_workspace"] = rt.Workspace
+		request.LaunchWorkspace = rt.Workspace
 	}
 	if command == "upgrade_resume" {
 		if exe := clientExecutablePath(); exe != "" {
-			next["client_executable"] = exe
+			request.ClientExecutable = exe
 		}
 	}
-	return next
+	return request
 }
 
 func clientExecutablePath() string {

@@ -447,8 +447,8 @@ func (r *clientInputRouter) handleTerminalKeyboard(raw []byte) {
 }
 
 func (r *clientInputRouter) sendIPC(command string, args map[string]string) error {
-	args = clientRequestArgs(r.rt, r.clientID, command, args)
-	_, err := ipc.Call(r.rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
+	request := clientRequest(r.rt, r.clientID, 0, 0, command, args)
+	_, err := ipc.Call(r.rt.SocketPath, request, 2*time.Second)
 	return err
 }
 

@@ -1422,23 +1422,11 @@ func unsupportedIPCArg(args map[string]string, allowed ...string) string {
 		allowedSet[key] = true
 	}
 	for key := range args {
-		if ipcTransportArg(key) {
-			continue
-		}
 		if !allowedSet[key] {
 			return key
 		}
 	}
 	return ""
-}
-
-func ipcTransportArg(key string) bool {
-	switch key {
-	case "client_id", "width", "height":
-		return true
-	default:
-		return false
-	}
 }
 
 func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
@@ -1456,8 +1444,8 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		m.message = "refreshed"
 		return m.ipcResponse("refreshed Weft dashboard"), nil
 	case "resize":
-		width, _ := strconv.Atoi(request.Args["width"])
-		height, _ := strconv.Atoi(request.Args["height"])
+		width := request.Width
+		height := request.Height
 		if width > 0 {
 			m.width = width
 		}

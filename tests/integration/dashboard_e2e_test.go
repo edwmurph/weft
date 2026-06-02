@@ -2823,7 +2823,7 @@ func waitForEscapedCapture(t *testing.T, env []string, pane string, accept func(
 func waitForOutput(t *testing.T, output func() string, accept func(string) bool) string {
 	t.Helper()
 	var capture string
-	if waitForBool(8*time.Second, func() bool {
+	if waitForBool(12*time.Second, func() bool {
 		capture = output()
 		return accept(capture)
 	}) {

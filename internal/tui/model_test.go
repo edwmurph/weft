@@ -363,7 +363,7 @@ func TestApplyLaunchWorkspaceSelectsExistingWorkspace(t *testing.T) {
 	}
 }
 
-func TestSnapshotLaunchWorkspaceArgDoesNotReselectWorkspace(t *testing.T) {
+func TestSnapshotLaunchWorkspaceFieldDoesNotReselectWorkspace(t *testing.T) {
 	rt := testRuntime(t)
 	other := t.TempDir()
 	launch := t.TempDir()
@@ -375,7 +375,7 @@ func TestSnapshotLaunchWorkspaceArgDoesNotReselectWorkspace(t *testing.T) {
 	next.SelectedWorkspaceID = "w"
 	model := NewModel(rt, config.DefaultConfig(), next)
 
-	response, _ := model.handleIPC(ipc.Request{Command: "snapshot", Args: map[string]string{"launch_workspace": launch}})
+	response, _ := model.handleIPC(ipc.Request{Command: "snapshot", LaunchWorkspace: launch})
 
 	if !response.OK {
 		t.Fatalf("snapshot response = %#v", response)
@@ -560,30 +560,30 @@ func TestClientRetriesTransportAttachFailures(t *testing.T) {
 	}
 }
 
-func TestClientRequestArgsOnlySelectLaunchWorkspaceOnAttach(t *testing.T) {
+func TestClientRequestMetadataOnlySelectsLaunchWorkspaceOnAttach(t *testing.T) {
 	rt := config.Runtime{Workspace: "/tmp/project"}
 
-	attach := clientRequestArgs(rt, "client-1", "attach_client", nil)
-	if attach["client_id"] != "client-1" {
-		t.Fatalf("attach client_id = %q", attach["client_id"])
+	attach := clientRequest(rt, "client-1", 120, 40, "attach_client", nil)
+	if attach.ClientID != "client-1" || attach.Width != 120 || attach.Height != 40 {
+		t.Fatalf("attach metadata = %#v", attach)
 	}
-	if attach["launch_workspace"] != rt.Workspace {
-		t.Fatalf("attach launch workspace = %q", attach["launch_workspace"])
+	if attach.LaunchWorkspace != rt.Workspace {
+		t.Fatalf("attach launch workspace = %q", attach.LaunchWorkspace)
 	}
 
-	nav := clientRequestArgs(rt, "client-1", "nav_move", map[string]string{"delta": "1"})
-	if nav["client_id"] != "client-1" || nav["delta"] != "1" {
-		t.Fatalf("nav args = %#v", nav)
+	nav := clientRequest(rt, "client-1", 120, 40, "nav_move", map[string]string{"delta": "1"})
+	if nav.ClientID != "client-1" || nav.Width != 120 || nav.Height != 40 || nav.Args["delta"] != "1" {
+		t.Fatalf("nav request = %#v", nav)
 	}
-	if _, ok := nav["launch_workspace"]; ok {
+	if nav.LaunchWorkspace != "" {
 		t.Fatalf("nav request should not reselect launch workspace: %#v", nav)
 	}
 
-	upgrade := clientRequestArgs(rt, "client-1", "upgrade_resume", nil)
-	if upgrade["client_id"] != "client-1" || upgrade["client_executable"] == "" {
-		t.Fatalf("upgrade args = %#v", upgrade)
+	upgrade := clientRequest(rt, "client-1", 120, 40, "upgrade_resume", nil)
+	if upgrade.ClientID != "client-1" || upgrade.ClientExecutable == "" {
+		t.Fatalf("upgrade request = %#v", upgrade)
 	}
-	if _, ok := upgrade["launch_workspace"]; ok {
+	if upgrade.LaunchWorkspace != "" {
 		t.Fatalf("upgrade request should not reselect launch workspace: %#v", upgrade)
 	}
 }
@@ -1660,7 +1660,7 @@ func TestIPCNewCreatesRequestedTaskType(t *testing.T) {
 	}
 }
 
-func TestIPCNewAllowsTransportMetadata(t *testing.T) {
+func TestIPCNewRejectsTransportMetadataInArgs(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	model.state.Tasks = nil
@@ -1668,16 +1668,17 @@ func TestIPCNewAllowsTransportMetadata(t *testing.T) {
 
 	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{
 		"client_id": "dashboard-1",
-		"width":     "120",
-		"height":    "40",
 	}})
 	defer killPTYs(model)
 
-	if !response.OK || cmd == nil {
+	if response.OK || cmd != nil {
 		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
 	}
-	if len(model.state.Tasks) != 1 || model.state.Tasks[0].TypeID != config.DefaultTaskTypeCodex {
-		t.Fatalf("tasks = %#v", model.state.Tasks)
+	if response.Error == nil || response.Error.Code != "unsupported_arg" || !strings.Contains(response.Message, "client_id") {
+		t.Fatalf("expected unsupported metadata arg error: %#v", response)
+	}
+	if len(model.state.Tasks) != 0 {
+		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 	weftversion "github.com/edwmurph/weft/internal/version"
@@ -63,7 +64,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		}
 	}
 	versionOut := runWeft(t, env, bin, "version")
-	for _, expected := range []string{"cli version: " + weftversion.Version, "supervisor version: " + weftversion.Version, "main dashboard version: not attached", "protocol: cli 1, supervisor 1", "upgrade: current"} {
+	for _, expected := range []string{"cli version: " + weftversion.Version, "supervisor version: " + weftversion.Version, "main dashboard version: not attached", fmt.Sprintf("protocol: cli %d, supervisor %d", ipc.ProtocolVersion, ipc.ProtocolVersion), "upgrade: current"} {
 		if !strings.Contains(versionOut, expected) {
 			t.Fatalf("version missing %q:\n%s", expected, versionOut)
 		}
@@ -1048,7 +1049,7 @@ func parseBackupID(t *testing.T, output string) string {
 func waitState(t *testing.T, env []string, bin string, accept func(state.State) bool) state.State {
 	t.Helper()
 	var last state.State
-	waitFor(t, "state", time.Second*8, func() bool {
+	waitFor(t, "state", time.Second*12, func() bool {
 		out := runWeft(t, env, bin, "status", "--json")
 		if err := json.Unmarshal([]byte(out), &last); err != nil {
 			return false

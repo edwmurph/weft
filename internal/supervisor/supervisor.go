@@ -286,11 +286,11 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 	applyRequestSize(engine, request)
 	switch request.Command {
 	case "attach_client":
-		clientID := request.Args["client_id"]
+		clientID := request.ClientID
 		if clientID == "" {
 			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required"), request, control), nil
 		}
-		if launchWorkspace := strings.TrimSpace(request.Args["launch_workspace"]); launchWorkspace != "" && clients.activeID != clientID {
+		if launchWorkspace := strings.TrimSpace(request.LaunchWorkspace); launchWorkspace != "" && clients.activeID != clientID {
 			engine.ApplyLaunchWorkspace(launchWorkspace)
 		}
 		if clients.activeID != "" && clients.activeID != clientID {
@@ -303,7 +303,7 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		applyClientState(&response, clients, clientID)
 		return withSupervisorFields(response, request, control), nil
 	case "client_detached":
-		clientID := request.Args["client_id"]
+		clientID := request.ClientID
 		if clients.activeID == clientID {
 			clients.activeID = ""
 			clients.activeVersion = ""
@@ -325,18 +325,18 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		return withSupervisorFields(response, request, control), nil
 	case "handshake":
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "Weft supervisor is running"}
-		applyClientState(&response, clients, request.Args["client_id"])
+		applyClientState(&response, clients, request.ClientID)
 		return withSupervisorFields(response, request, control), nil
 	case "upgrade_resume":
 		response := upgradeResume(rt, engine, control, request, cancel)
-		applyClientState(&response, clients, request.Args["client_id"])
+		applyClientState(&response, clients, request.ClientID)
 		return withSupervisorFields(response, request, control), nil
 	case "shutdown":
 		go cancel()
 		return withSupervisorFields(ipc.Response{OK: true, Message: "Weft supervisor stopped"}, request, control), nil
 	default:
 		response, cmd := engine.HandleSupervisorRequest(request)
-		applyClientState(&response, clients, request.Args["client_id"])
+		applyClientState(&response, clients, request.ClientID)
 		return withSupervisorFields(response, request, control), cmd
 	}
 }
@@ -345,10 +345,10 @@ func applyRequestSize(engine *tui.Model, request ipc.Request) {
 	if request.Command == "resize" {
 		return
 	}
-	if request.Args["width"] == "" && request.Args["height"] == "" {
+	if request.Width <= 0 && request.Height <= 0 {
 		return
 	}
-	engine.HandleSupervisorRequest(ipc.Request{Command: "resize", Args: request.Args})
+	engine.HandleSupervisorRequest(ipc.Request{Command: "resize", Width: request.Width, Height: request.Height})
 }
 
 func snapshotPtr(snapshot ipc.Snapshot) *ipc.Snapshot {
@@ -430,7 +430,7 @@ func supervisorSnapshotResponse(engine *tui.Model, message string) ipc.Response 
 }
 
 func restartRequestFromRequest(request ipc.Request) restartRequest {
-	exe := strings.TrimSpace(request.Args["client_executable"])
+	exe := strings.TrimSpace(request.ClientExecutable)
 	if exe == "" {
 		exe = strings.TrimSpace(os.Getenv("WEFT_EXECUTABLE"))
 	}
