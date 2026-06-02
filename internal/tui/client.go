@@ -563,7 +563,7 @@ func (m *ClientModel) startNewTaskMenu() {
 		return
 	}
 	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
-	m.newTaskField = 2
+	m.newTaskField = 0
 	m.newTaskSilent = false
 	m.newTaskTypeOpen = false
 	configureNewTaskTitleInput(&m.input, m.cfg, m.newTaskIndex)

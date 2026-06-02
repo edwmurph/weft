@@ -202,6 +202,8 @@ title_template = "Shell"
 			strings.Contains(capture, "Shell") &&
 			!strings.Contains(capture, "[shell] Shell")
 	})
+	directRun(t, env, "send-keys", "-t", pane, "Tab")
+	directRun(t, env, "send-keys", "-t", pane, "Tab")
 	for range "Shell" {
 		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 	}
@@ -1555,6 +1557,21 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	timedStep(t, "keyboard n creates task", func() {
 		started := time.Now()
 		directRun(t, env, "send-keys", "-t", pane, "n")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "New task") &&
+				strings.Contains(capture, "Type") &&
+				strings.Contains(capture, "Codex")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Right")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "New task") &&
+				strings.Contains(capture, "Shell")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Left")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "New task") &&
+				strings.Contains(capture, "Codex")
+		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Starting Codex") &&
@@ -2562,7 +2579,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 				strings.Contains(capture, "Tab move") &&
 				strings.Contains(capture, "Space type/toggle")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "Up")
+		directRun(t, env, "send-keys", "-t", pane, "Down")
 		directRun(t, env, "send-keys", "-t", pane, "Space")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "New task") &&

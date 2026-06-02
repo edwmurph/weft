@@ -730,6 +730,9 @@ func TestClientHoverSelectsNewTaskRowAndEnterOpensMenu(t *testing.T) {
 	if model.mode != modeNewTask {
 		t.Fatalf("enter should open new task menu, mode=%s", model.mode)
 	}
+	if model.newTaskField != 0 || model.input.Focused() {
+		t.Fatalf("new task menu should start on type field, field=%d input focused=%t", model.newTaskField, model.input.Focused())
+	}
 }
 
 func assertStyleRGB(t *testing.T, got color.Color, want color.RGBA) {
