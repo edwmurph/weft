@@ -101,7 +101,7 @@ jobs:
           fi
 
           git add VERSION internal/version/version.go
-          git commit -m "Release v${VERSION} [skip ci]"
+          git commit -m "Release v${VERSION}"
           git tag -a "$TAG" -m "$TAG"
           git push origin HEAD:main --follow-tags
 

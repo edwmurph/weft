@@ -174,9 +174,9 @@ Review these before upgrading.
 	}
 }
 
-func TestRenderReleaseNotesSkipsReleaseMetadataAndSkipCICommits(t *testing.T) {
+func TestRenderReleaseNotesSkipsReleaseMetadataAndCISkipCommits(t *testing.T) {
 	notes := RenderReleaseNotes([]Commit{
-		{Subject: "Release v5.3.0 [skip ci]"},
+		{Subject: "Release v5.3.0"},
 		{Subject: "chore: update generated version [ci skip]"},
 		{Subject: "fix: publish notes file"},
 	})
