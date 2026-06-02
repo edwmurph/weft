@@ -64,7 +64,6 @@ var (
 	workspaceInfoBoxBorderStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	emptyLogoStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
 	emptyLogoAccentStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
-	emptyVersionStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	newWorkspaceCardHintStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -1287,12 +1286,10 @@ func renderEmptyCodexContentWithFrame(width int, height int, canCreateTask bool,
 			content = append(content, renderEmptyLogoLine(line, logoWidth, previewEmpty, emptyArtFrame, index))
 		}
 		content = append(content, "")
-		content = append(content, emptyVersionStyle.Render(centerVisual(version.Label(), logoWidth)))
-		content = append(content, "")
 		content = append(content, centerVisual(emptyTitle, logoWidth), centerVisual(hint, logoWidth))
 		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
 	}
-	content = append(content, version.Label(), emptyTitle, hint)
+	content = append(content, emptyTitle, hint)
 	return renderCenteredCodexContent(content, width, height)
 }
 

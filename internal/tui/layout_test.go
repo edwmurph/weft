@@ -249,6 +249,9 @@ func TestRenderTaskPreviewEmptyStateUsesPreviewLogoAndAnimation(t *testing.T) {
 	if !strings.Contains(stripped, "No task selected") || !strings.Contains(stripped, "◆━━━━━╋━━━━━➤ ") {
 		t.Fatalf("empty preview missing preview logo:\n%s", stripped)
 	}
+	if strings.Contains(stripped, weftversion.Label()) {
+		t.Fatalf("empty preview should not render dashboard version text outside the Workspaces pane:\n%s", stripped)
+	}
 	if strings.Contains(stripped, "●─────┼────▶") {
 		t.Fatalf("empty preview should use the shared diamond graph, not the old static logo arrow:\n%s", stripped)
 	}
@@ -1098,8 +1101,8 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 	if hintIndex < 0 || logoIndex > hintIndex {
 		t.Fatalf("empty dashboard should render wordmark above existing hint:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, weftversion.Label()) {
-		t.Fatalf("empty dashboard missing version label:\n%s", stripped)
+	if strings.Contains(stripped, weftversion.Label()) {
+		t.Fatalf("empty task pane should not render dashboard version text outside the Workspaces pane:\n%s", stripped)
 	}
 	if strings.Contains(stripped, "Task Live Preview") || strings.Contains(stripped, " … │") {
 		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
@@ -1124,13 +1127,10 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 			t.Fatalf("logo row %d should preserve art spacing inside one centered block:\nwant prefix %q\ngot         %q", index, expectedLeft+want, got)
 		}
 	}
-	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+1]); !strings.HasPrefix(got, expectedLeft+centerVisual(weftversion.Label(), logoWidth)) {
-		t.Fatalf("empty version should align inside centered logo block, got %q", got)
-	}
-	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+3]); !strings.HasPrefix(got, expectedLeft+centerVisual("No task open", logoWidth)) {
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+1]); !strings.HasPrefix(got, expectedLeft+centerVisual("No task open", logoWidth)) {
 		t.Fatalf("empty title should align inside centered logo block, got %q", got)
 	}
-	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+4]); !strings.HasPrefix(got, expectedLeft+centerVisual("Press n to create one.", logoWidth)) {
+	if got := ansi.Strip(content[logoStart+len(emptyWeftLogo)+2]); !strings.HasPrefix(got, expectedLeft+centerVisual("Press n to create one.", logoWidth)) {
 		t.Fatalf("empty hint should align inside centered logo block, got %q", got)
 	}
 }
