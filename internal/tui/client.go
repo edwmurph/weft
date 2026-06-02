@@ -222,7 +222,7 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 	return workspaceRenderOptions{
 		loadingTasks:             loadingTaskSet(m.snapshot.LoadingTaskIDs),
 		taskOperationStartedAt:   m.snapshot.TaskOperationStartedAt,
-		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg),
+		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg, m.upgradeReport()),
 		workspaceInfoText:        m.workspaceInfoHeaderText(),
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
 		newTaskRowSelected:       m.newTaskRowSelected,
@@ -581,7 +581,7 @@ func (m *ClientModel) startUpgradeConfirm() {
 		return
 	}
 	if !m.canUpgradeResumeNow() {
-		m.message = upgradeResumeWaitingMessage(m.cfg, codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil), m.snapshot.State)
+		m.message = upgradeResumeWaitingMessage(m.cfg, m.upgradeReport(), m.snapshot.State)
 		return
 	}
 	m.confirm = confirmUpgradeResume
@@ -794,7 +794,20 @@ func (m ClientModel) hasLoadingAnimation() bool {
 		m.mode == modeNormal && previewPaneVisible(m.snapshot.State.NavOpen, m.width, m.snapshot.NavWidth)
 }
 
-func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config.Config) string {
+func (m ClientModel) upgradeReport() codexsession.Report {
+	return codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, m.snapshotTerminalForegroundActive)
+}
+
+func (m ClientModel) snapshotTerminalForegroundActive(taskID string) bool {
+	for _, id := range m.snapshot.TerminalForegroundTaskIDs {
+		if id == taskID {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config.Config, report codexsession.Report) string {
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
 	}
@@ -805,7 +818,6 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config
 		}
 		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop tasks before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
 	}
-	report := codexsession.BuildUpgradeReport(st, cfg, nil)
 	if len(report.TerminalBusy) > 0 {
 		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report)
 	}
@@ -915,15 +927,14 @@ func (m ClientModel) canUpgradePending() bool {
 }
 
 func (m ClientModel) canUpgradeResumeNow() bool {
-	return m.canUpgradePending() &&
-		codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil).CanUpgrade()
+	return m.canUpgradePending() && m.upgradeReport().CanUpgrade()
 }
 
 func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
 	if !upgrade.Compatible || !upgrade.RestartRequired {
 		return
 	}
-	report := codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil)
+	report := m.upgradeReport()
 	if len(report.Missing) == 0 || len(report.Busy) > 0 || time.Since(m.lastResumeScan) < time.Second {
 		return
 	}

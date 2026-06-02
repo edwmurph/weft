@@ -68,6 +68,7 @@ type Snapshot struct {
 	ActiveTaskInAlternateScreen bool                 `json:"active_task_in_alternate_screen,omitempty"`
 	LoadingText                 string               `json:"loading_text,omitempty"`
 	LoadingTaskIDs              []string             `json:"loading_task_ids,omitempty"`
+	TerminalForegroundTaskIDs   []string             `json:"terminal_foreground_task_ids,omitempty"`
 	TaskOperationStartedAt      map[string]time.Time `json:"task_operation_started_at,omitempty"`
 	Message                     string               `json:"message,omitempty"`
 	NavWidth                    int                  `json:"nav_width"`

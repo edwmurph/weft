@@ -214,6 +214,7 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		ActiveTaskInAlternateScreen: m.activeTaskInAlternateScreen(),
 		LoadingText:                 loadingText,
 		LoadingTaskIDs:              m.loadingTaskIDs(),
+		TerminalForegroundTaskIDs:   m.terminalForegroundTaskIDs(),
 		TaskOperationStartedAt:      m.taskOperationStartedAtForSnapshot(),
 		Message:                     m.message,
 		NavWidth:                    m.targetNavWidth(),

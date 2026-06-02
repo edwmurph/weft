@@ -872,6 +872,51 @@ func TestClientUpgradeAllowsIdleShellRestartWithSavedHistoryCWD(t *testing.T) {
 	}
 }
 
+func TestClientUpgradeBlocksForegroundShellTaskWithReadyStatus(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	st.Tasks[0].Title = "Server"
+	st.Tasks[0].Status = state.StatusReady
+	st.Workspaces[0].Title = "Core"
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK: true,
+		Snapshot: &ipc.Snapshot{
+			State:                     st,
+			NavWidth:                  92,
+			TerminalForegroundTaskIDs: []string{st.Tasks[0].ID},
+		},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Upgrade pending", "Wait for 1 shell task(s) to become idle", "Blocking:", "- workspace: Core", "  task: Server"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("foreground shell footer missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "Press U to upgrade") {
+		t.Fatalf("foreground shell upgrade action should not show:\n%s", got)
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode == modeConfirm {
+		t.Fatalf("foreground shell upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	}
+	for _, expected := range []string{"Blocking:", "- workspace: Core", "  task: Server"} {
+		if !strings.Contains(model.message, expected) {
+			t.Fatalf("blocked foreground shell message missing %q: %q", expected, model.message)
+		}
+	}
+}
+
 func TestClientUpgradeBlocksRunningShellTask(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithTask(rt.Workspace)

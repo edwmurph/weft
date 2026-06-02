@@ -708,6 +708,88 @@ command = %q
 	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade resume restart")
 }
 
+func TestDashboardUpgradeBlocksForegroundShellTask(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir := filepath.Join(tmp, "weft-home")
+	workspace := filepath.Join(tmp, "workspace")
+	for _, dir := range []string{runtimeDir, workspace} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	configText := fmt.Sprintf(`
+default_task_type = "shell"
+
+[task_types.codex]
+command = %q
+
+[task_types.shell]
+label = "Shell"
+kind = "terminal"
+command = %q
+badge = "[shell]"
+title_template = "{title}"
+`, fakeCodex, "exec /bin/sh -i")
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
+	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = newEnv
+		_ = cmd.Run()
+	})
+
+	runWeft(t, oldEnv, bin, "--no-attach")
+	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
+	runWeft(t, oldEnv, bin, "new", "Server")
+	st := waitState(t, oldEnv, bin, func(st state.State) bool {
+		return len(st.Tasks) == 1 && st.Tasks[0].TypeID == config.DefaultTaskTypeShell && st.Tasks[0].Status == state.StatusReady
+	})
+	taskID := st.Tasks[0].ID
+
+	pane := "upgrade-shell-blocked"
+	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Console")
+	})
+	directRun(t, newEnv, "send-keys", "-l", "-t", pane, "sleep 30")
+	directRun(t, newEnv, "send-keys", "-t", pane, "Enter")
+	waitState(t, newEnv, bin, func(st state.State) bool {
+		task := state.TaskByID(st, taskID)
+		return task != nil && task.Status == state.StatusRunning
+	})
+
+	directRun(t, newEnv, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") &&
+			strings.Contains(capture, "Upgrade pending") &&
+			strings.Contains(capture, "Wait for 1 shell task(s) to become idle") &&
+			strings.Contains(capture, "Blocking:") &&
+			strings.Contains(capture, "- workspace:") &&
+			strings.Contains(capture, "task: Server") &&
+			!strings.Contains(capture, "Press U to upgrade")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane, "u")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Blocking:") &&
+			strings.Contains(capture, "task: Server") &&
+			!strings.Contains(capture, "Upgrade supervisor?")
+	})
+	if latest := waitState(t, newEnv, bin, func(st state.State) bool {
+		return state.TaskByID(st, taskID) != nil
+	}); state.TaskByID(latest, taskID) == nil {
+		t.Fatalf("shell blocker test lost task %s: %#v", taskID, latest.Tasks)
+	}
+}
+
 func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")

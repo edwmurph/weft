@@ -25,6 +25,17 @@ func (m *Model) terminalForegroundProcessActive(taskID string) bool {
 	return pty != nil && pty.ForegroundProcessActive()
 }
 
+func (m *Model) terminalForegroundTaskIDs() []string {
+	ids := make([]string, 0, len(m.ptys))
+	for _, task := range m.state.Tasks {
+		if taskUsesCodexIntegration(m.cfg, task) || !m.terminalForegroundProcessActive(task.ID) {
+			continue
+		}
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
 func (m *Model) PrepareTerminalUpgradeSnapshots(taskIDs []string) error {
 	if len(taskIDs) == 0 {
 		return nil
