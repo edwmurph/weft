@@ -226,6 +226,9 @@ func TestRenderFormulaBuildsGoBinaryFromSource(t *testing.T) {
 	if strings.Contains(formula, `def caveats`) {
 		t.Fatalf("formula should not include caveats without breaking changes:\n%s", formula)
 	}
+	if strings.Contains(formula, "\n\n\n  test do") {
+		t.Fatalf("formula should not include an extra blank line before test block:\n%s", formula)
+	}
 }
 
 func TestRenderFormulaIncludesBreakingChangeCaveats(t *testing.T) {
