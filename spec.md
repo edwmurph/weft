@@ -63,6 +63,8 @@ Crossing from `0.x` to `1.0.0` requires a manual `Publish Homebrew` dispatch wit
 
 The publish workflow generates GitHub release notes from the shipped commits. Conventional Commit subjects provide the default user-facing bullet, and `Release-Notes:` body bullets replace that default when the subject is not descriptive enough.
 
+Pull request CI validates commit subjects before release automation sees them. Every PR commit must use one of the allowed release-note Conventional Commit subjects: `feat:`, `fix:`, `docs:`, `refactor:`, or `chore:`, with optional scopes such as `fix(tui):` and optional breaking markers such as `feat!:`.
+
 Breaking changes must be grouped first under `Breaking Changes` and must be visibly actionable for users before they upgrade. A breaking ship commit should use a Conventional Commit breaking marker such as `feat!:` or a `BREAKING CHANGE:` footer so the workflow classifies it correctly. The generated breaking-change entry includes the release-note summary, an `Impact:` line from the `BREAKING CHANGE:` footer when provided, and a `Migration:` line from a `Migration:`, `Migrate:`, `Upgrade:`, `Action Required:`, or `How to Migrate:` footer when provided. If a breaking marker is present but migration guidance is missing, the generated notes must still warn users to review the item before upgrading rather than blending the change into ordinary features or fixes.
 
 ## Supervisor
