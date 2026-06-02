@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -249,21 +248,8 @@ func Status(rt config.Runtime) (ipc.Response, error) {
 }
 
 func Shutdown(rt config.Runtime) error {
-	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "shutdown"}, time.Second)
-	if err != nil && shutdownNeedsProcessSignal(response, err) {
-		return signalSupervisorProcess(rt)
-	}
+	_, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "shutdown"}, time.Second)
 	return err
-}
-
-func shutdownNeedsProcessSignal(response ipc.Response, err error) bool {
-	if err == nil || !hasSupervisorResponse(response) {
-		return false
-	}
-	if response.Error != nil && response.Error.Code == "protocol_mismatch" {
-		return true
-	}
-	return strings.Contains(err.Error(), "unsupported protocol version")
 }
 
 func LockPath(rt config.Runtime) string {
@@ -276,78 +262,6 @@ func LogPath(rt config.Runtime) string {
 
 func PIDPath(rt config.Runtime) string {
 	return filepath.Join(rt.Dir, pidFile)
-}
-
-func signalSupervisorProcess(rt config.Runtime) error {
-	pid, err := readSupervisorPID(PIDPath(rt))
-	if err != nil {
-		return err
-	}
-	held, err := supervisorLockHeld(rt)
-	if err != nil {
-		return err
-	}
-	if !held {
-		return errors.New("supervisor lock is not held")
-	}
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return err
-	}
-	if err := process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH) {
-		return err
-	}
-	if waitForSupervisorProcessStop(rt, 2*time.Second) {
-		removeSupervisorRuntimeFiles(rt)
-		return nil
-	}
-	_ = process.Signal(syscall.SIGKILL)
-	if waitForSupervisorProcessStop(rt, 2*time.Second) {
-		removeSupervisorRuntimeFiles(rt)
-		return nil
-	}
-	return fmt.Errorf("supervisor process %d did not stop", pid)
-}
-
-func readSupervisorPID(path string) (int, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil || pid <= 0 {
-		return 0, fmt.Errorf("invalid supervisor pid file %s", path)
-	}
-	return pid, nil
-}
-
-func supervisorLockHeld(rt config.Runtime) (bool, error) {
-	lock, err := acquireLock(LockPath(rt))
-	if err == nil {
-		_ = lock.Close()
-		return false, nil
-	}
-	if errors.Is(err, ErrAlreadyRunning) {
-		return true, nil
-	}
-	return false, err
-}
-
-func waitForSupervisorProcessStop(rt config.Runtime, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		held, err := supervisorLockHeld(rt)
-		if err == nil && !held {
-			return true
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return false
-}
-
-func removeSupervisorRuntimeFiles(rt config.Runtime) {
-	_ = os.Remove(PIDPath(rt))
-	_ = os.Remove(rt.SocketPath)
 }
 
 func acquireLock(path string) (*os.File, error) {

@@ -750,7 +750,6 @@ Global `--clear`:
 - creates a runtime backup before shutdown
 - stops all task PTYs
 - stops the supervisor
-- can stop an incompatible older supervisor by signaling the recorded supervisor PID when IPC shutdown is rejected by a protocol mismatch
 - preserves config and state
 
 `weft refresh`:

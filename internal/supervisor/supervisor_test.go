@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -105,89 +104,6 @@ func TestSupervisorRejectsRawProtocolMismatch(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestShutdownStopsIncompatibleSupervisorByPID(t *testing.T) {
-	rt, _, _ := testRuntime(t)
-	if err := os.MkdirAll(rt.Dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	readyPath := filepath.Join(rt.Dir, "helper.ready")
-	cmd := exec.Command(os.Args[0], "-test.run=TestIncompatibleSupervisorProcessHelper")
-	cmd.Env = append(os.Environ(),
-		"WEFT_TEST_INCOMPATIBLE_SUPERVISOR_PROCESS=1",
-		"WEFT_TEST_LOCK_PATH="+LockPath(rt),
-		"WEFT_TEST_PID_PATH="+PIDPath(rt),
-		"WEFT_TEST_READY_PATH="+readyPath,
-	)
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	waited := false
-	t.Cleanup(func() {
-		if waited {
-			return
-		}
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
-	waitFor(t, "helper supervisor process", func() bool {
-		return fileExists(readyPath)
-	})
-
-	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
-		return ipc.Response{
-			OK:                false,
-			Message:           "unsupported protocol version 2",
-			Error:             &ipc.Error{Code: "protocol_mismatch", Message: "unsupported protocol version 2"},
-			ProtocolVersion:   1,
-			SupervisorVersion: "0.3.3",
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stop()
-
-	if err := Shutdown(rt); err != nil {
-		t.Fatalf("shutdown should signal incompatible supervisor process: %v", err)
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
-	select {
-	case <-done:
-		waited = true
-	case <-time.After(2 * time.Second):
-		t.Fatal("incompatible supervisor helper did not stop")
-	}
-	if fileExists(PIDPath(rt)) {
-		t.Fatalf("pid file should be removed after shutdown")
-	}
-	if fileExists(rt.SocketPath) {
-		t.Fatalf("socket should be removed after shutdown")
-	}
-}
-
-func TestIncompatibleSupervisorProcessHelper(t *testing.T) {
-	if os.Getenv("WEFT_TEST_INCOMPATIBLE_SUPERVISOR_PROCESS") != "1" {
-		return
-	}
-	lock, err := acquireLock(os.Getenv("WEFT_TEST_LOCK_PATH"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lock.Close()
-	if err := os.WriteFile(os.Getenv("WEFT_TEST_PID_PATH"), []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(os.Getenv("WEFT_TEST_READY_PATH"), []byte("ready\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(30 * time.Second)
 }
 
 func TestSupervisorRejectsSecondRuntimeForSameHome(t *testing.T) {
