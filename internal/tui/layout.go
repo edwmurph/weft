@@ -1136,7 +1136,7 @@ func renderPaneFrame(title string, right string, width int, height int, active b
 	palette := paletteFor(active)
 	innerWidth := max(0, width-2)
 	lines := []string{
-		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(title, right, max(0, innerWidth-2)), innerWidth)),
+		renderFrameBorderLine(palette, borderTopLeft, borderTopRight, borderTextLine(title, right, max(0, innerWidth-2)), innerWidth),
 	}
 	contentHeight := max(0, height-2)
 	for len(content) < contentHeight {
@@ -1145,7 +1145,7 @@ func renderPaneFrame(title string, right string, width int, height int, active b
 	for _, line := range content[:contentHeight] {
 		lines = append(lines, palette.border.Render(borderVertical)+padVisual(clip(line, innerWidth), innerWidth)+palette.border.Render(borderVertical))
 	}
-	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, "", innerWidth)))
+	lines = append(lines, renderFrameBorderLine(palette, borderBottomLeft, borderBottomRight, "", innerWidth))
 	return lines
 }
 
@@ -1190,7 +1190,7 @@ func renderCodexFrame(
 		topRightLabel = previewTopRightLabel(title, toastText)
 	}
 	lines := []string{
-		palette.border.Render(cornerLine(borderTopLeft, borderTopRight, borderTextLine(topLabel, topRightLabel, max(0, innerWidth-2)), innerWidth)),
+		renderFrameBorderLine(palette, borderTopLeft, borderTopRight, borderTextLine(topLabel, topRightLabel, max(0, innerWidth-2)), innerWidth),
 	}
 	contentHeight := max(0, height-2)
 	empty := !taskActive
@@ -1217,7 +1217,7 @@ func renderCodexFrame(
 	if taskActive && navCollapsed {
 		rightLabel = codexConsoleBottomRightLabel(st, toastText)
 	}
-	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))
+	lines = append(lines, renderFrameBorderLine(palette, borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth))
 	return lines
 }
 
@@ -1596,6 +1596,20 @@ func cornerLine(leftCorner string, rightCorner string, content string, innerWidt
 	}
 	contentWidth := innerWidth - 2
 	return leftCorner + borderHorizontal + padVisual(clip(content, contentWidth), contentWidth) + borderHorizontal + rightCorner
+}
+
+func renderFrameBorderLine(palette framePalette, leftCorner string, rightCorner string, content string, innerWidth int) string {
+	if innerWidth <= 0 {
+		return palette.border.Render(leftCorner + rightCorner)
+	}
+	if innerWidth == 1 {
+		return palette.border.Render(leftCorner + borderHorizontal + rightCorner)
+	}
+	contentWidth := innerWidth - 2
+	renderedContent := padVisual(clip(content, contentWidth), contentWidth)
+	// Keep the trailing border segment styled after any ANSI reset embedded in the label.
+	return palette.border.Render(leftCorner+borderHorizontal+renderedContent) +
+		palette.border.Render(borderHorizontal+rightCorner)
 }
 
 func borderTextLine(left string, right string, width int) string {

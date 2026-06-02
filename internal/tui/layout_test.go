@@ -1394,6 +1394,32 @@ func TestTaskConsoleChromePlacesTitleTopAndNoticesBottom(t *testing.T) {
 	}
 }
 
+func TestTaskConsoleBottomNoticeKeepsActiveBorderCornerStyle(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	cfg := config.DefaultConfig()
+	now := state.NowISO()
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	st.Tasks = append(st.Tasks, state.Task{ID: "b", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now})
+
+	got := renderWorkspaceView(cfg, st, "Alpha Task", "output", 100, 18, "", 0, 0, workspaceRenderOptions{
+		codexToastText: "Copied 4 characters",
+	})
+	lines := strings.Split(got, "\n")
+	bottomLine := lines[len(lines)-1]
+
+	if !strings.Contains(bottomLine, workspaceCountNeedsAttentionStyle.Render("1 other task ready")) {
+		t.Fatalf("bottom notice should keep its own highlight style:\n%q", bottomLine)
+	}
+	if !strings.HasSuffix(bottomLine, activePalette.border.Render(borderHorizontal+borderBottomRight)) {
+		t.Fatalf("bottom-right border corner should stay in the active pane border style:\n%q", bottomLine)
+	}
+}
+
 func TestCodexLeftPaddingStaysBeforeLeadingANSIStyle(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")

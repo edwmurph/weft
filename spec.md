@@ -283,7 +283,7 @@ When the user presses `Enter` on a task, navigation slides away left, `Task Cons
 
 Task PTYs can only receive input when `Task Console` is focused and maximized.
 
-When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured repaint key as `<key> repaint` without a `WEFT` prefix, and the top-right border shows only the active task title. If at least one other global task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task is excluded from that count, and the indicator is hidden when no other tasks are ready. Other brief console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item.
+When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured repaint key as `<key> repaint` without a `WEFT` prefix, and the top-right border shows only the active task title. If at least one other global task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task is excluded from that count, and the indicator is hidden when no other tasks are ready. Other brief console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item. The active `Task Console` pane border remains the active Weft blue on every border segment and corner even when bottom-right notices use their own text styling.
 
 ## Navigation States
 
