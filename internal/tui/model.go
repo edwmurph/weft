@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -75,6 +76,11 @@ type loadingTick struct{}
 
 var loadingFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+type taskOperationStart struct {
+	startedAt  time.Time
+	allowReady bool
+}
+
 type groupRowKind string
 
 const (
@@ -104,6 +110,7 @@ type Model struct {
 	visible           map[string]bool
 	codexInputBuffers map[string][]rune
 	terminalCommands  map[string]time.Time
+	operationStarts   *sync.Map
 	taskInterrupts    map[string]time.Time
 	sessionCaptures   map[string]time.Time
 	dataCh            chan ptyx.Data
@@ -136,6 +143,7 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		visible:           map[string]bool{},
 		codexInputBuffers: map[string][]rune{},
 		terminalCommands:  map[string]time.Time{},
+		operationStarts:   &sync.Map{},
 		taskInterrupts:    map[string]time.Time{},
 		sessionCaptures:   map[string]time.Time{},
 		dataCh:            make(chan ptyx.Data, 64),
@@ -196,17 +204,18 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		title = m.renderTaskTitle(*active)
 	}
 	return ipc.Snapshot{
-		State:                m.state,
-		CodexTitle:           title,
-		CodexContent:         content,
-		CodexPlainLines:      plainLines,
-		CodexScrollback:      scrollbackContent,
-		CodexScrollbackLines: scrollbackPlainLines,
-		LoadingText:          loadingText,
-		LoadingTaskIDs:       m.loadingTaskIDs(),
-		Message:              m.message,
-		NavWidth:             m.targetNavWidth(),
-		GroupCursor:          m.groupCursor,
+		State:                  m.state,
+		CodexTitle:             title,
+		CodexContent:           content,
+		CodexPlainLines:        plainLines,
+		CodexScrollback:        scrollbackContent,
+		CodexScrollbackLines:   scrollbackPlainLines,
+		LoadingText:            loadingText,
+		LoadingTaskIDs:         m.loadingTaskIDs(),
+		TaskOperationStartedAt: m.taskOperationStartedAtForSnapshot(),
+		Message:                m.message,
+		NavWidth:               m.targetNavWidth(),
+		GroupCursor:            m.groupCursor,
 	}
 }
 
@@ -346,6 +355,8 @@ func (m *Model) killTaskPTY(taskID string) {
 	}
 	delete(m.screens, taskID)
 	delete(m.visible, taskID)
+	delete(m.terminalCommands, taskID)
+	m.clearTaskOperationStarted(taskID)
 	delete(m.taskInterrupts, taskID)
 	delete(m.sessionCaptures, taskID)
 }
@@ -360,6 +371,7 @@ func (m *Model) killFocusedTerminalTask(taskID string) tea.Cmd {
 		delete(m.ptys, taskID)
 	}
 	delete(m.terminalCommands, taskID)
+	m.clearTaskOperationStarted(taskID)
 	delete(m.codexInputBuffers, taskID)
 	delete(m.taskInterrupts, taskID)
 	delete(m.sessionCaptures, taskID)
@@ -628,6 +640,9 @@ func (m Model) taskUsesAutoTitle(task state.Task) bool {
 }
 
 func (m *Model) markCodexInputSubmitted(taskID string) {
+	if task := state.TaskByID(m.state, taskID); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
+		m.markTaskOperationStarted(taskID, true)
+	}
 	m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 		task.CodexInputSubmitted = true
 		return task
@@ -724,6 +739,9 @@ func (m *Model) startPTY(taskID string) {
 	if m.ptys[taskID] != nil {
 		return
 	}
+	if task := state.TaskByID(m.state, taskID); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
+		m.ensureTaskOperationStarted(taskID)
+	}
 	if m.screens[taskID] == nil {
 		m.screens[taskID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
 	}
@@ -737,6 +755,7 @@ func (m *Model) startPTY(taskID string) {
 			task.CodexTitle = err.Error()
 			return task
 		})
+		m.clearTaskOperationStarted(taskID)
 		m.save()
 		return
 	}
@@ -756,6 +775,9 @@ func (m *Model) startPTY(taskID string) {
 func (m *Model) startPTYCmd(taskID string) tea.Cmd {
 	if m.ptys[taskID] != nil {
 		return nil
+	}
+	if task := state.TaskByID(m.state, taskID); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
+		m.ensureTaskOperationStarted(taskID)
 	}
 	ctx := m.ctx
 	command := m.taskCommandForTask(taskID)
@@ -778,6 +800,7 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 			task.CodexTitle = msg.err.Error()
 			return task
 		})
+		m.clearTaskOperationStarted(msg.taskID)
 		m.save()
 		return
 	}
@@ -795,6 +818,7 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 	m.ptys[msg.taskID] = msg.session
 	m.state = state.WithUpdatedTask(m.state, msg.taskID, func(task state.Task) state.Task {
 		if taskUsesCodexIntegration(m.cfg, task) {
+			m.ensureTaskOperationStarted(task.ID)
 			task.Status = state.StatusRunning
 		} else {
 			task.Status = state.StatusReady
@@ -819,6 +843,7 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 	}
 	if data.Err != nil {
 		delete(m.ptys, data.TaskID)
+		m.clearTaskOperationStarted(data.TaskID)
 		activeExited := m.state.ActiveTaskID == data.TaskID
 		status := state.StatusStopped
 		title := taskTypeForTask(m.cfg, *task).Label + " exited"
@@ -897,6 +922,9 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 			}
 			return task
 		})
+		if m.codexOperationComplete(data.TaskID, screenStatus, data.Title) {
+			m.clearTaskOperationStarted(data.TaskID)
+		}
 		m.save()
 	}
 }
@@ -1063,17 +1091,125 @@ func (m Model) codexLoading() bool {
 	if active == nil {
 		return false
 	}
-	return m.taskLoading(active.ID)
+	return m.taskLoading(active.ID) || m.taskOperationActive(active.ID)
 }
 
 func (m Model) loadingTaskIDs() []string {
 	ids := make([]string, 0)
 	for _, task := range m.state.Tasks {
-		if m.taskLoading(task.ID) {
+		if m.taskLoading(task.ID) || m.taskOperationActive(task.ID) {
 			ids = append(ids, task.ID)
 		}
 	}
 	return ids
+}
+
+func (m *Model) taskOperationStartedAtForSnapshot() map[string]time.Time {
+	if m.operationStarts == nil {
+		return nil
+	}
+	startedAt := map[string]time.Time{}
+	for _, task := range m.state.Tasks {
+		if started, ok := m.taskOperationStartedAt(task.ID); ok && (m.taskLoading(task.ID) || m.taskOperationActive(task.ID)) {
+			startedAt[task.ID] = started
+		}
+	}
+	if len(startedAt) == 0 {
+		return nil
+	}
+	return startedAt
+}
+
+func (m *Model) taskOperationStart(taskID string) (taskOperationStart, bool) {
+	if m.operationStarts == nil {
+		return taskOperationStart{}, false
+	}
+	value, ok := m.operationStarts.Load(taskID)
+	if !ok {
+		return taskOperationStart{}, false
+	}
+	switch typed := value.(type) {
+	case taskOperationStart:
+		if typed.startedAt.IsZero() {
+			return taskOperationStart{}, false
+		}
+		return typed, true
+	case time.Time:
+		if typed.IsZero() {
+			return taskOperationStart{}, false
+		}
+		return taskOperationStart{startedAt: typed}, true
+	default:
+		return taskOperationStart{}, false
+	}
+}
+
+func (m *Model) taskOperationStartedAt(taskID string) (time.Time, bool) {
+	start, ok := m.taskOperationStart(taskID)
+	return start.startedAt, ok
+}
+
+func (m *Model) taskOperationActive(taskID string) bool {
+	task := state.TaskByID(m.state, taskID)
+	if task == nil {
+		return false
+	}
+	operation, ok := m.taskOperationStart(taskID)
+	if !ok {
+		return false
+	}
+	switch titles.CanonicalStatus(*task) {
+	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting), "idle":
+		return false
+	case string(state.StatusReady):
+		return operation.allowReady
+	default:
+		return true
+	}
+}
+
+func (m *Model) markTaskOperationStarted(taskID string, allowReady bool) {
+	if strings.TrimSpace(taskID) == "" {
+		return
+	}
+	if m.operationStarts == nil {
+		m.operationStarts = &sync.Map{}
+	}
+	m.operationStarts.Store(taskID, taskOperationStart{startedAt: time.Now(), allowReady: allowReady})
+}
+
+func (m *Model) ensureTaskOperationStarted(taskID string) {
+	if strings.TrimSpace(taskID) == "" {
+		return
+	}
+	if m.operationStarts == nil {
+		m.operationStarts = &sync.Map{}
+	}
+	m.operationStarts.LoadOrStore(taskID, taskOperationStart{startedAt: time.Now()})
+}
+
+func (m *Model) clearTaskOperationStarted(taskID string) {
+	if m.operationStarts == nil {
+		return
+	}
+	m.operationStarts.Delete(taskID)
+}
+
+func (m *Model) codexOperationComplete(taskID string, screenStatus string, terminalTitle string) bool {
+	operation, ok := m.taskOperationStart(taskID)
+	if !ok {
+		return false
+	}
+	if m.taskLoading(taskID) {
+		return false
+	}
+	if strings.TrimSpace(terminalTitle) != "" {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(screenStatus), string(state.StatusReady)) {
+		return true
+	}
+	return !operation.allowReady
 }
 
 func (m Model) taskLoading(taskID string) bool {
@@ -1114,6 +1250,7 @@ func (m *Model) markTerminalCommandStarted(taskID string) {
 		m.terminalCommands = map[string]time.Time{}
 	}
 	m.terminalCommands[taskID] = time.Now()
+	m.markTaskOperationStarted(taskID, false)
 	m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 		switch task.Status {
 		case state.StatusError, state.StatusStopped, state.StatusKilled:
@@ -1135,10 +1272,12 @@ func (m *Model) refreshTerminalTaskActivity() {
 		task := state.TaskByID(m.state, taskID)
 		if task == nil || taskUsesCodexIntegration(m.cfg, *task) {
 			delete(m.terminalCommands, taskID)
+			m.clearTaskOperationStarted(taskID)
 			continue
 		}
 		if task.Status != state.StatusRunning {
 			delete(m.terminalCommands, taskID)
+			m.clearTaskOperationStarted(taskID)
 			continue
 		}
 		if time.Since(started) < terminalCommandLoadingFloor {
@@ -1149,6 +1288,7 @@ func (m *Model) refreshTerminalTaskActivity() {
 			continue
 		}
 		delete(m.terminalCommands, taskID)
+		m.clearTaskOperationStarted(taskID)
 		m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 			if task.Status == state.StatusRunning {
 				task.Status = state.StatusReady

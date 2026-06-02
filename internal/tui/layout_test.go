@@ -38,6 +38,30 @@ func TestWorkspaceNavWidthShrinksWorkspacesFirst(t *testing.T) {
 	}
 }
 
+func TestFormatTaskOperationDuration(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		elapsed time.Duration
+		want    string
+	}{
+		{name: "instant", elapsed: 0, want: "1s"},
+		{name: "seconds", elapsed: 12 * time.Second, want: "12s"},
+		{name: "last second", elapsed: 59 * time.Second, want: "59s"},
+		{name: "one minute", elapsed: time.Minute, want: "1m"},
+		{name: "two minutes", elapsed: 2*time.Minute + 59*time.Second, want: "2m"},
+		{name: "last minute", elapsed: 59*time.Minute + 59*time.Second, want: "59m"},
+		{name: "one hour", elapsed: time.Hour, want: "1h"},
+		{name: "hour minutes", elapsed: time.Hour + 2*time.Minute + 59*time.Second, want: "1h2m"},
+		{name: "many hours", elapsed: 25*time.Hour + 4*time.Minute, want: "25h4m"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatTaskOperationDuration(tt.elapsed); got != tt.want {
+				t.Fatalf("duration = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAutoTitleMaxColumnsAccountsForTaskTypeBadges(t *testing.T) {
 	cfg := config.DefaultConfig()
 	custom := cfg.TaskTypes[config.DefaultTaskTypeShell]
@@ -845,37 +869,59 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	got := strings.Join(renderGroupsPaneWithOptions(cfg, st, 42, 14, 99, workspaceRenderOptions{
 		loadingFrame: "⠼",
 		loadingTasks: map[string]bool{"loading": true},
+		taskOperationStartedAt: map[string]time.Time{
+			"loading":          time.Now().Add(-12 * time.Second),
+			"working":          time.Now().Add(-2 * time.Minute),
+			"waiting":          time.Now().Add(-(time.Hour + 2*time.Minute)),
+			"terminal-waiting": time.Now().Add(-59 * time.Second),
+			"ready":            time.Now().Add(-12 * time.Second),
+			"failed":           time.Now().Add(-12 * time.Second),
+			"stopped":          time.Now().Add(-12 * time.Second),
+			"killed":           time.Now().Add(-12 * time.Second),
+		},
 	}), "\n")
 	stripped := ansi.Strip(got)
-	if !strings.Contains(stripped, "⠼ [codex] Booting") || strings.Contains(stripped, "· [codex] Booting") {
-		t.Fatalf("loading row should replace the static marker with the spinner:\n%s", stripped)
+	if !taskLineContains(stripped, "Booting", "⠼ [codex] 12s Booting") || strings.Contains(stripped, "· [codex] 12s Booting") {
+		t.Fatalf("loading row should show operation duration after the badge:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "⠼ [codex] Review") || strings.Contains(stripped, "· [codex] Review") {
-		t.Fatalf("working row should use the animated marker:\n%s", stripped)
+	if !taskLineContains(stripped, "Review", "⠼ [codex] 2m Review") || strings.Contains(stripped, "· [codex] 2m Review") {
+		t.Fatalf("working row should show operation duration after the badge:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "⠼ [codex] Approval") || strings.Contains(stripped, "· [codex] Approval") {
-		t.Fatalf("waiting Codex row should use the animated marker:\n%s", stripped)
+	if !taskLineContains(stripped, "Approval", "⠼ [codex] 1h2m Approval") || strings.Contains(stripped, "· [codex] 1h2m Approval") {
+		t.Fatalf("waiting Codex row should show operation duration after the badge:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "⠼ [shell] Shell Awaiting") || strings.Contains(stripped, "· [shell] Shell Awaiting") {
-		t.Fatalf("waiting terminal row should use the animated marker:\n%s", stripped)
+	if !taskLineContains(stripped, "Shell Awaiting", "⠼ [shell] 59s Shell Awaiting") || strings.Contains(stripped, "· [shell] 59s Shell Awaiting") {
+		t.Fatalf("waiting terminal row should show operation duration after the badge:\n%s", stripped)
 	}
 	if !strings.Contains(stripped, "· [codex] Respond") || strings.Contains(stripped, "⠼ [codex] Respond") {
 		t.Fatalf("ready row should use the subtle ready marker instead of the spinner:\n%s", stripped)
 	}
+	if taskLineHasDurationToken(stripped, "Respond") {
+		t.Fatalf("ready row should not show operation duration:\n%s", stripped)
+	}
 	if !strings.Contains(stripped, "! [codex] Broken") {
 		t.Fatalf("error row should use the error marker:\n%s", stripped)
+	}
+	if taskLineHasDurationToken(stripped, "Broken") {
+		t.Fatalf("error row should not show operation duration:\n%s", stripped)
 	}
 	if !strings.Contains(stripped, "◦ [codex] Paused") {
 		t.Fatalf("stopped row should use the attention marker:\n%s", stripped)
 	}
+	if taskLineHasDurationToken(stripped, "Paused") {
+		t.Fatalf("stopped row should not show operation duration:\n%s", stripped)
+	}
 	if !strings.Contains(stripped, "! [codex] Killed") {
 		t.Fatalf("killed row should use the attention marker:\n%s", stripped)
 	}
+	if taskLineHasDurationToken(stripped, "Killed") {
+		t.Fatalf("killed row should not show operation duration:\n%s", stripped)
+	}
 	for _, expected := range []string{
-		taskRunningStyle.Render("⠼ [codex] Booting"),
-		taskWorkingStyle.Render("⠼ [codex] Review"),
-		taskLoadingStyle.Render("⠼ [codex] Approval"),
-		taskLoadingStyle.Render("⠼ [shell] Shell Awaiting"),
+		taskRunningStyle.Render("⠼ [codex] 12s Booting"),
+		taskWorkingStyle.Render("⠼ [codex] 2m Review"),
+		taskLoadingStyle.Render("⠼ [codex] 1h2m Approval"),
+		taskLoadingStyle.Render("⠼ [shell] 59s Shell Awaiting"),
 		taskReadyStyle.Render("· [codex] Respond"),
 		taskErrorStyle.Render("! [codex] Broken"),
 		taskAttentionStyle.Render("◦ [codex] Paused"),
@@ -890,6 +936,59 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 			t.Fatalf("task rows should not render fixed status text %q:\n%s", forbidden, stripped)
 		}
 	}
+}
+
+func taskLineContains(capture string, title string, expected string) bool {
+	for _, line := range strings.Split(capture, "\n") {
+		if strings.Contains(line, title) {
+			return strings.Contains(line, expected)
+		}
+	}
+	return false
+}
+
+func taskLineHasDurationToken(capture string, title string) bool {
+	for _, line := range strings.Split(capture, "\n") {
+		if !strings.Contains(line, title) {
+			continue
+		}
+		fields := strings.Fields(strings.Trim(line, " │"))
+		for _, field := range fields {
+			if isTaskDurationToken(field) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isTaskDurationToken(value string) bool {
+	if value == "" {
+		return false
+	}
+	if strings.HasSuffix(value, "s") || (strings.HasSuffix(value, "m") && !strings.Contains(value, "h")) {
+		return allASCIIDigits(value[:len(value)-1])
+	}
+	if strings.HasSuffix(value, "h") {
+		return allASCIIDigits(value[:len(value)-1])
+	}
+	if strings.Contains(value, "h") && strings.HasSuffix(value, "m") {
+		parts := strings.SplitN(value, "h", 2)
+		return len(parts) == 2 && allASCIIDigits(parts[0]) && allASCIIDigits(strings.TrimSuffix(parts[1], "m"))
+	}
+	return false
+}
+
+func allASCIIDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func TestReadyTaskColorSurvivesSelectionAndActiveFallback(t *testing.T) {

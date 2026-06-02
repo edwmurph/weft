@@ -1842,7 +1842,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, "1 active") &&
 				strings.Contains(capture, "0 needs attention") &&
 				!strings.Contains(capture, "Codex running") &&
-				taskLineHasLoadingFrame(capture, "Codex Waiting")
+				taskLineHasLoadingFrame(capture, "Codex Waiting") &&
+				taskLineHasBadgeAdjacentDuration(capture, "Codex Waiting", "[codex]")
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
@@ -1860,6 +1861,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		if taskLineHasLoadingFrame(readyCapture, "Codex Ready") {
 			t.Fatalf("ready Codex row should keep the static marker:\n%s", readyCapture)
+		}
+		if taskLineHasDuration(readyCapture, "Codex Ready") {
+			t.Fatalf("ready Codex row should not show operation duration:\n%s", readyCapture)
 		}
 	})
 
@@ -3057,6 +3061,65 @@ func taskLineHasLoadingFrame(capture string, title string) bool {
 		}
 	}
 	return false
+}
+
+func taskLineHasDuration(capture string, title string) bool {
+	for _, line := range strings.Split(capture, "\n") {
+		if !strings.Contains(line, title) {
+			continue
+		}
+		fields := strings.Fields(strings.Trim(line, " │"))
+		for _, field := range fields {
+			if taskDurationToken(field) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func taskLineHasBadgeAdjacentDuration(capture string, title string, badge string) bool {
+	for _, line := range strings.Split(capture, "\n") {
+		if !strings.Contains(line, title) {
+			continue
+		}
+		fields := strings.Fields(strings.Trim(line, " │"))
+		for index := 0; index < len(fields)-1; index++ {
+			if fields[index] == badge && taskDurationToken(fields[index+1]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func taskDurationToken(value string) bool {
+	if value == "" {
+		return false
+	}
+	if strings.HasSuffix(value, "s") || (strings.HasSuffix(value, "m") && !strings.Contains(value, "h")) {
+		return allDigits(value[:len(value)-1])
+	}
+	if strings.HasSuffix(value, "h") {
+		return allDigits(value[:len(value)-1])
+	}
+	if strings.Contains(value, "h") && strings.HasSuffix(value, "m") {
+		parts := strings.SplitN(value, "h", 2)
+		return len(parts) == 2 && allDigits(parts[0]) && allDigits(strings.TrimSuffix(parts[1], "m"))
+	}
+	return false
+}
+
+func allDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func taskRowVisible(capture string, title string) bool {

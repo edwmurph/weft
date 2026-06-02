@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -83,6 +84,7 @@ type workspaceRenderOptions struct {
 	previewHeaderAnimation   string
 	emptyArtFrame            int
 	loadingTasks             map[string]bool
+	taskOperationStartedAt   map[string]time.Time
 	workspaceFooterText      string
 	workspaceInfoText        string
 	newWorkspaceCardSelected bool
@@ -833,6 +835,9 @@ func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int
 	title := renderTaskTitleForState(cfg, st, task)
 	marker := taskMarkerForRender(task, options.loadingFrame, options.loadingTasks)
 	prefix := marker + " " + taskTypeBadgeCellForTask(cfg, task) + " "
+	if duration := taskOperationDurationSuffix(task, options); duration != "" {
+		prefix += duration + " "
+	}
 	if nested {
 		prefix = "  " + prefix
 	}
@@ -844,6 +849,40 @@ func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int
 		return activeTaskRowStyle(task, options.loadingTasks).Render(row)
 	}
 	return taskRowStyle(task, options.loadingTasks).Render(row)
+}
+
+func taskOperationDurationSuffix(task state.Task, options workspaceRenderOptions) string {
+	if !taskIsLoadingForRender(task, options.loadingTasks) {
+		return ""
+	}
+	if len(options.taskOperationStartedAt) == 0 {
+		return ""
+	}
+	started, ok := options.taskOperationStartedAt[task.ID]
+	if !ok || started.IsZero() {
+		return ""
+	}
+	return formatTaskOperationDuration(time.Since(started))
+}
+
+func formatTaskOperationDuration(elapsed time.Duration) string {
+	seconds := int(elapsed / time.Second)
+	if seconds < 1 {
+		seconds = 1
+	}
+	if seconds < 60 {
+		return fmtInt(seconds) + "s"
+	}
+	minutes := seconds / 60
+	if minutes < 60 {
+		return fmtInt(minutes) + "m"
+	}
+	hours := minutes / 60
+	remainder := minutes % 60
+	if remainder == 0 {
+		return fmtInt(hours) + "h"
+	}
+	return fmtInt(hours) + "h" + fmtInt(remainder) + "m"
 }
 
 func taskPaneWidthForTitleHook(st state.State, terminalWidth int) int {

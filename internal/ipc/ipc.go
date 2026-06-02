@@ -47,20 +47,21 @@ type Upgrade struct {
 }
 
 type Snapshot struct {
-	State                state.State `json:"state"`
-	CodexTitle           string      `json:"codex_title,omitempty"`
-	CodexContent         string      `json:"codex_content,omitempty"`
-	CodexPlainLines      []string    `json:"codex_plain_lines,omitempty"`
-	CodexScrollback      string      `json:"codex_scrollback,omitempty"`
-	CodexScrollbackLines []string    `json:"codex_scrollback_lines,omitempty"`
-	LoadingText          string      `json:"loading_text,omitempty"`
-	LoadingTaskIDs       []string    `json:"loading_task_ids,omitempty"`
-	Message              string      `json:"message,omitempty"`
-	NavWidth             int         `json:"nav_width"`
-	GroupCursor          int         `json:"group_cursor"`
-	ActiveClientID       string      `json:"active_client_id,omitempty"`
-	ActiveClientVersion  string      `json:"active_client_version,omitempty"`
-	DetachClient         bool        `json:"detach_client,omitempty"`
+	State                  state.State          `json:"state"`
+	CodexTitle             string               `json:"codex_title,omitempty"`
+	CodexContent           string               `json:"codex_content,omitempty"`
+	CodexPlainLines        []string             `json:"codex_plain_lines,omitempty"`
+	CodexScrollback        string               `json:"codex_scrollback,omitempty"`
+	CodexScrollbackLines   []string             `json:"codex_scrollback_lines,omitempty"`
+	LoadingText            string               `json:"loading_text,omitempty"`
+	LoadingTaskIDs         []string             `json:"loading_task_ids,omitempty"`
+	TaskOperationStartedAt map[string]time.Time `json:"task_operation_started_at,omitempty"`
+	Message                string               `json:"message,omitempty"`
+	NavWidth               int                  `json:"nav_width"`
+	GroupCursor            int                  `json:"group_cursor"`
+	ActiveClientID         string               `json:"active_client_id,omitempty"`
+	ActiveClientVersion    string               `json:"active_client_version,omitempty"`
+	DetachClient           bool                 `json:"detach_client,omitempty"`
 }
 
 type Error struct {

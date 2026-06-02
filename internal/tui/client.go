@@ -213,6 +213,7 @@ func (m ClientModel) dashboardState() state.State {
 func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 	return workspaceRenderOptions{
 		loadingTasks:             loadingTaskSet(m.snapshot.LoadingTaskIDs),
+		taskOperationStartedAt:   m.snapshot.TaskOperationStartedAt,
 		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg),
 		workspaceInfoText:        m.workspaceInfoHeaderText(),
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,

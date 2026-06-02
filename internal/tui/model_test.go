@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -170,16 +171,21 @@ func TestApplyPTYDataMarksPermissionScreensReady(t *testing.T) {
 
 func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 	st := testStateWithTask(t.TempDir())
+	started := time.Now().Add(-12 * time.Second)
 	model := Model{
-		cfg:     config.DefaultConfig(),
-		state:   st,
-		screens: map[string]*TerminalScreen{"a": NewTerminalScreen(80, 24)},
-		visible: map[string]bool{},
+		cfg:             config.DefaultConfig(),
+		state:           st,
+		screens:         map[string]*TerminalScreen{"a": NewTerminalScreen(80, 24)},
+		visible:         map[string]bool{},
+		operationStarts: testOperationStarts(map[string]time.Time{"a": started}),
 	}
 
 	snapshot := model.Snapshot()
 	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
 		t.Fatalf("loading task ids = %#v", snapshot.LoadingTaskIDs)
+	}
+	if got := snapshot.TaskOperationStartedAt["a"]; !got.Equal(started) {
+		t.Fatalf("loading task operation start = %v, want %v", got, started)
 	}
 
 	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
@@ -187,17 +193,66 @@ func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
 		t.Fatalf("ready task should keep loading until visible content: %#v", snapshot.LoadingTaskIDs)
 	}
+	if got := snapshot.TaskOperationStartedAt["a"]; !got.Equal(started) {
+		t.Fatalf("ready task without content should keep operation start = %v, want %v", got, started)
+	}
 
 	model.screens["a"].Write("ready\n")
 	snapshot = model.Snapshot()
 	if len(snapshot.LoadingTaskIDs) != 0 {
 		t.Fatalf("ready task should not be marked loading: %#v", snapshot.LoadingTaskIDs)
 	}
+	if len(snapshot.TaskOperationStartedAt) != 0 {
+		t.Fatalf("ready task should not expose operation starts: %#v", snapshot.TaskOperationStartedAt)
+	}
 
 	model.state.Tasks[0].CodexTitle = "Fake Codex Waiting"
+	model.operationStarts = testOperationStarts(map[string]time.Time{"a": started})
 	snapshot = model.Snapshot()
 	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
 		t.Fatalf("waiting task should be marked loading: %#v", snapshot.LoadingTaskIDs)
+	}
+	if got := snapshot.TaskOperationStartedAt["a"]; !got.Equal(started) {
+		t.Fatalf("waiting task operation start = %v, want %v", got, started)
+	}
+}
+
+func TestCodexOperationStartTracksStartupAndSubmittedPrompt(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	startup := model.Snapshot()
+	if _, ok := startup.TaskOperationStartedAt["a"]; !ok {
+		t.Fatalf("codex startup snapshot missing operation start: %#v", startup.TaskOperationStartedAt)
+	}
+
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Ready", Text: "ready\n"})
+	ready := model.Snapshot()
+	if len(ready.TaskOperationStartedAt) != 0 {
+		t.Fatalf("ready Codex task should clear operation start: %#v", ready.TaskOperationStartedAt)
+	}
+
+	task := state.TaskByID(model.state, "a")
+	if task == nil {
+		t.Fatal("task missing")
+	}
+	model.codexInputBuffers["a"] = []rune("hello")
+	model.submitCodexInputBuffer(*task)
+	if _, ok := modelOperationStart(model, "a"); !ok {
+		t.Fatalf("submitted Codex prompt should start operation timing: %#v", model.operationStarts)
+	}
+	submitted := model.Snapshot()
+	if len(submitted.LoadingTaskIDs) != 1 || submitted.LoadingTaskIDs[0] != "a" {
+		t.Fatalf("submitted Codex prompt should render as loading before title changes: %#v", submitted.LoadingTaskIDs)
+	}
+	if _, ok := submitted.TaskOperationStartedAt["a"]; !ok {
+		t.Fatalf("submitted Codex prompt snapshot missing operation start: %#v", submitted.TaskOperationStartedAt)
+	}
+
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Working"})
+	working := model.Snapshot()
+	if _, ok := working.TaskOperationStartedAt["a"]; !ok {
+		t.Fatalf("working Codex snapshot missing prompt operation start: %#v", working.TaskOperationStartedAt)
 	}
 }
 
@@ -1687,12 +1742,19 @@ func TestTerminalTaskCommandShowsLoadingUntilForegroundReturns(t *testing.T) {
 	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
 		t.Fatalf("terminal command loading ids = %#v", snapshot.LoadingTaskIDs)
 	}
+	if _, ok := snapshot.TaskOperationStartedAt["a"]; !ok {
+		t.Fatalf("terminal command operation start missing: %#v", snapshot.TaskOperationStartedAt)
+	}
 
 	model.terminalCommands["a"] = time.Now().Add(-terminalCommandLoadingFloor - time.Millisecond)
 	model.refreshTerminalTaskActivity()
 	task = state.TaskByID(model.state, "a")
 	if task == nil || task.Status != state.StatusReady {
 		t.Fatalf("terminal command should become ready when no foreground job is active: %#v", task)
+	}
+	snapshot = model.Snapshot()
+	if len(snapshot.TaskOperationStartedAt) != 0 {
+		t.Fatalf("ready terminal command should clear operation start: %#v", snapshot.TaskOperationStartedAt)
 	}
 }
 
@@ -1932,6 +1994,32 @@ func testStateWithWorkspace(t *testing.T, workspace string) state.State {
 func killPTYs(model Model) {
 	for _, pty := range model.ptys {
 		pty.Kill()
+	}
+}
+
+func testOperationStarts(entries map[string]time.Time) *sync.Map {
+	starts := &sync.Map{}
+	for taskID, started := range entries {
+		starts.Store(taskID, started)
+	}
+	return starts
+}
+
+func modelOperationStart(model Model, taskID string) (time.Time, bool) {
+	if model.operationStarts == nil {
+		return time.Time{}, false
+	}
+	value, ok := model.operationStarts.Load(taskID)
+	if !ok {
+		return time.Time{}, false
+	}
+	switch typed := value.(type) {
+	case taskOperationStart:
+		return typed.startedAt, !typed.startedAt.IsZero()
+	case time.Time:
+		return typed, !typed.IsZero()
+	default:
+		return time.Time{}, false
 	}
 }
 
