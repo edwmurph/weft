@@ -334,7 +334,7 @@ func renderFormulaCaveats(breakingChanges []BreakingChange) string {
 	}
 	var builder strings.Builder
 	builder.WriteString("  def caveats\n")
-	builder.WriteString("    notes = <<~'WEFT_CAVEATS'\n")
+	builder.WriteString("    notes = <<~WEFT_CAVEATS\n")
 	builder.WriteString("      This Weft release includes breaking changes.\n\n")
 	for _, change := range breakingChanges {
 		builder.WriteString("      - ")
@@ -354,7 +354,7 @@ func renderFormulaCaveats(breakingChanges []BreakingChange) string {
 	builder.WriteString("      Full release notes:\n")
 	builder.WriteString("        https://github.com/edwmurph/weft/releases/tag/v#{version}\n")
 	builder.WriteString("    EOS\n")
-	builder.WriteString("  end\n\n")
+	builder.WriteString("  end\n")
 	return builder.String()
 }
 

@@ -32,6 +32,7 @@ concurrency:
 env:
   FORMULA_NAME: weft
   HOMEBREW_TAP_REPOSITORY: edwmurph/homebrew-tap
+  HOMEBREW_TAP_PULL_LABEL: pr-pull
 
 jobs:
   publish:
@@ -145,8 +146,11 @@ jobs:
           fi
 
       - name: Checkout Homebrew tap
+        id: tap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
 
@@ -157,9 +161,25 @@ jobs:
 
           tap_dir="${RUNNER_TEMP}/homebrew-tap"
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPOSITORY}.git" "$tap_dir"
+          cd "$tap_dir"
+          git fetch origin main
+          tap_branch="${FORMULA_NAME}-v${VERSION}"
+
+          if [[ -f "Formula/${FORMULA_NAME}.rb" ]] &&
+             grep -q "refs/tags/${TAG}.tar.gz" "Formula/${FORMULA_NAME}.rb" &&
+             grep -q "bottle do" "Formula/${FORMULA_NAME}.rb"; then
+            echo "Homebrew formula is already bottled for ${TAG}."
+            echo "already_bottled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_bottled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          git checkout -B "$tap_branch" origin/main
           echo "HOMEBREW_TAP_DIR=$tap_dir" >> "$GITHUB_ENV"
+          echo "HOMEBREW_TAP_BRANCH=$tap_branch" >> "$GITHUB_ENV"
 
       - name: Render Homebrew formula
+        if: steps.tap.outputs.already_bottled != 'true'
         env:
           BASE_SHA: ${{ steps.version.outputs.base }}
           SOURCE_URL: ${{ steps.source.outputs.source_url }}
@@ -173,24 +193,146 @@ jobs:
             --breaking-head HEAD \
             --output "$HOMEBREW_TAP_DIR/Formula/${FORMULA_NAME}.rb"
 
-      - name: Push Homebrew tap update
+      - name: Create Homebrew tap pull request
+        if: steps.tap.outputs.already_bottled != 'true'
+        id: tap_pr
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
 
           cd "$HOMEBREW_TAP_DIR"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          tap_branch="$(git branch --show-current)"
-          if [[ -z "$tap_branch" ]]; then
-            tap_branch="main"
-            git checkout --orphan "$tap_branch"
-          fi
 
           git add "Formula/${FORMULA_NAME}.rb"
           if git diff --cached --quiet; then
-            echo "Homebrew formula already up to date."
+            pr_number="$(gh pr list \
+              --repo "$HOMEBREW_TAP_REPOSITORY" \
+              --head "$HOMEBREW_TAP_BRANCH" \
+              --state open \
+              --json number \
+              --jq '.[0].number // ""')"
+            if [[ -z "$pr_number" ]]; then
+              echo "Homebrew formula already up to date."
+              echo "pr_number=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          git commit -m "Update ${FORMULA_NAME} to v${{ steps.version.outputs.version }}"
-          git push origin "HEAD:${tap_branch}"
+          git commit -m "Update ${FORMULA_NAME} to v${VERSION}"
+          git push --force-with-lease origin "HEAD:${HOMEBREW_TAP_BRANCH}"
+
+          pr_number="$(gh pr list \
+            --repo "$HOMEBREW_TAP_REPOSITORY" \
+            --head "$HOMEBREW_TAP_BRANCH" \
+            --state open \
+            --json number \
+            --jq '.[0].number // ""')"
+          if [[ -z "$pr_number" ]]; then
+            pr_url="$(gh pr create \
+              --repo "$HOMEBREW_TAP_REPOSITORY" \
+              --head "$HOMEBREW_TAP_BRANCH" \
+              --base main \
+              --title "Update ${FORMULA_NAME} to v${VERSION}" \
+              --body "Updates ${FORMULA_NAME} to ${TAG}. The tap bottle workflow will build bottles, publish them to GitHub Releases, and update the formula bottle block.")"
+            pr_number="$(gh pr view "$pr_url" \
+              --repo "$HOMEBREW_TAP_REPOSITORY" \
+              --json number \
+              --jq .number)"
+          else
+            gh pr edit "$pr_number" \
+              --repo "$HOMEBREW_TAP_REPOSITORY" \
+              --title "Update ${FORMULA_NAME} to v${VERSION}" \
+              --body "Updates ${FORMULA_NAME} to ${TAG}. The tap bottle workflow will build bottles, publish them to GitHub Releases, and update the formula bottle block."
+          fi
+
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Homebrew bottle build
+        if: steps.tap.outputs.already_bottled != 'true' && steps.tap_pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          PR_NUMBER: ${{ steps.tap_pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          for attempt in {1..60}; do
+            check_count="$(gh pr checks "$PR_NUMBER" \
+              --repo "$HOMEBREW_TAP_REPOSITORY" \
+              --json name \
+              --jq 'length' 2>/dev/null || true)"
+            if [[ "${check_count:-0}" -gt 0 ]]; then
+              break
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "::error::Timed out waiting for Homebrew tap checks to start."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          gh pr checks "$PR_NUMBER" \
+            --repo "$HOMEBREW_TAP_REPOSITORY" \
+            --watch \
+            --fail-fast \
+            --interval 30
+
+      - name: Publish Homebrew bottles
+        if: steps.tap.outputs.already_bottled != 'true' && steps.tap_pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          PR_NUMBER: ${{ steps.tap_pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh label create "$HOMEBREW_TAP_PULL_LABEL" \
+            --repo "$HOMEBREW_TAP_REPOSITORY" \
+            --description "Pull bottles and merge formula updates" \
+            --color 0e8a16 \
+            --force
+          gh pr edit "$PR_NUMBER" \
+            --repo "$HOMEBREW_TAP_REPOSITORY" \
+            --add-label "$HOMEBREW_TAP_PULL_LABEL"
+
+          run_id=""
+          for attempt in {1..60}; do
+            run_id="$(gh run list \
+              --repo "$HOMEBREW_TAP_REPOSITORY" \
+              --workflow publish.yml \
+              --event pull_request_target \
+              --limit 20 \
+              --json databaseId,createdAt \
+              --jq 'map(select(.createdAt >= "'"$started_at"'")) | sort_by(.createdAt) | reverse | .[0].databaseId // ""')"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "::error::Timed out waiting for Homebrew bottle publish workflow to start."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          gh run watch "$run_id" \
+            --repo "$HOMEBREW_TAP_REPOSITORY" \
+            --exit-status
+
+      - name: Verify Homebrew bottle block
+        if: steps.tap.outputs.already_bottled != 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          cd "$HOMEBREW_TAP_DIR"
+          git fetch origin main --tags
+          git checkout --force main
+          git reset --hard origin/main
+          grep -q "refs/tags/${TAG}.tar.gz" "Formula/${FORMULA_NAME}.rb"
+          grep -q "bottle do" "Formula/${FORMULA_NAME}.rb"

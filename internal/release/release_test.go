@@ -245,6 +245,7 @@ func TestRenderFormulaIncludesBreakingChangeCaveats(t *testing.T) {
 
 	for _, expected := range []string{
 		`def caveats`,
+		`notes = <<~WEFT_CAVEATS`,
 		`This Weft release includes breaking changes.`,
 		`- Reject legacy config files.`,
 		`Impact: Legacy config keys are unsupported.`,
@@ -256,6 +257,12 @@ func TestRenderFormulaIncludesBreakingChangeCaveats(t *testing.T) {
 		if !strings.Contains(formula, expected) {
 			t.Fatalf("formula missing %q:\n%s", expected, formula)
 		}
+	}
+	if strings.Contains(formula, `<<~'WEFT_CAVEATS'`) {
+		t.Fatalf("formula should not quote heredoc delimiter:\n%s", formula)
+	}
+	if strings.Contains(formula, "\n\n\n  test do") {
+		t.Fatalf("formula should not include an extra blank line before test block:\n%s", formula)
 	}
 }
 
