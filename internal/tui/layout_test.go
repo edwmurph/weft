@@ -1339,10 +1339,18 @@ func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 	)
 
 	got := renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 0, 0, workspaceRenderOptions{})
-	if !strings.Contains(ansi.Strip(got), "2 other tasks ready") {
+	rawLines := strings.Split(got, "\n")
+	stripped := ansi.Strip(got)
+	strippedLines := strings.Split(stripped, "\n")
+	topLine := strippedLines[0]
+	bottomLine := strippedLines[len(strippedLines)-1]
+	if !strings.Contains(bottomLine, "2 other tasks ready") {
 		t.Fatalf("console should show ready indicator for other global tasks:\n%s", got)
 	}
-	if !strings.Contains(got, workspaceCountNeedsAttentionStyle.Render("2 other tasks ready")) {
+	if strings.Contains(topLine, "other task") {
+		t.Fatalf("ready indicator should render in the bottom border, not the top border:\n%s", stripped)
+	}
+	if !strings.Contains(rawLines[len(rawLines)-1], workspaceCountNeedsAttentionStyle.Render("2 other tasks ready")) {
 		t.Fatalf("ready indicator should use needs-attention styling:\n%q", got)
 	}
 
@@ -1350,6 +1358,39 @@ func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 	got = renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 0, 0, workspaceRenderOptions{})
 	if strings.Contains(ansi.Strip(got), "other task") {
 		t.Fatalf("console should hide ready indicator when no other tasks are ready:\n%s", got)
+	}
+}
+
+func TestTaskConsoleChromePlacesTitleTopAndNoticesBottom(t *testing.T) {
+	cfg := config.DefaultConfig()
+	now := state.NowISO()
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	st.Tasks = append(st.Tasks, state.Task{ID: "b", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now})
+
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "Alpha Task", "output", 100, 18, "", 0, 0, workspaceRenderOptions{
+		codexToastText: "Copied 4 characters",
+	}))
+	lines := strings.Split(got, "\n")
+	topLine := lines[0]
+	bottomLine := lines[len(lines)-1]
+
+	if !strings.Contains(topLine, "Task Console") || !strings.Contains(topLine, "Alpha Task") {
+		t.Fatalf("console top border should include pane title and task title:\n%s", got)
+	}
+	for _, unexpected := range []string{"Copied 4 characters", "other task"} {
+		if strings.Contains(topLine, unexpected) {
+			t.Fatalf("console top-right should show only the task title, but included %q:\n%s", unexpected, got)
+		}
+	}
+	for _, expected := range []string{"Copied 4 characters", "1 other task ready"} {
+		if !strings.Contains(bottomLine, expected) {
+			t.Fatalf("console bottom border should include %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(bottomLine, "Alpha Task") {
+		t.Fatalf("console bottom border should not include the task title:\n%s", got)
 	}
 }
 

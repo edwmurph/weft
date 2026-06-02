@@ -2743,6 +2743,22 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		if strings.Contains(capture, "Task Console  WEFT") {
 			t.Fatalf("Task Console title should not include WEFT branding:\n%s", capture)
 		}
+		var toolbarLine string
+		var readyLine string
+		for _, line := range strings.Split(capture, "\n") {
+			if strings.Contains(line, collapsedCodexToolbar) {
+				toolbarLine = line
+			}
+			if strings.Contains(line, "1 other task ready") {
+				readyLine = line
+			}
+		}
+		if toolbarLine == "" || !strings.Contains(toolbarLine, "Fake Codex Ready") {
+			t.Fatalf("Task Console top border should include toolbar and active task title:\n%s", capture)
+		}
+		if strings.Contains(toolbarLine, "1 other task ready") || readyLine == toolbarLine {
+			t.Fatalf("Task Console ready indicator should render outside the top border:\n%s", capture)
+		}
 	})
 
 	timedStep(t, "refresh and second attach preserve selected running task", func() {

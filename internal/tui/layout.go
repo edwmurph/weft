@@ -1181,7 +1181,9 @@ func renderCodexFrame(
 	}
 	if navCollapsed && active {
 		topLabel = "Task Console  " + codexCollapsedTopShortcuts(cfg)
-		topRightLabel = codexConsoleTopRightLabel(st, toastText)
+		if taskActive {
+			topRightLabel = title
+		}
 	} else if navCollapsed {
 		topLabel = "Task Console"
 	} else if taskActive {
@@ -1213,7 +1215,7 @@ func renderCodexFrame(
 	}
 	rightLabel := ""
 	if taskActive && navCollapsed {
-		rightLabel = title
+		rightLabel = codexConsoleBottomRightLabel(st, toastText)
 	}
 	lines = append(lines, palette.border.Render(cornerLine(borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth)))
 	return lines
@@ -1536,7 +1538,7 @@ func codexCollapsedTopShortcuts(cfg config.Config) string {
 	return cfg.KeyBindings.Drawer + " dashboard  " + cfg.KeyBindings.Repaint + " repaint"
 }
 
-func codexConsoleTopRightLabel(st state.State, toastText string) string {
+func codexConsoleBottomRightLabel(st state.State, toastText string) string {
 	toastText = strings.TrimSpace(toastText)
 	indicator := codexConsoleReadyIndicator(st)
 	switch {
