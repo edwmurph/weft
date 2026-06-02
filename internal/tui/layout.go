@@ -851,12 +851,12 @@ func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int
 	}
 	row := clip(prefix+title, width)
 	if selected {
-		return selectedTaskRowStyle(task, options.loadingTasks).Render(padVisual(row, width))
+		return selectedTaskRowStyle(st, task, options.loadingTasks).Render(padVisual(row, width))
 	}
 	if task.ID == st.ActiveTaskID {
-		return activeTaskRowStyle(task, options.loadingTasks).Render(row)
+		return activeTaskRowStyle(st, task, options.loadingTasks).Render(row)
 	}
-	return taskRowStyle(task, options.loadingTasks).Render(row)
+	return taskRowStyle(st, task, options.loadingTasks).Render(row)
 }
 
 func taskOperationDurationSuffix(task state.Task, options workspaceRenderOptions) string {
@@ -939,10 +939,13 @@ func autoTitleMaxColumns(cfg config.Config, st state.State, task state.Task, ter
 	return max(1, (columnWidth-fixedWidth)/slots)
 }
 
-func taskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+func taskRowStyle(st state.State, task state.Task, loadingTasks map[string]bool) lipgloss.Style {
 	status := titles.ConsolidatedStatus(task)
 	if taskIsLoadingForRender(task, loadingTasks) {
 		return taskLoadingStyleForStatus(status)
+	}
+	if taskRowSuppressedBySilence(st, task, loadingTasks) {
+		return mutedStyle
 	}
 	switch status {
 	case string(state.StatusReady):
@@ -962,18 +965,30 @@ func taskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style 
 	}
 }
 
-func selectedTaskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+func selectedTaskRowStyle(st state.State, task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+	if taskRowSuppressedBySilence(st, task, loadingTasks) {
+		return activeTaskStyle
+	}
 	if taskRowIsReady(task, loadingTasks) {
 		return taskReadySelectedStyle
 	}
 	return activeTaskStyle
 }
 
-func activeTaskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+func activeTaskRowStyle(st state.State, task state.Task, loadingTasks map[string]bool) lipgloss.Style {
+	if taskRowSuppressedBySilence(st, task, loadingTasks) {
+		return mutedStyle
+	}
 	if taskRowIsReady(task, loadingTasks) {
 		return taskReadyStyle
 	}
 	return activePaneStyle
+}
+
+func taskRowSuppressedBySilence(st state.State, task state.Task, loadingTasks map[string]bool) bool {
+	return !taskIsLoadingForRender(task, loadingTasks) &&
+		workspaceCardTaskSilenceEnabled(st, task) &&
+		workspaceCardTaskSilenced(task)
 }
 
 func taskRowIsReady(task state.Task, loadingTasks map[string]bool) bool {

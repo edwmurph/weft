@@ -831,6 +831,57 @@ func TestRenderTasksPaneShowsTaskSilentMarker(t *testing.T) {
 	}
 }
 
+func TestRenderTasksPaneMutesSilencedIdleTaskRows(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	cfg := config.DefaultConfig()
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Groups:              []state.Group{{ID: "g", WorkspaceID: "w", Path: "release", Silent: true, CreatedAt: now, UpdatedAt: now}},
+		Tasks: []state.Task{
+			{ID: "task-ready", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Task Ready", Status: state.StatusReady, Silent: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "task-stopped", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Task Stopped", Status: state.StatusStopped, Silent: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "task-running", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Task Running", Status: state.StatusRunning, Silent: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "task-error", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Task Error", Status: state.StatusError, Silent: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "group-ready", WorkspaceID: "w", GroupID: "g", TypeID: config.DefaultTaskTypeCodex, Title: "Group Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+
+	got := strings.Join(renderGroupsPaneWithOptions(cfg, st, 52, 16, 99, workspaceRenderOptions{}), "\n")
+
+	for _, expected := range []string{
+		mutedStyle.Render("· ⊘ [codex] Task Ready"),
+		mutedStyle.Render("◦ ⊘ [codex] Task Stopped"),
+		mutedStyle.Render("  · [codex] Group Ready"),
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("silenced idle task row should use muted style %q:\n%s", expected, got)
+		}
+	}
+	for _, forbidden := range []string{
+		taskReadyStyle.Render("· ⊘ [codex] Task Ready"),
+		taskAttentionStyle.Render("◦ ⊘ [codex] Task Stopped"),
+		taskReadyStyle.Render("  · [codex] Group Ready"),
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("silenced idle task row should not use attention style %q:\n%s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, taskRunningStyle.Render("⠋ ⊘ [codex] Task Running")) {
+		t.Fatalf("active silenced task should keep active styling:\n%s", got)
+	}
+	if !strings.Contains(got, taskErrorStyle.Render("! ⊘ [codex] Task Error")) {
+		t.Fatalf("error silenced task should keep error styling:\n%s", got)
+	}
+}
+
 func TestRenderTasksPaneUsesSingleGapBetweenNewTaskRowAndFirstGroup(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
