@@ -1,6 +1,6 @@
 <svg width="1200" height="360" viewBox="0 0 1200 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">weft logo</title>
-  <desc id="desc">Five Codex agent threads join into a single forward arrow next to the word weft.</desc>
+  <desc id="desc">Five colored strands join into a single forward arrow next to the word weft.</desc>
 
   <style>
     :root {
@@ -8,7 +8,6 @@
       --word-shadow: rgba(255,255,255,0.55);
       --node-fill: rgba(255,255,255,0.86);
       --node-stroke: rgba(17,24,39,0.16);
-      --muted: rgba(17,24,39,0.56);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -16,14 +15,12 @@
         --word-shadow: rgba(0,0,0,0.55);
         --node-fill: rgba(2,6,23,0.72);
         --node-stroke: rgba(255,255,255,0.18);
-        --muted: rgba(248,250,252,0.68);
       }
     }
     .thread { stroke-linecap: round; stroke-linejoin: round; filter: url(#softGlow); }
     .node { fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 2; filter: url(#softGlow); }
     .bot { stroke: currentColor; fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
     .word { fill: var(--word); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 800; letter-spacing: -0.045em; filter: url(#wordLift); }
-    .tag { fill: var(--muted); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-weight: 600; letter-spacing: 0.08em; }
   </style>
 
   <defs>
@@ -67,7 +64,7 @@
     </filter>
   </defs>
 
-  <!-- woven agent threads -->
+  <!-- woven strands -->
   <path class="thread" d="M116 72 H240 C318 72 328 166 408 166 C474 166 490 128 542 134 C586 139 610 165 640 180" stroke="url(#cyanBlue)" stroke-width="13"/>
   <path class="thread" d="M116 126 H248 C315 126 338 122 396 166 C455 211 492 221 548 205 C587 194 611 184 640 180" stroke="url(#blueAmber)" stroke-width="13"/>
   <path class="thread" d="M116 180 H256 C322 180 350 207 412 207 C482 207 498 153 552 154 C590 155 614 169 640 180" stroke="url(#violetAmber)" stroke-width="13"/>
@@ -112,5 +109,4 @@
 
   <!-- wordmark -->
   <text class="word" x="724" y="230" font-size="154">weft</text>
-  <text class="tag" x="733" y="277" font-size="24">agent threads</text>
 </svg>
