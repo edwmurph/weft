@@ -16,11 +16,7 @@ It is meant for the practical mess of running several agent sessions next to tes
 
 ## Demo
 
-<p align="center">
-  <a href="assets/weft-demo.mp4">
-    <img src="assets/weft-demo.gif" alt="Weft demo showing the dashboard managing parallel agent and shell tasks" width="100%">
-  </a>
-</p>
+https://github.com/user-attachments/assets/1aa89fbd-7fc0-48ba-8cb2-d3ea7f48dac7
 
 ## Quickstart
 
