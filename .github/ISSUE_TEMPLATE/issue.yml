@@ -1,0 +1,90 @@
+name: Issue
+description: Report a bug, install problem, docs issue, terminal behavior, or support question.
+title: "[Issue]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for bugs, release/install problems, terminal/input behavior, docs issues, and general support. Redact secrets, private paths, tokens, task output, and config values before posting.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Bug
+        - Install or release
+        - Terminal or input behavior
+        - Documentation
+        - Usage or support
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem or question clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: Tell us what Weft should have done instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can this be reproduced?
+      description: Include commands, dashboard actions, key presses, and the smallest example that shows the behavior.
+      placeholder: |
+        1. Run `weft ...`
+        2. Press ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Weft version
+      description: Paste the output of `weft version`.
+      placeholder: "weft version"
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Homebrew
+        - Source checkout
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15.5, Ubuntu 24.04, ..."
+    validations:
+      required: true
+  - type: input
+    id: terminal-shell
+    attributes:
+      label: Terminal and shell
+      placeholder: "iTerm2 + zsh, Terminal.app + bash, Ghostty + fish, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config, logs, or screenshots
+      description: Paste only the relevant redacted config or output. If none is relevant, write "None".
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add anything else that would help explain the issue.

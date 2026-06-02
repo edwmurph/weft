@@ -11,17 +11,30 @@ WEFT_HOME=$PWD/.weft WEFT_WORKSPACE=$PWD go run ./cmd/weft doctor
 
 Source-built Weft refuses to use the default `~/.weft` runtime unless `WEFT_HOME` is set or `WEFT_ALLOW_MAIN_RUNTIME=1` is set intentionally. Keep manual worktree testing isolated under the ignored `.weft/` directory.
 
+## Project Direction
+
+Weft is maintainer-directed, but public issues and pull requests are welcome. GitHub Issues are the place for bugs, proposals, support questions, install problems, terminal/input reports, docs issues, and agent support requests. GitHub Discussions are intentionally disabled.
+
+Support is best effort with no response-time guarantee. The maintainer may close, retitle, edit, split, or narrow issues and pull requests to keep the project focused.
+
+Behavior changes must keep `spec.md` as the source of truth. If a pull request changes product behavior, UX, command semantics, config/state shape, release behavior, or workflow expectations, update `spec.md` in the same change.
+
 ## Checks
 
 Run the full local workflow before offering a change for review:
 
 ```sh
+gofmt -w cmd internal tests
 go test ./...
 WEFT_RUN_INTEGRATION=1 go test ./...
 go build ./cmd/weft
 ```
 
 Live integration tests are opt-in because they start real supervisor and PTY processes. Each test uses temporary `WEFT_HOME`, temporary `WEFT_WORKSPACE`, and a fake Codex agent task command.
+
+Docs-only changes may skip live integration tests when they do not affect runtime behavior, generated output, release packaging, command output, or user-facing behavior. Explain any skipped check in the pull request.
+
+Pull requests from public contributors may touch any file, but merges to `main` are maintainer-controlled. Maintainer repository settings and branch protection expectations are documented in [Repository Settings Checklist](docs/repository-settings.md).
 
 ## Homebrew Publishing
 

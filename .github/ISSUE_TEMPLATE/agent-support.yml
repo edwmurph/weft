@@ -1,0 +1,41 @@
+name: Agent support request
+description: Request checked-in support for another agent.
+title: "[Agent]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to request a first-class agent integration. Generic long-running commands can already be configured as shell task types.
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      placeholder: "Agent name and project link"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and local setup
+      description: Show the command you run today and any setup Weft would need to assume.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: Describe how you use this agent, including start, resume, interrupt, permission prompts, and completion behavior if those matter.
+    validations:
+      required: true
+  - type: textarea
+    id: integration
+    attributes:
+      label: Expected Weft behavior
+      description: Describe the title, status, resume, input, or dashboard behavior you expect from first-class support.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add links, examples, terminal output, or other context. Redact secrets and private output.

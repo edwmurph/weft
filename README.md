@@ -60,6 +60,8 @@ Config and state are strict current-shape files. Unknown config keys are rejecte
 - [Technical Notes](docs/technical.md): how Weft works under the hood.
 - [Product Specification](spec.md): the living design contract for Weft.
 - [Contributing](CONTRIBUTING.md): local checks and release workflow.
+- [Support](SUPPORT.md): where to report issues and ask for help.
+- [Security](SECURITY.md): how to report vulnerabilities.
 
 ## License
 

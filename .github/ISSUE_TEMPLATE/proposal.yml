@@ -1,0 +1,55 @@
+name: Proposal
+description: Request a feature or behavior change.
+title: "[Proposal]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to describe the behavior you want Weft to support. Clear proposals are easier to evaluate than broad ideas.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow, limitation, or confusion are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: desired-behavior
+    attributes:
+      label: Desired behavior
+      description: Describe exactly what Weft should do, including commands, dashboard behavior, config behavior, or install behavior when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: user-workflow
+    attributes:
+      label: User workflow
+      description: Show the expected user flow with commands, key presses, or screen behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List the concrete outcomes that would make this proposal complete.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Dashboard or terminal UI
+        - CLI command
+        - Config or state
+        - Agent behavior
+        - Install or release
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals or constraints
+      description: Optional. Note anything this proposal should not change.
