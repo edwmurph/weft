@@ -309,6 +309,10 @@ func (m *Model) applyGroupCursor(row groupRow) {
 }
 
 func (m *Model) newTask(title string, typeIDs ...string) tea.Cmd {
+	return m.newTaskWithSilent(title, false, typeIDs...)
+}
+
+func (m *Model) newTaskWithSilent(title string, silent bool, typeIDs ...string) tea.Cmd {
 	workspace := state.ActiveWorkspace(m.state)
 	if workspace == nil {
 		m.message = "add a workspace first"
@@ -326,7 +330,7 @@ func (m *Model) newTask(title string, typeIDs ...string) tea.Cmd {
 	if strings.TrimSpace(title) == "" {
 		title = taskType.TitleTemplate
 	}
-	next, task, err := state.AddTaskWithType(m.state, shortID(), workspace.ID, "", taskType.ID, title, state.NowISO())
+	next, task, err := state.AddTaskWithTypeAndSilent(m.state, shortID(), workspace.ID, "", taskType.ID, title, state.NowISO(), silent)
 	if err != nil {
 		m.message = err.Error()
 		return nil
@@ -1556,7 +1560,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		if state.ActiveWorkspace(m.state) == nil {
 			return ipc.ErrorResponse("workspace_required", "add a workspace first"), nil
 		}
-		if arg := unsupportedIPCArg(request.Args, "title", "type"); arg != "" {
+		if arg := unsupportedIPCArg(request.Args, "title", "type", "silent"); arg != "" {
 			return ipc.ErrorResponse("unsupported_arg", "unsupported argument: "+arg), nil
 		}
 		title := request.Args["title"]
@@ -1567,7 +1571,15 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		if _, ok := m.cfg.TaskType(typeID); !ok {
 			return ipc.ErrorResponse("task_type_not_found", "task type not found: "+typeID), nil
 		}
-		cmd := m.newTask(title, typeID)
+		silent := false
+		if raw := strings.TrimSpace(request.Args["silent"]); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err != nil {
+				return ipc.ErrorResponse("invalid_silent", "silent must be a boolean"), nil
+			}
+			silent = parsed
+		}
+		cmd := m.newTaskWithSilent(title, silent, typeID)
 		m.snapNavWidthToTarget()
 		return m.ipcResponse("created task"), cmd
 	case "rename":
@@ -1579,7 +1591,17 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		if title == "" {
 			return ipc.Response{OK: false, Message: "title is required"}, nil
 		}
-		next, err := state.RenameTask(m.state, id, title)
+		var next state.State
+		var err error
+		if raw := strings.TrimSpace(request.Args["silent"]); raw != "" {
+			silent, parseErr := strconv.ParseBool(raw)
+			if parseErr != nil {
+				return ipc.ErrorResponse("invalid_silent", "silent must be a boolean"), nil
+			}
+			next, err = state.EditTask(m.state, id, title, silent)
+		} else {
+			next, err = state.RenameTask(m.state, id, title)
+		}
 		if err != nil {
 			return ipcError("rename_task_failed", err), nil
 		}

@@ -87,6 +87,20 @@ func TestAutoTitleMaxColumnsAccountsForTaskTypeBadges(t *testing.T) {
 	}
 }
 
+func TestAutoTitleMaxColumnsAccountsForTaskSilentMarker(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	st.Tasks[0].Title = "{status} {auto}"
+	st.Tasks[0].CodexTitle = "Fake Codex Ready"
+	st.Tasks[0].Silent = true
+
+	got := autoTitleMaxColumns(cfg, st, st.Tasks[0], fixedWorkspacePaneWidth+defaultTasksPaneWidth+minCodexPaneWidth)
+
+	if got != 30 {
+		t.Fatalf("auto title columns = %d, want 30", got)
+	}
+}
+
 func TestWrapPlainSplitsLongWordsWithoutEllipsis(t *testing.T) {
 	got := wrapPlain("error abcdefghijklmnopqrstuvwxyz done", 10, 10)
 	joined := strings.Join(got, "")
@@ -696,6 +710,28 @@ func TestWorkspaceCardCountsSilenceIdleTasksInSilentGroups(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCardCountsSilenceIdleTasksWithTaskSilent(t *testing.T) {
+	now := state.NowISO()
+	st := state.State{
+		Version:             state.Version,
+		SelectedWorkspaceID: "w",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
+		Tasks: []state.Task{
+			{ID: "ready", WorkspaceID: "w", Title: "Ready", Status: state.StatusReady, Silent: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "running", WorkspaceID: "w", Title: "Running", Status: state.StatusRunning, Silent: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "killed", WorkspaceID: "w", Title: "Killed", Status: state.StatusKilled, Silent: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "error", WorkspaceID: "w", Title: "Error", Status: state.StatusError, Silent: true, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+
+	counts := workspaceCardCountsForWorkspace(st, "w")
+	if counts.total != 4 || counts.active != 1 || counts.silenced != 1 || counts.needsAttention != 2 {
+		t.Fatalf("counts = %#v", counts)
+	}
+}
+
 func TestRenderWorkspaceFallsBackToSingleNavPane(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
@@ -781,6 +817,17 @@ func TestRenderTasksPaneShowsTopLevelTasksAndEmptyState(t *testing.T) {
 	got = strings.Join(renderGroupsPaneWithOptions(cfg, st, 40, 12, 0, workspaceRenderOptions{}), "\n")
 	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "Press w to add one.") || strings.Contains(got, "Press n to create") {
 		t.Fatalf("no-workspace tasks pane should explain workspace requirement:\n%s", got)
+	}
+}
+
+func TestRenderTasksPaneShowsTaskSilentMarker(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	st.Tasks[0].Silent = true
+
+	got := ansi.Strip(strings.Join(renderGroupsPaneWithOptions(cfg, st, 44, 12, 0, workspaceRenderOptions{}), "\n"))
+	if !strings.Contains(got, "· ⊘ [codex] alpha") {
+		t.Fatalf("silent task row missing marker:\n%s", got)
 	}
 }
 

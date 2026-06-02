@@ -282,6 +282,22 @@ func TestAddTaskWithTypeStoresTaskType(t *testing.T) {
 	}
 }
 
+func TestAddTaskWithTypeAndSilentSetsSilent(t *testing.T) {
+	st := stateWithWorkspace(t)
+	now := NowISO()
+
+	next, task, err := AddTaskWithTypeAndSilent(st, "silent-task", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", now, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !task.Silent {
+		t.Fatalf("task should be silent: %#v", task)
+	}
+	if got := TaskByID(next, "silent-task"); got == nil || !got.Silent {
+		t.Fatalf("persisted task should be silent: %#v", next.Tasks)
+	}
+}
+
 func TestAddTaskWithTypeRequiresTaskType(t *testing.T) {
 	st := stateWithWorkspace(t)
 
@@ -294,6 +310,36 @@ func TestAddTaskWithTypeRequiresTaskType(t *testing.T) {
 	}
 	if task.ID != "" {
 		t.Fatalf("task should be empty on error: %#v", task)
+	}
+}
+
+func TestEditTaskPersistsSilentAndRenameTaskPreservesSilent(t *testing.T) {
+	st := stateWithWorkspace(t)
+	now := NowISO()
+	st.Tasks = []Task{{ID: "a", WorkspaceID: st.SelectedWorkspaceID, TypeID: codexTaskTypeID, Title: "Codex", Status: StatusReady, Silent: false, CreatedAt: now, UpdatedAt: now}}
+
+	next, err := EditTask(st, "a", "Codex", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task := TaskByID(next, "a"); task == nil || task.Title != "Codex" || !task.Silent {
+		t.Fatalf("edited task = %#v", task)
+	}
+
+	next, err = RenameTask(next, "a", "Renamed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task := TaskByID(next, "a"); task == nil || task.Title != "Renamed" || !task.Silent {
+		t.Fatalf("renamed task should preserve silence: %#v", task)
+	}
+
+	next, err = EditTask(next, "a", "Unsilenced", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task := TaskByID(next, "a"); task == nil || task.Title != "Unsilenced" || task.Silent {
+		t.Fatalf("unsilenced task = %#v", task)
 	}
 }
 

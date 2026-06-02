@@ -11,13 +11,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/ptyx"
 	"github.com/edwmurph/weft/internal/state"
 	weftversion "github.com/edwmurph/weft/internal/version"
+	"github.com/muesli/termenv"
 )
 
 func TestEmptyModelStartsInWorkspacesFocus(t *testing.T) {
@@ -70,6 +73,91 @@ func TestTaskTypeBadgeDoesNotSynthesizeMissingTypes(t *testing.T) {
 	}
 	if got := taskTypeBadgeColumnWidth(config.Config{TaskTypes: map[string]config.TaskType{}}); got != 0 {
 		t.Fatalf("empty configured task type badge width = %d, want 0", got)
+	}
+}
+
+func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+
+	cfg := config.DefaultConfig()
+	input := textinput.New()
+	index := defaultTaskTypeIndex(cfg)
+	configureNewTaskTitleInput(&input, cfg, index)
+
+	raw := renderNewTaskModal(cfg, index, input, 60, 1, false, false)
+	rendered := ansi.Strip(raw)
+	if !strings.Contains(rendered, "Title") || !strings.Contains(rendered, "[ ] Silent") {
+		t.Fatalf("new task modal missing title or silent checkbox:\n%s", rendered)
+	}
+	if !strings.Contains(raw, "\x1b[38;5;117m╭") {
+		t.Fatalf("focused title input should use blue border:\n%s", raw)
+	}
+
+	result := handleNewTaskKey(cfg, index, input, 1, false, false, tea.KeyMsg{Type: tea.KeyDown})
+	if result.field != 2 || result.silent {
+		t.Fatalf("down should focus silent checkbox without toggling: %#v", result)
+	}
+	raw = renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen)
+	if !strings.Contains(raw, modalKeyStyle.Render("[ ]")+" "+modalValueStyle.Render("Silent")) {
+		t.Fatalf("focused silent checkbox should color only the checkbox glyph:\n%s", raw)
+	}
+
+	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeySpace})
+	if result.field != 2 || !result.silent {
+		t.Fatalf("space should toggle silent checkbox: %#v", result)
+	}
+
+	rendered = ansi.Strip(renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen))
+	if !strings.Contains(rendered, "[x] Silent") {
+		t.Fatalf("new task modal should render checked checkbox:\n%s", rendered)
+	}
+
+	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeyUp})
+	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeyUp})
+	if result.field != 0 || !result.silent {
+		t.Fatalf("up should move to type while keeping checkbox state: %#v", result)
+	}
+	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeySpace})
+	if !result.typeOpen {
+		t.Fatalf("space on type should open dropdown: %#v", result)
+	}
+	raw = renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen)
+	if !strings.Contains(raw, "\x1b[38;5;117m╭") {
+		t.Fatalf("focused type field should use blue border:\n%s", raw)
+	}
+	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeyDown})
+	if result.index == index || result.field != 0 || !result.silent || !result.typeOpen {
+		t.Fatalf("down in dropdown should move task type while keeping field and checkbox state: %#v", result)
+	}
+	rendered = ansi.Strip(renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen))
+	if !strings.Contains(rendered, "> Shell") {
+		t.Fatalf("new task modal should render open type dropdown:\n%s", rendered)
+	}
+}
+
+func TestEditTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
+	st := testStateWithTask(t.TempDir())
+	ctx := promptContext{prompt: promptEditTask, pendingID: "a", state: st, selectedTask: &st.Tasks[0]}
+	input := textinput.New()
+	configurePromptInput(&input, ctx, "Codex {status}")
+
+	extra := renderPromptExtraForState(config.DefaultConfig(), st, promptEditTask, &st.Tasks[0], input, 60)
+	rendered := ansi.Strip(renderSilentPromptModal(ctx, input, 60, 20, 0, true, extra))
+	if !strings.Contains(rendered, "Title") || !strings.Contains(rendered, "Codex {status}") || !strings.Contains(rendered, "[x] Silent") || !strings.Contains(rendered, "Variables") {
+		t.Fatalf("edit task modal missing title, template, or checkbox:\n%s", rendered)
+	}
+
+	result := handleSilentPromptInputKey(input, ctx, 0, true, tea.KeyMsg{Type: tea.KeyTab})
+	result = handleSilentPromptInputKey(result.input, ctx, result.field, result.silent, tea.KeyMsg{Type: tea.KeySpace})
+	if result.field != 1 || result.silent {
+		t.Fatalf("space should clear existing silent checkbox: %#v", result)
+	}
+
+	result = handleSilentPromptInputKey(result.input, ctx, result.field, result.silent, tea.KeyMsg{Type: tea.KeyEnter})
+	if result.action != promptInputSubmit || result.value != "Codex {status}" || result.silent {
+		t.Fatalf("edit task submit should preserve title variables and unchecked state: %#v", result)
 	}
 }
 
@@ -1660,6 +1748,43 @@ func TestIPCNewCreatesRequestedTaskType(t *testing.T) {
 	}
 }
 
+func TestIPCNewCreatesSilentTask(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Tasks = nil
+	model.state.ActiveTaskID = ""
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"silent": "true"}})
+	defer killPTYs(model)
+
+	if !response.OK || cmd == nil {
+		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+	}
+	if len(model.state.Tasks) != 1 || !model.state.Tasks[0].Silent {
+		t.Fatalf("silent task was not created: %#v", model.state.Tasks)
+	}
+}
+
+func TestIPCNewRejectsInvalidSilent(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Tasks = nil
+	model.state.ActiveTaskID = ""
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"silent": "sometimes"}})
+	defer killPTYs(model)
+
+	if response.OK || cmd != nil {
+		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+	}
+	if response.Error == nil || response.Error.Code != "invalid_silent" {
+		t.Fatalf("expected invalid silent error: %#v", response)
+	}
+	if len(model.state.Tasks) != 0 {
+		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
+	}
+}
+
 func TestIPCNewRejectsTransportMetadataInArgs(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
@@ -1679,6 +1804,52 @@ func TestIPCNewRejectsTransportMetadataInArgs(t *testing.T) {
 	}
 	if len(model.state.Tasks) != 0 {
 		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
+	}
+}
+
+func TestIPCRenameCanSetAndPreserveTaskSilent(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	response, _ := model.handleIPC(ipc.Request{Command: "rename", Args: map[string]string{"id": "a", "title": "Beta", "silent": "true"}})
+	if !response.OK {
+		t.Fatalf("rename response = %#v", response)
+	}
+	if task := state.TaskByID(model.state, "a"); task == nil || task.Title != "Beta" || !task.Silent {
+		t.Fatalf("silent rename task = %#v", task)
+	}
+
+	response, _ = model.handleIPC(ipc.Request{Command: "rename", Args: map[string]string{"id": "a", "title": "Gamma"}})
+	if !response.OK {
+		t.Fatalf("rename response = %#v", response)
+	}
+	if task := state.TaskByID(model.state, "a"); task == nil || task.Title != "Gamma" || !task.Silent {
+		t.Fatalf("title-only rename should preserve silence: %#v", task)
+	}
+
+	response, _ = model.handleIPC(ipc.Request{Command: "rename", Args: map[string]string{"id": "a", "title": "Delta", "silent": "false"}})
+	if !response.OK {
+		t.Fatalf("rename response = %#v", response)
+	}
+	if task := state.TaskByID(model.state, "a"); task == nil || task.Title != "Delta" || task.Silent {
+		t.Fatalf("unsilent rename task = %#v", task)
+	}
+}
+
+func TestIPCRenameRejectsInvalidSilent(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	response, _ := model.handleIPC(ipc.Request{Command: "rename", Args: map[string]string{"id": "a", "title": "Beta", "silent": "sometimes"}})
+
+	if response.OK {
+		t.Fatalf("rename response = %#v", response)
+	}
+	if response.Error == nil || response.Error.Code != "invalid_silent" {
+		t.Fatalf("expected invalid silent error: %#v", response)
+	}
+	if task := state.TaskByID(model.state, "a"); task == nil || task.Title != "alpha" || task.Silent {
+		t.Fatalf("invalid silent should not mutate task: %#v", task)
 	}
 }
 

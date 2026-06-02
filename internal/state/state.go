@@ -59,6 +59,7 @@ type Task struct {
 	GroupID             string     `json:"group_id"`
 	TypeID              string     `json:"type_id"`
 	Title               string     `json:"title"`
+	Silent              bool       `json:"silent,omitempty"`
 	AutoTitle           string     `json:"auto_title,omitempty"`
 	AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
 	AutoTitleError      string     `json:"auto_title_error,omitempty"`
@@ -1047,6 +1048,10 @@ func ToggleGroupCollapsed(st State, groupID string) State {
 }
 
 func AddTaskWithType(st State, id string, workspaceID string, groupID string, typeID string, title string, now string) (State, Task, error) {
+	return AddTaskWithTypeAndSilent(st, id, workspaceID, groupID, typeID, title, now, false)
+}
+
+func AddTaskWithTypeAndSilent(st State, id string, workspaceID string, groupID string, typeID string, title string, now string, silent bool) (State, Task, error) {
 	if strings.TrimSpace(id) == "" {
 		return st, Task{}, fmt.Errorf("task id is required")
 	}
@@ -1072,7 +1077,7 @@ func AddTaskWithType(st State, id string, workspaceID string, groupID string, ty
 	}
 	task := Task{
 		ID: id, WorkspaceID: workspaceID, GroupID: groupID,
-		TypeID: typeID, Title: title, Status: StatusStarting, CreatedAt: now, UpdatedAt: now,
+		TypeID: typeID, Title: title, Silent: silent, Status: StatusStarting, CreatedAt: now, UpdatedAt: now,
 	}
 	st.Tasks = append(st.Tasks, task)
 	st.ActiveTaskID = id
@@ -1089,6 +1094,14 @@ func TaskTypeID(task Task) string {
 }
 
 func RenameTask(st State, taskID string, title string) (State, error) {
+	return editTask(st, taskID, title, nil)
+}
+
+func EditTask(st State, taskID string, title string, silent bool) (State, error) {
+	return editTask(st, taskID, title, &silent)
+}
+
+func editTask(st State, taskID string, title string, silent *bool) (State, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return st, fmt.Errorf("title cannot be empty")
@@ -1098,6 +1111,9 @@ func RenameTask(st State, taskID string, title string) (State, error) {
 	}
 	return WithUpdatedTask(st, taskID, func(task Task) Task {
 		task.Title = title
+		if silent != nil {
+			task.Silent = *silent
+		}
 		return task
 	}), nil
 }

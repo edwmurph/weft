@@ -42,6 +42,7 @@ var (
 	groupHeaderStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	modalStyle                        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("117")).Padding(1, 2)
 	modalInputStyle                   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("244")).Padding(0, 1)
+	modalInputFocusedStyle            = modalInputStyle.BorderForeground(lipgloss.Color("117"))
 	modalTitleStyle                   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
 	modalLabelStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
 	modalValueStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
@@ -625,7 +626,7 @@ func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspa
 			counts.active++
 			continue
 		}
-		if group := state.GroupByID(st, task.GroupID); group != nil && group.Silent && workspaceCardTaskSilenced(task) {
+		if workspaceCardTaskSilenceEnabled(st, task) && workspaceCardTaskSilenced(task) {
 			counts.silenced++
 			continue
 		}
@@ -636,6 +637,14 @@ func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspa
 
 func workspaceCardTaskActive(task state.Task) bool {
 	return taskStatusIndicatesActivity(task)
+}
+
+func workspaceCardTaskSilenceEnabled(st state.State, task state.Task) bool {
+	if task.Silent {
+		return true
+	}
+	group := state.GroupByID(st, task.GroupID)
+	return group != nil && group.Silent
 }
 
 func workspaceCardTaskSilenced(task state.Task) bool {
@@ -833,7 +842,7 @@ func scrollPaneContentToRangeWithOffset(content []string, selectedLine int, sele
 func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int, nested bool, selected bool, options workspaceRenderOptions) string {
 	title := renderTaskTitleForState(cfg, st, task)
 	marker := taskMarkerForRender(task, options.loadingFrame, options.loadingTasks)
-	prefix := marker + " " + taskTypeBadgeCellForTask(cfg, task) + " "
+	prefix := marker + " " + taskSilentMarkerForRender(task) + taskTypeBadgeCellForTask(cfg, task) + " "
 	if duration := taskOperationDurationSuffix(task, options); duration != "" {
 		prefix += duration + " "
 	}
@@ -862,6 +871,13 @@ func taskOperationDurationSuffix(task state.Task, options workspaceRenderOptions
 		return ""
 	}
 	return formatTaskOperationDuration(time.Since(started))
+}
+
+func taskSilentMarkerForRender(task state.Task) string {
+	if task.Silent {
+		return "⊘ "
+	}
+	return ""
 }
 
 func formatTaskOperationDuration(elapsed time.Duration) string {
@@ -904,7 +920,7 @@ func taskPaneWidthForTitleHook(st state.State, terminalWidth int) int {
 func taskTitleColumnWidth(cfg config.Config, st state.State, task state.Task, terminalWidth int) int {
 	paneWidth := taskPaneWidthForTitleHook(st, terminalWidth)
 	rowWidth := max(0, paneWidth-2-(navHorizontalPadding*2))
-	return max(0, rowWidth-taskRowPrefixWidth(cfg, task.GroupID != ""))
+	return max(0, rowWidth-taskRowPrefixWidth(cfg, task, task.GroupID != ""))
 }
 
 func autoTitleMaxColumns(cfg config.Config, st state.State, task state.Task, terminalWidth int) int {

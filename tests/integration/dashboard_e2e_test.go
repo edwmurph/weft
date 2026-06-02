@@ -199,9 +199,7 @@ title_template = "Shell"
 		return strings.Contains(capture, "New task") &&
 			strings.Contains(capture, "Type") &&
 			strings.Contains(capture, "Title") &&
-			strings.Contains(capture, "Codex") &&
 			strings.Contains(capture, "Shell") &&
-			!strings.Contains(capture, "[codex] Codex") &&
 			!strings.Contains(capture, "[shell] Shell")
 	})
 	for range "Shell" {
@@ -2344,7 +2342,6 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "New task") &&
 				strings.Contains(capture, "Codex") &&
-				strings.Contains(capture, "Shell") &&
 				strings.Contains(capture, "Enter create")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Escape")
@@ -2476,10 +2473,23 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 
 		directRun(t, env, "send-keys", "-t", pane, "n")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "New task") &&
+				strings.Contains(capture, "[ ] Silent") &&
+				strings.Contains(capture, "Tab move") &&
+				strings.Contains(capture, "Space type/toggle")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Down")
+		directRun(t, env, "send-keys", "-t", pane, "Space")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "New task") &&
+				strings.Contains(capture, "[x] Silent")
+		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		st := waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Tasks) == 1 &&
 				st.Tasks[0].GroupID == "" &&
+				st.Tasks[0].Silent &&
 				st.Tasks[0].Status == state.StatusRunning &&
 				st.Focus == state.FocusConsole
 		})
@@ -2488,6 +2498,25 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
 			return st.Focus == state.FocusTasks && st.NavOpen
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "⊘ [codex]")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "e")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Edit task") &&
+				strings.Contains(capture, "Title") &&
+				strings.Contains(capture, "[x] Silent")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Tab")
+		directRun(t, env, "send-keys", "-t", pane, "Space")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			task := findTask(st, firstTaskID)
+			return task != nil && !task.Silent
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return !strings.Contains(capture, "Edit task")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "m")
 		waitForOutput(t, clientOutput, func(capture string) bool {

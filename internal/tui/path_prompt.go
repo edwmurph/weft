@@ -50,7 +50,7 @@ type promptInputResult struct {
 	cmd             tea.Cmd
 }
 
-type editGroupPromptResult struct {
+type silentPromptResult struct {
 	input   textinput.Model
 	field   int
 	silent  bool
@@ -275,8 +275,8 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 	return result
 }
 
-func handleEditGroupPromptInputKey(input textinput.Model, ctx promptContext, field int, silent bool, msg tea.KeyMsg) editGroupPromptResult {
-	result := editGroupPromptResult{input: input, field: field, silent: silent}
+func handleSilentPromptInputKey(input textinput.Model, ctx promptContext, field int, silent bool, msg tea.KeyMsg) silentPromptResult {
+	result := silentPromptResult{input: input, field: field, silent: silent}
 	keyText := strings.ToLower(msg.String())
 	switch msg.Type {
 	case tea.KeyEsc:
@@ -479,7 +479,11 @@ func workspaceAddMessage(previous state.State, workspace state.Workspace) string
 func renderPromptInput(label string, input textinput.Model, width int) []string {
 	input.Width = max(16, width-4)
 	input.SetSuggestions(nil)
-	box := modalInputStyle.Width(max(16, width-4)).Render(input.View())
+	style := modalInputStyle
+	if input.Focused() {
+		style = modalInputFocusedStyle
+	}
+	box := style.Width(max(16, width-4)).Render(input.View())
 	lines := []string{modalLabelStyle.Render(label)}
 	lines = append(lines, strings.Split(box, "\n")...)
 	return lines
@@ -525,37 +529,31 @@ func renderPromptModal(ctx promptContext, input textinput.Model, width int, heig
 	return strings.Join(lines, "\n")
 }
 
-func renderEditGroupPromptModal(ctx promptContext, input textinput.Model, width int, _ int, field int, silent bool) string {
+func renderSilentPromptModal(ctx promptContext, input textinput.Model, width int, _ int, field int, silent bool, extra []string) string {
 	lines := []string{modalTitleStyle.Render(promptTitle(ctx.prompt)), ""}
 
-	groupLines := renderPromptInput("Group", input, width)
+	valueLines := renderPromptInput(promptLabel(ctx.prompt), input, width)
 	if field != 0 {
-		groupLines[0] = mutedStyle.Render(groupLines[0])
+		valueLines[0] = mutedStyle.Render(valueLines[0])
 	}
-	lines = append(lines, groupLines...)
+	lines = append(lines, valueLines...)
 
 	canSubmit := strings.TrimSpace(input.Value()) != ""
 	if !canSubmit {
-		lines = append(lines, modalWarningStyle.Render(clip("Group required", width)))
+		lines = append(lines, modalWarningStyle.Render(clip(promptSubmitBlocker(ctx, ""), width)))
 	}
 
-	checkbox := "[ ] Silent"
-	if silent {
-		checkbox = "[x] Silent"
-	}
-	checkboxLine := modalValueStyle.Render(checkbox)
-	if field == 1 {
-		checkboxLine = modalKeyStyle.Render(checkbox)
-	} else {
-		checkboxLine = mutedStyle.Render(checkbox)
-	}
-	lines = append(lines, "", checkboxLine)
+	lines = append(lines, "", renderSilentCheckbox(silent, field == 1))
 
-	lines = append(lines, "", renderEditGroupActions(ctx.prompt, canSubmit))
+	if len(extra) > 0 {
+		lines = append(lines, extra...)
+	}
+
+	lines = append(lines, "", renderSilentPromptActions(ctx.prompt, canSubmit))
 	return strings.Join(lines, "\n")
 }
 
-func renderEditGroupActions(prompt promptKind, canSubmit bool) string {
+func renderSilentPromptActions(prompt promptKind, canSubmit bool) string {
 	actions := []string{
 		modalKeyStyle.Render("Tab") + " move",
 		modalKeyStyle.Render("Up/Down") + " move",

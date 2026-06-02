@@ -53,6 +53,9 @@ type ClientModel struct {
 	confirm                  confirmKind
 	pendingID                string
 	newTaskIndex             int
+	newTaskField             int
+	newTaskSilent            bool
+	newTaskTypeOpen          bool
 	promptSuggestionOpen     bool
 	promptSuggestionIndex    int
 	editGroupField           int
@@ -168,7 +171,7 @@ func (m ClientModel) View() string {
 		return m.modalView(m.renderConfirmModal())
 	}
 	if m.mode == modeNewTask {
-		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, m.input, max(36, min(m.width-16, 72))))
+		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, m.input, max(36, min(m.width-16, 72)), m.newTaskField, m.newTaskSilent, m.newTaskTypeOpen))
 	}
 	loadingText := m.snapshot.LoadingText
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
@@ -392,9 +395,12 @@ func (m ClientModel) isNewTaskRowSelected() bool {
 }
 
 func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	result := handleNewTaskKey(m.cfg, m.newTaskIndex, m.input, msg)
+	result := handleNewTaskKey(m.cfg, m.newTaskIndex, m.input, m.newTaskField, m.newTaskSilent, m.newTaskTypeOpen, msg)
 	m.newTaskIndex = result.index
 	m.input = result.input
+	m.newTaskField = result.field
+	m.newTaskSilent = result.silent
+	m.newTaskTypeOpen = result.typeOpen
 	if result.message != "" {
 		m.message = result.message
 	}
@@ -413,7 +419,7 @@ func (m ClientModel) handleNewTaskKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.mode = modeNormal
 	m.newTaskRowSelected = false
-	return m, m.request("new", map[string]string{"type": taskType.ID, "title": m.input.Value()})
+	return m, m.request("new", map[string]string{"type": taskType.ID, "title": m.input.Value(), "silent": fmt.Sprintf("%t", m.newTaskSilent)})
 }
 
 func (m ClientModel) reorderSelectedRow(delta int) (tea.Model, tea.Cmd) {
@@ -464,8 +470,8 @@ func (m ClientModel) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.promptSuggestionIndex = 0
 		return m, nil
 	}
-	if m.prompt == promptGroup || m.prompt == promptEditGroup {
-		result := handleEditGroupPromptInputKey(m.input, m.promptContext(), m.editGroupField, m.editGroupSilent, msg)
+	if m.prompt == promptGroup || m.prompt == promptEditGroup || m.prompt == promptEditTask {
+		result := handleSilentPromptInputKey(m.input, m.promptContext(), m.editGroupField, m.editGroupSilent, msg)
 		m.input = result.input
 		m.editGroupField = result.field
 		m.editGroupSilent = result.silent
@@ -525,7 +531,9 @@ func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 	m.promptSuggestionOpen = promptShouldOpenSuggestions(m.promptContext(), m.input.Value())
 	m.promptSuggestionIndex = 0
 	m.editGroupField = 0
-	if prompt != promptGroup && prompt != promptEditGroup {
+	if prompt == promptGroup {
+		m.editGroupSilent = false
+	} else if prompt != promptEditGroup && prompt != promptEditTask {
 		m.editGroupSilent = false
 	}
 	m.mode = modeInput
@@ -555,7 +563,11 @@ func (m *ClientModel) startNewTaskMenu() {
 		return
 	}
 	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
+	m.newTaskField = 1
+	m.newTaskSilent = false
+	m.newTaskTypeOpen = false
 	configureNewTaskTitleInput(&m.input, m.cfg, m.newTaskIndex)
+	focusNewTaskInput(&m.input, m.newTaskField)
 	m.mode = modeNewTask
 }
 
@@ -583,7 +595,7 @@ func (m ClientModel) applyPrompt(value string) tea.Cmd {
 	case promptWorkspaceTitle:
 		return m.request("rename_workspace", map[string]string{"id": m.pendingID, "title": value})
 	case promptEditTask:
-		return m.request("rename", map[string]string{"id": m.pendingID, "title": value})
+		return m.request("rename", map[string]string{"id": m.pendingID, "title": value, "silent": fmt.Sprintf("%t", m.editGroupSilent)})
 	case promptMoveTask:
 		if task := m.selectedTask(); task != nil {
 			return m.request("move", map[string]string{"id": task.ID, "group": value})
@@ -860,8 +872,8 @@ func (m ClientModel) modalView(content string) string {
 
 func (m ClientModel) renderInputModal() string {
 	width := max(36, min(m.width-16, 72))
-	if m.prompt == promptGroup || m.prompt == promptEditGroup {
-		return renderEditGroupPromptModal(m.promptContext(), m.input, width, m.height, m.editGroupField, m.editGroupSilent)
+	if m.prompt == promptGroup || m.prompt == promptEditGroup || m.prompt == promptEditTask {
+		return renderSilentPromptModal(m.promptContext(), m.input, width, m.height, m.editGroupField, m.editGroupSilent, m.renderPromptExtra(m.input, width))
 	}
 	return renderPromptModal(m.promptContext(), m.input, width, m.height, m.promptSuggestionOpen, m.promptSuggestionIndex, m.renderPromptExtra(m.input, width))
 }

@@ -42,12 +42,19 @@ func taskTypeBadgeCell(cfg config.Config, taskType config.TaskType) string {
 	return padVisual(taskTypeBadge(taskType), taskTypeBadgeColumnWidth(cfg))
 }
 
-func taskRowPrefixWidth(cfg config.Config, nested bool) int {
-	width := lipgloss.Width("·") + lipgloss.Width(" ") + taskTypeBadgeColumnWidth(cfg) + lipgloss.Width(" ")
+func taskRowPrefixWidth(cfg config.Config, task state.Task, nested bool) int {
+	width := lipgloss.Width("·") + lipgloss.Width(" ") + taskSilentMarkerWidth(task) + taskTypeBadgeColumnWidth(cfg) + lipgloss.Width(" ")
 	if nested {
 		width += lipgloss.Width("  ")
 	}
 	return width
+}
+
+func taskSilentMarkerWidth(task state.Task) int {
+	if task.Silent {
+		return lipgloss.Width("⊘ ")
+	}
+	return 0
 }
 
 func defaultTaskTypeIndex(cfg config.Config) int {
@@ -100,48 +107,125 @@ func defaultNewTaskTitle(cfg config.Config, selectedIndex int) string {
 	return taskType.TitleTemplate
 }
 
-func renderNewTaskModal(cfg config.Config, selectedIndex int, input textinput.Model, width int) string {
-	taskTypes := cfg.OrderedTaskTypes()
-	lines := []string{modalTitleStyle.Render("New task"), "", modalLabelStyle.Render("Type")}
-	valueWidth := max(16, width-2)
-	for index, taskType := range taskTypes {
-		marker := "  "
-		style := modalValueStyle
-		if index == selectedIndex {
-			marker = "> "
-			style = modalKeyStyle
-		}
-		label := strings.TrimSpace(taskType.Label)
-		if label == "" {
-			label = strings.TrimSpace(taskType.ID)
-		}
-		lines = append(lines, style.Render(padVisual(clip(marker+label, valueWidth), valueWidth)))
-	}
-	if len(taskTypes) == 0 {
-		lines = append(lines, modalErrorStyle.Render("No task types configured"))
-	}
+func renderNewTaskModal(cfg config.Config, selectedIndex int, input textinput.Model, width int, field int, silent bool, typeOpen bool) string {
+	lines := []string{modalTitleStyle.Render("New task"), ""}
+	lines = append(lines, renderNewTaskTypeField(cfg, selectedIndex, width, field == 0, typeOpen)...)
 	lines = append(lines, "")
-	lines = append(lines, renderPromptInput("Title", input, width)...)
+	titleLines := renderPromptInput("Title", input, width)
+	if field != 1 {
+		titleLines[0] = mutedStyle.Render(titleLines[0])
+	}
+	lines = append(lines, titleLines...)
 	if strings.TrimSpace(input.Value()) == "" {
 		lines = append(lines, modalErrorStyle.Render("Title required"))
 	}
-	lines = append(lines, "", modalKeyStyle.Render("Enter")+" create  "+modalKeyStyle.Render("Up/Down")+" type  "+modalKeyStyle.Render("Esc")+" cancel")
+	lines = append(lines, "", renderSilentCheckbox(silent, field == 2))
+	lines = append(lines, "", renderNewTaskActions(typeOpen))
 	return strings.Join(lines, "\n")
 }
 
-type newTaskInputResult struct {
-	index   int
-	input   textinput.Model
-	submit  bool
-	cancel  bool
-	message string
-	cmd     tea.Cmd
+func renderNewTaskTypeField(cfg config.Config, selectedIndex int, width int, focused bool, open bool) []string {
+	label := modalLabelStyle.Render("Type")
+	if !focused {
+		label = mutedStyle.Render(label)
+	}
+	valueWidth := max(16, width-4)
+	taskType, ok := selectedTaskType(cfg, selectedIndex)
+	value := "No task types configured"
+	if ok {
+		value = taskTypeLabel(taskType)
+	}
+	boxValue := padVisual(clip(value, valueWidth), valueWidth)
+	if focused {
+		boxValue = modalValueStyle.Render(boxValue)
+	}
+	style := modalInputStyle
+	if focused {
+		style = modalInputFocusedStyle
+	}
+	lines := []string{label, style.Width(valueWidth).Render(boxValue)}
+	if !ok {
+		lines = append(lines, modalErrorStyle.Render("No task types configured"))
+		return lines
+	}
+	if !open {
+		return lines
+	}
+	for index, taskType := range cfg.OrderedTaskTypes() {
+		marker := "  "
+		style := mutedStyle
+		if index == selectedIndex {
+			marker = "> "
+			style = modalSuggestionSelectedStyle
+		}
+		option := padVisual(clip(marker+taskTypeLabel(taskType), valueWidth), valueWidth)
+		lines = append(lines, " "+style.Render(option))
+	}
+	return lines
 }
 
-func handleNewTaskKey(cfg config.Config, index int, input textinput.Model, msg tea.KeyMsg) newTaskInputResult {
-	result := newTaskInputResult{index: index, input: input}
-	if handlePromptWordKey(&result.input, msg) {
-		return result
+func renderSilentCheckbox(silent bool, focused bool) string {
+	glyph := "[ ]"
+	if silent {
+		glyph = "[x]"
+	}
+	if focused {
+		return modalKeyStyle.Render(glyph) + " " + modalValueStyle.Render("Silent")
+	}
+	return mutedStyle.Render(glyph + " Silent")
+}
+
+func taskTypeLabel(taskType config.TaskType) string {
+	label := strings.TrimSpace(taskType.Label)
+	if label == "" {
+		label = strings.TrimSpace(taskType.ID)
+	}
+	return label
+}
+
+func renderNewTaskActions(typeOpen bool) string {
+	if typeOpen {
+		return modalKeyStyle.Render("Enter") + " choose  " + modalKeyStyle.Render("Tab") + " choose  " + modalKeyStyle.Render("Up/Down") + " type  " + modalKeyStyle.Render("Esc") + " close"
+	}
+	return modalKeyStyle.Render("Enter") + " create  " + modalKeyStyle.Render("Tab") + " move  " + modalKeyStyle.Render("Up/Down") + " move  " + modalKeyStyle.Render("Left/Right") + " type  " + modalKeyStyle.Render("Space") + " type/toggle  " + modalKeyStyle.Render("Esc") + " cancel"
+}
+
+type newTaskInputResult struct {
+	index    int
+	input    textinput.Model
+	field    int
+	silent   bool
+	typeOpen bool
+	submit   bool
+	cancel   bool
+	message  string
+	cmd      tea.Cmd
+}
+
+func handleNewTaskKey(cfg config.Config, index int, input textinput.Model, field int, silent bool, typeOpen bool, msg tea.KeyMsg) newTaskInputResult {
+	result := newTaskInputResult{index: index, input: input, field: field, silent: silent, typeOpen: typeOpen}
+	keyText := strings.ToLower(msg.String())
+	if result.typeOpen {
+		switch {
+		case msg.Type == tea.KeyEsc:
+			result.typeOpen = false
+			return result
+		case msg.Type == tea.KeyEnter || msg.Type == tea.KeyTab || keyText == "tab":
+			result.typeOpen = false
+			if msg.Type == tea.KeyTab || keyText == "tab" {
+				result.field = 1
+				focusNewTaskInput(&result.input, result.field)
+			}
+			return result
+		case msg.Type == tea.KeyUp || bindingMatches(cfg.KeyBindings.SelectPrev, msg):
+			result.index = newTaskTypeIndexAfterMove(cfg, index, &result.input, -1)
+			return result
+		case msg.Type == tea.KeyDown || bindingMatches(cfg.KeyBindings.SelectNext, msg):
+			result.index = newTaskTypeIndexAfterMove(cfg, index, &result.input, 1)
+			return result
+		default:
+			return result
+		}
 	}
 	switch {
 	case msg.Type == tea.KeyEsc:
@@ -154,15 +238,49 @@ func handleNewTaskKey(cfg config.Config, index int, input textinput.Model, msg t
 		}
 		result.submit = true
 		return result
+	case msg.Type == tea.KeyTab || keyText == "tab":
+		result.field = (result.field + 1) % 3
+		focusNewTaskInput(&result.input, result.field)
+		return result
 	case msg.Type == tea.KeyUp || bindingMatches(cfg.KeyBindings.SelectPrev, msg):
-		result.index = newTaskTypeIndexAfterMove(cfg, index, &result.input, -1)
+		result.field = max(0, result.field-1)
+		focusNewTaskInput(&result.input, result.field)
 		return result
 	case msg.Type == tea.KeyDown || bindingMatches(cfg.KeyBindings.SelectNext, msg):
-		result.index = newTaskTypeIndexAfterMove(cfg, index, &result.input, 1)
+		result.field = min(2, result.field+1)
+		focusNewTaskInput(&result.input, result.field)
+		return result
+	case result.field == 0 && (msg.Type == tea.KeyLeft || msg.Type == tea.KeyRight):
+		delta := -1
+		if msg.Type == tea.KeyRight {
+			delta = 1
+		}
+		result.index = newTaskTypeIndexAfterMove(cfg, index, &result.input, delta)
+		return result
+	case result.field == 0:
+		if msg.Type == tea.KeySpace || msg.String() == " " || keyText == "space" {
+			result.typeOpen = true
+		}
+		return result
+	case result.field == 2:
+		if msg.Type == tea.KeySpace || msg.String() == " " || keyText == "space" {
+			result.silent = !result.silent
+		}
 		return result
 	default:
+		if handlePromptWordKey(&result.input, msg) {
+			return result
+		}
 		result.input, result.cmd = result.input.Update(msg)
 		return result
+	}
+}
+
+func focusNewTaskInput(input *textinput.Model, field int) {
+	if field == 1 {
+		input.Focus()
+	} else {
+		input.Blur()
 	}
 }
 

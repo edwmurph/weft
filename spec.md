@@ -111,7 +111,7 @@ Every IPC request must include the current `protocol_version`. The supervisor re
 
 The protocol does not need an external RPC framework. New dependencies should be added only if the standard library becomes clearly insufficient.
 
-Command payload contracts are strict. `new` accepts only `title` and `type`. `move` accepts only `id`, `direction`, and the current `group` path argument. Transport metadata inside command arguments, such as old `client_id`, `width`, or `height` entries, fails with the same unsupported-argument error as any other unknown command argument.
+Command payload contracts are strict. `new` accepts only `title`, `type`, and optional `silent=true|false`; invalid `silent` values return `invalid_silent`. `rename` may include optional `silent=true|false`; omitting it preserves the task's current silent value. `move` accepts only `id`, `direction`, and the current `group` path argument. Transport metadata inside command arguments, such as old `client_id`, `width`, or `height` entries, fails with the same unsupported-argument error as any other unknown command argument.
 
 Client lifecycle commands are supervisor-owned. `attach_client`, `client_detached`, and `close_client` are handled by the supervisor client coordinator rather than by the engine that owns task and workspace state.
 
@@ -183,9 +183,10 @@ Each card renders:
 - a title in the top border
 - `total`, the number of all tasks in that workspace
 - `active`, the number of tasks whose rendered/live status is `starting`, `running`, `waiting`, `working`, or `shipping`
-- `needs attention`, computed as `total - active`
+- `needs attention`, the number of non-active tasks that are not silenced and still require attention
+- `silenced`, the number of ready, sitting, or stopped non-active tasks suppressed by either task-level or group-level silence
 
-Do not render card-level `parked`, `stopped`, `killed`, `quiet`, or `error` categories. Those task states remain available to title templates and other task-level surfaces, but the Workspaces pane summarizes them only through `needs attention`.
+Do not render card-level `parked`, `stopped`, `killed`, `quiet`, or `error` categories. Those task states remain available to title templates and other task-level surfaces, but the Workspaces pane summarizes them only through `active`, `needs attention`, and `silenced`.
 
 The default card title is the display path, for example `~/code/personal/weft`. A workspace can also have an optional manual title override. When the override is non-empty, the card uses that title instead of the path. Blank edit input clears the override and returns the card to the default path title.
 
@@ -200,6 +201,7 @@ Counts should use subtle colors:
 - `total`: muted neutral
 - `active`: blue
 - `needs attention`: the Tasks pane ready highlight/text yellow when nonzero, muted neutral when zero
+- `silenced`: muted neutral
 
 Example:
 
@@ -241,7 +243,7 @@ Each task row renders:
 
 Task rows must not render fixed status tags. Status can appear only if the task title template includes a status variable.
 
-Task rows may use subtle row color and marker shape to make derived state easier to scan. Rows for active non-ready/non-idle task states (`starting`, `running`, `waiting`, `working`, `shipping`, or newer live task states) replace the static marker with the shared high-resolution Braille loading spinner frame. Rows whose PTY has not produced visible content may also use the spinner until the task is ready. Configured command task rows also use the same spinner while a submitted foreground command is in progress, returning to the ready marker when the shell regains the PTY foreground process group. Codex screens detected as ready user prompts, including tool permission prompts and command approval prompts, use the ready marker instead of the loading spinner. Ready or idle rows use the subtle `·` marker and keep their ready color even when selected, hovered, or also the active task; the selected ready-row variant must use enough foreground/background contrast to stay readable. Stopped rows use `◦`; errors use `!` and the error marker/color. These visuals are presentation only and must not add status text.
+Task rows may use subtle row color and marker shape to make derived state easier to scan. Rows for active non-ready/non-idle task states (`starting`, `running`, `waiting`, `working`, `shipping`, or newer live task states) replace the static marker with the shared high-resolution Braille loading spinner frame. Rows whose PTY has not produced visible content may also use the spinner until the task is ready. Configured command task rows also use the same spinner while a submitted foreground command is in progress, returning to the ready marker when the shell regains the PTY foreground process group. Codex screens detected as ready user prompts, including tool permission prompts and command approval prompts, use the ready marker instead of the loading spinner. Ready or idle rows use the subtle `·` marker and keep their ready color even when selected, hovered, or also the active task; the selected ready-row variant must use enough foreground/background contrast to stay readable. Stopped rows use `◦`; errors use `!` and the error marker/color. Task-level silent rows render `⊘` after the task state marker and before the task type badge, such as `· ⊘ [codex] Title`. These visuals are presentation only and must not add status text beyond the silent marker.
 
 Task type badges render as plain bracketed text such as `[codex]` or `[shell]`, usually from the task type ID, in a fixed-width badge column so task rows align across terminal fonts. Avoid emoji and wide symbols because terminal width and fallback-font behavior is inconsistent.
 
@@ -360,7 +362,7 @@ Deletion behavior depends on selected item type and is defined below.
 
 ## Status
 
-Task status exists in the model. The Workspaces pane summarizes status only as `active` and `needs attention` counts per workspace. Beyond the console-only ready indicator, a separate top-level global status summary is deferred.
+Task status exists in the model. The Workspaces pane summarizes status only as `active`, `needs attention`, and `silenced` counts per workspace. Beyond the console-only ready indicator, a separate top-level global status summary is deferred.
 
 Status should be available to title templates.
 
@@ -413,7 +415,7 @@ badge = "[shell]"
 title_template = "Shell"
 ```
 
-The dashboard new-task form lists task type labels only, such as `Codex` and `Shell`, and includes a title input. The title input defaults to the selected task type's `title_template`. Changing the selected task type updates the title input to the newly selected type's default only while the input is blank or still matches the previous type default; once the user edits the title, type changes preserve that custom value. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
+The dashboard new-task form has focused Type, Title, and `[ ] Silent` fields. The form opens with Title focused so typing a custom title and pressing `Enter` remains fast. `Up`/`Down` move between fields, `Tab` cycles fields, and `Enter` creates the task when the type dropdown is closed. Focused Type and Title inputs use the blue modal input border; focused Silent renders only the `[ ]` or `[x]` checkbox glyph in blue. The Type field renders the selected task type label only, such as `Codex` or `Shell`; `Left`/`Right` cycles task types, and `Space` opens a dropdown where `Up`/`Down` choose a task type and `Enter` or `Tab` closes the dropdown. `Space` toggles Silent when the checkbox is focused. The title input defaults to the selected task type's `title_template`. Changing the selected task type updates the title input to the newly selected type's default only while the input is blank or still matches the previous type default; once the user edits the title, type changes preserve that custom value. The edit-task form uses the same Silent checkbox, initialized from the selected task, and title-only command-line rename preserves the current silent value. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
 
 The dashboard `n` shortcut opens the new-task form. `Enter` creates a top-level task of the selected type with the entered title. The CLI command `weft new` creates the configured `default_task_type`, and `weft new --type <id>` creates a specific task type. Tasks always start in the selected workspace and are created top-level with no group.
 
@@ -510,13 +512,15 @@ type Task struct {
     GroupID             string     `json:"group_id"`
     TypeID              string     `json:"type_id"`
     Title               string     `json:"title"`
+    Silent              bool       `json:"silent,omitempty"`
     AutoTitle           string     `json:"auto_title,omitempty"`
     AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
     AutoTitleError      string     `json:"auto_title_error,omitempty"`
     CodexTitle          string     `json:"codex_title,omitempty"`
     CodexStatus         string     `json:"codex_status,omitempty"`
     CodexSessionID      string     `json:"codex_session_id,omitempty"`
-    CodexInputSubmitted bool `json:"codex_input_submitted,omitempty"`
+    CodexInputSubmitted bool       `json:"codex_input_submitted,omitempty"`
+    TerminalCWD         string     `json:"terminal_cwd,omitempty"`
     Status              TaskStatus `json:"status"`
     CreatedAt           string     `json:"created_at"`
     UpdatedAt           string     `json:"updated_at"`

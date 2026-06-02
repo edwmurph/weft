@@ -81,7 +81,7 @@ func editPromptTargetForState(st state.State, groupCursor int) (promptKind, stri
 		}
 	case groupRowTask:
 		if task := state.TaskByID(st, row.taskID); task != nil {
-			return promptEditTask, task.ID, task.Title, false, true
+			return promptEditTask, task.ID, task.Title, task.Silent, true
 		}
 	}
 	return "", "", "", false, false
