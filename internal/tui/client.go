@@ -581,7 +581,7 @@ func (m *ClientModel) startUpgradeConfirm() {
 		return
 	}
 	if !m.canUpgradeResumeNow() {
-		m.message = upgradeResumeWaitingMessage(codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil), m.snapshot.State)
+		m.message = upgradeResumeWaitingMessage(m.cfg, codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil), m.snapshot.State)
 		return
 	}
 	m.confirm = confirmUpgradeResume
@@ -807,13 +807,13 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config
 	}
 	report := codexsession.BuildUpgradeReport(st, cfg, nil)
 	if len(report.TerminalBusy) > 0 {
-		return pendingUpgradeFooter(upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report)
+		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report)
 	}
 	if len(report.Busy) > 0 {
-		return pendingUpgradeFooter(upgrade, delta, fmt.Sprintf("Wait for %d Codex task(s) to become idle.", len(report.Busy)), st, report)
+		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d Codex task(s) to become idle.", len(report.Busy)), st, report)
 	}
 	if len(report.Missing) > 0 {
-		return pendingUpgradeFooter(upgrade, delta, fmt.Sprintf("Waiting for %d Codex session id(s).", len(report.Missing)), st, report)
+		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Waiting for %d Codex session id(s).", len(report.Missing)), st, report)
 	}
 	if action := upgradeReadyActionText(report); action != "" {
 		return readyUpgradeFooter(upgrade, delta, fmt.Sprintf("Press U to upgrade and %s.", action))
@@ -821,13 +821,13 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config
 	return readyUpgradeFooter(upgrade, delta, "Press U to restart now.")
 }
 
-func pendingUpgradeFooter(upgrade *ipc.Upgrade, target string, wait string, st state.State, report codexsession.Report) string {
+func pendingUpgradeFooter(cfg config.Config, upgrade *ipc.Upgrade, target string, wait string, st state.State, report codexsession.Report) string {
 	prefix := "Upgrade pending"
 	if upgrade.Reason == ipc.UpgradeReasonConfig {
 		prefix = "Config pending"
 	}
 	lines := []string{fmt.Sprintf("%s: %s.", prefix, target), wait}
-	lines = append(lines, upgradeBlockingTaskLines(st, report)...)
+	lines = append(lines, upgradeBlockingTaskLines(cfg, st, report)...)
 	return strings.Join(lines, "\n")
 }
 
@@ -858,8 +858,8 @@ func upgradeReadyActionText(report codexsession.Report) string {
 	return strings.Join(actions, " and ")
 }
 
-func upgradeBlockingTaskLines(st state.State, report codexsession.Report) []string {
-	tasks := upgradeBlockingTasks(st, report)
+func upgradeBlockingTaskLines(cfg config.Config, st state.State, report codexsession.Report) []string {
+	tasks := upgradeBlockingTasks(cfg, st, report)
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -870,7 +870,7 @@ func upgradeBlockingTaskLines(st state.State, report codexsession.Report) []stri
 	return lines
 }
 
-func upgradeBlockingTasks(st state.State, report codexsession.Report) []upgradeBlockingTask {
+func upgradeBlockingTasks(cfg config.Config, st state.State, report codexsession.Report) []upgradeBlockingTask {
 	tasks := append([]state.Task{}, report.TerminalBusy...)
 	tasks = append(tasks, report.Busy...)
 	tasks = append(tasks, report.Missing...)
@@ -879,17 +879,17 @@ func upgradeBlockingTasks(st state.State, report codexsession.Report) []upgradeB
 	}
 	items := make([]upgradeBlockingTask, 0, len(tasks))
 	for _, task := range tasks {
-		items = append(items, upgradeBlockingTaskDetails(st, task))
+		items = append(items, upgradeBlockingTaskDetails(cfg, st, task))
 	}
 	return items
 }
 
-func upgradeBlockingTaskDetails(st state.State, task state.Task) upgradeBlockingTask {
+func upgradeBlockingTaskDetails(cfg config.Config, st state.State, task state.Task) upgradeBlockingTask {
 	workspace := task.WorkspaceID
 	if found := state.WorkspaceForTask(st, task); found != nil {
 		workspace = workspaceCardTitle(*found)
 	}
-	title := strings.TrimSpace(task.Title)
+	title := strings.TrimSpace(renderTaskTitleForState(cfg, st, task))
 	if title == "" {
 		title = task.ID
 	}
@@ -935,9 +935,9 @@ func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
 	}
 }
 
-func upgradeResumeWaitingMessage(report codexsession.Report, st state.State) string {
+func upgradeResumeWaitingMessage(cfg config.Config, report codexsession.Report, st state.State) string {
 	detail := ""
-	if lines := upgradeBlockingTaskLines(st, report); len(lines) > 0 {
+	if lines := upgradeBlockingTaskLines(cfg, st, report); len(lines) > 0 {
 		detail = "\n" + strings.Join(lines, "\n")
 	}
 	if len(report.TerminalBusy) > 0 {

@@ -365,6 +365,32 @@ func TestUpgradeResumeBlockedMessageListsWorkspaceAndTaskTitle(t *testing.T) {
 	}
 }
 
+func TestUpgradeResumeBlockedMessageResolvesTaskTitleTemplate(t *testing.T) {
+	now := state.NowISO()
+	st := state.State{
+		Version:    state.Version,
+		Focus:      state.FocusTasks,
+		NavOpen:    true,
+		Workspaces: []state.Workspace{{ID: "w", Path: "/tmp/workspace", Title: "Core", CreatedAt: now, UpdatedAt: now}},
+		Groups:     []state.Group{},
+		Tasks: []state.Task{{
+			ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "{status} {auto}",
+			AutoTitle: "Fix config", Status: state.StatusRunning, CodexTitle: "Fake Codex Working", CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	report := codexsession.Report{Busy: st.Tasks}
+
+	got := upgradeResumeBlockedMessage(report, st)
+	for _, expected := range []string{"1 still active", "Blocking:", "- workspace: Core", "  task: Working Fix config"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("blocked message missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "{status}") || strings.Contains(got, "{auto}") {
+		t.Fatalf("blocked message leaked title template:\n%s", got)
+	}
+}
+
 func TestSupervisorOwnsPTYAndAcceptsCodexInput(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh is required")

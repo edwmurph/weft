@@ -19,6 +19,7 @@ import (
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/titles"
 	"github.com/edwmurph/weft/internal/tui"
 	"github.com/edwmurph/weft/internal/version"
 )
@@ -652,8 +653,10 @@ func blockingTasks(st state.State, report codexsession.Report) []blockingTask {
 }
 
 func blockingTaskDetails(st state.State, task state.Task) blockingTask {
+	workspaceState := state.Workspace{}
 	workspace := task.WorkspaceID
 	if found := state.WorkspaceForTask(st, task); found != nil {
+		workspaceState = *found
 		workspace = strings.TrimSpace(found.Title)
 		if workspace == "" {
 			workspace = filepath.Base(strings.TrimRight(found.Path, string(os.PathSeparator)))
@@ -662,7 +665,11 @@ func blockingTaskDetails(st state.State, task state.Task) blockingTask {
 			workspace = found.Path
 		}
 	}
-	title := strings.TrimSpace(task.Title)
+	groupState := state.Group{}
+	if found := state.GroupForTask(st, task); found != nil {
+		groupState = *found
+	}
+	title := strings.TrimSpace(titles.RenderTask(task, workspaceState, groupState, task.Title))
 	if title == "" {
 		title = task.ID
 	}

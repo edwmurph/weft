@@ -905,6 +905,52 @@ func TestClientUpgradeBlocksRunningShellTask(t *testing.T) {
 	}
 }
 
+func TestClientUpgradeBlockerResolvesTaskTitleTemplate(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].TypeID = config.DefaultTaskTypeCodex
+	st.Tasks[0].Title = "{status} {auto}"
+	st.Tasks[0].AutoTitle = "Fix config"
+	st.Tasks[0].Status = state.StatusRunning
+	st.Tasks[0].CodexTitle = "Fake Codex Working"
+	st.Workspaces[0].Title = "Core"
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Upgrade pending", "Wait for 1 Codex task(s) to become idle", "Blocking:", "- workspace: Core", "  task: Working Fix config"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("running Codex footer missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Contains(got, "{status}") || strings.Contains(got, "{auto}") {
+		t.Fatalf("running Codex footer leaked title template:\n%s", got)
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode == modeConfirm {
+		t.Fatalf("running Codex upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	}
+	for _, expected := range []string{"Blocking:", "- workspace: Core", "  task: Working Fix config"} {
+		if !strings.Contains(model.message, expected) {
+			t.Fatalf("blocked upgrade message missing %q: %q", expected, model.message)
+		}
+	}
+	if strings.Contains(model.message, "{status}") || strings.Contains(model.message, "{auto}") {
+		t.Fatalf("blocked upgrade message leaked title template: %q", model.message)
+	}
+}
+
 func TestClientConfigDriftFooterUsesUpgradePathAndListsBlocker(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithTask(rt.Workspace)
