@@ -25,15 +25,20 @@ Important persisted fields include:
 - active and selected task ids
 - task type id
 - task title template
-- Codex title, status, session id, and input-submitted metadata when available
+- supported-agent title, status, resume, and input-submitted metadata when available
+- terminal cwd metadata when available
 
-Runtime-only details such as process ids, PTY handles, socket clients, terminal size, and screen cache are not persisted.
+Runtime-only details such as process ids, PTY handles, socket clients, terminal size, and screen cache are not persisted. Normal task terminal output is kept in supervisor memory for the live console and preview, not in `state.json`.
+
+During dashboard upgrade restart, idle terminal tasks can write temporary visible scrollback/cwd snapshots under `terminal-upgrade-snapshots/` in the runtime directory. The restarted supervisor restores those snapshots into read-only task history and removes the files.
 
 ## Agent Integrations And Commands
 
-Integrated agent support is checked into Weft. `codex` is currently the only supported agent kind and gets Codex-specific status/title capture, session id capture, interrupt routing, and upgrade resume behavior.
+Integrated agent support is checked into Weft. `codex` is currently the only supported agent kind and gets Codex-specific status/title capture, resume ID capture, interrupt routing, and upgrade resume behavior.
 
 Configured shell command tasks use `kind = "terminal"`. They can start any shell command, but they do not get agent-specific resume or title/status behavior unless Weft adds a dedicated integration for that agent. During dashboard `U`, an idle terminal task can restart as a fresh shell with saved history/cwd. A terminal task running foreground work blocks upgrade until it becomes idle.
+
+Task processes execute as the current user. PTY task commands run from the task workspace through the resolved user shell with `-lc`, inherit the parent environment with Weft-specific runtime variables and `NO_COLOR` removed, and can access the same files, credentials, and network as a command run directly in the terminal. Title hooks also run locally from the task workspace and inherit the environment with `SHELL` normalized.
 
 ## Source Builds
 

@@ -1,6 +1,6 @@
 # Usage
 
-Weft has one dashboard for work across projects. Each project directory is a workspace. Inside a workspace, tasks can be grouped however you like.
+Weft has one dashboard for agent sessions and shell commands across projects. Each project directory is a workspace. Inside a workspace, tasks can be grouped however you like.
 
 ## Dashboard Basics
 
@@ -22,6 +22,20 @@ C-b     Return from a task to the dashboard
 ?       Show shortcuts
 C-c     Quit from dashboard focus
 ```
+
+Create an agent task from the CLI:
+
+```sh
+weft new --type codex "Review the failing integration test"
+```
+
+Create a shell task from the CLI:
+
+```sh
+weft new --type shell "Project shell"
+```
+
+The default shell task starts an interactive login shell. Open it with `Enter`, run commands normally, then return to the dashboard with `C-b`.
 
 ## Common Commands
 
@@ -64,7 +78,7 @@ After `brew upgrade weft`, reopen the dashboard with `weft`.
 
 If only the client needed to reopen, Weft is current. If an older background runtime is still running, the dashboard shows an upgrade banner. When running tasks are safe to resume or restart, Weft shows `U` as the upgrade action.
 
-Codex agent tasks can be resumed after a confirmed dashboard upgrade when Weft has a saved Codex session id. Terminal tasks can restart only when idle, retaining prior scrollback as read-only history and launching from the latest OSC 7 cwd. This is not shell resume: jobs, environment mutations, shell variables, and unsubmitted input are not preserved, so finish important command work before upgrading.
+Codex agent tasks can be resumed after a confirmed dashboard upgrade when Weft has a saved resume id. Terminal tasks can restart only when idle, retaining prior scrollback as read-only history and launching from the latest OSC 7 cwd. This is not shell resume: jobs, environment mutations, shell variables, and unsubmitted input are not preserved, so finish important command work before upgrading.
 
 ## Key Diagnostics
 

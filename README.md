@@ -1,57 +1,77 @@
 <h1 align="center"><img src="assets/weft-logo.svg" alt="Weft" width="360"></h1>
 
 <p align="center">
-  <strong>A terminal dashboard for agents and shells.</strong>
+  <strong>A local terminal dashboard for agents and shell commands.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/go-1.23%2B-4b5563?style=flat-square" alt="Go 1.23+">
+  <img src="https://img.shields.io/badge/go-1.24.2%2B-4b5563?style=flat-square" alt="Go 1.24.2+">
   <img src="https://img.shields.io/badge/license-MIT-4b5563?style=flat-square" alt="MIT license">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-4b5563?style=flat-square" alt="macOS and Linux">
 </p>
 
-Weft helps you manage parallel work in one terminal. Run agent sessions and project commands, organize them by workspace and group, see which tasks need attention, and jump back into the right console when you need it.
+Weft is a local terminal dashboard for agents and shell commands. It keeps parallel work grouped by workspace and highlights tasks that need attention, so you can jump back into the right console.
+
+It is meant for the practical mess of running several agent sessions next to tests, dev servers, logs, scripts, and one-off commands. Instead of scanning terminal tabs to remember which session is waiting, which command is still running, and which project a console belongs to, Weft keeps those tasks visible in one local TUI.
 
 ## Demo
 
-https://github.com/user-attachments/assets/1aa89fbd-7fc0-48ba-8cb2-d3ea7f48dac7
+<p align="center">
+  <a href="assets/weft-demo.mp4">
+    <img src="assets/weft-demo.gif" alt="Weft demo showing the dashboard managing parallel agent and shell tasks" width="100%">
+  </a>
+</p>
 
-## Why Weft
+## Quickstart
 
-- See every agent or command task in one dashboard instead of hunting through terminal tabs.
-- Organize tasks into optional groups inside each workspace, such as `release`, `review`, `bugs`, or `experiments`.
-- Track workspace totals for `active` and `needs attention` tasks so finished or blocked work does not sit idle.
-- Auto-name agent tasks from their first message, or configured command tasks from their first command, with an optional title hook.
-- Detach, upgrade, or reopen the UI while local work keeps running.
-- Focus one task for direct input, then return to the dashboard to switch or reorganize.
-- Use the mouse inside a task: scroll history and drag-copy bounded text.
-
-## Getting Started
+Install with Homebrew:
 
 ```sh
 brew install edwmurph/tap/weft
 weft
 ```
 
-Tip: If keyboard input feels wrong in Weft, such as Option/Alt word movement not working or Option+Backspace acting like plain Backspace, run `weft doctor keys`. It diagnoses how your terminal sends editing keys and suggests the terminal setting to fix.
-
-In the dashboard:
+From the dashboard:
 
 - Press `n` to create a task.
-- Choose `Codex` for an agent task, or `Shell` for a configured command task.
-- Press `Enter` to open the selected task.
-- Press `C-b` to return to the dashboard.
+- Choose the agent task type or `Shell` for a normal shell.
+- Press `Enter` to open the selected task console.
+- Press `C-b` to return from a task console to the dashboard.
 - Press `?` for shortcuts.
 
-## Supported Agents
+If keyboard input feels wrong in Weft, such as Option/Alt word movement not working or Option+Backspace acting like plain Backspace, run:
+
+```sh
+weft doctor keys
+```
+
+## Core Ideas
+
+- A workspace is a project directory.
+- A task is a local PTY-backed process, usually an agent session or shell.
+- Groups are optional flat labels inside a workspace, such as `release`, `review`, `bugs`, or `experiments`.
+- The Workspaces pane shows `active` and `needs attention` counts. `needs attention` means the task is not currently active, so it may be ready, stopped, killed, or in an error state.
+- The preview pane shows read-only output for the selected task when there is room. Open the task to use the full console.
+
+## What Weft Helps With
+
+- Group related agent sessions, test runs, and dev servers by workspace.
+- Run normal shell commands alongside agent sessions.
+- See which task needs attention without scanning every terminal.
+- Jump back into the full console when a task needs input.
+- Keep task PTYs owned by a local supervisor, so the dashboard can detach or reopen without stopping running work.
+
+## Why Not Tmux Or Zellij?
+
+tmux and zellij are excellent terminal multiplexers, and Weft started from the same need to keep many terminal processes reachable. Weft uses a purpose-built Go TUI and local supervisor instead of a tmux runtime dependency, which makes common dashboard updates faster because Weft does not shell out or poll for routine state.
+
+That stack also supports task-specific features directly: workspace/group metadata, attention counts, live previews, agent resume metadata, and dashboard upgrade/re-entry flows. Weft is not trying to replace every terminal workflow; it complements normal shells and multiplexers when you have multiple long-running agent or shell tasks.
+
+## Supported Agents And Commands
 
 Weft supports Codex today.
 
-Additional agents can be added upon request. Config can also define generic shell command tasks, which are useful for tests, dev servers, logs, scripts, or any other command you want to keep visible beside agent work.
-
-## Runtime Contract
-
-Config and state are strict current-shape files. Unknown config keys are rejected, `key_bindings.delete = "d"` is not valid, and persisted state is validated as-is instead of being repaired on load or write. Every persisted task `type_id` must be defined by active config before the supervisor starts. Unsupported old config or state files fail with reset guidance.
+Additional agents can be added upon request. Config can also define generic shell command tasks, which are useful for tests, dev servers, logs, scripts, or any other command you want to keep visible beside agent work. Feedback on the workflow and docs is welcome in GitHub Issues.
 
 ## Learn More
 
@@ -61,8 +81,4 @@ Config and state are strict current-shape files. Unknown config keys are rejecte
 - [Product Specification](spec.md): the living design contract for Weft.
 - [Contributing](CONTRIBUTING.md): local checks and release workflow.
 - [Support](SUPPORT.md): where to report issues and ask for help.
-- [Security](SECURITY.md): how to report vulnerabilities.
-
-## License
-
-MIT
+- [Security](SECURITY.md): local execution model and vulnerability reporting.

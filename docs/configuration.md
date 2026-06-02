@@ -92,6 +92,12 @@ Codex agent tasks use the first submitted chat message. Configured command tasks
 
 The checked-in `hooks/auto-title-openai.sh` script is one example hook. It reads `OPENAI_API_KEY` from the environment or a local ignored `.env` file and calls the OpenAI Responses API. Its prompt tells the model to stay within `auto_title_columns` so generated titles fit task rows without ellipsis truncation. The script retries transient curl failures twice by default; set `OPENAI_TITLE_CURL_RETRIES` and `OPENAI_TITLE_CURL_RETRY_DELAY_SECONDS` to tune that behavior. You can replace it with any command that follows the same stdin/stdout contract.
 
+## Task Environment
+
+PTY task commands run from the task workspace through the user's shell with `-lc`. They inherit the parent environment, with `WEFT_ROOT`, `WEFT_HOME`, `WEFT_WORKSPACE`, and `NO_COLOR` removed and `SHELL` normalized to the resolved shell. This means task commands can use the same credentials and environment variables they would see from a normal terminal, unless your shell startup files change them.
+
+Title hooks also run from the task workspace and inherit the environment with `SHELL` normalized. The checked-in `hooks/auto-title-openai.sh` helper reads `OPENAI_API_KEY` from the environment or a local ignored `.env` file and calls the OpenAI API only when you configure it as `title_hook_command`.
+
 ## Runtime Paths
 
 Installed releases use:
@@ -99,10 +105,16 @@ Installed releases use:
 ```text
 ~/.weft/config.toml
 ~/.weft/state.json
+~/.weft/state.json.lock
 ~/.weft/weft.sock
 ~/.weft/weftd.pid
+~/.weft/weftd.lock
 ~/.weft/weftd.log
+~/.weft/weft-client.log
 ~/.weft/backups/
+~/.weft/terminal-upgrade-snapshots/
 ```
 
 Development runs from a source checkout use the checkout-local `.weft/` directory unless `WEFT_HOME`, `WEFT_ROOT`, or `WEFT_ALLOW_MAIN_RUNTIME=1` says otherwise.
+
+`state.json` stores workspace, group, and task metadata, including task type ids, titles, statuses, generated title metadata, supported-agent metadata, selected/active ids, and terminal cwd metadata. Normal task terminal output is kept in supervisor memory for the live console and preview, not in `state.json`. Idle shell task upgrade restart can temporarily write visible scrollback and cwd metadata under `terminal-upgrade-snapshots/`; Weft removes those files after restoring them into the restarted task.
