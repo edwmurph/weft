@@ -32,7 +32,7 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing codex task type: %#v", cfg.TaskTypes)
 	}
-	if codexType.Kind != TaskKindCodex || codexType.Command != "codex" || codexType.Badge != "[codex]" || codexType.TitleTemplate != "{status} {auto}" {
+	if codexType.Kind != TaskKindCodex || codexType.Command != "codex" || codexType.Badge != "[codex]" || codexType.TitleTemplate != "{codex}" {
 		t.Fatalf("codex task type = %#v", codexType)
 	}
 	shellType, ok := cfg.TaskTypes[DefaultTaskTypeShell]

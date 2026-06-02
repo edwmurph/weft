@@ -86,18 +86,21 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 	index := defaultTaskTypeIndex(cfg)
 	configureNewTaskTitleInput(&input, cfg, index)
 
-	raw := renderNewTaskModal(cfg, index, input, 60, 1, false, false)
+	raw := renderNewTaskModal(cfg, index, input, 60, 2, false, false)
 	rendered := ansi.Strip(raw)
-	if !strings.Contains(rendered, "Title") || !strings.Contains(rendered, "[ ] Silent") {
-		t.Fatalf("new task modal missing title or silent checkbox:\n%s", rendered)
+	if !strings.Contains(rendered, "Title") || !strings.Contains(rendered, "[ ] Silent") || !strings.Contains(rendered, "Variables") || !strings.Contains(rendered, "{codex}") {
+		t.Fatalf("new task modal missing title, variables, or silent checkbox:\n%s", rendered)
+	}
+	if strings.Index(rendered, "[ ] Silent") > strings.Index(rendered, "Title") {
+		t.Fatalf("new task modal should render silent before title:\n%s", rendered)
 	}
 	if !strings.Contains(raw, "\x1b[38;5;117m╭") {
 		t.Fatalf("focused title input should use blue border:\n%s", raw)
 	}
 
-	result := handleNewTaskKey(cfg, index, input, 1, false, false, tea.KeyMsg{Type: tea.KeyDown})
-	if result.field != 2 || result.silent {
-		t.Fatalf("down should focus silent checkbox without toggling: %#v", result)
+	result := handleNewTaskKey(cfg, index, input, 2, false, false, tea.KeyMsg{Type: tea.KeyUp})
+	if result.field != 1 || result.silent {
+		t.Fatalf("up should focus silent checkbox without toggling: %#v", result)
 	}
 	raw = renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen)
 	if !strings.Contains(raw, modalKeyStyle.Render("[ ]")+" "+modalValueStyle.Render("Silent")) {
@@ -105,7 +108,7 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 	}
 
 	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeySpace})
-	if result.field != 2 || !result.silent {
+	if result.field != 1 || !result.silent {
 		t.Fatalf("space should toggle silent checkbox: %#v", result)
 	}
 
@@ -114,7 +117,6 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 		t.Fatalf("new task modal should render checked checkbox:\n%s", rendered)
 	}
 
-	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeyUp})
 	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeyUp})
 	if result.field != 0 || !result.silent {
 		t.Fatalf("up should move to type while keeping checkbox state: %#v", result)
@@ -144,14 +146,17 @@ func TestEditTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 	configurePromptInput(&input, ctx, "Codex {status}")
 
 	extra := renderPromptExtraForState(config.DefaultConfig(), st, promptEditTask, &st.Tasks[0], input, 60)
-	rendered := ansi.Strip(renderSilentPromptModal(ctx, input, 60, 20, 0, true, extra))
+	rendered := ansi.Strip(renderSilentPromptModal(ctx, input, 60, 20, 1, true, extra))
 	if !strings.Contains(rendered, "Title") || !strings.Contains(rendered, "Codex {status}") || !strings.Contains(rendered, "[x] Silent") || !strings.Contains(rendered, "Variables") {
 		t.Fatalf("edit task modal missing title, template, or checkbox:\n%s", rendered)
 	}
+	if strings.Index(rendered, "[x] Silent") > strings.Index(rendered, "Title") {
+		t.Fatalf("edit task modal should render silent before title:\n%s", rendered)
+	}
 
-	result := handleSilentPromptInputKey(input, ctx, 0, true, tea.KeyMsg{Type: tea.KeyTab})
+	result := handleSilentPromptInputKey(input, ctx, 1, true, tea.KeyMsg{Type: tea.KeyTab})
 	result = handleSilentPromptInputKey(result.input, ctx, result.field, result.silent, tea.KeyMsg{Type: tea.KeySpace})
-	if result.field != 1 || result.silent {
+	if result.field != 0 || result.silent {
 		t.Fatalf("space should clear existing silent checkbox: %#v", result)
 	}
 

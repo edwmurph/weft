@@ -50,7 +50,12 @@ func renderPromptExtraForState(cfg config.Config, st state.State, prompt promptK
 			lines = append(lines, renderWrappedPromptNotice(notice, width)...)
 		}
 	}
-	lines = append(lines, "", modalLabelStyle.Render("Variables"))
+	lines = append(lines, renderTitleTemplateVariables(width)...)
+	return lines
+}
+
+func renderTitleTemplateVariables(width int) []string {
+	lines := []string{"", modalLabelStyle.Render("Variables")}
 	for _, variable := range titles.TemplateVariables() {
 		lines = append(lines, mutedStyle.Render(clip(fmt.Sprintf("- %s: %s", variable.Name, variable.Description), width)))
 	}

@@ -530,7 +530,7 @@ func (m *ClientModel) startPrompt(prompt promptKind, value string) {
 	configurePromptInput(&m.input, m.promptContext(), value)
 	m.promptSuggestionOpen = promptShouldOpenSuggestions(m.promptContext(), m.input.Value())
 	m.promptSuggestionIndex = 0
-	m.editGroupField = 0
+	m.editGroupField = silentPromptInputField(prompt)
 	if prompt == promptGroup {
 		m.editGroupSilent = false
 	} else if prompt != promptEditGroup && prompt != promptEditTask {
@@ -563,7 +563,7 @@ func (m *ClientModel) startNewTaskMenu() {
 		return
 	}
 	m.newTaskIndex = defaultTaskTypeIndex(m.cfg)
-	m.newTaskField = 1
+	m.newTaskField = 2
 	m.newTaskSilent = false
 	m.newTaskTypeOpen = false
 	configureNewTaskTitleInput(&m.input, m.cfg, m.newTaskIndex)

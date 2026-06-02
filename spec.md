@@ -407,7 +407,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{status} {auto}"
+title_template = "{codex}"
 
 [task_types.shell]
 label = "Shell"
@@ -417,7 +417,7 @@ badge = "[shell]"
 title_template = "Shell"
 ```
 
-The dashboard new-task form has focused Type, Title, and `[ ] Silent` fields. The form opens with Title focused so typing a custom title and pressing `Enter` remains fast. `Up`/`Down` move between fields, `Tab` cycles fields, and `Enter` creates the task when the type dropdown is closed. Focused Type and Title inputs use the blue modal input border; focused Silent renders only the `[ ]` or `[x]` checkbox glyph in blue. The Type field renders the selected task type label only, such as `Codex` or `Shell`; `Left`/`Right` cycles task types, and `Space` opens a dropdown where `Up`/`Down` choose a task type and `Enter` or `Tab` closes the dropdown. `Space` toggles Silent when the checkbox is focused. The title input defaults to the selected task type's `title_template`. Changing the selected task type updates the title input to the newly selected type's default only while the input is blank or still matches the previous type default; once the user edits the title, type changes preserve that custom value. The edit-task form uses the same Silent checkbox, initialized from the selected task, and title-only command-line rename preserves the current silent value. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
+The dashboard new-task form has focused Type, `[ ] Silent`, and Title fields in that visual order. The form opens with Title focused so typing a custom title and pressing `Enter` remains fast. `Up`/`Down` move between fields, `Tab` cycles fields, and `Enter` creates the task when the type dropdown is closed. Focused Type and Title inputs use the blue modal input border; focused Silent renders only the `[ ]` or `[x]` checkbox glyph in blue. The Type field renders the selected task type label only, such as `Codex` or `Shell`; `Left`/`Right` cycles task types, and `Space` opens a dropdown where `Up`/`Down` choose a task type and `Enter` or `Tab` closes the dropdown. `Space` toggles Silent when the checkbox is focused. The title input defaults to the selected task type's `title_template`, and supported title variables render under the title input. Changing the selected task type updates the title input to the newly selected type's default only while the input is blank or still matches the previous type default; once the user edits the title, type changes preserve that custom value. The edit-task form renders its Silent checkbox above the Title input, initializes it from the selected task, lists the same supported title variables under the Title input, and title-only command-line rename preserves the current silent value. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
 
 The dashboard `n` shortcut opens the new-task form. `Enter` creates a top-level task of the selected type with the entered title. The CLI command `weft new` creates the configured `default_task_type`, and `weft new --type <id>` creates a specific task type. Tasks always start in the selected workspace and are created top-level with no group.
 
@@ -430,7 +430,7 @@ A task title can include template variables. Renaming a task edits that task's s
 Default Codex agent task template:
 
 ```text
-{status} {auto}
+{codex}
 ```
 
 Supported variables:
@@ -448,6 +448,7 @@ Example task templates:
 
 ```text
 {title}
+{codex}
 {auto}
 {status} {auto}
 {status} {title}
@@ -541,7 +542,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{status} {auto}"
+title_template = "{codex}"
 
 [task_types.shell]
 label = "Shell"
@@ -862,7 +863,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{status} {auto}"
+title_template = "{codex}"
 
 [task_types.shell]
 label = "Shell"

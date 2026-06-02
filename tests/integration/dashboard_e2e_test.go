@@ -2476,10 +2476,12 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "New task") &&
 				strings.Contains(capture, "[ ] Silent") &&
+				strings.Contains(capture, "Variables") &&
+				strings.Contains(capture, "{codex}") &&
 				strings.Contains(capture, "Tab move") &&
 				strings.Contains(capture, "Space type/toggle")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "Down")
+		directRun(t, env, "send-keys", "-t", pane, "Up")
 		directRun(t, env, "send-keys", "-t", pane, "Space")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "New task") &&

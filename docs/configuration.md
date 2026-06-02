@@ -28,7 +28,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{status} {auto}"
+title_template = "{codex}"
 
 [task_types.shell]
 label = "Shell"
@@ -72,6 +72,7 @@ Examples:
 
 ```text
 {title}
+{codex}
 {auto}
 {status} {auto}
 {group}: {title}

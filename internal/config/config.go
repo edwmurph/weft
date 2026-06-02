@@ -119,7 +119,7 @@ func DefaultTaskTypes() map[string]TaskType {
 			Kind:          TaskKindCodex,
 			Command:       "codex",
 			Badge:         "[codex]",
-			TitleTemplate: "{status} {auto}",
+			TitleTemplate: "{codex}",
 		},
 		DefaultTaskTypeShell: {
 			ID:            DefaultTaskTypeShell,
@@ -481,7 +481,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{status} {auto}"
+title_template = "{codex}"
 
 [task_types.shell]
 label = "Shell"

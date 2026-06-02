@@ -278,6 +278,8 @@ func handlePromptInputKey(input textinput.Model, ctx promptContext, suggestionOp
 func handleSilentPromptInputKey(input textinput.Model, ctx promptContext, field int, silent bool, msg tea.KeyMsg) silentPromptResult {
 	result := silentPromptResult{input: input, field: field, silent: silent}
 	keyText := strings.ToLower(msg.String())
+	inputField := silentPromptInputField(ctx.prompt)
+	silentField := silentPromptSilentField(ctx.prompt)
 	switch msg.Type {
 	case tea.KeyEsc:
 		result.action = promptInputCancel
@@ -302,7 +304,7 @@ func handleSilentPromptInputKey(input textinput.Model, ctx promptContext, field 
 			next = min(1, result.field+1)
 		}
 		result.field = next
-		if result.field == 0 {
+		if result.field == inputField {
 			result.input.Focus()
 		} else {
 			result.input.Blur()
@@ -311,14 +313,14 @@ func handleSilentPromptInputKey(input textinput.Model, ctx promptContext, field 
 	}
 	if keyText == "tab" {
 		result.field = (result.field + 1) % 2
-		if result.field == 0 {
+		if result.field == inputField {
 			result.input.Focus()
 		} else {
 			result.input.Blur()
 		}
 		return result
 	}
-	if result.field == 1 {
+	if result.field == silentField {
 		if msg.Type == tea.KeySpace || msg.String() == " " || keyText == "space" {
 			result.silent = !result.silent
 			return result
@@ -330,6 +332,20 @@ func handleSilentPromptInputKey(input textinput.Model, ctx promptContext, field 
 	}
 	result.input, result.cmd = result.input.Update(msg)
 	return result
+}
+
+func silentPromptInputField(prompt promptKind) int {
+	if prompt == promptEditTask {
+		return 1
+	}
+	return 0
+}
+
+func silentPromptSilentField(prompt promptKind) int {
+	if prompt == promptEditTask {
+		return 0
+	}
+	return 1
 }
 
 func promptPlaceholder(prompt promptKind) string {
@@ -532,8 +548,12 @@ func renderPromptModal(ctx promptContext, input textinput.Model, width int, heig
 func renderSilentPromptModal(ctx promptContext, input textinput.Model, width int, _ int, field int, silent bool, extra []string) string {
 	lines := []string{modalTitleStyle.Render(promptTitle(ctx.prompt)), ""}
 
+	if ctx.prompt == promptEditTask {
+		lines = append(lines, renderSilentCheckbox(silent, field == 0), "")
+	}
+
 	valueLines := renderPromptInput(promptLabel(ctx.prompt), input, width)
-	if field != 0 {
+	if field != silentPromptInputField(ctx.prompt) {
 		valueLines[0] = mutedStyle.Render(valueLines[0])
 	}
 	lines = append(lines, valueLines...)
@@ -543,7 +563,9 @@ func renderSilentPromptModal(ctx promptContext, input textinput.Model, width int
 		lines = append(lines, modalWarningStyle.Render(clip(promptSubmitBlocker(ctx, ""), width)))
 	}
 
-	lines = append(lines, "", renderSilentCheckbox(silent, field == 1))
+	if ctx.prompt != promptEditTask {
+		lines = append(lines, "", renderSilentCheckbox(silent, field == 1))
+	}
 
 	if len(extra) > 0 {
 		lines = append(lines, extra...)

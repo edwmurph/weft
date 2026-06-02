@@ -110,16 +110,16 @@ func defaultNewTaskTitle(cfg config.Config, selectedIndex int) string {
 func renderNewTaskModal(cfg config.Config, selectedIndex int, input textinput.Model, width int, field int, silent bool, typeOpen bool) string {
 	lines := []string{modalTitleStyle.Render("New task"), ""}
 	lines = append(lines, renderNewTaskTypeField(cfg, selectedIndex, width, field == 0, typeOpen)...)
-	lines = append(lines, "")
+	lines = append(lines, "", renderSilentCheckbox(silent, field == 1), "")
 	titleLines := renderPromptInput("Title", input, width)
-	if field != 1 {
+	if field != 2 {
 		titleLines[0] = mutedStyle.Render(titleLines[0])
 	}
 	lines = append(lines, titleLines...)
 	if strings.TrimSpace(input.Value()) == "" {
 		lines = append(lines, modalErrorStyle.Render("Title required"))
 	}
-	lines = append(lines, "", renderSilentCheckbox(silent, field == 2))
+	lines = append(lines, renderTitleTemplateVariables(width)...)
 	lines = append(lines, "", renderNewTaskActions(typeOpen))
 	return strings.Join(lines, "\n")
 }
@@ -262,7 +262,7 @@ func handleNewTaskKey(cfg config.Config, index int, input textinput.Model, field
 			result.typeOpen = true
 		}
 		return result
-	case result.field == 2:
+	case result.field == 1:
 		if msg.Type == tea.KeySpace || msg.String() == " " || keyText == "space" {
 			result.silent = !result.silent
 		}
@@ -277,7 +277,7 @@ func handleNewTaskKey(cfg config.Config, index int, input textinput.Model, field
 }
 
 func focusNewTaskInput(input *textinput.Model, field int) {
-	if field == 1 {
+	if field == 2 {
 		input.Focus()
 	} else {
 		input.Blur()
