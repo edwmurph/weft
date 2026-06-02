@@ -1,0 +1,4 @@
+interface:
+  display_name: "Weft Demo Video"
+  short_description: "Record Weft demos with key overlays"
+  default_prompt: "Use $weft-demo-video to regenerate the README demo video for the current Weft dashboard."
