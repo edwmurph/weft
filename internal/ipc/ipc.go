@@ -17,6 +17,11 @@ import (
 
 const ProtocolVersion = 2
 
+const (
+	UpgradeReasonVersion = "version"
+	UpgradeReasonConfig  = "config"
+)
+
 type Request struct {
 	ProtocolVersion  int               `json:"protocol_version,omitempty"`
 	ClientVersion    string            `json:"client_version,omitempty"`
@@ -38,11 +43,13 @@ type Response struct {
 	Upgrade           *Upgrade     `json:"upgrade,omitempty"`
 	ProtocolVersion   int          `json:"protocol_version,omitempty"`
 	SupervisorVersion string       `json:"supervisor_version,omitempty"`
+	ConfigFingerprint string       `json:"config_fingerprint,omitempty"`
 }
 
 type Upgrade struct {
 	ClientVersion     string `json:"client_version"`
 	SupervisorVersion string `json:"supervisor_version"`
+	Reason            string `json:"reason,omitempty"`
 	Compatible        bool   `json:"compatible"`
 	RestartRequired   bool   `json:"restart_required"`
 	AutoRestarted     bool   `json:"auto_restarted,omitempty"`
@@ -117,6 +124,7 @@ func UpgradeStatus(response Response, clientVersion string) *Upgrade {
 	return &Upgrade{
 		ClientVersion:     clientVersion,
 		SupervisorVersion: supervisorVersion,
+		Reason:            UpgradeReasonVersion,
 		Compatible:        compatible,
 		RestartRequired:   true,
 		RunningTasks:      running,

@@ -118,6 +118,35 @@ func TestWrapPlainSplitsLongWordsWithoutEllipsis(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFooterKeepsBlockingTaskList(t *testing.T) {
+	got := ansi.Strip(strings.Join(renderWorkspaceFooter(
+		"Config pending: config.toml changed.\nWait for 1 shell task(s) to become idle.\nBlocking:\n- workspace: /Users/emurphy/code/personal/weft/.worktrees/config-drift-upgrade\n  task: SuperLongTaskTitleWithoutSpaces",
+		32,
+		12,
+		workspaceUpgradeFooterStyle,
+	), "\n"))
+
+	for _, expected := range []string{"Blocking:", "- workspace:", "  task: SuperLong"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("blocking footer should include %q, got:\n%s", expected, got)
+		}
+	}
+}
+
+func TestStatusBannerPreservesBlockingTaskList(t *testing.T) {
+	got := ansi.Strip(strings.Join(renderStatusBanner(
+		"Upgrade waits until 1 shell task(s) are idle.\nBlocking:\n- workspace: Core\n  task: Shell",
+		48,
+		6,
+	), "\n"))
+
+	for _, expected := range []string{"Upgrade: waits until 1 shell", "Blocking:", "- workspace: Core", "  task: Shell"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("status banner should include %q, got:\n%s", expected, got)
+		}
+	}
+}
+
 func TestWeftLogoGraphShape(t *testing.T) {
 	if len(emptyWeftLogo) != 6 {
 		t.Fatalf("logo height = %d, want 6", len(emptyWeftLogo))

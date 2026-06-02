@@ -301,7 +301,7 @@ func TestSourceCheckoutCWDCanDeriveWorkspaceAndRuntime(t *testing.T) {
 	if rt.Workspace != root {
 		t.Fatalf("Workspace = %q, want checkout cwd %q", rt.Workspace, root)
 	}
-	if rt.Dir != filepath.Join(root, ".weft") {
+	if rt.Dir != filepath.Join(root, ".weft-runtime") {
 		t.Fatalf("Dir = %q, want cwd-local runtime", rt.Dir)
 	}
 	if !rt.HomeExplicit {
@@ -324,7 +324,7 @@ func TestSourceCheckoutCWDRespectsWorkspaceEnv(t *testing.T) {
 	if rt.Workspace != workspace {
 		t.Fatalf("Workspace = %q, want workspace env %q", rt.Workspace, workspace)
 	}
-	if rt.Dir != filepath.Join(root, ".weft") {
+	if rt.Dir != filepath.Join(root, ".weft-runtime") {
 		t.Fatalf("Dir = %q, want checkout-local runtime", rt.Dir)
 	}
 }

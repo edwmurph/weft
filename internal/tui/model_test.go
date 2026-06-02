@@ -878,6 +878,7 @@ func TestClientUpgradeBlocksRunningShellTask(t *testing.T) {
 	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
 	st.Tasks[0].Title = "Shell"
 	st.Tasks[0].Status = state.StatusRunning
+	st.Workspaces[0].Title = "Core"
 	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
@@ -892,7 +893,7 @@ func TestClientUpgradeBlocksRunningShellTask(t *testing.T) {
 	})
 
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Upgrade pending", "Wait for 1 shell task(s) to become idle"} {
+	for _, expected := range []string{"Upgrade pending", "Wait for 1 shell task(s) to become idle", "Blocking:", "- workspace: Core", "  task: Shell"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("running shell footer missing %q:\n%s", expected, got)
 		}
@@ -901,6 +902,78 @@ func TestClientUpgradeBlocksRunningShellTask(t *testing.T) {
 	model = updated.(ClientModel)
 	if cmd != nil || model.mode == modeConfirm {
 		t.Fatalf("running shell upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	}
+}
+
+func TestClientConfigDriftFooterUsesUpgradePathAndListsBlocker(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	st.Tasks[0].Title = "Shell"
+	st.Tasks[0].Status = state.StatusRunning
+	st.Workspaces[0].Title = "Core"
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:       true,
+		Snapshot: &ipc.Snapshot{State: st, NavWidth: 92},
+		Upgrade: &ipc.Upgrade{
+			ClientVersion:     weftversion.Version,
+			SupervisorVersion: weftversion.Version,
+			Reason:            ipc.UpgradeReasonConfig,
+			Compatible:        true,
+			RestartRequired:   true,
+			RunningTasks:      1,
+			Message:           "Config changed.",
+		},
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: weftversion.Version,
+		ConfigFingerprint: config.Fingerprint(config.DefaultConfig()),
+	})
+
+	got := ansi.Strip(model.View())
+	for _, expected := range []string{"Config pending", "config.toml changed", "Wait for 1 shell task(s) to become idle", "Blocking:", "- workspace: Core", "  task: Shell"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("config drift footer missing %q:\n%s", expected, got)
+		}
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode == modeConfirm {
+		t.Fatalf("blocked config reload should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	}
+	for _, expected := range []string{"Blocking:", "- workspace: Core", "  task: Shell"} {
+		if !strings.Contains(model.message, expected) {
+			t.Fatalf("blocked config reload message missing %q: %q", expected, model.message)
+		}
+	}
+}
+
+func TestClientReloadsConfigAfterSupervisorFingerprintChanges(t *testing.T) {
+	rt := testRuntime(t)
+	changed := strings.Replace(config.DefaultConfigText(), `new_task = "n"`, `new_task = "t"`, 1)
+	if err := os.WriteFile(rt.ConfigPath, []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changedCfg, err := config.LoadConfig(rt.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewClientModel(rt, config.DefaultConfig())
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: state.Empty(), NavWidth: 92},
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: weftversion.Version,
+		ConfigFingerprint: config.Fingerprint(changedCfg),
+	})
+
+	if model.cfg.KeyBindings.NewTask != "t" {
+		t.Fatalf("client config did not reload: %#v", model.cfg.KeyBindings)
 	}
 }
 

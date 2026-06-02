@@ -194,10 +194,10 @@ func TestSourceBuildAutoRootsFromCheckoutCWD(t *testing.T) {
 	if rt.Workspace != root {
 		t.Fatalf("workspace = %q, want checkout cwd %q", rt.Workspace, root)
 	}
-	if rt.Dir != filepath.Join(root, ".weft") {
-		t.Fatalf("runtime dir = %q, want checkout-local .weft", rt.Dir)
+	if rt.Dir != filepath.Join(root, ".weft-runtime") {
+		t.Fatalf("runtime dir = %q, want checkout-local .weft-runtime", rt.Dir)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".weft", "config.toml")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".weft-runtime", "config.toml")); err != nil {
 		t.Fatalf("checkout-local runtime should create config: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(err) {
@@ -245,7 +245,7 @@ func TestReleaseBuildIgnoresCheckoutCWDAutoRoot(t *testing.T) {
 	if rt.Dir != filepath.Join(home, ".weft") {
 		t.Fatalf("runtime dir = %q, want default home runtime", rt.Dir)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".weft")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, ".weft-runtime")); !os.IsNotExist(err) {
 		t.Fatalf("release build should not touch checkout-local runtime, stat err = %v", err)
 	}
 }

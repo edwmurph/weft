@@ -401,17 +401,59 @@ func renderWorkspaceFooter(message string, width int, height int, style lipgloss
 	if rowWidth <= 0 {
 		return nil
 	}
-	wrapped := []string{}
-	for _, paragraph := range strings.Split(message, "\n") {
-		paragraph = strings.Join(strings.Fields(paragraph), " ")
-		if paragraph == "" {
+	lines := []string{}
+	hasBlockingList := false
+	for _, rawLine := range strings.Split(message, "\n") {
+		line := normalizeWorkspaceFooterLine(rawLine)
+		if line == "" {
 			continue
 		}
-		wrapped = append(wrapped, wrapPlain(paragraph, rowWidth, 3-len(wrapped))...)
+		lines = append(lines, line)
+		if strings.HasPrefix(strings.TrimSpace(line), "Blocking:") {
+			hasBlockingList = true
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	if hasBlockingList {
+		maxLines := max(1, height-3)
+		wrapped := []string{}
+		for _, line := range lines {
+			if len(wrapped) >= maxLines {
+				break
+			}
+			wrapped = append(wrapped, clip(line, rowWidth))
+		}
+		return renderWorkspaceFooterLines(wrapped, rowWidth, style)
+	}
+	wrapped := []string{}
+	for _, paragraph := range lines {
+		remaining := 3 - len(wrapped)
+		if remaining <= 0 {
+			break
+		}
+		wrapped = append(wrapped, wrapPlain(paragraph, rowWidth, remaining)...)
 		if len(wrapped) >= 3 {
 			break
 		}
 	}
+	return renderWorkspaceFooterLines(wrapped, rowWidth, style)
+}
+
+func normalizeWorkspaceFooterLine(line string) string {
+	line = strings.TrimRight(line, " \t\r")
+	if strings.TrimSpace(line) == "" {
+		return ""
+	}
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(line, "  ") {
+		return line
+	}
+	return strings.Join(strings.Fields(line), " ")
+}
+
+func renderWorkspaceFooterLines(wrapped []string, rowWidth int, style lipgloss.Style) []string {
 	lines := make([]string, 0, len(wrapped))
 	for _, line := range wrapped {
 		line = padVisual(clip(line, rowWidth), rowWidth)
@@ -1151,7 +1193,7 @@ func renderCodexFrame(
 	contentHeight := max(0, height-2)
 	empty := !taskActive
 	contentWidth := codexLineContentWidth(innerWidth, previewMode)
-	messageLines := renderStatusBanner(message, contentWidth, min(3, contentHeight))
+	messageLines := renderStatusBanner(message, contentWidth, statusBannerMaxLines(message, contentHeight))
 	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText, codexEmptyTitle(previewMode), previewMode && empty, emptyArtFrame)
 	if len(messageLines) > 0 {
 		contentLines = append(messageLines, contentLines...)
@@ -1193,7 +1235,20 @@ func previewTopRightLabel(title string, toastText string) string {
 	return title
 }
 
+func statusBannerMaxLines(message string, contentHeight int) int {
+	if contentHeight <= 0 {
+		return 0
+	}
+	if statusMessageHasBlockingList(message) {
+		return contentHeight
+	}
+	return min(3, contentHeight)
+}
+
 func renderStatusBanner(message string, width int, maxLines int) []string {
+	if statusMessageHasBlockingList(message) {
+		return renderStatusBannerList(message, width, maxLines)
+	}
 	message = strings.Join(strings.Fields(message), " ")
 	if message == "" || width <= 0 || maxLines <= 0 {
 		return nil
@@ -1208,6 +1263,35 @@ func renderStatusBanner(message string, width int, maxLines int) []string {
 		wrapped[index] = padVisual(clip(wrapped[index], width), width)
 	}
 	return wrapped
+}
+
+func statusMessageHasBlockingList(message string) bool {
+	return strings.Contains(message, "\nBlocking:\n")
+}
+
+func renderStatusBannerList(message string, width int, maxLines int) []string {
+	if width <= 0 || maxLines <= 0 {
+		return nil
+	}
+	lines := []string{}
+	for _, rawLine := range strings.Split(strings.TrimSpace(message), "\n") {
+		line := normalizeWorkspaceFooterLine(rawLine)
+		if line == "" {
+			continue
+		}
+		if len(lines) == 0 {
+			if !strings.HasPrefix(line, "Upgrade") && !strings.HasPrefix(line, "Restart") {
+				return nil
+			}
+			line = strings.TrimPrefix(line, "Upgrade ")
+			line = "Upgrade: " + line
+		}
+		lines = append(lines, padVisual(clip(line, width), width))
+		if len(lines) >= maxLines {
+			break
+		}
+	}
+	return lines
 }
 
 func wrapPlain(value string, width int, maxLines int) []string {

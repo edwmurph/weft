@@ -51,6 +51,12 @@ func newClientInputRouter(input io.Reader, rt config.Runtime, clientID string, d
 	return router
 }
 
+func (r *clientInputRouter) UpdateBindings(drawerBinding string, repaintBinding string) {
+	r.drawer = bindingRawSequence(drawerBinding)
+	r.drawerSequences = bindingTerminalSequences(drawerBinding)
+	r.repaintSequences = bindingTerminalSequences(repaintBinding)
+}
+
 func (r *clientInputRouter) SetCodexActive(active bool) {
 	if active {
 		r.SetTaskInputMode(taskInputCodex)

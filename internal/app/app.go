@@ -388,10 +388,22 @@ func upgradeSummary(upgrade *ipc.Upgrade) string {
 		return "current"
 	}
 	if upgrade.AutoRestarted {
+		if upgrade.Reason == ipc.UpgradeReasonConfig {
+			return "config reload restarted supervisor"
+		}
 		return "supervisor restarted"
 	}
 	if !upgrade.Compatible {
+		if upgrade.Reason == ipc.UpgradeReasonConfig {
+			return "config reload blocked"
+		}
 		return "incompatible supervisor restart required"
+	}
+	if upgrade.Reason == ipc.UpgradeReasonConfig {
+		if upgrade.RunningTasks > 0 {
+			return fmt.Sprintf("config reload pending, wait for idle/resumable tasks (%d live)", upgrade.RunningTasks)
+		}
+		return "config reload ready"
 	}
 	if upgrade.RunningTasks > 0 {
 		return fmt.Sprintf("upgrade pending, wait for idle/resumable tasks (%d live)", upgrade.RunningTasks)

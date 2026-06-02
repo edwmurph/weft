@@ -35,6 +35,11 @@ type clientToastTick struct {
 	id int
 }
 
+type upgradeBlockingTask struct {
+	workspace string
+	task      string
+}
+
 type ClientModel struct {
 	cfg               config.Config
 	runtime           config.Runtime
@@ -326,7 +331,7 @@ func (m ClientModel) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.newWorkspaceCardSelected = false
 		m.newTaskRowSelected = false
 		m.startNewTaskMenu()
-	case m.canActOnUpgrade() && strings.EqualFold(msg.String(), "u"):
+	case m.canUpgradePending() && strings.EqualFold(msg.String(), "u"):
 		m.newWorkspaceCardSelected = false
 		m.newTaskRowSelected = false
 		m.startUpgradeConfirm()
@@ -576,7 +581,7 @@ func (m *ClientModel) startUpgradeConfirm() {
 		return
 	}
 	if !m.canUpgradeResumeNow() {
-		m.message = upgradeResumeWaitingMessage(codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil))
+		m.message = upgradeResumeWaitingMessage(codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil), m.snapshot.State)
 		return
 	}
 	m.confirm = confirmUpgradeResume
@@ -687,6 +692,7 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	if strings.TrimSpace(response.SupervisorVersion) != "" {
 		m.supervisorVersion = strings.TrimSpace(response.SupervisorVersion)
 	}
+	m.syncConfig(response)
 	if strings.TrimSpace(response.Message) != "" {
 		m.message = response.Message
 	}
@@ -703,6 +709,29 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	m.maybePromptForLaunchWorkspace()
 	m.syncCodexScroll()
 	m.syncInputRouter()
+}
+
+func (m *ClientModel) syncConfig(response ipc.Response) {
+	fingerprint := strings.TrimSpace(response.ConfigFingerprint)
+	if fingerprint == "" || fingerprint == config.Fingerprint(m.cfg) || configRestartPending(response.Upgrade) {
+		return
+	}
+	cfg, err := config.LoadConfig(m.runtime.ConfigPath)
+	if err != nil {
+		m.message = "Config changed but could not reload: " + err.Error()
+		return
+	}
+	if config.Fingerprint(cfg) != fingerprint {
+		return
+	}
+	m.cfg = cfg
+	if m.inputRouter != nil {
+		m.inputRouter.UpdateBindings(cfg.KeyBindings.Drawer, cfg.KeyBindings.Repaint)
+	}
+}
+
+func configRestartPending(upgrade *ipc.Upgrade) bool {
+	return upgrade != nil && upgrade.Reason == ipc.UpgradeReasonConfig && upgrade.RestartRequired
 }
 
 func (m ClientModel) workspaceInfoHeaderText() string {
@@ -769,24 +798,50 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
 	}
-	delta := fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
+	delta := upgradeTarget(*upgrade)
 	if !upgrade.Compatible {
+		if upgrade.Reason == ipc.UpgradeReasonConfig {
+			return "Config reload blocked: config.toml changed.\nFix the config error before restarting."
+		}
 		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop tasks before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
 	}
 	report := codexsession.BuildUpgradeReport(st, cfg, nil)
 	if len(report.TerminalBusy) > 0 {
-		return fmt.Sprintf("Upgrade pending: %s.\nWait for %d shell task(s) to become idle.", delta, len(report.TerminalBusy))
+		return pendingUpgradeFooter(upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report)
 	}
 	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade pending: %s.\nWait for %d Codex task(s) to become idle.", delta, len(report.Busy))
+		return pendingUpgradeFooter(upgrade, delta, fmt.Sprintf("Wait for %d Codex task(s) to become idle.", len(report.Busy)), st, report)
 	}
 	if len(report.Missing) > 0 {
-		return fmt.Sprintf("Upgrade pending: %s.\nWaiting for %d Codex session id(s).", delta, len(report.Missing))
+		return pendingUpgradeFooter(upgrade, delta, fmt.Sprintf("Waiting for %d Codex session id(s).", len(report.Missing)), st, report)
 	}
 	if action := upgradeReadyActionText(report); action != "" {
-		return fmt.Sprintf("Upgrade ready: %s.\nPress U to upgrade and %s.", delta, action)
+		return readyUpgradeFooter(upgrade, delta, fmt.Sprintf("Press U to upgrade and %s.", action))
 	}
-	return fmt.Sprintf("Upgrade ready: %s.\nPress U to restart now.", delta)
+	return readyUpgradeFooter(upgrade, delta, "Press U to restart now.")
+}
+
+func pendingUpgradeFooter(upgrade *ipc.Upgrade, target string, wait string, st state.State, report codexsession.Report) string {
+	prefix := "Upgrade pending"
+	if upgrade.Reason == ipc.UpgradeReasonConfig {
+		prefix = "Config pending"
+	}
+	lines := []string{fmt.Sprintf("%s: %s.", prefix, target), wait}
+	lines = append(lines, upgradeBlockingTaskLines(st, report)...)
+	return strings.Join(lines, "\n")
+}
+
+func readyUpgradeFooter(upgrade *ipc.Upgrade, target string, action string) string {
+	prefix := "Upgrade ready"
+	if upgrade.Reason == ipc.UpgradeReasonConfig {
+		prefix = "Config ready"
+		if action == "Press U to restart now." {
+			action = "Press U to restart supervisor and apply config."
+		} else {
+			action = strings.Replace(action, "Press U to upgrade and ", "Press U to apply config and ", 1)
+		}
+	}
+	return fmt.Sprintf("%s: %s.\n%s", prefix, target, action)
 }
 
 func upgradeReadyActionText(report codexsession.Report) string {
@@ -803,7 +858,55 @@ func upgradeReadyActionText(report codexsession.Report) string {
 	return strings.Join(actions, " and ")
 }
 
+func upgradeBlockingTaskLines(st state.State, report codexsession.Report) []string {
+	tasks := upgradeBlockingTasks(st, report)
+	if len(tasks) == 0 {
+		return nil
+	}
+	lines := []string{"Blocking:"}
+	for _, task := range tasks {
+		lines = append(lines, "- workspace: "+task.workspace, "  task: "+task.task)
+	}
+	return lines
+}
+
+func upgradeBlockingTasks(st state.State, report codexsession.Report) []upgradeBlockingTask {
+	tasks := append([]state.Task{}, report.TerminalBusy...)
+	tasks = append(tasks, report.Busy...)
+	tasks = append(tasks, report.Missing...)
+	if len(tasks) == 0 {
+		return nil
+	}
+	items := make([]upgradeBlockingTask, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, upgradeBlockingTaskDetails(st, task))
+	}
+	return items
+}
+
+func upgradeBlockingTaskDetails(st state.State, task state.Task) upgradeBlockingTask {
+	workspace := task.WorkspaceID
+	if found := state.WorkspaceForTask(st, task); found != nil {
+		workspace = workspaceCardTitle(*found)
+	}
+	title := strings.TrimSpace(task.Title)
+	if title == "" {
+		title = task.ID
+	}
+	return upgradeBlockingTask{
+		workspace: singleLineValue(workspace),
+		task:      singleLineValue(title),
+	}
+}
+
+func singleLineValue(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
 func upgradeTarget(upgrade ipc.Upgrade) string {
+	if upgrade.Reason == ipc.UpgradeReasonConfig {
+		return "config.toml changed"
+	}
 	return fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 }
 
@@ -814,10 +917,6 @@ func (m ClientModel) canUpgradePending() bool {
 func (m ClientModel) canUpgradeResumeNow() bool {
 	return m.canUpgradePending() &&
 		codexsession.BuildUpgradeReport(m.snapshot.State, m.cfg, nil).CanUpgrade()
-}
-
-func (m ClientModel) canActOnUpgrade() bool {
-	return m.canUpgradePending() && m.canUpgradeResumeNow()
 }
 
 func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
@@ -836,15 +935,19 @@ func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
 	}
 }
 
-func upgradeResumeWaitingMessage(report codexsession.Report) string {
+func upgradeResumeWaitingMessage(report codexsession.Report, st state.State) string {
+	detail := ""
+	if lines := upgradeBlockingTaskLines(st, report); len(lines) > 0 {
+		detail = "\n" + strings.Join(lines, "\n")
+	}
 	if len(report.TerminalBusy) > 0 {
-		return fmt.Sprintf("Upgrade waits until %d shell task(s) are idle.", len(report.TerminalBusy))
+		return fmt.Sprintf("Upgrade waits until %d shell task(s) are idle.%s", len(report.TerminalBusy), detail)
 	}
 	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade waits until %d Codex task(s) are idle.", len(report.Busy))
+		return fmt.Sprintf("Upgrade waits until %d Codex task(s) are idle.%s", len(report.Busy), detail)
 	}
 	if len(report.Missing) > 0 {
-		return fmt.Sprintf("Upgrade waits until %d Codex session id(s) are available.", len(report.Missing))
+		return fmt.Sprintf("Upgrade waits until %d Codex session id(s) are available.%s", len(report.Missing), detail)
 	}
 	return "Upgrade is not ready yet."
 }

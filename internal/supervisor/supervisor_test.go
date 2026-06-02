@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edwmurph/weft/internal/codexsession"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/state"
@@ -259,8 +260,72 @@ func TestUpgradeStatusRejectsIncompatibleProtocol(t *testing.T) {
 	}
 }
 
+func TestSupervisorDetectsConfigDrift(t *testing.T) {
+	rt, cfg, store := testRuntime(t)
+	stop := runTestSupervisor(t, rt, cfg, store)
+	defer stop()
+
+	before, err := Status(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Upgrade != nil {
+		t.Fatalf("fresh supervisor should be current: %#v", before.Upgrade)
+	}
+	changed := strings.Replace(config.DefaultConfigText(), `new_task = "n"`, `new_task = "t"`, 1)
+	if err := os.WriteFile(rt.ConfigPath, []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	after, err := Status(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Upgrade == nil || after.Upgrade.Reason != ipc.UpgradeReasonConfig || !after.Upgrade.RestartRequired {
+		t.Fatalf("config drift upgrade = %#v", after.Upgrade)
+	}
+	if after.Upgrade.RunningTasks != 0 || !ShouldAutoRestart(after) {
+		t.Fatalf("idle config drift should be auto-restartable: %#v", after.Upgrade)
+	}
+	if after.ConfigFingerprint != config.Fingerprint(cfg) {
+		t.Fatalf("active config fingerprint changed before restart: %q", after.ConfigFingerprint)
+	}
+	if !strings.Contains(after.Upgrade.Message, "Config changed") {
+		t.Fatalf("config drift message = %q", after.Upgrade.Message)
+	}
+}
+
+func TestConfigDriftBlocksRestartWhenChangedConfigCannotLoadState(t *testing.T) {
+	now := state.NowISO()
+	st := state.State{
+		Version:    state.Version,
+		Focus:      state.FocusTasks,
+		NavOpen:    true,
+		Workspaces: []state.Workspace{{ID: "w", Path: "/tmp/workspace", CreatedAt: now, UpdatedAt: now}},
+		Groups:     []state.Group{},
+		Tasks: []state.Task{{
+			ID: "shell", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell, Title: "Shell",
+			Status: state.StatusReady, CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	cfg := config.DefaultConfig()
+	delete(cfg.TaskTypes, config.DefaultTaskTypeShell)
+	response := ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.ProtocolVersion, SupervisorVersion: version.Version}
+
+	upgrade := configDriftUpgrade(response, version.Version, configDriftStatus{changed: true, cfg: cfg})
+	if upgrade == nil || upgrade.RestartRequired || upgrade.Compatible {
+		t.Fatalf("state-incompatible config drift should be blocked: %#v", upgrade)
+	}
+	for _, expected := range []string{"cannot apply", `type_id "shell" is not defined`} {
+		if !strings.Contains(upgrade.Message, expected) {
+			t.Fatalf("blocked config drift message missing %q:\n%s", expected, upgrade.Message)
+		}
+	}
+}
+
 func TestUpgradeResumeRestartMessageIncludesShellRestart(t *testing.T) {
-	got := upgradeResumeRestartMessage(1, 1, 2, "backup-1")
+	got := upgradeResumeRestartMessage(ipc.UpgradeReasonVersion, 1, 1, 2, "backup-1")
 
 	for _, expected := range []string{
 		"resuming 1 idle Codex task(s)",
@@ -274,6 +339,29 @@ func TestUpgradeResumeRestartMessageIncludesShellRestart(t *testing.T) {
 	}
 	if strings.Contains(got, "resume shell") {
 		t.Fatalf("message should not imply shell resume:\n%s", got)
+	}
+}
+
+func TestUpgradeResumeBlockedMessageListsWorkspaceAndTaskTitle(t *testing.T) {
+	now := state.NowISO()
+	st := state.State{
+		Version:    state.Version,
+		Focus:      state.FocusTasks,
+		NavOpen:    true,
+		Workspaces: []state.Workspace{{ID: "w", Path: "/tmp/workspace", Title: "Core", CreatedAt: now, UpdatedAt: now}},
+		Groups:     []state.Group{},
+		Tasks: []state.Task{{
+			ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell, Title: "Server",
+			Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	report := codexsession.Report{TerminalBusy: st.Tasks}
+
+	got := upgradeResumeBlockedMessage(report, st)
+	for _, expected := range []string{"1 shell task(s) not idle", "Blocking:", "- workspace: Core", "  task: Server"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("blocked message missing %q:\n%s", expected, got)
+		}
 	}
 }
 

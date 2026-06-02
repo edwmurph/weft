@@ -223,7 +223,7 @@ func TestSourceCheckoutCWDLaunchesIsolatedRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
-	runtimeDir := filepath.Join(root, ".weft")
+	runtimeDir := filepath.Join(root, ".weft-runtime")
 	if err := os.Mkdir(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestSourceCheckoutCWDLaunchesIsolatedRuntime(t *testing.T) {
 	out := runWeftInDir(t, env, root, bin, "doctor")
 	for _, expected := range []string{
 		"info launch workspace: " + resolvedRoot,
-		"info runtime dir: " + filepath.Join(resolvedRoot, ".weft"),
+		"info runtime dir: " + filepath.Join(resolvedRoot, ".weft-runtime"),
 	} {
 		if !strings.Contains(out, expected) {
 			t.Fatalf("doctor output missing %q:\n%s", expected, out)
@@ -521,6 +521,73 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 		t.Fatalf("fresh Codex task should start before and after restart:\n%s", logText)
 	}
 	assertBackupWithReason(t, runtimeDir, workspace, "pre-upgrade resume restart")
+}
+
+func TestDashboardConfigDriftRestartAppliesChangedConfig(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	oldPID := readPID(t, runtimeDir)
+	runWeft(t, env, bin, "workspace", "add", workspace)
+	runWeft(t, env, bin, "new", "Fresh")
+	waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Tasks) == 1 &&
+			st.Tasks[0].Status == state.StatusRunning &&
+			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+	})
+
+	pane := "config-drift-restart"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 150, 36)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Console")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces")
+	})
+
+	changedConfig := codexTaskConfig(fakeCodex) + "\n[key_bindings]\nnew_task = \"t\"\n"
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(changedConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Config ready: config.toml changed") &&
+			strings.Contains(capture, "Press U to apply config and start 1 fresh Codex task")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "u")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Upgrade supervisor?") &&
+			strings.Contains(capture, "config.toml changed")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	if !waitForBool(8*time.Second, func() bool {
+		data, err := os.ReadFile(filepath.Join(runtimeDir, "weftd.pid"))
+		return err == nil && strings.TrimSpace(string(data)) != oldPID
+	}) {
+		t.Fatalf("supervisor did not restart after config reload confirmation; pid still %q\nscreen:\n%s", oldPID, clientOutput())
+	}
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "+ New task") &&
+			strings.Contains(capture, "Press t to create")
+	})
+	status := runWeft(t, env, bin, "status")
+	if !strings.Contains(status, "upgrade: current") {
+		t.Fatalf("status should be current after config reload:\n%s", status)
+	}
+	assertBackupWithReason(t, runtimeDir, workspace, "pre-config reload restart")
 }
 
 func TestDashboardUpgradeRestartsIdleDefaultShellWithSnapshot(t *testing.T) {

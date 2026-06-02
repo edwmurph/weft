@@ -42,6 +42,7 @@ type EnsureResult struct {
 type restartRequest struct {
 	executable      string
 	clientVersion   string
+	reason          string
 	backupID        string
 	runningTasks    int
 	freshTasks      int
@@ -51,14 +52,28 @@ type restartRequest struct {
 }
 
 type supervisorControl struct {
-	restartNow *restartRequest
+	restartNow        *restartRequest
+	configFingerprint string
+	configDrift       configDriftStatus
+	lastConfigCheck   time.Time
+}
+
+type configDriftStatus struct {
+	changed bool
+	err     error
+	cfg     config.Config
+}
+
+type blockingTask struct {
+	workspace string
+	task      string
 }
 
 func Ensure(rt config.Runtime) (EnsureResult, error) {
 	if response, err := Status(rt); err == nil {
 		response = AnnotateUpgrade(response, false)
 		if ShouldAutoRestart(response) {
-			backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade auto restart", IncludeLogs: true})
+			backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: preAutoRestartBackupReason(response.Upgrade), IncludeLogs: true})
 			if err != nil {
 				return EnsureResult{}, fmt.Errorf("could not create pre-restart backup: %w", err)
 			}
@@ -80,6 +95,13 @@ func Ensure(rt config.Runtime) (EnsureResult, error) {
 		return EnsureResult{Status: response}, upgradeError(response, err)
 	}
 	return start(rt)
+}
+
+func preAutoRestartBackupReason(upgrade *ipc.Upgrade) string {
+	if upgrade != nil && upgrade.Reason == ipc.UpgradeReasonConfig {
+		return "pre-config reload auto restart"
+	}
+	return "pre-upgrade auto restart"
 }
 
 func start(rt config.Runtime) (EnsureResult, error) {
@@ -162,7 +184,7 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 	stopSignals := notifySignals(ctx, cancel)
 	var mu sync.Mutex
 	clients := clientCoordinator{}
-	control := supervisorControl{}
+	control := supervisorControl{configFingerprint: config.Fingerprint(cfg)}
 	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
 		mu.Lock()
 		response, cmd := handleRequest(rt, &engine, &clients, &control, request, cancel)
@@ -281,14 +303,14 @@ func acquireLock(path string) (*os.File, error) {
 
 func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordinator, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) (ipc.Response, tea.Cmd) {
 	if request.ProtocolVersion != ipc.ProtocolVersion {
-		return withSupervisorFields(ipc.ErrorResponse("protocol_mismatch", fmt.Sprintf("unsupported protocol version %d", request.ProtocolVersion)), request, control), nil
+		return withSupervisorFields(ipc.ErrorResponse("protocol_mismatch", fmt.Sprintf("unsupported protocol version %d", request.ProtocolVersion)), request, control, rt), nil
 	}
 	applyRequestSize(engine, request)
 	switch request.Command {
 	case "attach_client":
 		clientID := request.ClientID
 		if clientID == "" {
-			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required"), request, control), nil
+			return withSupervisorFields(ipc.ErrorResponse("missing_client_id", "client_id is required"), request, control, rt), nil
 		}
 		if launchWorkspace := strings.TrimSpace(request.LaunchWorkspace); launchWorkspace != "" && clients.activeID != clientID {
 			engine.ApplyLaunchWorkspace(launchWorkspace)
@@ -301,7 +323,7 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		clients.activeVersion = strings.TrimSpace(request.ClientVersion)
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "attached Weft client"}
 		applyClientState(&response, clients, clientID)
-		return withSupervisorFields(response, request, control), nil
+		return withSupervisorFields(response, request, control, rt), nil
 	case "client_detached":
 		clientID := request.ClientID
 		if clients.activeID == clientID {
@@ -312,32 +334,32 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 			clients.detachID = ""
 			clients.message = ""
 		}
-		return withSupervisorFields(ipc.Response{OK: true, Message: "detached Weft client"}, request, control), nil
+		return withSupervisorFields(ipc.Response{OK: true, Message: "detached Weft client"}, request, control, rt), nil
 	case "close_client":
 		clientID := clients.activeID
 		if clientID == "" {
-			return withSupervisorFields(ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "No Weft client is attached."}, request, control), nil
+			return withSupervisorFields(ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "No Weft client is attached."}, request, control, rt), nil
 		}
 		clients.detachID = clientID
 		clients.message = "closed Weft client"
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "closed Weft client"}
 		applyClientState(&response, clients, clientID)
-		return withSupervisorFields(response, request, control), nil
+		return withSupervisorFields(response, request, control, rt), nil
 	case "handshake":
 		response := ipc.Response{OK: true, Snapshot: snapshotPtr(engine.Snapshot()), Message: "Weft supervisor is running"}
 		applyClientState(&response, clients, request.ClientID)
-		return withSupervisorFields(response, request, control), nil
+		return withSupervisorFields(response, request, control, rt), nil
 	case "upgrade_resume":
 		response := upgradeResume(rt, engine, control, request, cancel)
 		applyClientState(&response, clients, request.ClientID)
-		return withSupervisorFields(response, request, control), nil
+		return withSupervisorFields(response, request, control, rt), nil
 	case "shutdown":
 		go cancel()
-		return withSupervisorFields(ipc.Response{OK: true, Message: "Weft supervisor stopped"}, request, control), nil
+		return withSupervisorFields(ipc.Response{OK: true, Message: "Weft supervisor stopped"}, request, control, rt), nil
 	default:
 		response, cmd := engine.HandleSupervisorRequest(request)
 		applyClientState(&response, clients, request.ClientID)
-		return withSupervisorFields(response, request, control), cmd
+		return withSupervisorFields(response, request, control, rt), cmd
 	}
 }
 
@@ -369,10 +391,18 @@ func applyClientState(response *ipc.Response, clients *clientCoordinator, client
 	}
 }
 
-func withSupervisorFields(response ipc.Response, request ipc.Request, control *supervisorControl) ipc.Response {
+func withSupervisorFields(response ipc.Response, request ipc.Request, control *supervisorControl, rt config.Runtime) ipc.Response {
 	response.ProtocolVersion = ipc.ProtocolVersion
 	response.SupervisorVersion = ReportedVersion()
+	if control != nil {
+		response.ConfigFingerprint = control.configFingerprint
+	}
 	response = ipc.AnnotateUpgrade(response, request.ClientVersion, false)
+	if response.Upgrade == nil && control != nil {
+		if drift := control.detectConfigDrift(rt); drift.changed {
+			response.Upgrade = configDriftUpgrade(response, request.ClientVersion, drift)
+		}
+	}
 	if response.Upgrade != nil && control != nil {
 		if control.restartNow != nil {
 			response.Upgrade.Message = restartNowMessage(*control.restartNow)
@@ -382,22 +412,93 @@ func withSupervisorFields(response ipc.Response, request ipc.Request, control *s
 	return response
 }
 
+func (control *supervisorControl) detectConfigDrift(rt config.Runtime) configDriftStatus {
+	if control == nil || strings.TrimSpace(control.configFingerprint) == "" {
+		return configDriftStatus{}
+	}
+	if time.Since(control.lastConfigCheck) < 250*time.Millisecond {
+		return control.configDrift
+	}
+	control.lastConfigCheck = time.Now()
+	cfg, err := config.LoadConfig(rt.ConfigPath)
+	if err != nil {
+		control.configDrift = configDriftStatus{changed: true, err: err}
+		return control.configDrift
+	}
+	control.configDrift = configDriftStatus{changed: config.Fingerprint(cfg) != control.configFingerprint, cfg: cfg}
+	return control.configDrift
+}
+
+func configDriftUpgrade(response ipc.Response, clientVersion string, drift configDriftStatus) *ipc.Upgrade {
+	clientVersion = strings.TrimSpace(clientVersion)
+	if clientVersion == "" {
+		clientVersion = ReportedClientVersion()
+	}
+	running := ipc.RunningTaskCount(responseState(response))
+	upgrade := &ipc.Upgrade{
+		ClientVersion:     clientVersion,
+		SupervisorVersion: response.SupervisorVersion,
+		Reason:            ipc.UpgradeReasonConfig,
+		Compatible:        drift.err == nil,
+		RestartRequired:   drift.err == nil,
+		RunningTasks:      running,
+	}
+	if drift.err != nil {
+		upgrade.Message = fmt.Sprintf("Config changed, but the supervisor cannot reload it yet: %v", drift.err)
+		return upgrade
+	}
+	if err := validateChangedConfigState(drift.cfg, responseState(response)); err != nil {
+		upgrade.Compatible = false
+		upgrade.RestartRequired = false
+		upgrade.Message = fmt.Sprintf("Config changed, but the supervisor cannot apply it yet: %v", err)
+		return upgrade
+	}
+	if running == 0 {
+		upgrade.Message = "Config changed; the idle supervisor can restart safely to apply it."
+		return upgrade
+	}
+	upgrade.Message = fmt.Sprintf("Config changed; restart the supervisor when %d live task terminal(s) are idle or resumable to apply it.", running)
+	return upgrade
+}
+
+func validateChangedConfigState(cfg config.Config, st *state.State) error {
+	if st == nil {
+		return nil
+	}
+	return state.ValidateTaskTypes(*st, func(id string) bool {
+		_, ok := cfg.TaskType(id)
+		return ok
+	})
+}
+
+func responseState(response ipc.Response) *state.State {
+	if response.State != nil {
+		return response.State
+	}
+	if response.Snapshot != nil {
+		return &response.Snapshot.State
+	}
+	return nil
+}
+
 func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) ipc.Response {
-	response := supervisorSnapshotResponse(engine, "")
-	response.ProtocolVersion = ipc.ProtocolVersion
-	response.SupervisorVersion = ReportedVersion()
-	upgrade := ipc.UpgradeStatus(response, request.ClientVersion)
-	if upgrade == nil {
-		return supervisorSnapshotResponse(engine, "No supervisor upgrade needed; client and supervisor are current.")
+	response := withSupervisorFields(supervisorSnapshotResponse(engine, ""), request, control, rt)
+	upgrade := response.Upgrade
+	if upgrade == nil || !upgrade.RestartRequired {
+		return supervisorSnapshotResponse(engine, "No supervisor restart needed; client, supervisor, and config are current.")
 	}
 	if !upgrade.Compatible {
+		if upgrade.Reason == ipc.UpgradeReasonConfig {
+			return ipc.ErrorResponse("config_reload_blocked", upgrade.Message)
+		}
 		return ipc.ErrorResponse("upgrade_incompatible", "Cannot upgrade from the dashboard because the supervisor protocol is incompatible. Use `weft close --kill` when ready.")
 	}
 	report := engine.PrepareUpgradeResume()
 	if !report.CanUpgrade() {
-		return ipc.ErrorResponse("upgrade_resume_blocked", upgradeResumeBlockedMessage(report))
+		return ipc.ErrorResponse("upgrade_resume_blocked", upgradeResumeBlockedMessage(report, *response.State))
 	}
 	restart := restartRequestFromRequest(request)
+	restart.reason = upgrade.Reason
 	restart.runningTasks = report.Ready
 	restart.freshTasks = report.Fresh
 	restart.terminalTasks = len(report.TerminalReady)
@@ -406,7 +507,7 @@ func upgradeResume(rt config.Runtime, engine *tui.Model, control *supervisorCont
 }
 
 func triggerResumeUpgrade(rt config.Runtime, engine *tui.Model, control *supervisorControl, restart restartRequest, cancel context.CancelFunc) ipc.Response {
-	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: "pre-upgrade resume restart", IncludeLogs: true})
+	backup, err := runtimebackup.Create(rt, runtimebackup.Options{Reason: preRestartBackupReason(restart.reason), IncludeLogs: true})
 	if err != nil {
 		return supervisorSnapshotResponse(engine, fmt.Sprintf("Upgrade canceled: could not create pre-upgrade backup: %v", err))
 	}
@@ -414,10 +515,17 @@ func triggerResumeUpgrade(rt config.Runtime, engine *tui.Model, control *supervi
 	if err := engine.PrepareTerminalUpgradeSnapshots(restart.terminalTaskIDs); err != nil {
 		return supervisorSnapshotResponse(engine, fmt.Sprintf("Upgrade canceled: could not save shell history/cwd snapshot: %v", err))
 	}
-	restart.message = upgradeResumeRestartMessage(restart.runningTasks, restart.freshTasks, restart.terminalTasks, backup.ID)
+	restart.message = upgradeResumeRestartMessage(restart.reason, restart.runningTasks, restart.freshTasks, restart.terminalTasks, backup.ID)
 	control.restartNow = &restart
 	go cancel()
 	return supervisorSnapshotResponse(engine, restart.message)
+}
+
+func preRestartBackupReason(reason string) string {
+	if reason == ipc.UpgradeReasonConfig {
+		return "pre-config reload restart"
+	}
+	return "pre-upgrade resume restart"
 }
 
 func supervisorSnapshotResponse(engine *tui.Model, message string) ipc.Response {
@@ -446,24 +554,40 @@ func restartNowMessage(restart restartRequest) string {
 	if restart.message != "" {
 		return restart.message
 	}
+	if restart.reason == ipc.UpgradeReasonConfig {
+		if restart.backupID == "" {
+			return "Restarting idle supervisor to apply config changes."
+		}
+		return "Restarting idle supervisor to apply config changes. Backup: " + restart.backupID + "."
+	}
 	if restart.backupID == "" {
 		return "Restarting idle supervisor to finish the upgrade."
 	}
 	return "Restarting idle supervisor to finish the upgrade. Backup: " + restart.backupID + "."
 }
 
-func upgradeResumeRestartMessage(resumeTasks int, freshTasks int, terminalTasks int, backupID string) string {
+func upgradeResumeRestartMessage(reason string, resumeTasks int, freshTasks int, terminalTasks int, backupID string) string {
+	suffix := "finish the supervisor upgrade"
+	if reason == ipc.UpgradeReasonConfig {
+		suffix = "apply config changes"
+	}
 	if resumeTasks <= 0 && freshTasks <= 0 && terminalTasks <= 0 {
 		if backupID == "" {
+			if reason == ipc.UpgradeReasonConfig {
+				return "Restarting supervisor to apply config changes."
+			}
 			return "Restarting supervisor to finish the upgrade."
+		}
+		if reason == ipc.UpgradeReasonConfig {
+			return "Restarting supervisor to apply config changes. Backup: " + backupID + "."
 		}
 		return "Restarting supervisor to finish the upgrade. Backup: " + backupID + "."
 	}
 	action := upgradeResumeRestartAction(resumeTasks, freshTasks, terminalTasks)
 	if backupID == "" {
-		return action + " to finish the supervisor upgrade."
+		return action + " to " + suffix + "."
 	}
-	return fmt.Sprintf("%s to finish the supervisor upgrade. Backup: %s.", action, backupID)
+	return fmt.Sprintf("%s to %s. Backup: %s.", action, suffix, backupID)
 }
 
 func upgradeResumeRestartAction(resumeTasks int, freshTasks int, terminalTasks int) string {
@@ -480,7 +604,7 @@ func upgradeResumeRestartAction(resumeTasks int, freshTasks int, terminalTasks i
 	return "Closing and " + strings.Join(actions, " and ")
 }
 
-func upgradeResumeBlockedMessage(report codexsession.Report) string {
+func upgradeResumeBlockedMessage(report codexsession.Report, st state.State) string {
 	var blockers []string
 	if len(report.Busy) > 0 {
 		blockers = append(blockers, fmt.Sprintf("%d still active", len(report.Busy)))
@@ -494,7 +618,62 @@ func upgradeResumeBlockedMessage(report codexsession.Report) string {
 	if len(blockers) == 0 {
 		return "Upgrade waits for idle, resumable Codex tasks and restartable idle shell task(s) before closing terminals and restarting the supervisor."
 	}
-	return "Upgrade waits for idle, resumable Codex tasks and restartable idle shell task(s) before closing terminals and restarting the supervisor: " + strings.Join(blockers, ", ") + "."
+	message := "Upgrade waits for idle, resumable Codex tasks and restartable idle shell task(s) before closing terminals and restarting the supervisor: " + strings.Join(blockers, ", ") + "."
+	if lines := blockingTaskLines(st, report); len(lines) > 0 {
+		message += "\n" + strings.Join(lines, "\n")
+	}
+	return message
+}
+
+func blockingTaskLines(st state.State, report codexsession.Report) []string {
+	tasks := blockingTasks(st, report)
+	if len(tasks) == 0 {
+		return nil
+	}
+	lines := []string{"Blocking:"}
+	for _, task := range tasks {
+		lines = append(lines, "- workspace: "+task.workspace, "  task: "+task.task)
+	}
+	return lines
+}
+
+func blockingTasks(st state.State, report codexsession.Report) []blockingTask {
+	tasks := append([]state.Task{}, report.TerminalBusy...)
+	tasks = append(tasks, report.Busy...)
+	tasks = append(tasks, report.Missing...)
+	if len(tasks) == 0 {
+		return nil
+	}
+	items := make([]blockingTask, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, blockingTaskDetails(st, task))
+	}
+	return items
+}
+
+func blockingTaskDetails(st state.State, task state.Task) blockingTask {
+	workspace := task.WorkspaceID
+	if found := state.WorkspaceForTask(st, task); found != nil {
+		workspace = strings.TrimSpace(found.Title)
+		if workspace == "" {
+			workspace = filepath.Base(strings.TrimRight(found.Path, string(os.PathSeparator)))
+		}
+		if strings.TrimSpace(workspace) == "" {
+			workspace = found.Path
+		}
+	}
+	title := strings.TrimSpace(task.Title)
+	if title == "" {
+		title = task.ID
+	}
+	return blockingTask{
+		workspace: singleLineValue(workspace),
+		task:      singleLineValue(title),
+	}
+}
+
+func singleLineValue(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func ReportedVersion() string {
@@ -522,12 +701,21 @@ func ShouldAutoRestart(response ipc.Response) bool {
 func restartedUpgrade(previous ipc.Response, current ipc.Response) *ipc.Upgrade {
 	clientVersion := ReportedClientVersion()
 	message := "Supervisor restarted on the new Weft version."
+	reason := ipc.UpgradeReasonVersion
+	if previous.Upgrade != nil && previous.Upgrade.Reason == ipc.UpgradeReasonConfig {
+		reason = ipc.UpgradeReasonConfig
+		message = "Supervisor restarted to apply config changes."
+	}
 	if previous.SupervisorVersion != "" && current.SupervisorVersion != "" {
 		message = fmt.Sprintf("Supervisor restarted from Weft %s to %s.", previous.SupervisorVersion, current.SupervisorVersion)
+		if reason == ipc.UpgradeReasonConfig && previous.SupervisorVersion == current.SupervisorVersion {
+			message = "Supervisor restarted to apply config changes."
+		}
 	}
 	return &ipc.Upgrade{
 		ClientVersion:     clientVersion,
 		SupervisorVersion: current.SupervisorVersion,
+		Reason:            reason,
 		Compatible:        true,
 		RestartRequired:   false,
 		AutoRestarted:     true,

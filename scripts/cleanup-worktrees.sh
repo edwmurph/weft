@@ -11,7 +11,7 @@ Stops Weft supervisors for every Git-registered auxiliary worktree under
 Options:
   --yes               run without the confirmation prompt
   --dry-run           print the cleanup plan without changing anything
-  --skip-supervisors  remove worktrees without trying to stop WEFT_ROOT supervisors
+  --skip-supervisors  remove worktrees without trying to stop Weft supervisors
   --skip-prune        leave stale Git worktree metadata untouched
   -h, --help          show this help
 USAGE
@@ -156,9 +156,13 @@ process_looks_like_weft() {
 	return 1
 }
 
-runtime_status() {
+runtime_dirs() {
 	local worktree=$1
-	local runtime_dir=$worktree/.weft
+	printf '%s\n' "$worktree/.weft-runtime" "$worktree/.weft"
+}
+
+runtime_status_for_dir() {
+	local runtime_dir=$1
 	local pid_file=$runtime_dir/weftd.pid
 	local pid=
 
@@ -175,20 +179,47 @@ runtime_status() {
 	fi
 }
 
+runtime_status() {
+	local worktree=$1
+	local runtime_dir=
+	local status=
+	local summary=
+
+	while IFS= read -r runtime_dir; do
+		status=$(runtime_status_for_dir "$runtime_dir")
+		case "$status" in
+			no\ runtime\ dir)
+				continue
+				;;
+		esac
+		if [[ -n "$summary" ]]; then
+			summary="$summary; "
+		fi
+		summary="$summary$(basename "$runtime_dir"): $status"
+	done < <(runtime_dirs "$worktree")
+
+	if [[ -z "$summary" ]]; then
+		printf 'no runtime dir'
+	else
+		printf '%s' "$summary"
+	fi
+}
+
 run_weft_close() {
 	local worktree=$1
+	local runtime_dir=$2
 	local status=127
 
 	if command -v weft >/dev/null 2>&1; then
 		status=0
-		WEFT_ROOT="$worktree" weft close --kill --yes || status=$?
+		WEFT_HOME="$runtime_dir" WEFT_WORKSPACE="$worktree" weft close --kill --yes || status=$?
 		if [[ "$status" -eq 0 ]]; then
 			return 0
 		fi
 		printf '  installed weft close command failed; trying source command if available\n' >&2
 	fi
 	if command -v go >/dev/null 2>&1 && [[ -d "$repo_root/cmd/weft" ]]; then
-		WEFT_ROOT="$worktree" go -C "$repo_root" run ./cmd/weft close --kill --yes
+		WEFT_HOME="$runtime_dir" WEFT_WORKSPACE="$worktree" go -C "$repo_root" run ./cmd/weft close --kill --yes
 		return $?
 	fi
 	return "$status"
@@ -207,8 +238,7 @@ wait_for_pid_exit() {
 }
 
 terminate_supervisor_pid() {
-	local worktree=$1
-	local runtime_dir=$worktree/.weft
+	local runtime_dir=$1
 	local pid_file=$runtime_dir/weftd.pid
 	local pid=
 
@@ -234,35 +264,43 @@ terminate_supervisor_pid() {
 }
 
 supervisor_may_exist() {
-	local worktree=$1
-	local runtime_dir=$worktree/.weft
+	local runtime_dir=$1
 	[[ -f "$runtime_dir/weftd.pid" || -S "$runtime_dir/weft.sock" || -f "$runtime_dir/weftd.lock" ]]
 }
 
-stop_supervisor() {
+stop_supervisor_runtime() {
 	local worktree=$1
-	local runtime_dir=$worktree/.weft
+	local runtime_dir=$2
 	local pid_file=$runtime_dir/weftd.pid
 	local pid=
 
 	if [[ "$skip_supervisors" == true ]]; then
 		return 0
 	fi
-	if ! supervisor_may_exist "$worktree"; then
+	if ! supervisor_may_exist "$runtime_dir"; then
 		return 0
 	fi
 
-	printf 'Stopping Weft supervisor for %s\n' "$(display_path "$worktree")"
-	if run_weft_close "$worktree"; then
+	printf 'Stopping Weft supervisor for %s (%s)\n' "$(display_path "$worktree")" "$(basename "$runtime_dir")"
+	if run_weft_close "$worktree" "$runtime_dir"; then
 		if pid=$(pid_from_file "$pid_file") && kill -0 "$pid" 2>/dev/null && process_looks_like_weft "$pid"; then
 			printf '  supervisor pid %s is still running after close; falling back to SIGTERM\n' "$pid"
-			terminate_supervisor_pid "$worktree"
+			terminate_supervisor_pid "$runtime_dir"
 		fi
 		return 0
 	fi
 
 	printf '  weft close --kill failed; falling back to SIGTERM when a valid pid exists\n' >&2
-	terminate_supervisor_pid "$worktree"
+	terminate_supervisor_pid "$runtime_dir"
+}
+
+stop_supervisor() {
+	local worktree=$1
+	local runtime_dir=
+
+	while IFS= read -r runtime_dir; do
+		stop_supervisor_runtime "$worktree" "$runtime_dir"
+	done < <(runtime_dirs "$worktree")
 }
 
 print_plan() {

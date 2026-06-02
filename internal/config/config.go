@@ -1,6 +1,9 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +20,7 @@ const (
 	WorkspaceEnv            = "WEFT_WORKSPACE"
 	AllowMainRuntimeEnv     = "WEFT_ALLOW_MAIN_RUNTIME"
 	defaultRuntimeDirectory = ".weft"
+	sourceRuntimeDirectory  = ".weft-runtime"
 	modulePath              = "github.com/edwmurph/weft"
 	DefaultTaskTypeCodex    = "codex"
 	DefaultTaskTypeShell    = "shell"
@@ -178,7 +182,7 @@ func appDirInfo(workspace string, autoRoot string) (string, bool, error) {
 		return filepath.Join(root, defaultRuntimeDirectory), true, nil
 	}
 	if autoRoot != "" {
-		return filepath.Join(autoRoot, defaultRuntimeDirectory), true, nil
+		return filepath.Join(autoRoot, sourceRuntimeDirectory), true, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -460,6 +464,16 @@ func (c Config) OrderedTaskTypes() []TaskType {
 		ordered = append(ordered, c.TaskTypes[id])
 	}
 	return ordered
+}
+
+func Fingerprint(c Config) string {
+	c.normalizeTaskTypes()
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func DefaultConfigText() string {
