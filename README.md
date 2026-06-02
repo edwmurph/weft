@@ -15,9 +15,13 @@ Weft helps you manage parallel work in one terminal. Run agent sessions and proj
 ## Demo
 
 <p align="center">
-  <a href="assets/weft-demo.mp4">
-    <img src="assets/weft-demo.gif" alt="Weft demo showing the dashboard managing parallel agent and shell tasks" width="100%">
-  </a>
+  <video src="assets/weft-demo.mp4" poster="assets/weft-demo-poster.png" controls width="100%" aria-label="Weft demo showing the dashboard managing parallel agent and shell tasks">
+    <a href="assets/weft-demo.mp4">Watch the Weft demo video</a>
+  </video>
+</p>
+
+<p align="center">
+  <a href="assets/weft-demo.mp4">Open the demo video</a>
 </p>
 
 ## Why Weft
