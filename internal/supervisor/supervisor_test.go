@@ -2,7 +2,9 @@ package supervisor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,6 +67,42 @@ func TestSupervisorServesHandshakeStatusAndStructuredErrors(t *testing.T) {
 	}
 	if response.Error == nil || response.Error.Code != "unknown_command" {
 		t.Fatalf("structured error = %#v, err = %v", response.Error, err)
+	}
+}
+
+func TestSupervisorRejectsRawProtocolMismatch(t *testing.T) {
+	rt, cfg, store := testRuntime(t)
+	stop := runTestSupervisor(t, rt, cfg, store)
+	defer stop()
+
+	for _, tc := range []struct {
+		name    string
+		request map[string]any
+	}{
+		{
+			name:    "missing protocol",
+			request: map[string]any{"command": "handshake"},
+		},
+		{
+			name:    "unsupported protocol",
+			request: map[string]any{"protocol_version": ipc.ProtocolVersion + 1, "command": "handshake"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := rawSupervisorCall(t, rt.SocketPath, tc.request)
+			if response.OK {
+				t.Fatalf("raw request succeeded: %#v", response)
+			}
+			if response.Error == nil || response.Error.Code != "protocol_mismatch" {
+				t.Fatalf("structured error = %#v", response.Error)
+			}
+			if response.ProtocolVersion != ipc.ProtocolVersion {
+				t.Fatalf("response protocol version = %d", response.ProtocolVersion)
+			}
+			if response.SupervisorVersion != version.Version {
+				t.Fatalf("supervisor version = %q", response.SupervisorVersion)
+			}
+		})
 	}
 }
 
@@ -366,6 +404,38 @@ func testRuntime(t *testing.T) (config.Runtime, config.Config, *state.Store) {
 	}
 	store := state.NewStore(rt.StatePath)
 	return rt, cfg, store
+}
+
+func rawSupervisorCall(t *testing.T, socketPath string, request map[string]any) ipc.Response {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Dir(socketPath)); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	conn, err := net.DialTimeout("unix", filepath.Base(socketPath), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	var response ipc.Response
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	return response
 }
 
 func waitFor(t *testing.T, name string, accept func() bool) {

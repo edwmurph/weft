@@ -280,7 +280,7 @@ func acquireLock(path string) (*os.File, error) {
 }
 
 func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordinator, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) (ipc.Response, tea.Cmd) {
-	if request.ProtocolVersion != 0 && request.ProtocolVersion != ipc.ProtocolVersion {
+	if request.ProtocolVersion != ipc.ProtocolVersion {
 		return withSupervisorFields(ipc.ErrorResponse("protocol_mismatch", fmt.Sprintf("unsupported protocol version %d", request.ProtocolVersion)), request, control), nil
 	}
 	applyRequestSize(engine, request)

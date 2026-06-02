@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-01 - Strict IPC protocol cutover
+
+- Request: Remove the legacy supervisor IPC compatibility path that accepted raw requests with missing `protocol_version`, and delete the unreachable engine-side `close_client` handler.
+- Suggestions: Require every supervisor IPC request to include the current protocol version, keep `ipc.Call` auto-populating the field for current CLI/TUI clients, leave client lifecycle commands supervisor-owned, and add raw-socket coverage for missing or unsupported protocol versions.
+- Outcome: Implemented in `.worktrees/strict-ipc-cutover`; awaiting review.
+- Evidence: `internal/supervisor/supervisor.go`, `internal/supervisor/supervisor_test.go`, `internal/tui/model.go`, `spec.md`.
+- Deferred: None.
+
 ## 2026-06-01 - Direct model UI hard cutover
 
 - Request: Remove legacy unneeded code with a breaking hard cutover instead of keeping parity or back-compat code for this iteration.

@@ -571,10 +571,6 @@ func (m *Model) setCodexFocus() tea.Cmd {
 	return nil
 }
 
-func (m *Model) closeWeft() {
-	m.message = "closed Weft clients"
-}
-
 func (m *Model) captureCodexInput(task state.Task, msg tea.KeyMsg) tea.Cmd {
 	switch msg.Type {
 	case tea.KeyRunes:
@@ -1749,9 +1745,6 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 	case "task_clear":
 		m.clearActiveTerminal()
 		return m.ipcResponse(m.message), nil
-	case "close_client":
-		m.closeWeft()
-		return m.ipcResponse("closed Weft clients"), nil
 	default:
 		return ipc.ErrorResponse("unknown_command", "unknown command: "+request.Command), nil
 	}

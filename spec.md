@@ -105,9 +105,13 @@ Client and supervisor communication should use a small versioned protocol over t
 - terminal size updates from the active TUI client
 - structured errors suitable for CLI output and TUI footer messages
 
+Every IPC request must include the current `protocol_version`. The supervisor rejects missing, zero, stale, or future protocol versions with a structured `protocol_mismatch` error before applying any command. Current Weft CLI and TUI clients populate the field automatically.
+
 The protocol does not need an external RPC framework. New dependencies should be added only if the standard library becomes clearly insufficient.
 
 Command payload contracts are strict, excluding transport metadata such as `client_id`, `width`, and `height`. `new` accepts only `title` and `type`. `move` accepts only `id`, `direction`, and the current `group` path argument. Any other command argument fails with an unsupported-argument error.
+
+Client lifecycle commands are supervisor-owned. `attach_client`, `client_detached`, and `close_client` are handled by the supervisor client coordinator rather than by the engine that owns task and workspace state.
 
 ## Process And Upgrade UX
 
