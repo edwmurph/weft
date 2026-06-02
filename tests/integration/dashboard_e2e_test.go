@@ -2759,6 +2759,43 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		if strings.Contains(toolbarLine, "1 other task ready") || readyLine == toolbarLine {
 			t.Fatalf("Task Console ready indicator should render outside the top border:\n%s", capture)
 		}
+
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool {
+			return st.Focus == state.FocusTasks && st.NavOpen
+		})
+		directRun(t, env, "send-keys", "-t", pane, "j")
+		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "e")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Edit task") &&
+				strings.Contains(capture, "[ ] Silent")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "Tab")
+		directRun(t, env, "send-keys", "-t", pane, "Space")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			second := findTask(st, secondTaskID)
+			return second != nil && second.Silent
+		})
+		directRun(t, env, "send-keys", "-t", pane, "k")
+		time.Sleep(250 * time.Millisecond)
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			first := findTask(st, firstTaskID)
+			second := findTask(st, secondTaskID)
+			return st.ActiveTaskID == firstTaskID &&
+				st.Focus == state.FocusConsole &&
+				first != nil &&
+				second != nil &&
+				second.Silent &&
+				strings.Contains(first.CodexTitle, "Ready") &&
+				strings.Contains(second.CodexTitle, "Ready")
+		})
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "other task")
+		})
 	})
 
 	timedStep(t, "refresh and second attach preserve selected running task", func() {

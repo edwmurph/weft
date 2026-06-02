@@ -668,7 +668,7 @@ func workspaceCardCountsForWorkspace(st state.State, workspaceID string) workspa
 			counts.active++
 			continue
 		}
-		if workspaceCardTaskSilenceEnabled(st, task) && workspaceCardTaskSilenced(task) {
+		if taskSilenceEnabled(st, task) && workspaceCardTaskSilenced(task) {
 			counts.silenced++
 			continue
 		}
@@ -681,7 +681,7 @@ func workspaceCardTaskActive(task state.Task) bool {
 	return taskStatusIndicatesActivity(task)
 }
 
-func workspaceCardTaskSilenceEnabled(st state.State, task state.Task) bool {
+func taskSilenceEnabled(st state.State, task state.Task) bool {
 	if task.Silent {
 		return true
 	}
@@ -1029,7 +1029,7 @@ func activeTaskRowStyle(st state.State, task state.Task, loadingTasks map[string
 
 func taskRowSuppressedBySilence(st state.State, task state.Task, loadingTasks map[string]bool) bool {
 	return !taskIsLoadingForRender(task, loadingTasks) &&
-		workspaceCardTaskSilenceEnabled(st, task) &&
+		taskSilenceEnabled(st, task) &&
 		workspaceCardTaskSilenced(task)
 }
 
@@ -1571,6 +1571,9 @@ func otherReadyTaskCount(st state.State) int {
 	count := 0
 	for _, task := range st.Tasks {
 		if task.ID == active.ID {
+			continue
+		}
+		if taskSilenceEnabled(st, task) {
 			continue
 		}
 		if titles.ConsolidatedStatus(task) == string(state.StatusReady) {

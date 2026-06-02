@@ -1332,10 +1332,13 @@ func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusConsole
 	st.NavOpen = false
+	st.Groups = append(st.Groups, state.Group{ID: "silent-group", WorkspaceID: "w", Path: "quiet", Silent: true, CreatedAt: now, UpdatedAt: now})
 	st.Tasks = append(st.Tasks,
 		state.Task{ID: "b", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
 		state.Task{ID: "c", WorkspaceID: "w2", TypeID: config.DefaultTaskTypeCodex, Title: "gamma", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 		state.Task{ID: "d", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "e", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "silent", Status: state.StatusReady, Silent: true, CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "f", WorkspaceID: "w", GroupID: "silent-group", TypeID: config.DefaultTaskTypeCodex, Title: "group silent", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
 	)
 
 	got := renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 0, 0, workspaceRenderOptions{})
