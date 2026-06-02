@@ -59,7 +59,7 @@ Weft stays on the `0.x` release line until the maintainer explicitly declares th
 
 Crossing from `0.x` to `1.0.0` requires a manual `Publish Homebrew` dispatch with `bump=major` and `allow_stable_major=true`. Normal pushes to `main` must not automatically create a `1.0.0` release.
 
-Homebrew publishing uses the standard tap bottle flow. The Weft publish workflow creates or updates a formula pull request in `edwmurph/homebrew-tap`; the tap `brew test-bot` workflow builds bottles for supported runners including Apple Silicon macOS, and the tap `brew pr-pull` workflow uploads bottles to GitHub Releases, merges the formula update, and writes the formula `bottle do` block. The formula must still keep its source `url`, `sha256`, and Go build instructions so `brew install --build-from-source edwmurph/tap/weft` remains a fallback.
+Homebrew publishing keeps separate owner and contributor paths. Normal maintainer releases from Weft `main` use a direct tap workflow: the Weft publish workflow writes the formula update to `edwmurph/homebrew-tap` `main`, dispatches the tap direct bottle workflow, waits for an Apple Silicon macOS bottle build, uploads the bottle to the tap GitHub Release, and verifies the formula `bottle do` block. Contributor or manual tap changes still use the standard pull-request bottle flow: the tap `brew test-bot` workflow builds bottles for supported PR runners, and the tap `brew pr-pull` workflow uploads bottles to GitHub Releases, merges the formula update, and writes the formula `bottle do` block. The formula must still keep its source `url`, `sha256`, and Go build instructions so `brew install --build-from-source edwmurph/tap/weft` remains a fallback.
 
 ## Release Notes Policy
 

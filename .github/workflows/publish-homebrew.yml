@@ -21,6 +21,14 @@ on:
         required: false
         default: false
         type: boolean
+      tap_publish_mode:
+        description: "Homebrew tap bottle publish mode"
+        required: false
+        default: direct
+        type: choice
+        options:
+          - direct
+          - pr
 
 permissions:
   contents: write
@@ -31,6 +39,8 @@ concurrency:
 
 env:
   FORMULA_NAME: weft
+  HOMEBREW_TAP_DIRECT_WORKFLOW: publish-weft-direct.yml
+  HOMEBREW_TAP_PUBLISH_MODE: ${{ github.event.inputs.tap_publish_mode || 'direct' }}
   HOMEBREW_TAP_REPOSITORY: edwmurph/homebrew-tap
   HOMEBREW_TAP_PULL_LABEL: pr-pull
 
@@ -194,7 +204,7 @@ jobs:
             --output "$HOMEBREW_TAP_DIR/Formula/${FORMULA_NAME}.rb"
 
       - name: Create Homebrew tap pull request
-        if: steps.tap.outputs.already_bottled != 'true'
+        if: steps.tap.outputs.already_bottled != 'true' && env.HOMEBREW_TAP_PUBLISH_MODE == 'pr'
         id: tap_pr
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -254,7 +264,7 @@ jobs:
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
 
       - name: Wait for Homebrew bottle build
-        if: steps.tap.outputs.already_bottled != 'true' && steps.tap_pr.outputs.pr_number != ''
+        if: steps.tap.outputs.already_bottled != 'true' && env.HOMEBREW_TAP_PUBLISH_MODE == 'pr' && steps.tap_pr.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           PR_NUMBER: ${{ steps.tap_pr.outputs.pr_number }}
@@ -282,8 +292,8 @@ jobs:
             --fail-fast \
             --interval 30
 
-      - name: Publish Homebrew bottles
-        if: steps.tap.outputs.already_bottled != 'true' && steps.tap_pr.outputs.pr_number != ''
+      - name: Publish Homebrew bottles through pull request
+        if: steps.tap.outputs.already_bottled != 'true' && env.HOMEBREW_TAP_PUBLISH_MODE == 'pr' && steps.tap_pr.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           PR_NUMBER: ${{ steps.tap_pr.outputs.pr_number }}
@@ -296,7 +306,7 @@ jobs:
             --description "Pull bottles and merge formula updates" \
             --color 0e8a16 \
             --force
-          gh pr edit "$PR_NUMBER" \
+          gh issue edit "$PR_NUMBER" \
             --repo "$HOMEBREW_TAP_REPOSITORY" \
             --add-label "$HOMEBREW_TAP_PULL_LABEL"
 
@@ -314,6 +324,58 @@ jobs:
             fi
             if [[ "$attempt" -eq 60 ]]; then
               echo "::error::Timed out waiting for Homebrew bottle publish workflow to start."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          gh run watch "$run_id" \
+            --repo "$HOMEBREW_TAP_REPOSITORY" \
+            --exit-status
+
+      - name: Publish Homebrew bottles directly
+        if: steps.tap.outputs.already_bottled != 'true' && env.HOMEBREW_TAP_PUBLISH_MODE == 'direct'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          cd "$HOMEBREW_TAP_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "Formula/${FORMULA_NAME}.rb"
+          if git diff --cached --quiet; then
+            echo "Homebrew formula already up to date before direct bottle publish."
+          else
+            git commit -m "Update ${FORMULA_NAME} to v${VERSION}"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run "$HOMEBREW_TAP_DIRECT_WORKFLOW" \
+            --repo "$HOMEBREW_TAP_REPOSITORY" \
+            --ref main \
+            -f formula="$FORMULA_NAME" \
+            -f version="$VERSION"
+
+          run_id=""
+          for attempt in {1..60}; do
+            run_id="$(gh run list \
+              --repo "$HOMEBREW_TAP_REPOSITORY" \
+              --workflow "$HOMEBREW_TAP_DIRECT_WORKFLOW" \
+              --event workflow_dispatch \
+              --branch main \
+              --limit 20 \
+              --json databaseId,createdAt \
+              --jq 'map(select(.createdAt >= "'"$started_at"'")) | sort_by(.createdAt) | reverse | .[0].databaseId // ""')"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "::error::Timed out waiting for direct Homebrew bottle workflow to start."
               exit 1
             fi
             sleep 10
