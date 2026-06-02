@@ -187,6 +187,7 @@ func (m *Model) Snapshot() ipc.Snapshot {
 	if m.state.NavOpen && m.state.Focus == state.FocusTasks {
 		m.syncGroupCursor()
 	}
+	m.syncTaskOperationStartsWithStatuses()
 	content := m.activeOutput()
 	plainLines := m.activePlainLines()
 	scrollbackContent := m.activeScrollbackOutput()
@@ -641,6 +642,11 @@ func (m *Model) markCodexInputSubmitted(taskID string) {
 	}
 	m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 		task.CodexInputSubmitted = true
+		if taskUsesCodexIntegration(m.cfg, task) {
+			task.CodexStatus = string(state.StatusRunning)
+			task.Status = state.StatusRunning
+			task.UpdatedAt = state.NowISO()
+		}
 		return task
 	})
 	m.save()
@@ -1116,6 +1122,16 @@ func (m *Model) taskOperationStartedAtForSnapshot() map[string]time.Time {
 	return startedAt
 }
 
+func (m *Model) syncTaskOperationStartsWithStatuses() {
+	for _, task := range m.state.Tasks {
+		if m.taskLoading(task.ID) || taskStatusIndicatesActivity(task) {
+			m.ensureTaskOperationStarted(task.ID)
+			continue
+		}
+		m.clearTaskOperationStarted(task.ID)
+	}
+}
+
 func (m *Model) taskOperationStart(taskID string) (taskOperationStart, bool) {
 	if m.operationStarts == nil {
 		return taskOperationStart{}, false
@@ -1154,8 +1170,8 @@ func (m *Model) taskOperationActive(taskID string) bool {
 	if !ok {
 		return false
 	}
-	switch titles.CanonicalStatus(*task) {
-	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting), "idle":
+	switch titles.ConsolidatedStatus(*task) {
+	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
 		return false
 	case string(state.StatusReady):
 		return operation.allowReady
@@ -1216,8 +1232,8 @@ func (m Model) taskLoading(taskID string) bool {
 	if !taskUsesCodexIntegration(m.cfg, *task) {
 		return taskStatusShowsLoadingIndicator(*task)
 	}
-	canonical := titles.CanonicalStatus(*task)
-	switch canonical {
+	consolidated := titles.ConsolidatedStatus(*task)
+	switch consolidated {
 	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
 		return false
 	}
@@ -1229,9 +1245,6 @@ func (m Model) taskLoading(taskID string) bool {
 	}
 	if taskStatusShowsLoadingIndicator(*task) {
 		return true
-	}
-	if canonical == "idle" {
-		return false
 	}
 	screen := m.screens[taskID]
 	return screen == nil || (!screen.HasVisibleContent() && !m.visible[taskID])

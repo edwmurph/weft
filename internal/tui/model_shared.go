@@ -172,8 +172,8 @@ func taskStatusIndicatesActivity(task state.Task) bool {
 }
 
 func taskStatusShowsLoadingIndicator(task state.Task) bool {
-	switch titles.CanonicalStatus(task) {
-	case string(state.StatusReady), "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
+	switch titles.ConsolidatedStatus(task) {
+	case string(state.StatusReady), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
 		return false
 	default:
 		return true

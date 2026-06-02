@@ -379,6 +379,8 @@ error
 
 The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex agent title, Weft passes through the live Codex status word verbatim and preserves its casing, including newer labels such as `Exploring` or `Crafting`; fallback lifecycle statuses remain the lowercase model values above. When the Codex screen is stopped on a user prompt, such as Plan mode waiting for a user answer, a tool permission allow/deny choice, or a command approval prompt, Weft derives `Ready` for `{status}` even if the terminal title has not changed from a running-like title.
 
+Runtime behavior must resolve provider-specific or command-specific live words into consolidated buckets before making task-pane decisions. Active buckets are `starting`, `running`, `waiting`, `working`, and `shipping`; ready and terminal buckets are `ready`, `sitting`, `stopped`, `killed`, and `error`. Unknown live work words such as `Crafting` or a configured terminal command's custom active label are treated as `working` for row styling, active counts, interrupt routing, and task-pane duration timing. The task-pane duration prefix is derived from transitions into and out of those consolidated active buckets, not from provider-specific display text.
+
 ## Task Types
 
 Task types are loaded from config. Each task type represents either an agent or a configured shell command. Each task type has:

@@ -69,14 +69,34 @@ func CanonicalStatus(task state.Task) string {
 	return strings.ToLower(RenderStatus(task))
 }
 
+func ConsolidatedStatus(task state.Task) string {
+	return consolidateStatus(CanonicalStatus(task))
+}
+
 func StatusIndicatesActivity(task state.Task) bool {
-	switch CanonicalStatus(task) {
+	switch ConsolidatedStatus(task) {
 	case string(state.StatusStarting), string(state.StatusRunning), "waiting", "working", string(state.StatusShipping):
 		return true
-	case string(state.StatusReady), "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
+	case string(state.StatusReady), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
 		return false
 	default:
-		return CodexActivityStatus(task.CodexTitle) != ""
+		return true
+	}
+}
+
+func consolidateStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	switch status {
+	case string(state.StatusStarting), string(state.StatusRunning), "waiting", "working", string(state.StatusShipping), string(state.StatusReady), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
+		return status
+	case "idle", "complete", "completed", "done":
+		return string(state.StatusReady)
+	case "failed", "failure":
+		return string(state.StatusError)
+	case "":
+		return string(state.StatusError)
+	default:
+		return "working"
 	}
 }
 

@@ -1883,6 +1883,28 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, "1 needs attention") &&
 				!strings.Contains(capture, "Codex running")
 		})
+
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusConsole })
+		directRun(t, env, "send-keys", "-l", "-t", pane, "accept plan")
+		directRun(t, env, "send-keys", "-t", pane, "Enter")
+		waitState(t, env, bin, func(st state.State) bool {
+			task := findTask(st, firstID)
+			return task != nil && task.Status == state.StatusRunning &&
+				(task.CodexStatus == string(state.StatusRunning) ||
+					strings.Contains(task.CodexTitle, "Running") ||
+					strings.Contains(task.CodexTitle, "Working"))
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-b")
+		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
+		capture := waitForOutput(t, clientOutput, func(capture string) bool {
+			return (strings.Contains(capture, "Codex Running") || strings.Contains(capture, "Codex Working")) &&
+				strings.Contains(capture, "1 active") &&
+				strings.Contains(capture, "0 needs attention") &&
+				taskLineHasLoadingFrame(capture, "Codex") &&
+				taskLineHasBadgeAdjacentDuration(capture, "Codex", "[codex]")
+		})
+		assertDashboardNotCorrupt(t, capture, false)
 	})
 
 	timedStep(t, "tool permission prompt renders ready status without loading", func() {

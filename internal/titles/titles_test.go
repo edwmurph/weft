@@ -77,6 +77,41 @@ func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
 	}
 }
 
+func TestConsolidatedStatusBucketsLiveStatuses(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		task state.Task
+		want string
+	}{
+		{
+			name: "known live working",
+			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning},
+			want: "working",
+		},
+		{
+			name: "unknown live codex status",
+			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning},
+			want: "working",
+		},
+		{
+			name: "ready prompt",
+			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Running", CodexStatus: "Ready", Status: state.StatusReady},
+			want: string(state.StatusReady),
+		},
+		{
+			name: "submitted ready prompt",
+			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Ready", CodexStatus: "running", Status: state.StatusRunning},
+			want: string(state.StatusRunning),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ConsolidatedStatus(tt.task); got != tt.want {
+				t.Fatalf("consolidated status = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderStatusUsesScreenDerivedCodexStatus(t *testing.T) {
 	task := state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Running", CodexStatus: "Ready", Status: state.StatusRunning}
 

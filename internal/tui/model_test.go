@@ -256,6 +256,44 @@ func TestCodexOperationStartTracksStartupAndSubmittedPrompt(t *testing.T) {
 	}
 }
 
+func TestSubmittingReadyCodexPromptRestartsOperationTiming(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	model.applyPTYData(ptyx.Data{TaskID: "a", Title: "Fake Codex Running"})
+	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[HQuestion 1\nPick a path\n1 unanswered question\nEnter to submit answer\n"})
+
+	task := state.TaskByID(model.state, "a")
+	if task == nil {
+		t.Fatal("task missing")
+	}
+	if task.Status != state.StatusReady || task.CodexStatus != "Ready" {
+		t.Fatalf("setup task status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+	}
+	ready := model.Snapshot()
+	if len(ready.TaskOperationStartedAt) != 0 {
+		t.Fatalf("ready prompt should not expose operation start before answer: %#v", ready.TaskOperationStartedAt)
+	}
+
+	model.codexInputBuffers["a"] = []rune("accept plan")
+	model.submitCodexInputBuffer(*task)
+
+	task = state.TaskByID(model.state, "a")
+	if task == nil {
+		t.Fatal("task missing after submit")
+	}
+	if task.Status != state.StatusRunning || task.CodexStatus != string(state.StatusRunning) {
+		t.Fatalf("submitted ready prompt should become running, got %s/%q", task.Status, task.CodexStatus)
+	}
+	submitted := model.Snapshot()
+	if len(submitted.LoadingTaskIDs) != 1 || submitted.LoadingTaskIDs[0] != "a" {
+		t.Fatalf("submitted ready prompt should render as loading: %#v", submitted.LoadingTaskIDs)
+	}
+	if _, ok := submitted.TaskOperationStartedAt["a"]; !ok {
+		t.Fatalf("submitted ready prompt snapshot missing operation start: %#v", submitted.TaskOperationStartedAt)
+	}
+}
+
 func TestLoadingIndicatorCoversNonIdleTaskStates(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -268,8 +306,18 @@ func TestLoadingIndicatorCoversNonIdleTaskStates(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "unlisted codex activity title",
+			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Crafting"},
+			want: true,
+		},
+		{
 			name: "terminal waiting status",
 			task: state.Task{ID: "a", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.TaskStatus("waiting")},
+			want: true,
+		},
+		{
+			name: "unlisted terminal activity status",
+			task: state.Task{ID: "a", TypeID: config.DefaultTaskTypeShell, Title: "Shell", Status: state.TaskStatus("deploying")},
 			want: true,
 		},
 		{

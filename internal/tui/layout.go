@@ -639,7 +639,7 @@ func workspaceCardTaskActive(task state.Task) bool {
 }
 
 func workspaceCardTaskSilenced(task state.Task) bool {
-	switch titles.CanonicalStatus(task) {
+	switch titles.ConsolidatedStatus(task) {
 	case string(state.StatusReady), string(state.StatusSitting), string(state.StatusStopped):
 		return true
 	default:
@@ -924,7 +924,7 @@ func autoTitleMaxColumns(cfg config.Config, st state.State, task state.Task, ter
 }
 
 func taskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.Style {
-	status := titles.CanonicalStatus(task)
+	status := titles.ConsolidatedStatus(task)
 	if taskIsLoadingForRender(task, loadingTasks) {
 		return taskLoadingStyleForStatus(status)
 	}
@@ -961,7 +961,7 @@ func activeTaskRowStyle(task state.Task, loadingTasks map[string]bool) lipgloss.
 }
 
 func taskRowIsReady(task state.Task, loadingTasks map[string]bool) bool {
-	return !taskIsLoadingForRender(task, loadingTasks) && titles.CanonicalStatus(task) == string(state.StatusReady)
+	return !taskIsLoadingForRender(task, loadingTasks) && titles.ConsolidatedStatus(task) == string(state.StatusReady)
 }
 
 func taskLoadingStyleForStatus(status string) lipgloss.Style {
@@ -983,7 +983,7 @@ func taskMarkerForRender(task state.Task, loadingFrame string, loadingTasks map[
 	if taskIsLoadingForRender(task, loadingTasks) {
 		return loadingFrameForRender(loadingFrame)
 	}
-	switch titles.CanonicalStatus(task) {
+	switch titles.ConsolidatedStatus(task) {
 	case string(state.StatusError):
 		return "!"
 	case string(state.StatusKilled):
@@ -1456,7 +1456,7 @@ func otherReadyTaskCount(st state.State) int {
 		if task.ID == active.ID {
 			continue
 		}
-		if titles.CanonicalStatus(task) == string(state.StatusReady) {
+		if titles.ConsolidatedStatus(task) == string(state.StatusReady) {
 			count++
 		}
 	}
