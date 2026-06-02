@@ -101,7 +101,7 @@ func TestRenderReleaseNotesUsesExplicitBulletsAndScopes(t *testing.T) {
 }
 
 func TestRenderReleaseNotesLabelsBreakingChanges(t *testing.T) {
-	notes := RenderReleaseNotes([]Commit{
+	commits := []Commit{
 		{
 			Subject: "feat(config)!: require WEFT_HOME for supervisor state",
 			Body: `BREAKING CHANGE: Supervisor state no longer defaults to the old global path.
@@ -112,7 +112,8 @@ Migration: Set WEFT_HOME before launching Weft or run weft clear after backing u
 			Body: `BREAKING CHANGE: release notes are regenerated from commits.
 Migration: Add Release-Notes bullets to ship commits when the subject is not enough.`,
 		},
-	})
+	}
+	notes := RenderReleaseNotes(commits)
 
 	want := `## Breaking Changes
 
@@ -127,6 +128,19 @@ Review these before upgrading.
 `
 	if notes != want {
 		t.Fatalf("notes mismatch\nwant:\n%s\ngot:\n%s", want, notes)
+	}
+	breakingChanges := BreakingChangesFromCommits(commits)
+	if len(breakingChanges) != 2 {
+		t.Fatalf("breaking changes count = %d", len(breakingChanges))
+	}
+	if breakingChanges[0].Text != "Require WEFT_HOME for supervisor state" {
+		t.Fatalf("breaking change text = %q", breakingChanges[0].Text)
+	}
+	if breakingChanges[0].Impact != "Supervisor state no longer defaults to the old global path." {
+		t.Fatalf("breaking change impact = %q", breakingChanges[0].Impact)
+	}
+	if breakingChanges[0].Migration != "Set WEFT_HOME before launching Weft or run weft clear after backing up state." {
+		t.Fatalf("breaking change migration = %q", breakingChanges[0].Migration)
 	}
 }
 
@@ -208,6 +222,40 @@ func TestRenderFormulaBuildsGoBinaryFromSource(t *testing.T) {
 	}
 	if strings.Contains(formula, `depends_on "tmux"`) {
 		t.Fatalf("formula should not depend on tmux:\n%s", formula)
+	}
+	if strings.Contains(formula, `def caveats`) {
+		t.Fatalf("formula should not include caveats without breaking changes:\n%s", formula)
+	}
+}
+
+func TestRenderFormulaIncludesBreakingChangeCaveats(t *testing.T) {
+	formula := RenderFormula(
+		"weft",
+		"https://example.test/weft.tar.gz",
+		"abc123",
+		BreakingChange{
+			Text:      "Reject legacy config files.",
+			Impact:    "Legacy config keys are unsupported.",
+			Migration: "Remove retired keys from config.toml.",
+		},
+		BreakingChange{
+			Text: "Remove legacy tab state",
+		},
+	)
+
+	for _, expected := range []string{
+		`def caveats`,
+		`This Weft release includes breaking changes.`,
+		`- Reject legacy config files.`,
+		`Impact: Legacy config keys are unsupported.`,
+		`Migration: Remove retired keys from config.toml.`,
+		`- Remove legacy tab state`,
+		`Migration: Review this item before upgrading; no migration step was documented.`,
+		`https://github.com/edwmurph/weft/releases/tag/v#{version}`,
+	} {
+		if !strings.Contains(formula, expected) {
+			t.Fatalf("formula missing %q:\n%s", expected, formula)
+		}
 	}
 }
 

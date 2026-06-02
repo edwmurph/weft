@@ -33,6 +33,12 @@ type Commit struct {
 	Body    string
 }
 
+type BreakingChange struct {
+	Text      string
+	Impact    string
+	Migration string
+}
+
 type BumpOptions struct {
 	AllowStableMajor bool
 }
@@ -165,38 +171,18 @@ func ReleaseNotes(base string, head string) (string, error) {
 	return RenderReleaseNotes(commits), nil
 }
 
-func RenderReleaseNotes(commits []Commit) string {
-	sections := map[string][]string{}
-	var breakingNotes []breakingReleaseNote
-	for _, commit := range commits {
-		if ignoreReleaseNoteCommit(commit) {
-			continue
-		}
-		details := parseConventionalSubject(commit.Subject)
-		notes := explicitReleaseNotes(commit.Body)
-		if len(notes) == 0 {
-			notes = []string{details.Description}
-		}
-		section := releaseNoteSection(details)
-		isBreaking := details.Breaking || breakingRE.MatchString(commit.Body)
-		impact := firstFooterValue(commit.Body, breakingChangeFooterRE)
-		migration := firstFooterValue(commit.Body, migrationFooterRE)
-		for _, note := range notes {
-			normalized := normalizeReleaseNote(note)
-			if normalized == "" {
-				continue
-			}
-			if isBreaking {
-				breakingNotes = append(breakingNotes, breakingReleaseNote{
-					Text:      normalized,
-					Impact:    impact,
-					Migration: migration,
-				})
-				continue
-			}
-			sections[section] = append(sections[section], normalized)
-		}
+func ReleaseBreakingChanges(base string, head string) ([]BreakingChange, error) {
+	commits, err := Commits(base, head)
+	if err != nil {
+		return nil, err
 	}
+	return BreakingChangesFromCommits(commits), nil
+}
+
+func RenderReleaseNotes(commits []Commit) string {
+	notes := collectReleaseNotes(commits)
+	sections := notes.Sections
+	breakingNotes := notes.BreakingChanges
 
 	order := []struct {
 		key   string
@@ -220,12 +206,8 @@ func RenderReleaseNotes(commits []Commit) string {
 				builder.WriteString(note.Impact)
 				builder.WriteString("\n")
 			}
-			migration := note.Migration
-			if migration == "" {
-				migration = "Review this item before upgrading; no migration step was documented."
-			}
 			builder.WriteString("  - Migration: ")
-			builder.WriteString(migration)
+			builder.WriteString(migrationText(note.Migration))
 			builder.WriteString("\n")
 		}
 	}
@@ -252,6 +234,48 @@ func RenderReleaseNotes(commits []Commit) string {
 	return builder.String()
 }
 
+func BreakingChangesFromCommits(commits []Commit) []BreakingChange {
+	return collectReleaseNotes(commits).BreakingChanges
+}
+
+func collectReleaseNotes(commits []Commit) releaseNoteSet {
+	sections := map[string][]string{}
+	var breakingChanges []BreakingChange
+	for _, commit := range commits {
+		if ignoreReleaseNoteCommit(commit) {
+			continue
+		}
+		details := parseConventionalSubject(commit.Subject)
+		notes := explicitReleaseNotes(commit.Body)
+		if len(notes) == 0 {
+			notes = []string{details.Description}
+		}
+		section := releaseNoteSection(details)
+		isBreaking := details.Breaking || breakingRE.MatchString(commit.Body)
+		impact := firstFooterValue(commit.Body, breakingChangeFooterRE)
+		migration := firstFooterValue(commit.Body, migrationFooterRE)
+		for _, note := range notes {
+			normalized := normalizeReleaseNote(note)
+			if normalized == "" {
+				continue
+			}
+			if isBreaking {
+				breakingChanges = append(breakingChanges, BreakingChange{
+					Text:      normalized,
+					Impact:    impact,
+					Migration: migration,
+				})
+				continue
+			}
+			sections[section] = append(sections[section], normalized)
+		}
+	}
+	return releaseNoteSet{
+		Sections:        sections,
+		BreakingChanges: breakingChanges,
+	}
+}
+
 func UsableBase(base string, head string) string {
 	if base == "" || strings.Trim(base, "0") == "" {
 		return FallbackBase(head)
@@ -272,7 +296,7 @@ func FallbackBase(head string) string {
 	return EmptyTree
 }
 
-func RenderFormula(formulaName string, versionURL string, sha256 string) string {
+func RenderFormula(formulaName string, versionURL string, sha256 string, breakingChanges ...BreakingChange) string {
 	className := ""
 	for _, part := range strings.Split(strings.ReplaceAll(formulaName, "_", "-"), "-") {
 		if part == "" {
@@ -294,13 +318,51 @@ class %s < Formula
     system "go", "build", "-ldflags", "-X github.com/edwmurph/weft/internal/version.Version=#{version} -X github.com/edwmurph/weft/internal/version.BuildChannel=release", "-o", bin/"%s", "./cmd/weft"
   end
 
+%s
   test do
     ENV["WEFT_ROOT"] = testpath
     assert_match "Terminal dashboard for Codex and shell tasks", shell_output("#{bin}/%s --help")
     assert_match "supervisor owns task PTYs", shell_output("#{bin}/%s doctor")
   end
 end
-`, className, versionURL, sha256, formulaName, formulaName, formulaName)
+`, className, versionURL, sha256, formulaName, renderFormulaCaveats(breakingChanges), formulaName, formulaName)
+}
+
+func renderFormulaCaveats(breakingChanges []BreakingChange) string {
+	if len(breakingChanges) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("  def caveats\n")
+	builder.WriteString("    notes = <<~'WEFT_CAVEATS'\n")
+	builder.WriteString("      This Weft release includes breaking changes.\n\n")
+	for _, change := range breakingChanges {
+		builder.WriteString("      - ")
+		builder.WriteString(change.Text)
+		builder.WriteString("\n")
+		if change.Impact != "" {
+			builder.WriteString("        Impact: ")
+			builder.WriteString(change.Impact)
+			builder.WriteString("\n")
+		}
+		builder.WriteString("        Migration: ")
+		builder.WriteString(migrationText(change.Migration))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("    WEFT_CAVEATS\n")
+	builder.WriteString("    notes + <<~EOS\n\n")
+	builder.WriteString("      Full release notes:\n")
+	builder.WriteString("        https://github.com/edwmurph/weft/releases/tag/v#{version}\n")
+	builder.WriteString("    EOS\n")
+	builder.WriteString("  end\n\n")
+	return builder.String()
+}
+
+func migrationText(migration string) string {
+	if migration == "" {
+		return "Review this item before upgrading; no migration step was documented."
+	}
+	return migration
 }
 
 type conventionalSubject struct {
@@ -309,10 +371,9 @@ type conventionalSubject struct {
 	Breaking    bool
 }
 
-type breakingReleaseNote struct {
-	Text      string
-	Impact    string
-	Migration string
+type releaseNoteSet struct {
+	Sections        map[string][]string
+	BreakingChanges []BreakingChange
 }
 
 func splitCommitMessage(message string) (string, string) {

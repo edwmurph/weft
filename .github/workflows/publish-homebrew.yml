@@ -161,6 +161,7 @@ jobs:
 
       - name: Render Homebrew formula
         env:
+          BASE_SHA: ${{ steps.version.outputs.base }}
           SOURCE_URL: ${{ steps.source.outputs.source_url }}
           SOURCE_SHA256: ${{ steps.source.outputs.source_sha256 }}
         run: |
@@ -168,6 +169,8 @@ jobs:
             --formula-name "$FORMULA_NAME" \
             --url "$SOURCE_URL" \
             --sha256 "$SOURCE_SHA256" \
+            --breaking-base "$BASE_SHA" \
+            --breaking-head HEAD \
             --output "$HOMEBREW_TAP_DIR/Formula/${FORMULA_NAME}.rb"
 
       - name: Push Homebrew tap update

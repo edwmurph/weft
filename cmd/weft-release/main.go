@@ -134,6 +134,8 @@ func renderFormula(args []string) error {
 	formulaName := fs.String("formula-name", "weft", "formula name")
 	url := fs.String("url", "", "source URL")
 	sha256 := fs.String("sha256", "", "source sha256")
+	breakingBase := fs.String("breaking-base", "", "base commit/ref for breaking-change caveats")
+	breakingHead := fs.String("breaking-head", "HEAD", "head commit/ref for breaking-change caveats")
 	output := fs.String("output", "", "output path")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -141,7 +143,16 @@ func renderFormula(args []string) error {
 	if *url == "" || *sha256 == "" || *output == "" {
 		return fmt.Errorf("--url, --sha256, and --output are required")
 	}
-	formula := release.RenderFormula(*formulaName, *url, *sha256)
+	var breakingChanges []release.BreakingChange
+	if *breakingBase != "" {
+		resolvedBase := release.UsableBase(*breakingBase, *breakingHead)
+		var err error
+		breakingChanges, err = release.ReleaseBreakingChanges(resolvedBase, *breakingHead)
+		if err != nil {
+			return err
+		}
+	}
+	formula := release.RenderFormula(*formulaName, *url, *sha256, breakingChanges...)
 	return os.WriteFile(*output, []byte(formula), 0o644)
 }
 
