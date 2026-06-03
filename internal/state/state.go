@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = 5
+const Version = 6
 
 type Focus string
 
@@ -54,23 +54,23 @@ type Group struct {
 }
 
 type Task struct {
-	ID                  string     `json:"id"`
-	WorkspaceID         string     `json:"workspace_id"`
-	GroupID             string     `json:"group_id"`
-	TypeID              string     `json:"type_id"`
-	Title               string     `json:"title"`
-	Silent              bool       `json:"silent,omitempty"`
-	AutoTitle           string     `json:"auto_title,omitempty"`
-	AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
-	AutoTitleError      string     `json:"auto_title_error,omitempty"`
-	CodexTitle          string     `json:"codex_title,omitempty"`
-	CodexStatus         string     `json:"codex_status,omitempty"`
-	CodexSessionID      string     `json:"codex_session_id,omitempty"`
-	CodexInputSubmitted bool       `json:"codex_input_submitted,omitempty"`
-	TerminalCWD         string     `json:"terminal_cwd,omitempty"`
-	Status              TaskStatus `json:"status"`
-	CreatedAt           string     `json:"created_at"`
-	UpdatedAt           string     `json:"updated_at"`
+	ID                 string     `json:"id"`
+	WorkspaceID        string     `json:"workspace_id"`
+	GroupID            string     `json:"group_id"`
+	TypeID             string     `json:"type_id"`
+	Title              string     `json:"title"`
+	Silent             bool       `json:"silent,omitempty"`
+	AutoTitle          string     `json:"auto_title,omitempty"`
+	AutoTitleAttempted bool       `json:"auto_title_attempted,omitempty"`
+	AutoTitleError     string     `json:"auto_title_error,omitempty"`
+	LiveTitle          string     `json:"live_title,omitempty"`
+	LiveStatus         string     `json:"live_status,omitempty"`
+	ResumeID           string     `json:"resume_id,omitempty"`
+	InputSubmitted     bool       `json:"input_submitted,omitempty"`
+	TerminalCWD        string     `json:"terminal_cwd,omitempty"`
+	Status             TaskStatus `json:"status"`
+	CreatedAt          string     `json:"created_at"`
+	UpdatedAt          string     `json:"updated_at"`
 }
 
 type State struct {
@@ -174,13 +174,13 @@ func parseState(raw []byte) (State, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&st); err != nil {
-		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v5 state: %v", err))
+		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v6 state: %v", err))
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err == nil {
-		return State{}, unsupportedStateError("could not parse strict v5 state: multiple JSON values")
+		return State{}, unsupportedStateError("could not parse strict v6 state: multiple JSON values")
 	} else if !errors.Is(err, io.EOF) {
-		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v5 state: %v", err))
+		return State{}, unsupportedStateError(fmt.Sprintf("could not parse strict v6 state: %v", err))
 	}
 	if st.Version != Version {
 		return State{}, unsupportedStateError(fmt.Sprintf("unsupported state version %d", st.Version))

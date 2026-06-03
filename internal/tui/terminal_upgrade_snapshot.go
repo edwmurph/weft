@@ -9,6 +9,7 @@ import (
 
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -31,7 +32,7 @@ func (m *Model) terminalForegroundProcessActive(taskID string) bool {
 func (m *Model) terminalForegroundTaskIDs() []string {
 	ids := make([]string, 0, len(m.ptys))
 	for _, task := range m.state.Tasks {
-		if taskUsesCodexIntegration(m.cfg, task) || !m.terminalForegroundProcessActive(task.ID) {
+		if !taskDefinitionForTask(m.cfg, task).TracksForegroundCommands() || !m.terminalForegroundProcessActive(task.ID) {
 			continue
 		}
 		ids = append(ids, task.ID)
@@ -169,7 +170,11 @@ func terminalSnapshotTextWidth(text string) int {
 
 func terminalTaskCWD(cfg config.Config, task state.Task) string {
 	taskType, ok := cfg.TaskType(state.TaskTypeID(task))
-	if !ok || taskType.Kind != config.TaskKindTerminal {
+	if !ok {
+		return ""
+	}
+	definition, ok := tasktypes.ForKind(taskType.Kind)
+	if !ok || !definition.TracksTerminalCWD() {
 		return ""
 	}
 	cwd := strings.TrimSpace(task.TerminalCWD)

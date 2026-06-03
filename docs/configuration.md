@@ -28,7 +28,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{codex}"
+title_template = "{live}"
 
 [task_types.shell]
 label = "Shell"
@@ -62,17 +62,19 @@ Supported variables:
 ```text
 {title}      user-configured task title
 {auto}       generated title from the first submitted message or command
-{codex}      live Codex agent title
-{status}     live Codex agent status, falling back to task lifecycle status
+{live}      live task title
+{status}     live task status, falling back to task lifecycle status
 {workspace}  display workspace path
 {group}      flat group name
 ```
+
+The retired `{codex}` variable is unsupported; use `{live}` for the live task title.
 
 Examples:
 
 ```text
 {title}
-{codex}
+{live}
 {auto}
 {status} {auto}
 {group}: {title}
@@ -118,4 +120,4 @@ Installed releases use:
 
 Development runs from a source checkout use the checkout-local `.weft/` directory unless `WEFT_HOME`, `WEFT_ROOT`, or `WEFT_ALLOW_MAIN_RUNTIME=1` says otherwise.
 
-`state.json` stores workspace, group, and task metadata, including task type ids, titles, statuses, generated title metadata, supported-agent metadata, selected/active ids, and terminal cwd metadata. Normal task terminal output is kept in supervisor memory for the live console and preview, not in `state.json`. Idle shell task upgrade restart can temporarily write visible scrollback and cwd metadata under `terminal-upgrade-snapshots/`; Weft removes those files after restoring them into the restarted task.
+`state.json` stores workspace, group, and task metadata, including task type ids, titles, statuses, generated title metadata, provider-neutral live title/status and resume metadata, selected/active ids, and terminal cwd metadata. Normal task terminal output is kept in supervisor memory for the live console and preview, not in `state.json`. Idle shell task upgrade restart can temporarily write visible scrollback and cwd metadata under `terminal-upgrade-snapshots/`; Weft removes those files after restoring them into the restarted task.

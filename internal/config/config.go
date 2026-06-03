@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/edwmurph/weft/internal/tasktypes"
 )
 
 const (
@@ -22,10 +23,10 @@ const (
 	defaultRuntimeDirectory = ".weft"
 	sourceRuntimeDirectory  = ".weft-runtime"
 	modulePath              = "github.com/edwmurph/weft"
-	DefaultTaskTypeCodex    = "codex"
-	DefaultTaskTypeShell    = "shell"
-	TaskKindCodex           = "codex"
-	TaskKindTerminal        = "terminal"
+	DefaultTaskTypeCodex    = tasktypes.DefaultCodexID
+	DefaultTaskTypeShell    = tasktypes.DefaultShellID
+	TaskKindCodex           = tasktypes.KindCodex
+	TaskKindTerminal        = tasktypes.KindTerminal
 )
 
 type KeyBindings struct {
@@ -123,7 +124,7 @@ func DefaultTaskTypes() map[string]TaskType {
 			Kind:          TaskKindCodex,
 			Command:       "codex",
 			Badge:         "[codex]",
-			TitleTemplate: "{codex}",
+			TitleTemplate: "{live}",
 		},
 		DefaultTaskTypeShell: {
 			ID:            DefaultTaskTypeShell,
@@ -394,11 +395,12 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(taskType.Kind) == "" {
 			return ConfigError{Message: fmt.Sprintf("task_types.%s.kind must be a non-empty string", id)}
 		}
-		if taskType.Kind != TaskKindCodex && taskType.Kind != TaskKindTerminal {
+		definition, ok := tasktypes.ForKind(taskType.Kind)
+		if !ok {
 			return ConfigError{Message: fmt.Sprintf("task_types.%s.kind %q is not supported; use %q for generic commands or a checked-in integrated type", id, taskType.Kind, TaskKindTerminal)}
 		}
-		if taskType.Kind == TaskKindCodex && id != DefaultTaskTypeCodex {
-			return ConfigError{Message: fmt.Sprintf("task_types.%s.kind %q is reserved for the checked-in codex task type", id, TaskKindCodex)}
+		if requiredID := definition.ConfiguredTypeID(); requiredID != "" && id != requiredID {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.kind %q is reserved for the checked-in %s task type", id, taskType.Kind, requiredID)}
 		}
 		if strings.TrimSpace(taskType.Command) == "" {
 			return ConfigError{Message: fmt.Sprintf("task_types.%s.command must be a non-empty string", id)}
@@ -408,6 +410,9 @@ func (c Config) Validate() error {
 		}
 		if strings.TrimSpace(taskType.TitleTemplate) == "" {
 			return ConfigError{Message: fmt.Sprintf("task_types.%s.title_template must be a non-empty string", id)}
+		}
+		if strings.Contains(taskType.TitleTemplate, "{codex}") {
+			return ConfigError{Message: fmt.Sprintf("task_types.%s.title_template uses retired {codex}; use {live}", id)}
 		}
 	}
 	for name, value := range map[string]string{
@@ -495,7 +500,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{codex}"
+title_template = "{live}"
 
 [task_types.shell]
 label = "Shell"

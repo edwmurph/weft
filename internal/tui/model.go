@@ -20,6 +20,7 @@ import (
 	"github.com/edwmurph/weft/internal/navigation"
 	"github.com/edwmurph/weft/internal/ptyx"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/edwmurph/weft/internal/titlehook"
 	"github.com/edwmurph/weft/internal/titles"
 )
@@ -207,7 +208,7 @@ func (m *Model) Snapshot() ipc.Snapshot {
 	}
 	return ipc.Snapshot{
 		State:                       m.state,
-		CodexTitle:                  title,
+		LiveTitle:                   title,
 		CodexContent:                content,
 		CodexPlainLines:             plainLines,
 		CodexScrollback:             scrollbackContent,
@@ -250,7 +251,7 @@ func (m Model) activeErrorText() string {
 	if active == nil || active.Status != state.StatusError {
 		return ""
 	}
-	detail := strings.TrimSpace(active.CodexTitle)
+	detail := strings.TrimSpace(active.LiveTitle)
 	if detail == "" {
 		detail = "unknown error"
 	}
@@ -403,7 +404,7 @@ func (m *Model) killFocusedTerminalTask(taskID string) tea.Cmd {
 	m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 		if task.Status != state.StatusError {
 			task.Status = state.StatusKilled
-			task.CodexTitle = title
+			task.LiveTitle = title
 		}
 		return task
 	})
@@ -626,7 +627,7 @@ func (m *Model) captureCodexInput(task state.Task, msg tea.KeyMsg) tea.Cmd {
 		if firstMessage == "" {
 			return nil
 		}
-		m.markCodexInputSubmitted(task.ID)
+		m.markInputSubmitted(task.ID)
 		if updated := state.TaskByID(m.state, task.ID); updated != nil {
 			task = *updated
 		}
@@ -668,14 +669,14 @@ func (m Model) taskUsesAutoTitle(task state.Task) bool {
 	return strings.Contains(task.Title, titles.AutoTemplate)
 }
 
-func (m *Model) markCodexInputSubmitted(taskID string) {
-	if task := state.TaskByID(m.state, taskID); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
+func (m *Model) markInputSubmitted(taskID string) {
+	if task := state.TaskByID(m.state, taskID); task != nil && taskInputModeForTask(m.cfg, *task) == tasktypes.InputModeCodex {
 		m.markTaskOperationStarted(taskID, true)
 	}
 	m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
-		task.CodexInputSubmitted = true
-		if taskUsesCodexIntegration(m.cfg, task) {
-			task.CodexStatus = string(state.StatusRunning)
+		task.InputSubmitted = true
+		if taskInputModeForTask(m.cfg, task) == tasktypes.InputModeCodex {
+			task.LiveStatus = string(state.StatusRunning)
 			task.Status = state.StatusRunning
 			task.UpdatedAt = state.NowISO()
 		}
@@ -773,8 +774,10 @@ func (m *Model) startPTY(taskID string) {
 	if m.ptys[taskID] != nil {
 		return
 	}
-	if task := state.TaskByID(m.state, taskID); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
-		m.ensureTaskOperationStarted(taskID)
+	if task := state.TaskByID(m.state, taskID); task != nil {
+		if taskDefinitionForTask(m.cfg, *task).StartPolicy().TrackOperation {
+			m.ensureTaskOperationStarted(taskID)
+		}
 	}
 	if m.screens[taskID] == nil {
 		m.screens[taskID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
@@ -786,7 +789,7 @@ func (m *Model) startPTY(taskID string) {
 	if err != nil {
 		m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 			task.Status = state.StatusError
-			task.CodexTitle = err.Error()
+			task.LiveTitle = err.Error()
 			return task
 		})
 		m.clearTaskOperationStarted(taskID)
@@ -795,10 +798,9 @@ func (m *Model) startPTY(taskID string) {
 	}
 	m.ptys[taskID] = ptySession
 	m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
-		if taskUsesCodexIntegration(m.cfg, task) {
-			task.Status = state.StatusRunning
-		} else {
-			task.Status = state.StatusReady
+		policy := taskDefinitionForTask(m.cfg, task).StartPolicy()
+		task.Status = policy.Status
+		if policy.Visible {
 			m.visible[task.ID] = true
 		}
 		return task
@@ -810,8 +812,10 @@ func (m *Model) startPTYCmd(taskID string) tea.Cmd {
 	if m.ptys[taskID] != nil {
 		return nil
 	}
-	if task := state.TaskByID(m.state, taskID); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
-		m.ensureTaskOperationStarted(taskID)
+	if task := state.TaskByID(m.state, taskID); task != nil {
+		if taskDefinitionForTask(m.cfg, *task).StartPolicy().TrackOperation {
+			m.ensureTaskOperationStarted(taskID)
+		}
 	}
 	ctx := m.ctx
 	command := m.taskCommandForTask(taskID)
@@ -831,7 +835,7 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 	if msg.err != nil {
 		m.state = state.WithUpdatedTask(m.state, msg.taskID, func(task state.Task) state.Task {
 			task.Status = state.StatusError
-			task.CodexTitle = msg.err.Error()
+			task.LiveTitle = msg.err.Error()
 			return task
 		})
 		m.clearTaskOperationStarted(msg.taskID)
@@ -851,11 +855,12 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 	}
 	m.ptys[msg.taskID] = msg.session
 	m.state = state.WithUpdatedTask(m.state, msg.taskID, func(task state.Task) state.Task {
-		if taskUsesCodexIntegration(m.cfg, task) {
+		policy := taskDefinitionForTask(m.cfg, task).StartPolicy()
+		if policy.TrackOperation {
 			m.ensureTaskOperationStarted(task.ID)
-			task.Status = state.StatusRunning
-		} else {
-			task.Status = state.StatusReady
+		}
+		task.Status = policy.Status
+		if policy.Visible {
 			m.visible[task.ID] = true
 		}
 		return task
@@ -871,8 +876,8 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 	if task == nil {
 		return
 	}
-	usesCodex := taskUsesCodexIntegration(m.cfg, *task)
-	if usesCodex && (data.Text != "" || data.Title != "") {
+	definition := taskDefinitionForTask(m.cfg, *task)
+	if definition.TracksSessions() && (data.Text != "" || data.Title != "") {
 		m.captureCodexSession(data.TaskID)
 	}
 	if data.Err != nil {
@@ -883,7 +888,7 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		title := taskTypeForTask(m.cfg, *task).Label + " exited"
 		if task.Status == state.StatusKilled {
 			status = state.StatusKilled
-			title = task.CodexTitle
+			title = task.LiveTitle
 			if strings.TrimSpace(title) == "" {
 				title = taskTypeForTask(m.cfg, *task).Label + " killed"
 			}
@@ -895,7 +900,7 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		m.state = state.WithUpdatedTask(m.state, data.TaskID, func(task state.Task) state.Task {
 			if task.Status != state.StatusError {
 				task.Status = status
-				task.CodexTitle = title
+				task.LiveTitle = title
 			}
 			return task
 		})
@@ -920,43 +925,26 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 		if screen.HasVisibleContent() {
 			m.visible[data.TaskID] = true
 		}
-		if usesCodex {
-			screenStatus = codexScreenStatus(screen)
-		} else if cwd := screen.LastCWD(); cwd != "" && cwd != task.TerminalCWD {
-			m.state = state.WithUpdatedTask(m.state, data.TaskID, func(task state.Task) state.Task {
-				task.TerminalCWD = cwd
-				task.UpdatedAt = state.NowISO()
-				return task
-			})
-			m.save()
+		screenStatus = definition.ScreenStatus(screen.String())
+		if definition.TracksTerminalCWD() {
+			if cwd := screen.LastCWD(); cwd != "" && cwd != task.TerminalCWD {
+				m.state = state.WithUpdatedTask(m.state, data.TaskID, func(task state.Task) state.Task {
+					task.TerminalCWD = cwd
+					task.UpdatedAt = state.NowISO()
+					return task
+				})
+				m.save()
+			}
 		}
 	}
-	if usesCodex && (data.Title != "" || data.Text != "") {
-		title := titles.NormalizeCodexTitle(data.Title)
+	if data.Title != "" || data.Text != "" {
 		if data.Title != "" {
 			delete(m.taskInterrupts, data.TaskID)
 		}
 		m.state = state.WithUpdatedTask(m.state, data.TaskID, func(task state.Task) state.Task {
-			if data.Title != "" {
-				task.CodexTitle = title
-				task.CodexStatus = ""
-				task.Status = state.StatusRunning
-			}
-			switch {
-			case screenStatus != "":
-				task.CodexStatus = screenStatus
-				if !titles.CodexTitleIndicatesActivity(task.CodexTitle) {
-					task.Status = state.StatusReady
-				}
-			case data.Text != "" && task.CodexStatus != "":
-				task.CodexStatus = ""
-				if task.Status == state.StatusReady && !titles.CodexTitleIndicatesActivity(task.CodexTitle) {
-					task.Status = state.StatusRunning
-				}
-			}
-			return task
+			return definition.ApplyPTYTitle(task, data.Title, screenStatus)
 		})
-		if m.codexOperationComplete(data.TaskID, screenStatus, data.Title) {
+		if definition.InputMode() == tasktypes.InputModeCodex && m.codexOperationComplete(data.TaskID, screenStatus, data.Title) {
 			m.clearTaskOperationStarted(data.TaskID)
 		}
 		m.save()
@@ -965,10 +953,10 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 
 func (m *Model) captureCodexSession(taskID string) {
 	task := state.TaskByID(m.state, taskID)
-	if task == nil || strings.TrimSpace(task.CodexSessionID) != "" {
+	if task == nil || strings.TrimSpace(task.ResumeID) != "" {
 		return
 	}
-	if !taskUsesCodexIntegration(m.cfg, *task) {
+	if !taskDefinitionForTask(m.cfg, *task).TracksSessions() {
 		return
 	}
 	now := time.Now()
@@ -991,11 +979,7 @@ func (m Model) taskCommandForTask(taskID string) string {
 		return ""
 	}
 	taskType := taskTypeForTask(m.cfg, *task)
-	command := taskType.Command
-	if taskUsesCodexIntegration(m.cfg, *task) && strings.TrimSpace(task.CodexSessionID) != "" {
-		command = codexsession.ResumeCommand(command, task.CodexSessionID)
-	}
-	return command
+	return taskDefinitionForTask(m.cfg, *task).Command(taskType.Command, *task)
 }
 
 func (m *Model) activeOutput() string {
@@ -1014,7 +998,7 @@ func (m *Model) activeOutput() string {
 }
 
 func (m Model) terminalExitFooter(task state.Task) string {
-	if taskUsesCodexIntegration(m.cfg, task) {
+	if !taskDefinitionForTask(m.cfg, task).ShowsExitFooter() {
 		return ""
 	}
 	switch task.Status {
@@ -1022,7 +1006,7 @@ func (m Model) terminalExitFooter(task state.Task) string {
 	default:
 		return ""
 	}
-	title := strings.TrimSpace(task.CodexTitle)
+	title := strings.TrimSpace(task.LiveTitle)
 	if title == "" {
 		title = taskTypeForTask(m.cfg, task).Label + " exited"
 	}
@@ -1261,30 +1245,16 @@ func (m Model) taskLoading(taskID string) bool {
 	if task == nil {
 		return false
 	}
-	if !taskUsesCodexIntegration(m.cfg, *task) {
-		return taskStatusShowsLoadingIndicator(*task)
-	}
-	consolidated := titles.ConsolidatedStatus(*task)
-	switch consolidated {
-	case string(state.StatusError), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusSitting):
-		return false
-	}
-	// Many non-active tasks don't have a captured screen buffer; rely on the Codex title-derived
-	// status first so we don't incorrectly show them as still "running"/loading.
-	// For the active task, keep the stricter behavior that waits for visible content.
-	if taskID != m.state.ActiveTaskID {
-		return taskStatusShowsLoadingIndicator(*task)
-	}
-	if taskStatusShowsLoadingIndicator(*task) {
-		return true
-	}
 	screen := m.screens[taskID]
-	return screen == nil || (!screen.HasVisibleContent() && !m.visible[taskID])
+	return taskDefinitionForTask(m.cfg, *task).Loading(*task, tasktypes.LoadingContext{
+		Active:        taskID == m.state.ActiveTaskID,
+		ScreenVisible: screen != nil && screen.HasVisibleContent() || m.visible[taskID],
+	})
 }
 
 func (m *Model) markTerminalCommandStarted(taskID string) {
 	task := state.TaskByID(m.state, taskID)
-	if task == nil || taskUsesCodexIntegration(m.cfg, *task) {
+	if task == nil || !taskDefinitionForTask(m.cfg, *task).TracksForegroundCommands() {
 		return
 	}
 	if m.terminalCommands == nil {
@@ -1311,7 +1281,7 @@ func (m *Model) refreshTerminalTaskActivity() {
 	changed := false
 	for taskID, started := range m.terminalCommands {
 		task := state.TaskByID(m.state, taskID)
-		if task == nil || taskUsesCodexIntegration(m.cfg, *task) {
+		if task == nil || !taskDefinitionForTask(m.cfg, *task).TracksForegroundCommands() {
 			delete(m.terminalCommands, taskID)
 			m.clearTaskOperationStarted(taskID)
 			continue
@@ -1379,7 +1349,7 @@ func (m *Model) resizePTYs() {
 func (m *Model) resizeScreens() {
 	for taskID, screen := range m.screens {
 		task := state.TaskByID(m.state, taskID)
-		if task != nil && !taskUsesCodexIntegration(m.cfg, *task) {
+		if task != nil && taskDefinitionForTask(m.cfg, *task).TopAlignedResize() {
 			screen.ResizeTopAligned(max(screen.cols, m.ptyWidth()), m.ptyHeight())
 			continue
 		}
@@ -1846,7 +1816,7 @@ func (m *Model) applyCodexInput(args map[string]string) tea.Cmd {
 	if active == nil {
 		return nil
 	}
-	if !taskUsesCodexIntegration(m.cfg, *active) {
+	if taskInputModeForTask(m.cfg, *active) != tasktypes.InputModeCodex {
 		return m.applyTaskInput(args)
 	}
 	args = routeCodexInputArgs(*active, args)
@@ -1867,7 +1837,7 @@ func (m *Model) applyTaskInput(args map[string]string) tea.Cmd {
 	if active == nil {
 		return nil
 	}
-	if taskUsesCodexIntegration(m.cfg, *active) {
+	if taskInputModeForTask(m.cfg, *active) == tasktypes.InputModeCodex {
 		return m.applyCodexInput(args)
 	}
 	encoded := []byte(args["encoded"])
@@ -1891,7 +1861,7 @@ func (m *Model) clearActiveTerminal() {
 		return
 	}
 	active := state.ActiveTask(m.state)
-	if active == nil || taskUsesCodexIntegration(m.cfg, *active) {
+	if active == nil || taskInputModeForTask(m.cfg, *active) != tasktypes.InputModeTerminal {
 		return
 	}
 	if screen := m.screens[active.ID]; screen != nil {
@@ -1933,7 +1903,7 @@ func (m *Model) submitCodexInputBuffer(task state.Task) tea.Cmd {
 	if firstMessage == "" {
 		return nil
 	}
-	m.markCodexInputSubmitted(task.ID)
+	m.markInputSubmitted(task.ID)
 	if updated := state.TaskByID(m.state, task.ID); updated != nil {
 		task = *updated
 	}

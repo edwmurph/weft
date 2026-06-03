@@ -18,6 +18,7 @@ import (
 	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/supervisor"
+	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/edwmurph/weft/internal/tui"
 	"github.com/edwmurph/weft/internal/version"
 )
@@ -659,7 +660,8 @@ func doctor(args []string) error {
 		return err
 	}
 	for _, taskType := range cfg.OrderedTaskTypes() {
-		if taskType.Kind != config.TaskKindCodex {
+		definition, ok := tasktypes.ForKind(taskType.Kind)
+		if !ok || definition.ConfiguredTypeID() == "" {
 			fmt.Printf("info task type %s command: %s\n", taskType.ID, taskType.Command)
 			continue
 		}

@@ -27,8 +27,8 @@ func TestPrepareResumeStateAssignsMatchingSessionIDs(t *testing.T) {
 		SelectedWorkspaceID: "w",
 		Workspaces:          []state.Workspace{{ID: "w", Path: workspace, CreatedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)}},
 		Tasks: []state.Task{
-			{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Alpha", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexInputSubmitted: true, CreatedAt: now.Add(-30 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
-			{ID: "b", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Beta", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexInputSubmitted: true, CreatedAt: now.Add(-20 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
+			{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Alpha", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", InputSubmitted: true, CreatedAt: now.Add(-30 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
+			{ID: "b", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "Beta", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", InputSubmitted: true, CreatedAt: now.Add(-20 * time.Second).Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)},
 		},
 	}
 
@@ -36,10 +36,10 @@ func TestPrepareResumeStateAssignsMatchingSessionIDs(t *testing.T) {
 	if !report.CanUpgrade() || report.Assigned != 2 || report.Ready != 2 {
 		t.Fatalf("report = %#v", report)
 	}
-	if got := next.Tasks[0].CodexSessionID; got != "session-alpha" {
+	if got := next.Tasks[0].ResumeID; got != "session-alpha" {
 		t.Fatalf("first session id = %q", got)
 	}
-	if got := next.Tasks[1].CodexSessionID; got != "session-beta" {
+	if got := next.Tasks[1].ResumeID; got != "session-beta" {
 		t.Fatalf("second session id = %q", got)
 	}
 }
@@ -49,12 +49,12 @@ func TestBuildReportBlocksBusyOrMissingSessions(t *testing.T) {
 	st := state.State{
 		Version: state.Version,
 		Tasks: []state.Task{
-			{ID: "busy", TypeID: config.DefaultTaskTypeCodex, Title: "Busy", Status: state.StatusRunning, CodexTitle: "Codex Working", CodexInputSubmitted: true, CreatedAt: now, UpdatedAt: now},
-			{ID: "waiting", TypeID: config.DefaultTaskTypeCodex, Title: "Waiting", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CodexInputSubmitted: true, CreatedAt: now, UpdatedAt: now},
-			{ID: "missing", TypeID: config.DefaultTaskTypeCodex, Title: "Missing", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexInputSubmitted: true, CreatedAt: now, UpdatedAt: now},
-			{ID: "ready", TypeID: config.DefaultTaskTypeCodex, Title: "Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CodexSessionID: "session-ready", CreatedAt: now, UpdatedAt: now},
-			{ID: "prompt-ready", TypeID: config.DefaultTaskTypeCodex, Title: "Prompt Ready", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CodexStatus: "Ready", CodexSessionID: "session-prompt", CreatedAt: now, UpdatedAt: now},
-			{ID: "fresh", TypeID: config.DefaultTaskTypeCodex, Title: "Fresh", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "busy", TypeID: config.DefaultTaskTypeCodex, Title: "Busy", Status: state.StatusRunning, LiveTitle: "Codex Working", LiveStatus: "Working", InputSubmitted: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", TypeID: config.DefaultTaskTypeCodex, Title: "Waiting", Status: state.StatusRunning, LiveTitle: "Codex Waiting", LiveStatus: "Waiting", InputSubmitted: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "missing", TypeID: config.DefaultTaskTypeCodex, Title: "Missing", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", InputSubmitted: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "ready", TypeID: config.DefaultTaskTypeCodex, Title: "Ready", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", ResumeID: "session-ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "prompt-ready", TypeID: config.DefaultTaskTypeCodex, Title: "Prompt Ready", Status: state.StatusRunning, LiveTitle: "Codex Waiting", LiveStatus: "Ready", ResumeID: "session-prompt", CreatedAt: now, UpdatedAt: now},
+			{ID: "fresh", TypeID: config.DefaultTaskTypeCodex, Title: "Fresh", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
@@ -69,7 +69,7 @@ func TestBuildReportAllowsFreshUnsubmittedCodexWithoutSession(t *testing.T) {
 	st := state.State{
 		Version: state.Version,
 		Tasks: []state.Task{
-			{ID: "fresh", TypeID: config.DefaultTaskTypeCodex, Title: "Fresh", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "fresh", TypeID: config.DefaultTaskTypeCodex, Title: "Fresh", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", CreatedAt: now, UpdatedAt: now},
 		},
 	}
 

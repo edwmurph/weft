@@ -126,7 +126,7 @@ func TestFreshDashboardNewTaskFallsBackWhenShellMissing(t *testing.T) {
 		return len(st.Tasks) == 1 && st.Tasks[0].Status != state.StatusStarting
 	})
 	if st.Tasks[0].Status != state.StatusRunning {
-		t.Fatalf("task should start even when SHELL is invalid, status=%s title=%q\nscreen:\n%s", st.Tasks[0].Status, st.Tasks[0].CodexTitle, clientOutput())
+		t.Fatalf("task should start even when SHELL is invalid, status=%s title=%q\nscreen:\n%s", st.Tasks[0].Status, st.Tasks[0].LiveTitle, clientOutput())
 	}
 	waitForEscapedCapture(t, env, pane, func(capture string) bool {
 		return strings.Contains(capture, keyboardProtocolSetup)
@@ -216,7 +216,7 @@ title_template = "Shell"
 			st.Tasks[0].Title == "Ops Shell" &&
 			st.Tasks[0].Status == state.StatusReady
 	})
-	if st.Tasks[0].CodexSessionID != "" {
+	if st.Tasks[0].ResumeID != "" {
 		t.Fatalf("shell task should not capture Codex session id: %#v", st.Tasks[0])
 	}
 	waitForOutput(t, clientOutput, func(capture string) bool {
@@ -279,7 +279,7 @@ func TestDashboardEditTaskWrapsFullAutoTitleErrorE2E(t *testing.T) {
 	), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configText := codexTaskConfigWithTitleHook(fakeCodex, "{codex}", shellQuote(titleHook))
+	configText := codexTaskConfigWithTitleHook(fakeCodex, "{live}", shellQuote(titleHook))
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ title_template = "Shell"
 			st.Focus == state.FocusTasks &&
 			st.NavOpen &&
 			st.Tasks[0].Status == state.StatusKilled &&
-			st.Tasks[0].CodexTitle == "Shell killed"
+			st.Tasks[0].LiveTitle == "Shell killed"
 	})
 	if clientExited(clientDone) {
 		t.Fatal("idle terminal C-c should not quit Weft")
@@ -1608,7 +1608,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	titleHookCommand := "TITLE_HOOK_PAYLOAD=" + shellQuote(titleHookPayload) + " " + shellQuote(titleHook)
-	configText := codexTaskConfigWithTitleHook(fakeCodex, "{codex}", titleHookCommand)
+	configText := codexTaskConfigWithTitleHook(fakeCodex, "{live}", titleHookCommand)
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1911,7 +1911,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Working")
+			return task != nil && strings.Contains(task.LiveTitle, "Working")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:interrupt signal") &&
@@ -1934,7 +1934,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Ready")
+			return task != nil && strings.Contains(task.LiveTitle, "Ready")
 		})
 	})
 
@@ -2011,7 +2011,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 	timedStep(t, "edit modal saves status template", func() {
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Ready")
+			return task != nil && strings.Contains(task.LiveTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "e")
 		waitForOutput(t, clientOutput, func(capture string) bool {
@@ -2037,7 +2037,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Working")
+			return task != nil && strings.Contains(task.LiveTitle, "Working")
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:status check")
@@ -2045,7 +2045,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		assertDashboardNotCorrupt(t, capture, false)
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Ready")
+			return task != nil && strings.Contains(task.LiveTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2061,7 +2061,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Crafting")
+			return task != nil && strings.Contains(task.LiveTitle, "Crafting")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2075,7 +2075,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Waiting")
+			return task != nil && strings.Contains(task.LiveTitle, "Waiting")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2094,7 +2094,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && strings.Contains(task.CodexTitle, "Ready")
+			return task != nil && strings.Contains(task.LiveTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2116,7 +2116,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && task.Status == state.StatusReady && task.CodexStatus == "Ready" && strings.Contains(task.CodexTitle, "Running")
+			return task != nil && task.Status == state.StatusReady && task.LiveStatus == "Ready" && strings.Contains(task.LiveTitle, "Running")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2133,9 +2133,9 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
 			return task != nil && task.Status == state.StatusRunning &&
-				(task.CodexStatus == string(state.StatusRunning) ||
-					strings.Contains(task.CodexTitle, "Running") ||
-					strings.Contains(task.CodexTitle, "Working"))
+				(task.LiveStatus == string(state.StatusRunning) ||
+					strings.Contains(task.LiveTitle, "Running") ||
+					strings.Contains(task.LiveTitle, "Working"))
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2159,7 +2159,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && task.Status == state.StatusReady && task.CodexStatus == "Ready" && strings.Contains(task.CodexTitle, "Running")
+			return task != nil && task.Status == state.StatusReady && task.LiveStatus == "Ready" && strings.Contains(task.LiveTitle, "Running")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2184,7 +2184,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		waitState(t, env, bin, func(st state.State) bool {
 			task := findTask(st, firstID)
-			return task != nil && task.Status == state.StatusReady && task.CodexStatus == "Ready" && strings.Contains(task.CodexTitle, "Running")
+			return task != nil && task.Status == state.StatusReady && task.LiveStatus == "Ready" && strings.Contains(task.LiveTitle, "Running")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
@@ -2262,7 +2262,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		waitState(t, env, bin, func(st state.State) bool {
 			return len(st.Tasks) == 1 &&
 				st.Focus == state.FocusConsole &&
-				strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+				strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-l", "-t", pane, "interrupt")
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
@@ -2270,7 +2270,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return len(st.Tasks) == 1 &&
 				st.Focus == state.FocusConsole &&
 				st.Tasks[0].Status == state.StatusRunning &&
-				strings.Contains(st.Tasks[0].CodexTitle, "Working")
+				strings.Contains(st.Tasks[0].LiveTitle, "Working")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "received:interrupt") &&
@@ -2286,7 +2286,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return len(st.Tasks) == 1 &&
 				st.Focus == state.FocusConsole &&
 				st.Tasks[0].Status == state.StatusRunning &&
-				strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+				strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, collapsedCodexToolbar) &&
@@ -2301,7 +2301,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 			return len(st.Tasks) == 1 &&
 				st.Focus == state.FocusConsole &&
 				st.Tasks[0].Status == state.StatusRunning &&
-				strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+				strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool {
@@ -2319,7 +2319,7 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	tmp := t.TempDir()
 	fakeCodex := writeExitOnInterruptFakeCodex(t, tmp, "fake-codex-exits-on-int.sh")
 	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
-	configText := codexTaskConfigWithTitle(fakeCodex, "{codex}")
+	configText := codexTaskConfigWithTitle(fakeCodex, "{live}")
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -2348,7 +2348,7 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	st := waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Tasks) == 1 &&
 			st.Focus == state.FocusConsole &&
-			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+			strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 	})
 	firstTaskID := st.Tasks[0].ID
 	capture := waitForOutput(t, clientOutput, func(capture string) bool {
@@ -2366,7 +2366,7 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 			st.Focus == state.FocusTasks &&
 			st.NavOpen &&
 			st.Tasks[0].Status == state.StatusKilled &&
-			st.Tasks[0].CodexTitle == "Codex killed"
+			st.Tasks[0].LiveTitle == "Codex killed"
 	})
 	if clientExited(clientDone) {
 		t.Fatal("C-c that exits Codex should not quit Weft")
@@ -2384,7 +2384,7 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 			active != nil &&
 			active.ID != firstTaskID &&
 			st.Focus == state.FocusConsole &&
-			strings.Contains(active.CodexTitle, "Ready")
+			strings.Contains(active.LiveTitle, "Ready")
 	})
 	secondTaskID := st.ActiveTaskID
 	directRun(t, env, "send-keys", "-t", pane, "C-]")
@@ -2422,7 +2422,7 @@ func TestTaskConsoleCtrlCSideWorkE2E(t *testing.T) {
 	tmp := t.TempDir()
 	fakeCodex := writeSideModeFakeCodex(t, tmp, "fake-codex-side-mode.sh")
 	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
-	configText := codexTaskConfigWithTitle(fakeCodex, "{codex}")
+	configText := codexTaskConfigWithTitle(fakeCodex, "{live}")
 	if err := os.WriteFile(filepath.Join(runtimeDir, "config.toml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -2451,7 +2451,7 @@ func TestTaskConsoleCtrlCSideWorkE2E(t *testing.T) {
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Tasks) == 1 &&
 			st.Focus == state.FocusConsole &&
-			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+			strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 	})
 	directRun(t, env, "send-keys", "-l", "-t", pane, "/side")
 	time.Sleep(100 * time.Millisecond)
@@ -2469,7 +2469,7 @@ func TestTaskConsoleCtrlCSideWorkE2E(t *testing.T) {
 		return len(st.Tasks) == 1 &&
 			st.Focus == state.FocusConsole &&
 			st.Tasks[0].Status == state.StatusRunning &&
-			strings.Contains(st.Tasks[0].CodexTitle, "Working")
+			strings.Contains(st.Tasks[0].LiveTitle, "Working")
 	})
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "received:side-work") &&
@@ -2498,7 +2498,7 @@ func TestTaskConsoleCtrlCSideWorkE2E(t *testing.T) {
 		return len(st.Tasks) == 1 &&
 			st.Focus == state.FocusConsole &&
 			st.Tasks[0].Status == state.StatusRunning &&
-			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+			strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 	})
 	if clientExited(clientDone) {
 		t.Fatal("C-c during side work should not quit Weft")
@@ -2726,7 +2726,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 			return strings.Contains(capture, "New task") &&
 				strings.Contains(capture, "[ ] Silent") &&
 				strings.Contains(capture, "Variables") &&
-				strings.Contains(capture, "{codex}") &&
+				strings.Contains(capture, "{live}") &&
 				strings.Contains(capture, "Tab move") &&
 				strings.Contains(capture, "Space type/toggle")
 		})
@@ -2884,8 +2884,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 				st.Focus == state.FocusConsole &&
 				first != nil &&
 				second != nil &&
-				strings.Contains(first.CodexTitle, "Ready") &&
-				strings.Contains(second.CodexTitle, "Ready")
+				strings.Contains(first.LiveTitle, "Ready") &&
+				strings.Contains(second.LiveTitle, "Ready")
 		})
 		capture := waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, collapsedCodexToolbar) &&
@@ -2940,8 +2940,8 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 				first != nil &&
 				second != nil &&
 				second.Silent &&
-				strings.Contains(first.CodexTitle, "Ready") &&
-				strings.Contains(second.CodexTitle, "Ready")
+				strings.Contains(first.LiveTitle, "Ready") &&
+				strings.Contains(second.LiveTitle, "Ready")
 		})
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, collapsedCodexToolbar) &&

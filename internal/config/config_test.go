@@ -32,7 +32,7 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing codex task type: %#v", cfg.TaskTypes)
 	}
-	if codexType.Kind != TaskKindCodex || codexType.Command != "codex" || codexType.Badge != "[codex]" || codexType.TitleTemplate != "{codex}" {
+	if codexType.Kind != TaskKindCodex || codexType.Command != "codex" || codexType.Badge != "[codex]" || codexType.TitleTemplate != "{live}" {
 		t.Fatalf("codex task type = %#v", codexType)
 	}
 	shellType, ok := cfg.TaskTypes[DefaultTaskTypeShell]
@@ -195,6 +195,50 @@ title_template = "Claude"
 	}
 	if !strings.Contains(err.Error(), `kind "claude" is not supported`) ||
 		!strings.Contains(err.Error(), `checked-in integrated type`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestLoadConfigRejectsIntegratedKindOnCustomTaskID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	err := os.WriteFile(path, []byte(`
+[task_types.codex-copy]
+label = "Codex Copy"
+kind = "codex"
+command = "codex"
+badge = "[codex-copy]"
+title_template = "{live}"
+`), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected reserved integrated kind error")
+	}
+	if !strings.Contains(err.Error(), `kind "codex" is reserved`) ||
+		!strings.Contains(err.Error(), `checked-in codex task type`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestLoadConfigRejectsRetiredCodexTitleTemplateVariable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	err := os.WriteFile(path, []byte(`
+[task_types.codex]
+command = "codex"
+title_template = "{codex}"
+`), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected retired title template error")
+	}
+	if !strings.Contains(err.Error(), `title_template uses retired {codex}; use {live}`) {
 		t.Fatalf("error = %v", err)
 	}
 }

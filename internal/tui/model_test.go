@@ -88,7 +88,7 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 
 	raw := renderNewTaskModal(cfg, index, input, 60, 2, false, false)
 	rendered := ansi.Strip(raw)
-	if !strings.Contains(rendered, "Title") || !strings.Contains(rendered, "[ ] Silent") || !strings.Contains(rendered, "Variables") || !strings.Contains(rendered, "{codex}") {
+	if !strings.Contains(rendered, "Title") || !strings.Contains(rendered, "[ ] Silent") || !strings.Contains(rendered, "Variables") || !strings.Contains(rendered, "{live}") {
 		t.Fatalf("new task modal missing title, variables, or silent checkbox:\n%s", rendered)
 	}
 	if strings.Index(rendered, "[ ] Silent") > strings.Index(rendered, "Title") {
@@ -190,8 +190,8 @@ func TestApplyPTYDataUsesTaskID(t *testing.T) {
 	if !model.visible["a"] {
 		t.Fatalf("task should be marked visible: %#v", model.visible)
 	}
-	if got := model.state.Tasks[0].CodexTitle; got != "Fake Codex Ready" {
-		t.Fatalf("CodexTitle = %q", got)
+	if got := model.state.Tasks[0].LiveTitle; got != "Fake Codex Ready" {
+		t.Fatalf("LiveTitle = %q", got)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestApplyPTYDataMarksRequestUserInputScreenReady(t *testing.T) {
 	if task == nil {
 		t.Fatal("task missing")
 	}
-	if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
-		t.Fatalf("task status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+	if task.LiveStatus != "Ready" || task.Status != state.StatusReady {
+		t.Fatalf("task status = %s/%q, want ready/Ready", task.Status, task.LiveStatus)
 	}
 	if got := model.renderTaskTitle(*task); got != "alpha" {
 		t.Fatalf("configured title should remain unchanged, got %q", got)
@@ -220,7 +220,7 @@ func TestApplyPTYDataMarksRequestUserInputScreenReady(t *testing.T) {
 
 	model.applyPTYData(ptyx.Data{TaskID: "a", Text: "\033[2J\033[Hworking again\n"})
 	task = state.TaskByID(model.state, "a")
-	if task == nil || task.CodexStatus != "" || task.Status != state.StatusRunning {
+	if task == nil || task.LiveStatus != "Running" || task.Status != state.StatusRunning {
 		t.Fatalf("task status after clearing prompt = %#v", task)
 	}
 }
@@ -252,8 +252,8 @@ func TestApplyPTYDataMarksPermissionScreensReady(t *testing.T) {
 			if task == nil {
 				t.Fatal("task missing")
 			}
-			if task.CodexStatus != "Ready" || task.Status != state.StatusReady {
-				t.Fatalf("prompt status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+			if task.LiveStatus != "Ready" || task.Status != state.StatusReady {
+				t.Fatalf("prompt status = %s/%q, want ready/Ready", task.Status, task.LiveStatus)
 			}
 			if model.taskLoading("a") {
 				t.Fatalf("prompt should not show as loading")
@@ -281,7 +281,8 @@ func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 		t.Fatalf("loading task operation start = %v, want %v", got, started)
 	}
 
-	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
+	model.state.Tasks[0].LiveTitle = "Fake Codex Ready"
+	model.state.Tasks[0].LiveStatus = "Ready"
 	snapshot = model.Snapshot()
 	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
 		t.Fatalf("ready task should keep loading until visible content: %#v", snapshot.LoadingTaskIDs)
@@ -299,7 +300,8 @@ func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 		t.Fatalf("ready task should not expose operation starts: %#v", snapshot.TaskOperationStartedAt)
 	}
 
-	model.state.Tasks[0].CodexTitle = "Fake Codex Waiting"
+	model.state.Tasks[0].LiveTitle = "Fake Codex Waiting"
+	model.state.Tasks[0].LiveStatus = "Waiting"
 	model.operationStarts = testOperationStarts(map[string]time.Time{"a": started})
 	snapshot = model.Snapshot()
 	if len(snapshot.LoadingTaskIDs) != 1 || snapshot.LoadingTaskIDs[0] != "a" {
@@ -360,8 +362,8 @@ func TestSubmittingReadyCodexPromptRestartsOperationTiming(t *testing.T) {
 	if task == nil {
 		t.Fatal("task missing")
 	}
-	if task.Status != state.StatusReady || task.CodexStatus != "Ready" {
-		t.Fatalf("setup task status = %s/%q, want ready/Ready", task.Status, task.CodexStatus)
+	if task.Status != state.StatusReady || task.LiveStatus != "Ready" {
+		t.Fatalf("setup task status = %s/%q, want ready/Ready", task.Status, task.LiveStatus)
 	}
 	ready := model.Snapshot()
 	if len(ready.TaskOperationStartedAt) != 0 {
@@ -375,8 +377,8 @@ func TestSubmittingReadyCodexPromptRestartsOperationTiming(t *testing.T) {
 	if task == nil {
 		t.Fatal("task missing after submit")
 	}
-	if task.Status != state.StatusRunning || task.CodexStatus != string(state.StatusRunning) {
-		t.Fatalf("submitted ready prompt should become running, got %s/%q", task.Status, task.CodexStatus)
+	if task.Status != state.StatusRunning || task.LiveStatus != string(state.StatusRunning) {
+		t.Fatalf("submitted ready prompt should become running, got %s/%q", task.Status, task.LiveStatus)
 	}
 	submitted := model.Snapshot()
 	if len(submitted.LoadingTaskIDs) != 1 || submitted.LoadingTaskIDs[0] != "a" {
@@ -395,12 +397,12 @@ func TestLoadingIndicatorCoversNonIdleTaskStates(t *testing.T) {
 	}{
 		{
 			name: "codex waiting title",
-			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Waiting"},
+			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, LiveTitle: "Fake Codex Waiting", LiveStatus: "Waiting"},
 			want: true,
 		},
 		{
 			name: "unlisted codex activity title",
-			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Crafting"},
+			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, LiveTitle: "Fake Codex Crafting", LiveStatus: "Crafting"},
 			want: true,
 		},
 		{
@@ -415,7 +417,7 @@ func TestLoadingIndicatorCoversNonIdleTaskStates(t *testing.T) {
 		},
 		{
 			name: "ready",
-			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, CodexTitle: "Fake Codex Ready"},
+			task: state.Task{ID: "a", Title: "Codex", Status: state.StatusRunning, LiveTitle: "Fake Codex Ready", LiveStatus: "Ready"},
 			want: false,
 		},
 		{
@@ -703,7 +705,7 @@ func TestClientWorkspaceFooterShowsVersionInfo(t *testing.T) {
 		OK: true,
 		Snapshot: &ipc.Snapshot{
 			State:               st,
-			CodexTitle:          "Task",
+			LiveTitle:           "Task",
 			CodexContent:        "No task open.",
 			NavWidth:            minTwoPaneNavWidth,
 			ActiveClientVersion: weftversion.Version,
@@ -780,8 +782,9 @@ func testClientUpgrade(supervisorVersion string, runningTasks int) *ipc.Upgrade 
 func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithTask(rt.Workspace)
-	st.Tasks[0].CodexTitle = "Fake Codex Ready"
-	st.Tasks[0].CodexSessionID = "session-alpha"
+	st.Tasks[0].LiveTitle = "Fake Codex Ready"
+	st.Tasks[0].LiveStatus = "Ready"
+	st.Tasks[0].ResumeID = "session-alpha"
 	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
@@ -789,7 +792,7 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 
 	model.applyResponse(ipc.Response{
 		OK:                true,
-		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Snapshot:          &ipc.Snapshot{State: st, LiveTitle: "alpha", CodexContent: "output", NavWidth: 92},
 		Upgrade:           testClientUpgrade("3.9.0", 1),
 		ProtocolVersion:   ipc.ProtocolVersion,
 		SupervisorVersion: "3.9.0",
@@ -842,8 +845,9 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 func TestClientUpgradeWaitsUntilTaskIsIdleAndResumable(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithTask(rt.Workspace)
-	st.Tasks[0].CodexTitle = "Fake Codex Working"
-	st.Tasks[0].CodexInputSubmitted = true
+	st.Tasks[0].LiveTitle = "Fake Codex Working"
+	st.Tasks[0].LiveStatus = "Working"
+	st.Tasks[0].InputSubmitted = true
 	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
@@ -851,7 +855,7 @@ func TestClientUpgradeWaitsUntilTaskIsIdleAndResumable(t *testing.T) {
 
 	model.applyResponse(ipc.Response{
 		OK:                true,
-		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Snapshot:          &ipc.Snapshot{State: st, LiveTitle: "alpha", CodexContent: "output", NavWidth: 92},
 		Upgrade:           testClientUpgrade("3.9.0", 1),
 		ProtocolVersion:   ipc.ProtocolVersion,
 		SupervisorVersion: "3.9.0",
@@ -876,7 +880,8 @@ func TestClientUpgradeWaitsUntilTaskIsIdleAndResumable(t *testing.T) {
 func TestClientUpgradeAllowsFreshCodexWithoutSession(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithTask(rt.Workspace)
-	st.Tasks[0].CodexTitle = "Fake Codex Ready"
+	st.Tasks[0].LiveTitle = "Fake Codex Ready"
+	st.Tasks[0].LiveStatus = "Ready"
 	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, config.DefaultConfig())
@@ -884,7 +889,7 @@ func TestClientUpgradeAllowsFreshCodexWithoutSession(t *testing.T) {
 
 	model.applyResponse(ipc.Response{
 		OK:                true,
-		Snapshot:          &ipc.Snapshot{State: st, CodexTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Snapshot:          &ipc.Snapshot{State: st, LiveTitle: "alpha", CodexContent: "output", NavWidth: 92},
 		Upgrade:           testClientUpgrade("3.9.0", 1),
 		ProtocolVersion:   ipc.ProtocolVersion,
 		SupervisorVersion: "3.9.0",
@@ -1042,7 +1047,8 @@ func TestClientUpgradeBlockerResolvesTaskTitleTemplate(t *testing.T) {
 	st.Tasks[0].Title = "{status} {auto}"
 	st.Tasks[0].AutoTitle = "Fix config"
 	st.Tasks[0].Status = state.StatusRunning
-	st.Tasks[0].CodexTitle = "Fake Codex Working"
+	st.Tasks[0].LiveTitle = "Fake Codex Working"
+	st.Tasks[0].LiveStatus = "Working"
 	st.Workspaces[0].Title = "Core"
 	st.Focus = state.FocusTasks
 	st.NavOpen = true
@@ -1292,7 +1298,7 @@ func TestSnapshotShowsActiveTaskStartError(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := testStateWithTask(rt.Workspace)
 	st.Tasks[0].Status = state.StatusError
-	st.Tasks[0].CodexTitle = "fork/exec /missing/zsh: no such file or directory"
+	st.Tasks[0].LiveTitle = "fork/exec /missing/zsh: no such file or directory"
 
 	model := NewModel(rt, cfg, state.Empty())
 	model.state = st
@@ -1314,12 +1320,13 @@ func TestActivePTYExitReturnsToTasksPane(t *testing.T) {
 	model.navWidth = 0
 	model.state.Focus = state.FocusConsole
 	model.state.NavOpen = false
-	model.state.Tasks[0].CodexTitle = "Fake Codex Ready"
+	model.state.Tasks[0].LiveTitle = "Fake Codex Ready"
+	model.state.Tasks[0].LiveStatus = "Ready"
 
 	model.applyPTYData(ptyx.Data{TaskID: "a", Err: os.ErrClosed})
 
 	task := state.TaskByID(model.state, "a")
-	if task == nil || task.Status != state.StatusStopped || task.CodexTitle != "Codex exited" {
+	if task == nil || task.Status != state.StatusStopped || task.LiveTitle != "Codex exited" {
 		t.Fatalf("task after PTY exit = %#v", task)
 	}
 	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
@@ -1345,7 +1352,7 @@ func TestRecentCtrlCPTYExitMarksTaskKilled(t *testing.T) {
 	model.applyPTYData(ptyx.Data{TaskID: "a", Err: os.ErrClosed})
 
 	task := state.TaskByID(model.state, "a")
-	if task == nil || task.Status != state.StatusKilled || task.CodexTitle != "Codex killed" {
+	if task == nil || task.Status != state.StatusKilled || task.LiveTitle != "Codex killed" {
 		t.Fatalf("task after interrupted PTY exit = %#v", task)
 	}
 	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
@@ -1371,7 +1378,7 @@ func TestIdleTerminalTaskCtrlCKillsTask(t *testing.T) {
 		t.Fatalf("terminal ctrl+c should clear pending input buffer, got %q", got)
 	}
 	task := state.TaskByID(model.state, "a")
-	if task == nil || task.Status != state.StatusKilled || task.CodexTitle != "Shell killed" {
+	if task == nil || task.Status != state.StatusKilled || task.LiveTitle != "Shell killed" {
 		t.Fatalf("idle terminal ctrl+c should kill task immediately: %#v", task)
 	}
 	if model.state.Focus != state.FocusTasks || !model.state.NavOpen {
@@ -1383,7 +1390,7 @@ func TestIdleTerminalTaskCtrlCKillsTask(t *testing.T) {
 
 	model.applyPTYData(ptyx.Data{TaskID: "a", Err: os.ErrClosed})
 	task = state.TaskByID(model.state, "a")
-	if task == nil || task.Status != state.StatusKilled || task.CodexTitle != "Shell killed" {
+	if task == nil || task.Status != state.StatusKilled || task.LiveTitle != "Shell killed" {
 		t.Fatalf("delayed PTY exit should not downgrade killed task: %#v", task)
 	}
 
@@ -1504,7 +1511,7 @@ func TestTitleHookCapturesFirstSubmittedLine(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected title hook command")
 	}
-	if task := state.TaskByID(model.state, "a"); task == nil || !task.AutoTitleAttempted || !task.CodexInputSubmitted {
+	if task := state.TaskByID(model.state, "a"); task == nil || !task.AutoTitleAttempted || !task.InputSubmitted {
 		t.Fatalf("task should be marked attempted and submitted: %#v", task)
 	}
 

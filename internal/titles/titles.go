@@ -10,7 +10,7 @@ import (
 const (
 	TitleTemplate     = "{title}"
 	AutoTemplate      = "{auto}"
-	CodexTemplate     = "{codex}"
+	LiveTemplate      = "{live}"
 	StatusTemplate    = "{status}"
 	WorkspaceTemplate = "{workspace}"
 	GroupTemplate     = "{group}"
@@ -28,14 +28,14 @@ func TemplateVariables() []TemplateVariable {
 	return []TemplateVariable{
 		{Name: TitleTemplate, Description: "configured task title"},
 		{Name: AutoTemplate, Description: "generated title from first message"},
-		{Name: CodexTemplate, Description: "live Codex title"},
-		{Name: StatusTemplate, Description: "live Codex status"},
+		{Name: LiveTemplate, Description: "live task title"},
+		{Name: StatusTemplate, Description: "live task status"},
 		{Name: WorkspaceTemplate, Description: "workspace path"},
 		{Name: GroupTemplate, Description: "group name"},
 	}
 }
 
-func NormalizeCodexTitle(title string) string {
+func NormalizeLiveTitle(title string) string {
 	title = strings.TrimSpace(title)
 	if title == "" || title == "Terminal" || title == "tmux" {
 		return ""
@@ -48,16 +48,9 @@ func RenderStatus(task state.Task) string {
 	case state.StatusStarting, state.StatusStopped, state.StatusKilled, state.StatusError, state.StatusSitting, state.StatusShipping:
 		return string(task.Status)
 	}
-	titleStatus := CodexActivityStatus(task.CodexTitle)
-	screenStatus := strings.TrimSpace(task.CodexStatus)
-	if screenStatus != "" && !CodexTitleIndicatesActivity(task.CodexTitle) {
-		return screenStatus
-	}
-	if titleStatus != "" {
-		return titleStatus
-	}
-	if screenStatus != "" {
-		return screenStatus
+	liveStatus := strings.TrimSpace(task.LiveStatus)
+	if liveStatus != "" {
+		return liveStatus
 	}
 	if task.Status != "" {
 		return string(task.Status)
@@ -100,8 +93,8 @@ func consolidateStatus(status string) string {
 	}
 }
 
-func CodexTitleIndicatesActivity(title string) bool {
-	switch strings.ToLower(CodexActivityStatus(title)) {
+func LiveStatusIndicatesActivity(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "", string(state.StatusRunning), string(state.StatusReady), "waiting", "idle", string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
 		return false
 	default:
@@ -109,8 +102,12 @@ func CodexTitleIndicatesActivity(title string) bool {
 	}
 }
 
+func CodexLiveTitleIndicatesActivity(title string) bool {
+	return LiveStatusIndicatesActivity(CodexActivityStatus(title))
+}
+
 func CodexActivityStatus(title string) string {
-	title = NormalizeCodexTitle(title)
+	title = NormalizeLiveTitle(title)
 	tokens := codexTitleTokens(title)
 	if len(tokens) == 1 {
 		if strings.EqualFold(tokens[0], "codex") {
@@ -165,14 +162,14 @@ func RenderTask(task state.Task, workspace state.Workspace, group state.Group, t
 	if title == "" {
 		title = PendingTitle
 	}
-	codexTitle := NormalizeCodexTitle(task.CodexTitle)
-	if codexTitle == "" {
-		codexTitle = PendingTitle
+	liveTitle := NormalizeLiveTitle(task.LiveTitle)
+	if liveTitle == "" {
+		liveTitle = PendingTitle
 	}
 	values := map[string]string{
 		TitleTemplate:     title,
 		AutoTemplate:      renderAutoTitle(task),
-		CodexTemplate:     codexTitle,
+		LiveTemplate:      liveTitle,
 		StatusTemplate:    RenderStatus(task),
 		WorkspaceTemplate: fallback(workspace.Path, PendingTitle),
 		GroupTemplate:     fallback(group.Path, PendingTitle),

@@ -32,7 +32,7 @@ type Payload struct {
 	Status           string `json:"status"`
 	Title            string `json:"title"`
 	TitleTemplate    string `json:"title_template"`
-	CodexTitle       string `json:"codex_title,omitempty"`
+	LiveTitle        string `json:"live_title,omitempty"`
 	FirstMessage     string `json:"first_message"`
 	TitleColumns     int    `json:"title_columns,omitempty"`
 	AutoTitleColumns int    `json:"auto_title_columns,omitempty"`
@@ -40,7 +40,7 @@ type Payload struct {
 
 func BuildPayload(task state.Task, workspace state.Workspace, group state.Group, titleTemplate string, firstMessage string, titleColumns int, autoColumns int) Payload {
 	return Payload{
-		Version:          2,
+		Version:          3,
 		Event:            EventFirstMessage,
 		TaskID:           task.ID,
 		TypeID:           state.TaskTypeID(task),
@@ -49,7 +49,7 @@ func BuildPayload(task state.Task, workspace state.Workspace, group state.Group,
 		Status:           titles.RenderStatus(task),
 		Title:            task.Title,
 		TitleTemplate:    titleTemplate,
-		CodexTitle:       titles.NormalizeCodexTitle(task.CodexTitle),
+		LiveTitle:        titles.NormalizeLiveTitle(task.LiveTitle),
 		FirstMessage:     firstMessage,
 		TitleColumns:     titleColumns,
 		AutoTitleColumns: autoColumns,

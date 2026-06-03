@@ -35,7 +35,7 @@ The core workflow is:
 
 ## Current And Legacy Boundary
 
-Current Weft behavior is the workspace, group, and typed task model backed by one local supervisor. Persisted state is the strict v5 task schema, with `tasks`, `active_task_id`, `selected_task_id`, task `terminal_cwd`, and focus values of `workspaces`, `tasks`, or `console`. The supervisor owns all task PTYs, saves current state, captures resume IDs for Codex agent tasks, tracks OSC 7 cwd updates for terminal tasks, detects when on-disk config has drifted from the supervisor's active config, and performs the dashboard `U` upgrade/resume flow through the supervisor-owned `upgrade_resume` IPC command. Resuming Codex agent tasks with `codex resume <session-id>` after an explicit dashboard upgrade or config reload restart is part of the current product contract, not legacy compatibility. Configured command tasks are not resumable by the Codex resume integration; idle terminal tasks can only be restarted as fresh commands with saved history/cwd.
+Current Weft behavior is the workspace, group, and typed task model backed by one local supervisor. Persisted state is the strict v6 task schema, with `tasks`, `active_task_id`, `selected_task_id`, provider-neutral live title/status and resume metadata, task `terminal_cwd`, and focus values of `workspaces`, `tasks`, or `console`. The supervisor owns all task PTYs, saves current state, captures resume IDs for Codex agent tasks, tracks OSC 7 cwd updates for terminal tasks, detects when on-disk config has drifted from the supervisor's active config, and performs the dashboard `U` upgrade/resume flow through the supervisor-owned `upgrade_resume` IPC command. Runtime behavior for each task type kind is owned by the checked-in task type definition registry, so startup state, input routing, command construction, screen-derived status, loading, terminal cwd tracking, foreground-command tracking, and restart behavior live with the task kind instead of scattered UI conditionals. Resuming Codex agent tasks with `codex resume <session-id>` after an explicit dashboard upgrade or config reload restart is part of the current product contract, not legacy compatibility. Configured command tasks are not resumable by the Codex resume integration; idle terminal tasks can only be restarted as fresh commands with saved history/cwd.
 
 Legacy behavior is unsupported unless this specification explicitly brings it back. Legacy includes tmux pane state, tab/column state, workdir/folder naming, hidden old commands, old config keys, state/config migration paths, and alias support for retired command or state shapes. Legacy files should be rejected with reset guidance rather than migrated, defaulted, repaired, or silently ignored by hidden compatibility code.
 
@@ -43,9 +43,9 @@ Legacy behavior is unsupported unless this specification explicitly brings it ba
 
 Weft supports Codex today.
 
-Codex support is the checked-in `kind = "codex"` integration. It includes Codex-specific title/status capture, resume ID capture, interrupt routing, and dashboard upgrade/resume behavior.
+Codex support is the checked-in `kind = "codex"` task type definition. It includes Codex-specific title/status capture, resume ID capture, interrupt routing, command construction for `codex resume <session-id>`, and dashboard upgrade/resume behavior.
 
-Additional agents can be added upon request. New agent support requires a checked-in integration; config alone can define generic shell command tasks but cannot add agent-specific behavior.
+Additional agents can be added upon request. New agent support requires a checked-in task type definition; config alone can define generic shell command tasks but cannot add agent-specific behavior.
 
 ## Runtime Architecture
 
@@ -387,7 +387,7 @@ killed
 error
 ```
 
-The exact derivation of `ready`, `waiting`, `running`, and other live states can reuse the current Codex title/status detection and can evolve independently of the UI layout. When `{status}` is rendered from the live Codex agent title, Weft passes through the live Codex status word verbatim and preserves its casing, including newer labels such as `Exploring` or `Crafting`; fallback lifecycle statuses remain the lowercase model values above. When the Codex screen is stopped on a user prompt, such as Plan mode waiting for a user answer, a tool permission allow/deny choice, or a command approval prompt, Weft derives `Ready` for `{status}` even if the terminal title has not changed from a running-like title.
+The exact derivation of `ready`, `waiting`, `running`, and other live states is owned by each task type definition and can evolve independently of the UI layout. For Codex tasks, the Codex definition parses live terminal-title status into provider-neutral `live_status`, preserving status-word casing including newer labels such as `Exploring` or `Crafting`; fallback lifecycle statuses remain the lowercase model values above. When the Codex screen is stopped on a user prompt, such as Plan mode waiting for a user answer, a tool permission allow/deny choice, or a command approval prompt, Weft derives `Ready` for `{status}` even if the terminal title has not changed from a running-like title.
 
 Runtime behavior must resolve provider-specific or command-specific live words into consolidated buckets before making task-pane decisions. Active buckets are `starting`, `running`, `waiting`, `working`, and `shipping`; ready and terminal buckets are `ready`, `sitting`, `stopped`, `killed`, and `error`. Unknown live work words such as `Crafting` or a configured terminal command's custom active label are treated as `working` for row styling, active counts, interrupt routing, and task-pane duration timing. The task-pane duration prefix is derived from transitions into and out of those consolidated active buckets, not from provider-specific display text.
 
@@ -401,7 +401,8 @@ Task types are loaded from config. Each task type represents either an agent or 
 - `command`: shell command used to start the PTY
 - `badge`: bracketed type badge rendered before the task title; when omitted, it defaults to `[<id>]`
 - `title_template`: default title copied into newly created tasks of this type
-Checked-in agent kinds can add tailored behavior. `codex` is currently the only supported agent kind. Additional agents can be added upon request. Generic configured command task types must use `kind = "terminal"` and do not get Codex-specific title capture, resume ID capture, interrupt routing, or true resume. Unsupported agent kinds, including `kind = "claude"` before Claude support is checked in, must be rejected at config load with guidance to use `terminal` for generic commands. Any idle/ready `kind = "terminal"` task with no active foreground process can be restarted after dashboard `U` with read-only pre-upgrade history and the latest cwd captured from OSC 7.
+
+Each `kind` resolves to a checked-in task type definition. Definitions own the task-kind capabilities that affect runtime behavior: input mode, startup status, command construction, screen-derived status, loading rules, terminal cwd tracking, foreground-command tracking, exit footer behavior, screen resize behavior, and restartability during dashboard `U`. Checked-in agent kinds can add tailored behavior. `codex` is currently the only supported agent kind. Additional agents can be added upon request. Generic configured command task types must use `kind = "terminal"` and do not get agent-specific live title/status capture, resume ID capture, interrupt routing, or true resume. Unsupported agent kinds, including `kind = "claude"` before Claude support is checked in, must be rejected at config load with guidance to use `terminal` for generic commands. Any idle/ready `kind = "terminal"` task with no active foreground process can be restarted after dashboard `U` with read-only pre-upgrade history and the latest cwd captured from OSC 7.
 
 Default task types:
 
@@ -413,7 +414,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{codex}"
+title_template = "{live}"
 
 [task_types.shell]
 label = "Shell"
@@ -436,7 +437,7 @@ A task title can include template variables. Renaming a task edits that task's s
 Default Codex agent task template:
 
 ```text
-{codex}
+{live}
 ```
 
 Supported variables:
@@ -444,17 +445,19 @@ Supported variables:
 ```text
 {title}    user-configured task title
 {auto}     generated title from the first submitted message
-{codex}    live Codex agent title
-{status}   verbatim live Codex status, falling back to lifecycle status
+{live}    live task title
+{status}   live task status, falling back to lifecycle status
 {workspace}  display workspace path
 {group}   flat group name
 ```
+
+The retired `{codex}` variable is unsupported; use `{live}` for the live task title.
 
 Example task templates:
 
 ```text
 {title}
-{codex}
+{live}
 {auto}
 {status} {auto}
 {status} {title}
@@ -467,11 +470,11 @@ If a variable is unavailable, render a stable fallback rather than an empty brok
 ```text
 {title}  -> ...
 {auto}   -> waiting for first message
-{codex}  -> ...
+{live}  -> ...
 {status} -> unknown
 ```
 
-Generated titles are computed when `title_hook_command` is configured and a task opts into `{auto}` titles. Codex agent tasks capture the first non-empty message submitted to Codex. Configured command tasks capture the first typed command after their task type title template includes `{auto}`. The hook runs from the task workspace, sends JSON on stdin, and stores the first non-empty stdout line as the task's generated title. The hook payload includes `version`, `event`, `task_id`, `workspace`, `group`, `status`, `title`, the task `type_id`, task `title_template`, `codex_title` when available, `first_message`, `title_columns` for the rendered title area, and `auto_title_columns` for the available `{auto}` text after Weft accounts for the marker, widest configured task type badge, nesting, and other title-template fields.
+Generated titles are computed when `title_hook_command` is configured and a task opts into `{auto}` titles. Integrated agent tasks capture the first non-empty submitted message. Configured command tasks capture the first typed command after their task type title template includes `{auto}`. The hook runs from the task workspace, sends JSON on stdin, and stores the first non-empty stdout line as the task's generated title. The hook payload version is `3` and includes `version`, `event`, `task_id`, `workspace`, `group`, `status`, `title`, the task `type_id`, task `title_template`, `live_title` when available, `first_message`, `title_columns` for the rendered title area, and `auto_title_columns` for the available `{auto}` text after Weft accounts for the marker, widest configured task type badge, nesting, and other title-template fields.
 
 Weft must not encode provider-specific clients, model names, API keys, or HTTP contracts into the runtime. The title hook is just a shell command. If the hook times out, exits nonzero, is missing, or writes no title, `{auto}` renders as `auto title failed` and Weft does not retry for that task.
 
@@ -479,7 +482,7 @@ When `{auto}` is added in the edit pane, the UI should make hook readiness obvio
 
 ## Data Model
 
-The state model uses global workspaces, flat groups, and typed task rows persisted as `tasks` in strict v5 state. Unsupported old state shapes fail with reset guidance instead of being migrated, archived, or repaired.
+The state model uses global workspaces, flat groups, and typed task rows persisted as `tasks` in strict v6 state. Unsupported old state shapes fail with reset guidance instead of being migrated, archived, or repaired.
 
 Current persisted shape:
 
@@ -525,10 +528,10 @@ type Task struct {
     AutoTitle           string     `json:"auto_title,omitempty"`
     AutoTitleAttempted  bool       `json:"auto_title_attempted,omitempty"`
     AutoTitleError      string     `json:"auto_title_error,omitempty"`
-    CodexTitle          string     `json:"codex_title,omitempty"`
-    CodexStatus         string     `json:"codex_status,omitempty"`
-    CodexSessionID      string     `json:"codex_session_id,omitempty"`
-    CodexInputSubmitted bool       `json:"codex_input_submitted,omitempty"`
+    LiveTitle           string     `json:"live_title,omitempty"`
+    LiveStatus          string     `json:"live_status,omitempty"`
+    ResumeID            string     `json:"resume_id,omitempty"`
+    InputSubmitted      bool       `json:"input_submitted,omitempty"`
     TerminalCWD         string     `json:"terminal_cwd,omitempty"`
     Status              TaskStatus `json:"status"`
     CreatedAt           string     `json:"created_at"`
@@ -548,7 +551,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{codex}"
+title_template = "{live}"
 
 [task_types.shell]
 label = "Shell"
@@ -854,7 +857,7 @@ Visual style:
 
 ## Migration
 
-Unsupported old state shapes are not migrated or archived. If `state.json` is not strict v5 current shape, including malformed references, missing titles, missing `type_id`, or task types not defined by active config, Weft returns a clear error that tells the user to run `weft clear` when a reset is acceptable.
+Unsupported old state shapes are not migrated or archived. If `state.json` is not strict v6 current shape, including malformed references, missing titles, missing `type_id`, or task types not defined by active config, Weft returns a clear error that tells the user to run `weft clear` when a reset is acceptable.
 
 ## Configuration
 
@@ -870,7 +873,7 @@ label = "Codex"
 kind = "codex"
 command = "codex"
 badge = "[codex]"
-title_template = "{codex}"
+title_template = "{live}"
 
 [task_types.shell]
 label = "Shell"

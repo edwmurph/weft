@@ -237,7 +237,7 @@ func TestClientMouseDragCopiesConsoleSelection(t *testing.T) {
 				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
 				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w"}},
 			},
-			CodexTitle:      "Codex",
+			LiveTitle:       "Codex",
 			CodexContent:    "alpha beta",
 			CodexPlainLines: []string{"alpha beta                                                                      "},
 		},
@@ -307,7 +307,7 @@ func TestClientMouseDragCopiesTaskPreviewSelection(t *testing.T) {
 				Tasks:               []state.Task{{ID: "a", WorkspaceID: "w"}},
 			},
 			NavWidth:        minTwoPaneNavWidth,
-			CodexTitle:      "Codex",
+			LiveTitle:       "Codex",
 			CodexContent:    "alpha beta",
 			CodexPlainLines: []string{"alpha beta"},
 			CodexScrollback: "alpha beta",
@@ -380,7 +380,7 @@ func TestClientMouseWheelScrollsConsoleScrollback(t *testing.T) {
 				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
 				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
 			},
-			CodexTitle:           "Codex",
+			LiveTitle:            "Codex",
 			CodexContent:         strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
 			CodexPlainLines:      []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
 			CodexScrollback:      strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
@@ -452,7 +452,7 @@ func TestClientMouseWheelForwardsFocusedTerminalAlternateScreen(t *testing.T) {
 		height:   8,
 		snapshot: ipc.Snapshot{
 			State:                       st,
-			CodexTitle:                  "Shell",
+			LiveTitle:                   "Shell",
 			CodexContent:                "pager page 1",
 			CodexPlainLines:             []string{"pager page 1"},
 			CodexScrollback:             "pager page 1",
@@ -527,7 +527,7 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 				Tasks:               []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
 			},
 			NavWidth:                    minTwoPaneNavWidth,
-			CodexTitle:                  "Codex",
+			LiveTitle:                   "Codex",
 			CodexContent:                strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
 			CodexPlainLines:             []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
 			CodexScrollback:             strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
@@ -575,7 +575,7 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	model.height = 16
 	model.snapshot = ipc.Snapshot{
 		State:        st,
-		CodexTitle:   "alpha",
+		LiveTitle:    "alpha",
 		CodexContent: "last task output",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
@@ -649,7 +649,7 @@ func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
 	model.height = 16
 	model.snapshot = ipc.Snapshot{
 		State:        st,
-		CodexTitle:   "alpha",
+		LiveTitle:    "alpha",
 		CodexContent: "last task output",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
@@ -708,7 +708,7 @@ func TestClientDownFromLastWorkspaceSelectsNewWorkspaceCard(t *testing.T) {
 	model.height = 16
 	model.snapshot = ipc.Snapshot{
 		State:        st,
-		CodexTitle:   "Codex",
+		LiveTitle:    "Codex",
 		CodexContent: "No task open.",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
@@ -735,7 +735,7 @@ func TestClientHoverSelectsNewTaskRowAndEnterOpensMenu(t *testing.T) {
 	model.height = 16
 	model.snapshot = ipc.Snapshot{
 		State:        st,
-		CodexTitle:   "Task",
+		LiveTitle:    "Task",
 		CodexContent: "No task open.",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}

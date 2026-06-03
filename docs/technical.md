@@ -25,7 +25,7 @@ Important persisted fields include:
 - active and selected task ids
 - task type id
 - task title template
-- supported-agent title, status, resume, and input-submitted metadata when available
+- provider-neutral live title, live status, resume id, and input-submitted metadata when available
 - terminal cwd metadata when available
 
 Runtime-only details such as process ids, PTY handles, socket clients, terminal size, and screen cache are not persisted. Normal task terminal output is kept in supervisor memory for the live console and preview, not in `state.json`.
@@ -34,7 +34,7 @@ During dashboard upgrade restart, idle terminal tasks can write temporary visibl
 
 ## Agent Integrations And Commands
 
-Integrated agent support is checked into Weft. `codex` is currently the only supported agent kind and gets Codex-specific status/title capture, resume ID capture, interrupt routing, and upgrade resume behavior.
+Integrated agent support is checked into Weft as task type definitions. A definition owns behavior for a task kind, including input mode, startup status, command construction, screen-derived status, loading rules, terminal cwd tracking, foreground-command tracking, exit footer behavior, screen resize behavior, and restartability during dashboard `U`. `codex` is currently the only supported agent kind and fills the provider-neutral live title/status and resume metadata through Codex-specific capture, interrupt routing, and upgrade resume behavior.
 
 Configured shell command tasks use `kind = "terminal"`. They can start any shell command, but they do not get agent-specific resume or title/status behavior unless Weft adds a dedicated integration for that agent. During dashboard `U`, an idle terminal task can restart as a fresh shell with saved history/cwd. A terminal task running foreground work blocks upgrade until it becomes idle.
 

@@ -9,7 +9,7 @@ import (
 
 const codexTaskTypeID = "codex"
 
-func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
+func TestStoreRejectsUnknownV6StateWithoutArchiving(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	workspace := filepath.Join(dir, "workspace")
@@ -17,7 +17,7 @@ func TestStoreRejectsUnknownV5StateWithoutArchiving(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(`{
-  "version": 5,
+  "version": 6,
   "focus": "tasks",
   "nav_open": true,
   "workspaces": [],
@@ -88,7 +88,7 @@ func TestStoreRejectsUnknownFocusValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(`{
-  "version": 5,
+  "version": 6,
   "focus": "sideways",
   "nav_open": true,
   "workspaces": [],
@@ -118,7 +118,7 @@ func TestStoreRejectsTaskMissingTypeID(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(`{
-  "version": 5,
+  "version": 6,
   "focus": "tasks",
   "nav_open": true,
   "workspaces": [{"id": "w", "path": "/tmp/project", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
@@ -140,7 +140,7 @@ func TestStoreRejectsTaskMissingTypeID(t *testing.T) {
 	}
 }
 
-func TestStoreReadsStrictV5TaskState(t *testing.T) {
+func TestStoreReadsStrictV6TaskState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	workspace := filepath.Join(dir, "workspace")
@@ -148,7 +148,7 @@ func TestStoreReadsStrictV5TaskState(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(`{
-  "version": 5,
+  "version": 6,
   "active_task_id": "a",
   "selected_task_id": "a",
   "selected_workspace_id": "w",
@@ -167,14 +167,14 @@ func TestStoreReadsStrictV5TaskState(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st.Version != Version || st.ActiveTaskID != "a" || st.SelectedTaskID != "a" || st.Focus != FocusConsole || len(st.Tasks) != 1 {
-		t.Fatalf("strict v5 state = %#v", st)
+		t.Fatalf("strict v6 state = %#v", st)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(raw), `"type_id": "codex"`) {
-		t.Fatalf("strict v5 state should preserve task type:\n%s", raw)
+		t.Fatalf("strict v6 state should preserve task type:\n%s", raw)
 	}
 }
 

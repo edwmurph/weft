@@ -104,7 +104,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		return len(st.Tasks) == 2 && st.ActiveTaskID == firstID
 	})
 	statusJSON := runWeft(t, env, bin, "status", "--json")
-	for _, expected := range []string{`"version":5`, `"active_task_id":"` + firstID + `"`, `"selected_task_id":`, `"tasks":[`, `"type_id":"codex"`} {
+	for _, expected := range []string{`"version":6`, `"active_task_id":"` + firstID + `"`, `"selected_task_id":`, `"tasks":[`, `"type_id":"codex"`} {
 		if !strings.Contains(statusJSON, expected) {
 			t.Fatalf("status json missing %q:\n%s", expected, statusJSON)
 		}
@@ -369,14 +369,14 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleTask(t *testing.T) {
 	st := waitState(t, oldEnv, bin, func(st state.State) bool {
 		return len(st.Tasks) == 1 &&
 			st.Tasks[0].Status == state.StatusRunning &&
-			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+			strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 	})
-	if st.Tasks[0].CodexSessionID == "" {
+	if st.Tasks[0].ResumeID == "" {
 		logData, _ := os.ReadFile(resumeLog)
 		t.Fatalf("task did not capture Codex session id: %#v\nfake log:\n%s", st.Tasks[0], logData)
 	}
 	taskID := st.Tasks[0].ID
-	sessionID := st.Tasks[0].CodexSessionID
+	sessionID := st.Tasks[0].ResumeID
 
 	pane := "upgrade-resume"
 	clientOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane, 150, 36)
@@ -422,8 +422,8 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleTask(t *testing.T) {
 		task := state.TaskByID(st, taskID)
 		return task != nil &&
 			task.Status == state.StatusRunning &&
-			task.CodexSessionID == sessionID &&
-			strings.Contains(task.CodexTitle, "Ready")
+			task.ResumeID == sessionID &&
+			strings.Contains(task.LiveTitle, "Ready")
 	})
 	if len(st.Tasks) != 1 {
 		t.Fatalf("upgrade resume should preserve task rows: %#v", st.Tasks)
@@ -467,10 +467,10 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 	st := waitState(t, oldEnv, bin, func(st state.State) bool {
 		return len(st.Tasks) == 1 &&
 			st.Tasks[0].Status == state.StatusRunning &&
-			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+			strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 	})
 	taskID := st.Tasks[0].ID
-	if st.Tasks[0].CodexSessionID != "" {
+	if st.Tasks[0].ResumeID != "" {
 		t.Fatalf("fresh task should not have a Codex session id: %#v", st.Tasks[0])
 	}
 
@@ -503,8 +503,8 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 		task := state.TaskByID(st, taskID)
 		return task != nil &&
 			task.Status == state.StatusRunning &&
-			task.CodexSessionID == "" &&
-			strings.Contains(task.CodexTitle, "Ready")
+			task.ResumeID == "" &&
+			strings.Contains(task.LiveTitle, "Ready")
 	})
 	if len(st.Tasks) != 1 {
 		t.Fatalf("fresh upgrade should preserve task rows: %#v", st.Tasks)
@@ -546,7 +546,7 @@ func TestDashboardConfigDriftRestartAppliesChangedConfig(t *testing.T) {
 	waitState(t, env, bin, func(st state.State) bool {
 		return len(st.Tasks) == 1 &&
 			st.Tasks[0].Status == state.StatusRunning &&
-			strings.Contains(st.Tasks[0].CodexTitle, "Ready")
+			strings.Contains(st.Tasks[0].LiveTitle, "Ready")
 	})
 
 	pane := "config-drift-restart"

@@ -122,7 +122,7 @@ func TestSupervisorRejectsStateTaskTypesMissingFromConfig(t *testing.T) {
 	rt, cfg, store := testRuntime(t)
 	now := state.NowISO()
 	raw := `{
-  "version": 5,
+  "version": 6,
   "selected_workspace_id": "w",
   "focus": "tasks",
   "nav_open": true,
@@ -375,7 +375,7 @@ func TestUpgradeResumeBlockedMessageResolvesTaskTitleTemplate(t *testing.T) {
 		Groups:     []state.Group{},
 		Tasks: []state.Task{{
 			ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "{status} {auto}",
-			AutoTitle: "Fix config", Status: state.StatusRunning, CodexTitle: "Fake Codex Working", CreatedAt: now, UpdatedAt: now,
+			AutoTitle: "Fix config", Status: state.StatusRunning, LiveTitle: "Fake Codex Working", LiveStatus: "Working", CreatedAt: now, UpdatedAt: now,
 		}},
 	}
 	report := codexsession.Report{Busy: st.Tasks}

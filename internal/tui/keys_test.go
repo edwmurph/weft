@@ -161,7 +161,7 @@ func TestEnhancedKeyboardInputKeepsDrawerKeyForWeftInCodexFocus(t *testing.T) {
 
 func TestRouteCodexInputArgsSendsWorkingCtrlCAsInterruptKey(t *testing.T) {
 	args := map[string]string{"input": "ctrl+c", "encoded": terminalKeyboardCtrlC}
-	routed := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Working", Status: state.StatusRunning}, args)
+	routed := routeCodexInputArgs(state.Task{LiveTitle: "Fake Codex Working", LiveStatus: "Working", Status: state.StatusRunning}, args)
 	if got := routed["encoded"]; got != terminalKeyboardInterrupt {
 		t.Fatalf("working ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
 	}
@@ -169,17 +169,17 @@ func TestRouteCodexInputArgsSendsWorkingCtrlCAsInterruptKey(t *testing.T) {
 		t.Fatalf("routeCodexInputArgs mutated original args, got %q", got)
 	}
 
-	crafting := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}, args)
+	crafting := routeCodexInputArgs(state.Task{LiveTitle: "Fake Codex Crafting", LiveStatus: "Crafting", Status: state.StatusRunning}, args)
 	if got := crafting["encoded"]; got != terminalKeyboardInterrupt {
 		t.Fatalf("crafting ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
 	}
 
-	waiting := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Waiting", Status: state.StatusRunning}, args)
+	waiting := routeCodexInputArgs(state.Task{LiveTitle: "Fake Codex Waiting", LiveStatus: "Waiting", Status: state.StatusRunning}, args)
 	if got := waiting["encoded"]; got != terminalKeyboardInterrupt {
 		t.Fatalf("waiting ctrl+c encoded = %q, want interrupt key %q", got, terminalKeyboardInterrupt)
 	}
 
-	ready := routeCodexInputArgs(state.Task{CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}, args)
+	ready := routeCodexInputArgs(state.Task{LiveTitle: "Fake Codex Ready", LiveStatus: "Ready", Status: state.StatusRunning}, args)
 	if got := ready["encoded"]; got != terminalKeyboardCtrlC {
 		t.Fatalf("ready ctrl+c encoded = %q, want original ctrl+c %q", got, terminalKeyboardCtrlC)
 	}

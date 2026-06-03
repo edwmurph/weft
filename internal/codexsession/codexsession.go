@@ -11,6 +11,7 @@ import (
 
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/edwmurph/weft/internal/titles"
 )
 
@@ -58,10 +59,10 @@ func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh
 	assigned := 0
 	for index := range st.Tasks {
 		task := &st.Tasks[index]
-		if state.TaskTypeID(*task) != config.DefaultTaskTypeCodex {
+		if state.TaskTypeID(*task) != tasktypes.DefaultCodexID {
 			continue
 		}
-		if strings.TrimSpace(task.CodexSessionID) != "" {
+		if strings.TrimSpace(task.ResumeID) != "" {
 			continue
 		}
 		if skipFresh && TaskFreshForUpgrade(*task) {
@@ -73,7 +74,7 @@ func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh
 		if !ok {
 			continue
 		}
-		task.CodexSessionID = session.ID
+		task.ResumeID = session.ID
 		task.UpdatedAt = state.NowISO()
 		used[session.ID] = true
 		assigned++
@@ -84,7 +85,7 @@ func assignMissingSessionIDs(st state.State, fallbackWorkspace string, skipFresh
 func BuildReport(st state.State) Report {
 	report := Report{}
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) != config.DefaultTaskTypeCodex {
+		if state.TaskTypeID(task) != tasktypes.DefaultCodexID {
 			continue
 		}
 		report.Total++
@@ -96,7 +97,7 @@ func BuildReport(st state.State) Report {
 			report.Busy = append(report.Busy, task)
 			continue
 		}
-		if strings.TrimSpace(task.CodexSessionID) == "" {
+		if strings.TrimSpace(task.ResumeID) == "" {
 			report.Missing = append(report.Missing, task)
 			continue
 		}
@@ -108,14 +109,15 @@ func BuildReport(st state.State) Report {
 func BuildUpgradeReport(st state.State, cfg config.Config, terminalForegroundActive func(string) bool) Report {
 	report := BuildReport(st)
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) == config.DefaultTaskTypeCodex {
+		if state.TaskTypeID(task) == tasktypes.DefaultCodexID {
 			continue
 		}
 		if !taskLiveForRestart(task) {
 			continue
 		}
 		taskType, ok := cfg.TaskType(state.TaskTypeID(task))
-		if !ok || taskType.Kind != config.TaskKindTerminal || !TerminalTaskIdleForUpgrade(task) || terminalTaskForegroundActive(task.ID, terminalForegroundActive) {
+		definition, supported := tasktypes.ForKind(taskType.Kind)
+		if !ok || !supported || !definition.RestartableTerminal() || !TerminalTaskIdleForUpgrade(task) || terminalTaskForegroundActive(task.ID, terminalForegroundActive) {
 			report.TerminalBusy = append(report.TerminalBusy, task)
 			continue
 		}
@@ -151,10 +153,10 @@ func terminalTaskForegroundActive(taskID string, terminalForegroundActive func(s
 }
 
 func TaskFreshForUpgrade(task state.Task) bool {
-	if strings.TrimSpace(task.CodexSessionID) != "" {
+	if strings.TrimSpace(task.ResumeID) != "" {
 		return false
 	}
-	if task.CodexInputSubmitted || task.AutoTitleAttempted {
+	if task.InputSubmitted || task.AutoTitleAttempted {
 		return false
 	}
 	if strings.TrimSpace(task.AutoTitle) != "" || strings.TrimSpace(task.AutoTitleError) != "" {
@@ -164,11 +166,7 @@ func TaskFreshForUpgrade(task state.Task) bool {
 }
 
 func ResumeCommand(codexCommand string, sessionID string) string {
-	codexCommand = strings.TrimSpace(codexCommand)
-	if codexCommand == "" {
-		codexCommand = "codex"
-	}
-	return codexCommand + " resume " + shellQuote(sessionID)
+	return tasktypes.CodexResumeCommand(codexCommand, sessionID)
 }
 
 func Home() string {
@@ -269,7 +267,7 @@ func canonicalWorkspace(path string) string {
 func earliestTaskCreatedAt(st state.State) time.Time {
 	var earliest time.Time
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) != config.DefaultTaskTypeCodex {
+		if state.TaskTypeID(task) != tasktypes.DefaultCodexID {
 			continue
 		}
 		created := parseTime(task.CreatedAt)
@@ -289,10 +287,10 @@ func earliestTaskCreatedAt(st state.State) time.Time {
 func usedSessionIDs(st state.State) map[string]bool {
 	used := map[string]bool{}
 	for _, task := range st.Tasks {
-		if state.TaskTypeID(task) != config.DefaultTaskTypeCodex {
+		if state.TaskTypeID(task) != tasktypes.DefaultCodexID {
 			continue
 		}
-		if id := strings.TrimSpace(task.CodexSessionID); id != "" {
+		if id := strings.TrimSpace(task.ResumeID); id != "" {
 			used[id] = true
 		}
 	}
@@ -313,8 +311,4 @@ func parseTime(value string) time.Time {
 	}
 	parsed, _ = time.Parse(time.RFC3339, strings.TrimSpace(value))
 	return parsed
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

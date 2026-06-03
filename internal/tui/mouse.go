@@ -8,8 +8,8 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tasktypes"
 )
 
 const (
@@ -207,7 +207,7 @@ func (m ClientModel) handleTaskMouse(event tea.MouseEvent) (ClientModel, tea.Cmd
 func (m ClientModel) shouldForwardConsoleWheelToTask(active state.Task) bool {
 	return m.snapshot.State.Focus == state.FocusConsole &&
 		m.snapshot.ActiveTaskInAlternateScreen &&
-		taskTypeForTask(m.cfg, active).Kind == config.TaskKindTerminal
+		taskDefinitionForTask(m.cfg, active).TracksForegroundCommands()
 }
 
 func (m ClientModel) newTaskRowArea() (consoleArea, bool) {
@@ -247,7 +247,7 @@ func (m ClientModel) canSelectCodexContent() bool {
 
 func (m ClientModel) codexSelectionColumnOffset() int {
 	task := m.codexFrameTaskForSelection()
-	if task == nil || !taskUsesCodexIntegration(m.cfg, *task) {
+	if task == nil || taskDefinitionForTask(m.cfg, *task).InputMode() != tasktypes.InputModeCodex {
 		return 0
 	}
 	return codexSelectableMargin(m.codexPlainLines())

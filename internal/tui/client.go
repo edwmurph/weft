@@ -14,6 +14,7 @@ import (
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/edwmurph/weft/internal/version"
 )
 
@@ -108,7 +109,7 @@ func NewClientModel(rt config.Runtime, cfg config.Config) ClientModel {
 	st := state.Empty()
 	return ClientModel{
 		cfg: cfg, runtime: rt, clientID: shortID(), width: 100, height: 32,
-		snapshot: ipc.Snapshot{State: st, CodexTitle: "Task", CodexContent: "No task open.", NavWidth: workspaceNavFrameWidth(st, 100)},
+		snapshot: ipc.Snapshot{State: st, LiveTitle: "Task", CodexContent: "No task open.", NavWidth: workspaceNavFrameWidth(st, 100)},
 		input:    input,
 	}
 }
@@ -194,7 +195,7 @@ func (m ClientModel) View() string {
 	if loadingText != "" {
 		loadingText = loadingFrame + strings.TrimPrefix(loadingText, loadingFrames[0])
 		options.loadingText = loadingText
-		return renderWorkspaceView(m.cfg, dashboardState, m.snapshot.CodexTitle, "", m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
+		return renderWorkspaceView(m.cfg, dashboardState, m.snapshot.LiveTitle, "", m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 	}
 	codexContent := m.codexVisibleContent()
 	if m.mouseSelection.active {
@@ -205,7 +206,7 @@ func (m ClientModel) View() string {
 			}
 		}
 	}
-	return renderWorkspaceView(m.cfg, dashboardState, m.snapshot.CodexTitle, codexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
+	return renderWorkspaceView(m.cfg, dashboardState, m.snapshot.LiveTitle, codexContent, m.width, m.height, m.messageText(), m.snapshot.NavWidth, m.snapshot.GroupCursor, options)
 }
 
 func (m ClientModel) dashboardState() state.State {
@@ -787,7 +788,7 @@ func (m *ClientModel) syncInputRouter() {
 		m.inputRouter.SetTaskInputMode(taskInputNone)
 		return
 	}
-	if task := state.ActiveTask(m.snapshot.State); task != nil && taskUsesCodexIntegration(m.cfg, *task) {
+	if task := state.ActiveTask(m.snapshot.State); task != nil && taskInputModeForTask(m.cfg, *task) == tasktypes.InputModeCodex {
 		m.inputRouter.SetTaskInputMode(taskInputCodex)
 		return
 	}

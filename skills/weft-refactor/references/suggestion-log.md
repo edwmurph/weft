@@ -2,6 +2,22 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-02 - Provider-neutral task metadata cutover
+
+- Request: Continue the task type abstraction work so adding future agents such as Claude does not leave Codex-specific metadata names in the shared task schema.
+- Suggestions: Hard-cut persisted task metadata from `codex_title`, `codex_status`, `codex_session_id`, and `codex_input_submitted` to provider-neutral `live_title`, `live_status`, `resume_id`, and `input_submitted`, hard-cut the title-template live-title variable from `{codex}` to `{live}`, bump the strict state schema, title-hook payload, and IPC protocol, and keep Codex-specific behavior inside the Codex task type definition.
+- Outcome: Implemented in `.worktrees/task-types-abstraction`; awaiting review.
+- Evidence: `internal/state`, `internal/titlehook`, `internal/ipc`, `internal/tasktypes`, `internal/tui`, `internal/codexsession`, `spec.md`, `docs/technical.md`, `docs/configuration.md`; `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`, `git diff --check`.
+- Deferred: None.
+
+## 2026-06-02 - Task type definition registry
+
+- Request: Add a better task type abstraction so people and agents can add more task types while making the code easier to reason about, with breaking changes acceptable.
+- Suggestions: Introduce a checked-in `internal/tasktypes` definition registry, make config validation ask the registry which `kind` values are supported and which integrated type ids are reserved, and move runtime task-kind policy for input mode, startup, commands, loading, status capture, terminal cwd/foreground tracking, resize, exit footers, and upgrade restartability behind the definition interface.
+- Outcome: Implemented in `.worktrees/task-types-abstraction`; awaiting review.
+- Evidence: `internal/tasktypes`, `internal/config/config.go`, `internal/tui`, `internal/codexsession`, `spec.md`, `docs/technical.md`; `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`.
+- Deferred: None; the provider-neutral metadata cutover is tracked in the follow-up entry above.
+
 ## 2026-06-02 - IPC metadata hard cutover
 
 - Request: Remove legacy unneeded code with a hard cutover, preserving the current supervisor-owned workspace/group/task model.

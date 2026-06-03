@@ -7,7 +7,7 @@ import (
 )
 
 func TestRenderTaskDefaultTemplateUsesConfiguredTitle(t *testing.T) {
-	task := state.Task{ID: "abc", Title: "Plan", CodexTitle: "Plan Ready", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Plan", LiveTitle: "Plan Ready", Status: state.StatusRunning}
 
 	if got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "inbox"}, "{title}"); got != "Plan" {
 		t.Fatalf("got %q", got)
@@ -15,9 +15,9 @@ func TestRenderTaskDefaultTemplateUsesConfiguredTitle(t *testing.T) {
 }
 
 func TestRenderTaskSupportsLiveVariables(t *testing.T) {
-	task := state.Task{ID: "abc", Title: "Codex", AutoTitle: "Fix Login", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Codex", AutoTitle: "Fix Login", LiveTitle: "Fake Codex Working", LiveStatus: "Working", Status: state.StatusRunning}
 
-	got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workspace} {group}: {auto} {status} {codex}")
+	got := RenderTask(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{workspace} {group}: {auto} {status} {live}")
 
 	if got != "/tmp/project ship: Fix Login Working Fake Codex Working" {
 		t.Fatalf("got %q", got)
@@ -35,15 +35,15 @@ func TestRenderTaskUsesWorkspaceVariable(t *testing.T) {
 }
 
 func TestRenderTaskRendersVariablesInsideBaseTitle(t *testing.T) {
-	task := state.Task{ID: "abc", Title: "Codex {status}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
+	task := state.Task{ID: "abc", Title: "Codex {status}", LiveTitle: "Fake Codex Ready", LiveStatus: "Ready", Status: state.StatusRunning}
 
 	if got := RenderTask(task, state.Workspace{}, state.Group{}, "{title}"); got != "Codex Ready" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
-	task := state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning}
+func TestRenderStatusPreservesLiveStatusCase(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex", LiveStatus: "Working", Status: state.StatusRunning}
 
 	if got := RenderStatus(task); got != "Working" {
 		t.Fatalf("got %q", got)
@@ -52,7 +52,7 @@ func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	task.CodexTitle = "Fake Codex Waiting"
+	task.LiveStatus = "Waiting"
 	if got := RenderStatus(task); got != "Waiting" {
 		t.Fatalf("got %q", got)
 	}
@@ -60,7 +60,7 @@ func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	task.CodexTitle = "Fake Codex Crafting"
+	task.LiveStatus = "Crafting"
 	if got := RenderStatus(task); got != "Crafting" {
 		t.Fatalf("got %q", got)
 	}
@@ -68,7 +68,7 @@ func TestRenderStatusPreservesCodexTokenCase(t *testing.T) {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	task.CodexTitle = "Exploring"
+	task.LiveStatus = "Exploring"
 	if got := RenderStatus(task); got != "Exploring" {
 		t.Fatalf("got %q", got)
 	}
@@ -85,22 +85,22 @@ func TestConsolidatedStatusBucketsLiveStatuses(t *testing.T) {
 	}{
 		{
 			name: "known live working",
-			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Working", Status: state.StatusRunning},
+			task: state.Task{ID: "abc", Title: "Codex", LiveStatus: "Working", Status: state.StatusRunning},
 			want: "working",
 		},
 		{
-			name: "unknown live codex status",
-			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning},
+			name: "unknown live status",
+			task: state.Task{ID: "abc", Title: "Codex", LiveStatus: "Crafting", Status: state.StatusRunning},
 			want: "working",
 		},
 		{
 			name: "ready prompt",
-			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Running", CodexStatus: "Ready", Status: state.StatusReady},
+			task: state.Task{ID: "abc", Title: "Codex", LiveTitle: "Fake Codex Running", LiveStatus: "Ready", Status: state.StatusReady},
 			want: string(state.StatusReady),
 		},
 		{
 			name: "submitted ready prompt",
-			task: state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Ready", CodexStatus: "running", Status: state.StatusRunning},
+			task: state.Task{ID: "abc", Title: "Codex", LiveTitle: "Fake Codex Ready", LiveStatus: "running", Status: state.StatusRunning},
 			want: string(state.StatusRunning),
 		},
 	} {
@@ -112,8 +112,8 @@ func TestConsolidatedStatusBucketsLiveStatuses(t *testing.T) {
 	}
 }
 
-func TestRenderStatusUsesScreenDerivedCodexStatus(t *testing.T) {
-	task := state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Running", CodexStatus: "Ready", Status: state.StatusRunning}
+func TestRenderStatusUsesScreenDerivedLiveStatus(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex", LiveTitle: "Fake Codex Running", LiveStatus: "Ready", Status: state.StatusRunning}
 
 	if got := RenderStatus(task); got != "Ready" {
 		t.Fatalf("got %q", got)
@@ -122,39 +122,59 @@ func TestRenderStatusUsesScreenDerivedCodexStatus(t *testing.T) {
 		t.Fatalf("canonical status = %q", got)
 	}
 
-	task.CodexTitle = "Fake Codex Working"
+	task.LiveStatus = "Working"
 	if got := RenderStatus(task); got != "Working" {
-		t.Fatalf("live title status should win, got %q", got)
+		t.Fatalf("live status should update, got %q", got)
 	}
 }
 
-func TestStatusIndicatesActivityForUnlistedCodexStatus(t *testing.T) {
-	task := state.Task{ID: "abc", Title: "Codex", CodexTitle: "Fake Codex Crafting", Status: state.StatusRunning}
+func TestStatusIndicatesActivityForUnlistedLiveStatus(t *testing.T) {
+	task := state.Task{ID: "abc", Title: "Codex", LiveStatus: "Crafting", Status: state.StatusRunning}
 
 	if !StatusIndicatesActivity(task) {
-		t.Fatal("unlisted live Codex status should be active")
+		t.Fatal("unlisted live status should be active")
 	}
 
-	task.CodexTitle = "Fake Codex Waiting"
+	task.LiveStatus = "Waiting"
 	if !StatusIndicatesActivity(task) {
-		t.Fatal("waiting Codex status should be active")
+		t.Fatal("waiting live status should be active")
 	}
 
-	task.CodexTitle = "Fake Codex Ready"
+	task.LiveStatus = "Ready"
 	if StatusIndicatesActivity(task) {
-		t.Fatal("ready Codex status should not be active")
+		t.Fatal("ready live status should not be active")
 	}
 
-	task.CodexTitle = "Fake Codex Running"
-	task.CodexStatus = "Ready"
 	if StatusIndicatesActivity(task) {
-		t.Fatal("screen-derived ready status should not be active")
+		t.Fatal("ready live status should still not be active")
 	}
 
-	task.CodexTitle = "Fake Codex Waiting"
-	task.CodexStatus = "Ready"
-	if StatusIndicatesActivity(task) {
-		t.Fatal("screen-derived ready status should still override waiting title status")
+	task.LiveStatus = "running"
+	if !StatusIndicatesActivity(task) {
+		t.Fatal("running live status should be active")
+	}
+}
+
+func TestCodexActivityStatusParsesTerminalTitle(t *testing.T) {
+	for _, tt := range []struct {
+		title string
+		want  string
+	}{
+		{title: "Fake Codex Working", want: "Working"},
+		{title: "Fake Codex Waiting", want: "Waiting"},
+		{title: "Fake Codex Crafting", want: "Crafting"},
+		{title: "Exploring", want: "Exploring"},
+		{title: "Codex", want: ""},
+	} {
+		if got := CodexActivityStatus(tt.title); got != tt.want {
+			t.Fatalf("CodexActivityStatus(%q) = %q, want %q", tt.title, got, tt.want)
+		}
+	}
+	if !CodexLiveTitleIndicatesActivity("Fake Codex Crafting") {
+		t.Fatal("crafting title should indicate Codex activity")
+	}
+	if CodexLiveTitleIndicatesActivity("Fake Codex Ready") {
+		t.Fatal("ready title should not indicate Codex activity")
 	}
 }
 
@@ -176,7 +196,7 @@ func TestRenderStatusTemplateFallsBackToTaskStatus(t *testing.T) {
 	}
 
 	task.Status = state.StatusRunning
-	task.CodexTitle = "Codex"
+	task.LiveTitle = "Codex"
 	if got := RenderTask(task, state.Workspace{}, state.Group{}, StatusTemplate); got != string(state.StatusRunning) {
 		t.Fatalf("got %q", got)
 	}
@@ -200,7 +220,7 @@ func TestRenderAutoTemplateShowsFailureState(t *testing.T) {
 
 func TestTemplateVariablesListsSupportedPlaceholders(t *testing.T) {
 	got := TemplateVariables()
-	want := []string{TitleTemplate, AutoTemplate, CodexTemplate, StatusTemplate, WorkspaceTemplate, GroupTemplate}
+	want := []string{TitleTemplate, AutoTemplate, LiveTemplate, StatusTemplate, WorkspaceTemplate, GroupTemplate}
 	if len(got) != len(want) {
 		t.Fatalf("got %d variables, want %d: %#v", len(got), len(want), got)
 	}

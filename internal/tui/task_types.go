@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tasktypes"
 )
 
 func taskTypeForTask(cfg config.Config, task state.Task) config.TaskType {
@@ -18,8 +19,17 @@ func taskTypeForTask(cfg config.Config, task state.Task) config.TaskType {
 	return config.TaskType{}
 }
 
-func taskUsesCodexIntegration(cfg config.Config, task state.Task) bool {
-	return taskTypeForTask(cfg, task).Kind == config.TaskKindCodex
+func taskDefinitionForTask(cfg config.Config, task state.Task) tasktypes.Definition {
+	taskType := taskTypeForTask(cfg, task)
+	if definition, ok := tasktypes.ForKind(taskType.Kind); ok {
+		return definition
+	}
+	definition, _ := tasktypes.ForKind(tasktypes.KindTerminal)
+	return definition
+}
+
+func taskInputModeForTask(cfg config.Config, task state.Task) tasktypes.InputMode {
+	return taskDefinitionForTask(cfg, task).InputMode()
 }
 
 func taskTypeBadgeCellForTask(cfg config.Config, task state.Task) string {

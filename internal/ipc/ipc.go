@@ -15,7 +15,7 @@ import (
 	"github.com/edwmurph/weft/internal/version"
 )
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 const (
 	UpgradeReasonVersion = "version"
@@ -60,7 +60,7 @@ type Upgrade struct {
 
 type Snapshot struct {
 	State                       state.State          `json:"state"`
-	CodexTitle                  string               `json:"codex_title,omitempty"`
+	LiveTitle                   string               `json:"live_title,omitempty"`
 	CodexContent                string               `json:"codex_content,omitempty"`
 	CodexPlainLines             []string             `json:"codex_plain_lines,omitempty"`
 	CodexScrollback             string               `json:"codex_scrollback,omitempty"`

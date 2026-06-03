@@ -74,7 +74,8 @@ func TestAutoTitleMaxColumnsAccountsForTaskTypeBadges(t *testing.T) {
 		WorkspaceID: "w",
 		TypeID:      config.DefaultTaskTypeCodex,
 		Title:       "{status} {auto}",
-		CodexTitle:  "Fake Codex Ready",
+		LiveTitle:   "Fake Codex Ready",
+		LiveStatus:  "Ready",
 		Status:      state.StatusRunning,
 		CreatedAt:   state.NowISO(),
 		UpdatedAt:   state.NowISO(),
@@ -91,7 +92,8 @@ func TestAutoTitleMaxColumnsAccountsForTaskSilentMarker(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 	st.Tasks[0].Title = "{status} {auto}"
-	st.Tasks[0].CodexTitle = "Fake Codex Ready"
+	st.Tasks[0].LiveTitle = "Fake Codex Ready"
+	st.Tasks[0].LiveStatus = "Ready"
 	st.Tasks[0].Silent = true
 
 	got := autoTitleMaxColumns(cfg, st, st.Tasks[0], fixedWorkspacePaneWidth+defaultTasksPaneWidth+minCodexPaneWidth)
@@ -640,11 +642,11 @@ func TestRenderWorkspaceCardsShowOnlyReconciledCounts(t *testing.T) {
 		Tasks: []state.Task{
 			{ID: "starting", WorkspaceID: "w", Title: "Starting", Status: state.StatusStarting, CreatedAt: now, UpdatedAt: now},
 			{ID: "running", WorkspaceID: "w", Title: "Running", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
-			{ID: "waiting", WorkspaceID: "w", Title: "Waiting", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
-			{ID: "working", WorkspaceID: "w", Title: "Working", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", WorkspaceID: "w", Title: "Waiting", Status: state.StatusRunning, LiveTitle: "Codex Waiting", LiveStatus: "Waiting", CreatedAt: now, UpdatedAt: now},
+			{ID: "working", WorkspaceID: "w", Title: "Working", Status: state.StatusRunning, LiveTitle: "Codex Working", LiveStatus: "Working", CreatedAt: now, UpdatedAt: now},
 			{ID: "shipping", WorkspaceID: "w", Title: "Shipping", Status: state.StatusShipping, CreatedAt: now, UpdatedAt: now},
 			{ID: "ready", WorkspaceID: "w", Title: "Ready", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-			{ID: "live-ready", WorkspaceID: "w", Title: "Live Ready", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "live-ready", WorkspaceID: "w", Title: "Live Ready", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "failed", WorkspaceID: "w", Title: "Failed", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
 			{ID: "killed", WorkspaceID: "w", Title: "Killed", Status: state.StatusKilled, CreatedAt: now, UpdatedAt: now},
 		},
@@ -986,10 +988,10 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project", CreatedAt: now, UpdatedAt: now}},
 		Tasks: []state.Task{
 			{ID: "loading", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Booting", Status: state.StatusRunning, CreatedAt: now, UpdatedAt: now},
-			{ID: "working", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
-			{ID: "waiting", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Approval", Status: state.StatusRunning, CodexTitle: "Codex Waiting", CreatedAt: now, UpdatedAt: now},
+			{ID: "working", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Review", Status: state.StatusRunning, LiveTitle: "Codex Working", LiveStatus: "Working", CreatedAt: now, UpdatedAt: now},
+			{ID: "waiting", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Approval", Status: state.StatusRunning, LiveTitle: "Codex Waiting", LiveStatus: "Waiting", CreatedAt: now, UpdatedAt: now},
 			{ID: "terminal-waiting", TypeID: config.DefaultTaskTypeShell, WorkspaceID: "w", Title: "Shell Awaiting", Status: state.TaskStatus("waiting"), CreatedAt: now, UpdatedAt: now},
-			{ID: "ready", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+			{ID: "ready", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Respond", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", CreatedAt: now, UpdatedAt: now},
 			{ID: "failed", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Broken", Status: state.StatusError, CreatedAt: now, UpdatedAt: now},
 			{ID: "stopped", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Paused", Status: state.StatusStopped, CreatedAt: now, UpdatedAt: now},
 			{ID: "killed", TypeID: config.DefaultTaskTypeCodex, WorkspaceID: "w", Title: "Killed", Status: state.StatusKilled, CreatedAt: now, UpdatedAt: now},
@@ -1315,7 +1317,8 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 		t.Fatalf("focused codex pane should not render live preview UI:\n%s", got)
 	}
 	st.Tasks[0].Status = state.StatusRunning
-	st.Tasks[0].CodexTitle = "Fake Codex Working"
+	st.Tasks[0].LiveTitle = "Fake Codex Working"
+	st.Tasks[0].LiveStatus = "Working"
 	got = renderWorkspaceView(cfg, st, "alpha", "output", 80, 24, "", 0, 0, workspaceRenderOptions{})
 	if !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] menu") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("working codex toolbar should advertise only Weft-owned console shortcuts:\n%s", got)
@@ -1335,10 +1338,10 @@ func TestTaskConsoleReadyIndicatorCountsOtherGlobalReadyTasks(t *testing.T) {
 	st.Groups = append(st.Groups, state.Group{ID: "silent-group", WorkspaceID: "w", Path: "quiet", Silent: true, CreatedAt: now, UpdatedAt: now})
 	st.Tasks = append(st.Tasks,
 		state.Task{ID: "b", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "beta", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
-		state.Task{ID: "c", WorkspaceID: "w2", TypeID: config.DefaultTaskTypeCodex, Title: "gamma", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
-		state.Task{ID: "d", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "delta", Status: state.StatusRunning, CodexTitle: "Codex Working", CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "c", WorkspaceID: "w2", TypeID: config.DefaultTaskTypeCodex, Title: "gamma", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "d", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "delta", Status: state.StatusRunning, LiveTitle: "Codex Working", LiveStatus: "Working", CreatedAt: now, UpdatedAt: now},
 		state.Task{ID: "e", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex, Title: "silent", Status: state.StatusReady, Silent: true, CreatedAt: now, UpdatedAt: now},
-		state.Task{ID: "f", WorkspaceID: "w", GroupID: "silent-group", TypeID: config.DefaultTaskTypeCodex, Title: "group silent", Status: state.StatusRunning, CodexTitle: "Codex Ready", CreatedAt: now, UpdatedAt: now},
+		state.Task{ID: "f", WorkspaceID: "w", GroupID: "silent-group", TypeID: config.DefaultTaskTypeCodex, Title: "group silent", Status: state.StatusRunning, LiveTitle: "Codex Ready", LiveStatus: "Ready", CreatedAt: now, UpdatedAt: now},
 	)
 
 	got := renderWorkspaceView(cfg, st, "alpha", "output", 100, 18, "", 0, 0, workspaceRenderOptions{})

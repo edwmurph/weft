@@ -13,11 +13,11 @@ import (
 )
 
 func TestBuildPayloadUsesTaskContext(t *testing.T) {
-	task := state.Task{ID: "a", TypeID: config.DefaultTaskTypeCodex, Title: "{auto}", CodexTitle: "Fake Codex Ready", Status: state.StatusRunning}
+	task := state.Task{ID: "a", TypeID: config.DefaultTaskTypeCodex, Title: "{auto}", LiveTitle: "Fake Codex Ready", LiveStatus: "Ready", Status: state.StatusRunning}
 
 	payload := BuildPayload(task, state.Workspace{Path: "/tmp/project"}, state.Group{Path: "ship"}, "{auto}", "fix login", 32, 24)
 
-	if payload.Version != 2 || payload.Event != EventFirstMessage {
+	if payload.Version != 3 || payload.Event != EventFirstMessage {
 		t.Fatalf("payload identity = %#v", payload)
 	}
 	if payload.TaskID != "a" || payload.Workspace != "/tmp/project" || payload.Group != "ship" {
@@ -47,7 +47,7 @@ func TestRunSendsJSONAndUsesStdoutTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := Payload{Version: 2, Event: EventFirstMessage, TaskID: "a", FirstMessage: "fix login"}
+	payload := Payload{Version: 3, Event: EventFirstMessage, TaskID: "a", FirstMessage: "fix login"}
 
 	got, err := Run(context.Background(), shellQuote(scriptPath), dir, 5*time.Second, payload)
 	if err != nil {
@@ -66,7 +66,7 @@ func TestRunSendsJSONAndUsesStdoutTitle(t *testing.T) {
 }
 
 func TestRunFailsOnEmptyOutput(t *testing.T) {
-	_, err := Run(context.Background(), "printf ''", t.TempDir(), time.Second, Payload{Version: 2})
+	_, err := Run(context.Background(), "printf ''", t.TempDir(), time.Second, Payload{Version: 3})
 
 	if err == nil {
 		t.Fatal("expected empty output error")

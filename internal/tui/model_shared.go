@@ -3,12 +3,12 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/edwmurph/weft/internal/titles"
 )
 
@@ -177,57 +177,10 @@ func taskStatusIndicatesActivity(task state.Task) bool {
 }
 
 func taskStatusShowsLoadingIndicator(task state.Task) bool {
-	switch titles.ConsolidatedStatus(task) {
-	case string(state.StatusReady), string(state.StatusStopped), string(state.StatusKilled), string(state.StatusError), string(state.StatusSitting):
-		return false
-	default:
-		return true
-	}
-}
-
-func codexScreenStatus(screen *TerminalScreen) string {
-	if screen == nil {
-		return ""
-	}
-	content := strings.ToLower(screen.String())
-	contentKey := screenStatusKey(content)
-	hasSubmitAction := strings.Contains(content, "to submit answer") ||
-		strings.Contains(content, "to submit all")
-	hasQuestionPrompt := strings.Contains(content, "question ") ||
-		strings.Contains(content, "unanswered") ||
-		strings.Contains(content, "user_note:")
-	if hasSubmitAction && hasQuestionPrompt {
-		return "Ready"
-	}
-	hasPermissionPrompt := strings.Contains(content, "allow codex to ") &&
-		strings.Contains(content, "allow this request") &&
-		strings.Contains(content, "deny") &&
-		strings.Contains(content, "enter to submit")
-	if hasPermissionPrompt {
-		return "Ready"
-	}
-	hasCommandApprovalPrompt := strings.Contains(contentKey, "wouldyouliketorunthefollowingcommand?") &&
-		strings.Contains(contentKey, "yes,proceed") &&
-		strings.Contains(contentKey, "no,andtellcodex")
-	if hasCommandApprovalPrompt {
-		return "Ready"
-	}
-	return ""
-}
-
-func screenStatusKey(content string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) || strings.ContainsRune("╭╮╰╯─│", r) {
-			return -1
-		}
-		return r
-	}, content)
+	return tasktypes.StatusShowsLoadingIndicator(task)
 }
 
 func autoTitleNotice(cfg config.Config, task state.Task, draftTitle string) string {
-	if !taskUsesCodexIntegration(cfg, task) {
-		return ""
-	}
 	if !strings.Contains(draftTitle, titles.AutoTemplate) {
 		return ""
 	}
@@ -243,5 +196,10 @@ func autoTitleNotice(cfg config.Config, task state.Task, draftTitle string) stri
 	if strings.TrimSpace(cfg.TitleHookCommand) == "" {
 		return "Auto title unavailable: set title_hook_command."
 	}
-	return "Auto title will generate from the first submitted message."
+	switch taskInputModeForTask(cfg, task) {
+	case tasktypes.InputModeTerminal:
+		return "Auto title will generate from the first submitted command."
+	default:
+		return "Auto title will generate from the first submitted message."
+	}
 }
