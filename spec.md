@@ -263,6 +263,8 @@ When the Tasks pane has more rendered rows than fit in the visible frame, moving
 
 The Tasks pane cursor is persisted separately from the active task console. Moving the cursor to a group row must survive supervisor refreshes, restarts, and upgrades without snapping back to the active task inside that group.
 
+Moving focus left to Workspaces, changing the selected workspace, returning to a workspace that contains the active task, and then moving focus right to Tasks must resume the Tasks-pane cursor at that task. The next Tasks-pane movement continues from that row instead of restarting from the new-task row or first group.
+
 `Shift+Up` and `Shift+Down` reorder the selected workspace, task, or group row. On a selected workspace card, the workspace moves among the other workspaces. On a selected task row, the task moves within its current group or top-level area when possible. At an area boundary, the task moves into the adjacent area: `Shift+Down` from the last top-level task moves it to the top of the first group, and `Shift+Up` from the first task in a group moves it to the end of the previous group or top-level area. Task and group reordering never changes the workspace and does not restart the task PTY. On a selected group row, the whole group section moves among groups in the same workspace. Top-level ungrouped tasks remain above group sections.
 
 ## Task Live Preview And Console

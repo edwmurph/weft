@@ -714,6 +714,23 @@ func TestReorderWorkspacePreservesSelectionAndContents(t *testing.T) {
 	}
 }
 
+func TestSelectWorkspaceRestoresActiveTaskInWorkspace(t *testing.T) {
+	st := stateWithWorkspace(t)
+	now := NowISO()
+	st.Workspaces = append(st.Workspaces, Workspace{ID: "w2", Path: t.TempDir(), CreatedAt: now, UpdatedAt: now})
+	st.Groups = append(st.Groups,
+		Group{ID: "first", WorkspaceID: "w2", Path: "first", CreatedAt: now, UpdatedAt: now},
+		Group{ID: "active-group", WorkspaceID: "w2", Path: "active", CreatedAt: now, UpdatedAt: now},
+	)
+	st.Tasks = append(st.Tasks, Task{ID: "active", WorkspaceID: "w2", GroupID: "active-group", TypeID: codexTaskTypeID, Title: "Active", Status: StatusRunning, CreatedAt: now, UpdatedAt: now})
+	st.ActiveTaskID = "active"
+
+	next := SelectWorkspace(st, "w2")
+	if next.SelectedTaskID != "active" || next.SelectedGroupID != "active-group" {
+		t.Fatalf("workspace selection should restore active task, got selected task=%q group=%q", next.SelectedTaskID, next.SelectedGroupID)
+	}
+}
+
 func TestReorderGroupStaysWithinWorkspaceAndPreservesSelection(t *testing.T) {
 	st := stateWithWorkspace(t)
 	now := NowISO()

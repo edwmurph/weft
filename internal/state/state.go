@@ -838,6 +838,11 @@ func SelectWorkspace(st State, workspaceID string) State {
 	st.SelectedWorkspaceID = workspaceID
 	st.SelectedTaskID = ""
 	st.SelectedGroupID = ""
+	if active := TaskByID(st, st.ActiveTaskID); active != nil && active.WorkspaceID == workspaceID {
+		st.SelectedTaskID = active.ID
+		st.SelectedGroupID = active.GroupID
+		return st
+	}
 	if groups := GroupsForWorkspace(st, workspaceID); len(groups) > 0 {
 		st.SelectedGroupID = groups[0].ID
 	}

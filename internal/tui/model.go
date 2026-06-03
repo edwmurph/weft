@@ -268,6 +268,12 @@ func (m *Model) focusNavPane(focus state.Focus) {
 	m.state.Focus = focus
 	m.state.NavOpen = true
 	m.lastNavFocus = focus
+	if focus == state.FocusTasks {
+		if !m.groupCursorPinned {
+			m.restoreActiveTaskSelectionForSelectedWorkspace()
+		}
+		m.syncGroupCursor()
+	}
 	m.save()
 }
 
@@ -287,6 +293,7 @@ func (m *Model) moveSelection(delta int) {
 		next := navigation.MoveIndex(current, len(workspaceIDs), delta)
 		if len(workspaceIDs) > 0 && workspaceIDs[next] != m.state.SelectedWorkspaceID {
 			m.state = state.SelectWorkspace(m.state, workspaceIDs[next])
+			m.restoreActiveTaskSelectionForSelectedWorkspace()
 			m.groupCursor = 0
 			m.groupCursorPinned = false
 			m.save()
@@ -474,6 +481,15 @@ func (m *Model) syncGroupCursor() {
 	}
 	m.groupCursor = 0
 	m.groupCursorPinned = true
+}
+
+func (m *Model) restoreActiveTaskSelectionForSelectedWorkspace() {
+	active := state.ActiveTask(m.state)
+	if active == nil || active.WorkspaceID != m.state.SelectedWorkspaceID {
+		return
+	}
+	m.state.SelectedTaskID = active.ID
+	m.state.SelectedGroupID = active.GroupID
 }
 
 func (m *Model) syncGroupCursorToTask(taskID string) {

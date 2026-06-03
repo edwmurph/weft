@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/creack/pty"
+	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/tui"
 )
@@ -714,6 +715,98 @@ func TestDashboardReordersWorkspacesE2E(t *testing.T) {
 			st.SelectedWorkspaceID == workspace.ID &&
 			strings.Join(workspacePaths(st.Workspaces), ",") == strings.Join([]string{alpha, beta}, ",")
 	})
+}
+
+func TestDashboardTaskCursorSurvivesWorkspaceNavigationE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
+	runtimeDir, alpha := createRuntime(t, tmp, fakeCodex)
+	beta := filepath.Join(tmp, "beta-workspace")
+	if err := os.Mkdir(beta, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := baseIntegrationEnv(runtimeDir, alpha, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	callSupervisor := func(command string, args map[string]string) ipc.Response {
+		t.Helper()
+		response, err := ipc.Call(filepath.Join(runtimeDir, "weft.sock"), ipc.Request{Command: command, Args: args}, 2*time.Second)
+		if err != nil {
+			t.Fatalf("%s IPC call failed: %v", command, err)
+		}
+		if !response.OK {
+			t.Fatalf("%s IPC response failed: %#v", command, response)
+		}
+		return response
+	}
+	callSupervisor("add_workspace", map[string]string{"path": alpha})
+	callSupervisor("add_group", map[string]string{"path": "earlier"})
+	callSupervisor("add_group", map[string]string{"path": "later"})
+	first := callSupervisor("new", map[string]string{"title": "Later One"}).Snapshot.State.ActiveTaskID
+	callSupervisor("move", map[string]string{"id": first, "group": "later"})
+	second := callSupervisor("new", map[string]string{"title": "Later Two"}).Snapshot.State.ActiveTaskID
+	callSupervisor("move", map[string]string{"id": second, "group": "later"})
+	callSupervisor("add_workspace", map[string]string{"path": beta})
+	callSupervisor("select", map[string]string{"id": first})
+	callSupervisor("focus", map[string]string{"target": string(state.FocusTasks)})
+
+	pane := "direct-client-task-cursor-workspace-nav"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, alpha, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Tasks") &&
+			strings.Contains(capture, "Later One") &&
+			strings.Contains(capture, "Later Two")
+	})
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusTasks &&
+			st.SelectedTaskID == first &&
+			st.ActiveTaskID == first
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "Left")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusWorkspaces &&
+			state.WorkspaceByPath(st, alpha) != nil &&
+			st.SelectedWorkspaceID == state.WorkspaceByPath(st, alpha).ID
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Down")
+	waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, beta)
+		return workspace != nil &&
+			st.Focus == state.FocusWorkspaces &&
+			st.SelectedWorkspaceID == workspace.ID
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Up")
+	waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, alpha)
+		return workspace != nil &&
+			st.Focus == state.FocusWorkspaces &&
+			st.SelectedWorkspaceID == workspace.ID
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Right")
+	waitState(t, env, bin, func(st state.State) bool {
+		workspace := state.WorkspaceByPath(st, alpha)
+		return workspace != nil &&
+			st.Focus == state.FocusTasks &&
+			st.SelectedWorkspaceID == workspace.ID
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Down")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusTasks && st.SelectedTaskID != first
+	})
+	if st.SelectedTaskID != second {
+		t.Fatalf("down after workspace navigation selected %q, want next task %q; state=%#v\nscreen:\n%s", st.SelectedTaskID, second, st, clientOutput())
+	}
 }
 
 func TestDashboardReordersGroupsE2E(t *testing.T) {

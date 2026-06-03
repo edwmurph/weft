@@ -2006,6 +2006,43 @@ func TestGroupCursorSyncRestoresPersistedGroupRow(t *testing.T) {
 	}
 }
 
+func TestFocusTasksSyncsCursorBeforeNextNavMove(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	model := NewModel(rt, config.DefaultConfig(), state.State{
+		Version:             state.Version,
+		ActiveTaskID:        "later-one",
+		SelectedTaskID:      "later-one",
+		SelectedWorkspaceID: "w",
+		SelectedGroupID:     "later",
+		Focus:               state.FocusWorkspaces,
+		NavOpen:             true,
+		Workspaces:          []state.Workspace{{ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now}},
+		Groups: []state.Group{
+			{ID: "earlier", WorkspaceID: "w", Path: "earlier", CreatedAt: now, UpdatedAt: now},
+			{ID: "later", WorkspaceID: "w", Path: "later", CreatedAt: now, UpdatedAt: now},
+		},
+		Tasks: []state.Task{
+			{ID: "later-one", WorkspaceID: "w", GroupID: "later", TypeID: config.DefaultTaskTypeCodex, Title: "Later One", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+			{ID: "later-two", WorkspaceID: "w", GroupID: "later", TypeID: config.DefaultTaskTypeCodex, Title: "Later Two", Status: state.StatusReady, CreatedAt: now, UpdatedAt: now},
+		},
+	})
+	model.groupCursor = 0
+	model.groupCursorPinned = false
+
+	response, _ := model.HandleSupervisorRequest(ipc.Request{Command: "focus", Args: map[string]string{"target": string(state.FocusTasks)}})
+	if !response.OK {
+		t.Fatalf("focus response failed: %#v", response)
+	}
+	response, _ = model.HandleSupervisorRequest(ipc.Request{Command: "nav_move", Args: map[string]string{"delta": "1"}})
+	if !response.OK {
+		t.Fatalf("nav response failed: %#v", response)
+	}
+	if model.state.SelectedTaskID != "later-two" {
+		t.Fatalf("down after focus selected %q, want later-two", model.state.SelectedTaskID)
+	}
+}
+
 func TestSnapshotSyncsGroupCursorToSelectedTask(t *testing.T) {
 	now := state.NowISO()
 	st := state.State{
