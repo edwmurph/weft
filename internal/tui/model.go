@@ -1363,7 +1363,7 @@ func (m *Model) resizeScreens() {
 	for taskID, screen := range m.screens {
 		task := state.TaskByID(m.state, taskID)
 		if task != nil && !taskUsesCodexIntegration(m.cfg, *task) {
-			screen.ResizeTopAligned(m.ptyWidth(), m.ptyHeight())
+			screen.ResizeTopAligned(max(screen.cols, m.ptyWidth()), m.ptyHeight())
 			continue
 		}
 		screen.Resize(m.ptyWidth(), m.ptyHeight())

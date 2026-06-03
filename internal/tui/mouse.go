@@ -223,7 +223,7 @@ func (m ClientModel) codexFrameArea() (consoleArea, bool) {
 }
 
 func (m ClientModel) codexSelectionArea() (consoleArea, bool) {
-	return m.codexSelectionAreaForOffset(codexSelectableMargin(m.codexPlainLines()))
+	return m.codexSelectionAreaForOffset(m.codexSelectionColumnOffset())
 }
 
 func (m ClientModel) codexSelectionAreaForOffset(offset int) (consoleArea, bool) {
@@ -242,11 +242,20 @@ func (m ClientModel) codexSelectionAreaForOffset(offset int) (consoleArea, bool)
 }
 
 func (m ClientModel) canSelectCodexContent() bool {
-	st := codexFrameStateForSelection(m.dashboardState(), m.snapshot.GroupCursor)
-	if state.ActiveTask(st) == nil {
-		return false
+	return m.codexFrameTaskForSelection() != nil
+}
+
+func (m ClientModel) codexSelectionColumnOffset() int {
+	task := m.codexFrameTaskForSelection()
+	if task == nil || !taskUsesCodexIntegration(m.cfg, *task) {
+		return 0
 	}
-	return st.Focus == state.FocusConsole || st.NavOpen
+	return codexSelectableMargin(m.codexPlainLines())
+}
+
+func (m ClientModel) codexFrameTaskForSelection() *state.Task {
+	st := codexFrameStateForSelection(m.dashboardState(), m.snapshot.GroupCursor)
+	return state.ActiveTask(st)
 }
 
 func (m ClientModel) codexPlainLines() []string {

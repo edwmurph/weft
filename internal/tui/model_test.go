@@ -1118,6 +1118,62 @@ func TestTerminalUpgradeSnapshotRestoresHistoryBeforeRestart(t *testing.T) {
 	}
 }
 
+func TestTerminalUpgradeSnapshotRestoresSavedScreenWidth(t *testing.T) {
+	rt := testRuntime(t)
+	now := state.NowISO()
+	st := state.State{
+		Version:      state.Version,
+		ActiveTaskID: "shell",
+		Focus:        state.FocusConsole,
+		Workspaces: []state.Workspace{{
+			ID: "w", Path: rt.Workspace, CreatedAt: now, UpdatedAt: now,
+		}},
+		Tasks: []state.Task{{
+			ID: "shell", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell,
+			Title: "Shell", Status: state.StatusReady,
+			CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	wideLine := strings.Repeat("L", 120)
+	screen := NewTerminalScreen(140, 8)
+	screen.Write(wideLine + "\r\n$ ")
+	model := Model{
+		runtime: rt, cfg: config.DefaultConfig(), state: st, width: 160, height: 12,
+		screens: map[string]*TerminalScreen{"shell": screen},
+		visible: map[string]bool{"shell": true},
+	}
+
+	if err := model.PrepareTerminalUpgradeSnapshots([]string{"shell"}); err != nil {
+		t.Fatal(err)
+	}
+
+	restored := Model{
+		runtime: rt, cfg: config.DefaultConfig(), state: st, width: 80, height: 12,
+		screens: map[string]*TerminalScreen{},
+		visible: map[string]bool{},
+	}
+	restored.restoreTerminalUpgradeSnapshots()
+
+	restoredScreen := restored.screens["shell"]
+	if restoredScreen == nil {
+		t.Fatal("snapshot screen was not restored")
+	}
+	if restoredScreen.cols != 140 {
+		t.Fatalf("restored screen cols = %d, want saved width 140", restoredScreen.cols)
+	}
+	lines := restoredScreen.ScrollbackPlainLines()
+	foundWideLine := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == wideLine {
+			foundWideLine = true
+			break
+		}
+	}
+	if !foundWideLine {
+		t.Fatalf("restored snapshot should keep the wide row unwrapped:\n%s", restoredScreen.ScrollbackString())
+	}
+}
+
 func TestTerminalOSC7UpdatesTaskCWD(t *testing.T) {
 	rt := testRuntime(t)
 	cwd := t.TempDir()
@@ -1318,6 +1374,32 @@ func TestIPCCodexFocusResizesScreenToVisibleConsoleWidth(t *testing.T) {
 	}
 	if got, want := model.screens[taskID].cols, 157; got != want {
 		t.Fatalf("focused screen width = %d, want visible console width %d", got, want)
+	}
+}
+
+func TestTerminalScreenResizeDoesNotShrinkForPreview(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.width = 160
+	model.height = 32
+	model.state.Focus = state.FocusTasks
+	model.state.NavOpen = true
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.navWidth = model.targetNavWidth()
+	taskID := model.state.ActiveTaskID
+	model.screens[taskID] = NewTerminalScreen(120, 10)
+	targetWidth := model.ptyWidth()
+	if targetWidth >= 120 {
+		t.Fatalf("test setup expected narrower preview width, got %d", targetWidth)
+	}
+
+	model.resizeScreens()
+
+	if got := model.screens[taskID].cols; got != 120 {
+		t.Fatalf("terminal preview resize should preserve screen width, got %d", got)
+	}
+	if got, want := model.screens[taskID].rows, model.ptyHeight(); got != want {
+		t.Fatalf("terminal preview resize rows = %d, want %d", got, want)
 	}
 }
 

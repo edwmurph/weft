@@ -130,6 +130,48 @@ func TestCodexSelectableMarginIgnoresChromeAtColumnZero(t *testing.T) {
 	}
 }
 
+func TestTerminalTaskSelectionStartsAtColumnZero(t *testing.T) {
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  80,
+		height: 8,
+		snapshot: ipc.Snapshot{
+			State: state.State{
+				Focus:        state.FocusConsole,
+				ActiveTaskID: "shell",
+				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Tasks:        []state.Task{{ID: "shell", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
+			},
+			CodexPlainLines: []string{"        left side should copy"},
+		},
+	}
+
+	if got := model.codexSelectionColumnOffset(); got != 0 {
+		t.Fatalf("terminal selection offset = %d, want 0", got)
+	}
+}
+
+func TestCodexTaskSelectionKeepsSharedMargin(t *testing.T) {
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  80,
+		height: 8,
+		snapshot: ipc.Snapshot{
+			State: state.State{
+				Focus:        state.FocusConsole,
+				ActiveTaskID: "codex",
+				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Tasks:        []state.Task{{ID: "codex", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex}},
+			},
+			CodexPlainLines: []string{"        codex margin"},
+		},
+	}
+
+	if got := model.codexSelectionColumnOffset(); got != 8 {
+		t.Fatalf("codex selection offset = %d, want 8", got)
+	}
+}
+
 func TestSelectedCodexContentHighlightsDraggedCells(t *testing.T) {
 	selection := consoleSelection{
 		active: true,

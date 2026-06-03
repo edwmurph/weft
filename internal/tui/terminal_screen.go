@@ -127,6 +127,31 @@ func (s *TerminalScreen) Write(text string) {
 	}
 }
 
+func (s *TerminalScreen) RestorePlainText(text string) {
+	rows := plainTextScreenRows(text, s.cols)
+	s.history = nil
+	s.resetScrollRegion()
+	s.clearAll()
+	if len(rows) == 0 {
+		return
+	}
+	visibleStart := max(0, len(rows)-s.rows)
+	for _, row := range rows[:visibleStart] {
+		s.appendHistoryRow(row)
+	}
+	for index, row := range rows[visibleStart:] {
+		if index >= s.rows {
+			break
+		}
+		copy(s.cells[index], row)
+		s.row = index
+		s.col = 0
+	}
+	s.cursorVisible = true
+	s.cursorShape = terminalCursorBlock
+	s.clampCursor()
+}
+
 func (s *TerminalScreen) String() string {
 	return plainRowsString(s.cells)
 }
@@ -642,6 +667,44 @@ func blankCells(width int, style cellbuf.Style) []terminalCell {
 		row[index] = terminalCell{r: ' ', style: style}
 	}
 	return row
+}
+
+func plainTextScreenRows(text string, cols int) [][]terminalCell {
+	cols = max(1, cols)
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	rows := make([][]terminalCell, 0, len(lines))
+	for _, line := range lines {
+		rows = append(rows, plainLineScreenRows(line, cols)...)
+	}
+	return rows
+}
+
+func plainLineScreenRows(line string, cols int) [][]terminalCell {
+	row := blankCells(cols, cellbuf.Style{})
+	rows := [][]terminalCell{row}
+	col := 0
+	for _, r := range line {
+		width := runewidth.RuneWidth(r)
+		if width <= 0 {
+			continue
+		}
+		if width > cols {
+			continue
+		}
+		if col+width > cols {
+			row = blankCells(cols, cellbuf.Style{})
+			rows = append(rows, row)
+			col = 0
+		}
+		row[col] = terminalCell{r: r}
+		for offset := 1; offset < width && col+offset < cols; offset++ {
+			row[col+offset] = terminalCell{r: ' '}
+		}
+		col += width
+	}
+	return rows
 }
 
 func cloneTerminalCells(cells []terminalCell) []terminalCell {

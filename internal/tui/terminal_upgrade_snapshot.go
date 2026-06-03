@@ -9,6 +9,7 @@ import (
 
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/mattn/go-runewidth"
 )
 
 const terminalUpgradeSnapshotDir = "terminal-upgrade-snapshots"
@@ -16,6 +17,8 @@ const terminalUpgradeSnapshotDir = "terminal-upgrade-snapshots"
 type terminalUpgradeSnapshot struct {
 	TaskID    string `json:"task_id"`
 	CWD       string `json:"cwd,omitempty"`
+	Cols      int    `json:"cols,omitempty"`
+	Rows      int    `json:"rows,omitempty"`
 	Text      string `json:"text"`
 	CreatedAt string `json:"created_at"`
 }
@@ -55,6 +58,8 @@ func (m *Model) PrepareTerminalUpgradeSnapshots(taskIDs []string) error {
 		snapshot := terminalUpgradeSnapshot{
 			TaskID:    taskID,
 			CWD:       cwd,
+			Cols:      terminalScreenCols(screen),
+			Rows:      terminalScreenRows(screen),
 			Text:      text,
 			CreatedAt: state.NowISO(),
 		}
@@ -90,8 +95,8 @@ func (m *Model) restoreTerminalUpgradeSnapshots() {
 			continue
 		}
 		if state.TaskByID(m.state, snapshot.TaskID) != nil && strings.TrimSpace(snapshot.Text) != "" {
-			screen := NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
-			screen.Write(snapshot.Text)
+			screen := NewTerminalScreen(snapshotScreenCols(snapshot, m.ptyWidth()), snapshotScreenRows(snapshot, m.ptyHeight()))
+			screen.RestorePlainText(snapshot.Text)
 			m.screens[snapshot.TaskID] = screen
 			m.visible[snapshot.TaskID] = true
 		}
@@ -121,6 +126,45 @@ func terminalUpgradeSnapshotText(screen *TerminalScreen) string {
 		"",
 	)
 	return strings.Join(lines, "\r\n")
+}
+
+func terminalScreenCols(screen *TerminalScreen) int {
+	if screen == nil {
+		return 0
+	}
+	return screen.cols
+}
+
+func terminalScreenRows(screen *TerminalScreen) int {
+	if screen == nil {
+		return 0
+	}
+	return screen.rows
+}
+
+func snapshotScreenCols(snapshot terminalUpgradeSnapshot, fallback int) int {
+	cols := fallback
+	if snapshot.Cols > 0 {
+		cols = snapshot.Cols
+	}
+	return max(cols, terminalSnapshotTextWidth(snapshot.Text))
+}
+
+func snapshotScreenRows(snapshot terminalUpgradeSnapshot, fallback int) int {
+	if snapshot.Rows > 0 {
+		return snapshot.Rows
+	}
+	return fallback
+}
+
+func terminalSnapshotTextWidth(text string) int {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	width := 0
+	for _, line := range strings.Split(text, "\n") {
+		width = max(width, runewidth.StringWidth(line))
+	}
+	return width
 }
 
 func terminalTaskCWD(cfg config.Config, task state.Task) string {

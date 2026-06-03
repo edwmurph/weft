@@ -699,9 +699,14 @@ command = %q
 	}
 
 	afterOutput, _ := startDirectDashboardClient(t, newEnv, bin, workspace, pane+"-after", 150, 36)
-	directRun(t, newEnv, "send-keys", "-t", pane+"-after", "Enter")
 	waitForOutput(t, afterOutput, func(capture string) bool {
-		return screenContainsWrappedText(capture, "history-before-upgrade") &&
+		return strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Task Live Preview")
+	})
+	directRun(t, newEnv, "send-keys", "-t", pane+"-after", "C-b")
+	waitForOutput(t, afterOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Console") &&
+			!strings.Contains(capture, "Task Live Preview") &&
+			screenContainsWrappedText(capture, "history-before-upgrade") &&
 			screenContainsWrappedText(capture, "restarted this idle shell task with saved history/cwd") &&
 			strings.Contains(capture, "fake-shell:")
 	})
