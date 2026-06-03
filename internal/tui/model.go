@@ -44,6 +44,7 @@ const (
 	modeInput   mode = "input"
 	modeConfirm mode = "confirm"
 	modeNewTask mode = "new-task"
+	modeCommand mode = "command"
 )
 
 type promptKind string
@@ -2233,7 +2234,7 @@ func renderHelp(cfg config.Config) string {
 		"Shift+Up/Down reorder selected workspace, task, or group",
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
-		fmt.Sprintf("%s repaint", cfg.KeyBindings.Repaint),
+		fmt.Sprintf("%s command palette", cfg.KeyBindings.Repaint),
 		"U upgrade supervisor, resume Codex, restart idle shells",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),

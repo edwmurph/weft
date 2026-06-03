@@ -27,7 +27,7 @@ type clientResponseMsg struct {
 
 type clientSnapshotTick struct{}
 
-type clientRepaintMsg struct{}
+type clientCommandMenuMsg struct{}
 
 type clientAttachRetryTick struct{}
 
@@ -61,6 +61,8 @@ type ClientModel struct {
 	newTaskField             int
 	newTaskSilent            bool
 	newTaskTypeOpen          bool
+	commandMenuIndex         int
+	commandMenuReturnMode    mode
 	promptSuggestionOpen     bool
 	promptSuggestionIndex    int
 	editGroupField           int
@@ -91,8 +93,8 @@ func RunClient(rt config.Runtime, cfg config.Config) error {
 		tea.WithMouseAllMotion(),
 	}
 	program := tea.NewProgram(model, options...)
-	inputRouter.repaint = func() {
-		program.Send(clientRepaintMsg{})
+	inputRouter.commandMenu = func() {
+		program.Send(clientCommandMenuMsg{})
 	}
 	_, err := program.Run()
 	return err
@@ -138,8 +140,9 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nextLoadingTick
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
-	case clientRepaintMsg:
-		return m, m.repaintClient()
+	case clientCommandMenuMsg:
+		m.startCommandMenu()
+		return m, nil
 	case clientAttachRetryTick:
 		return m, m.request("attach_client", nil)
 	case clientToastTick:
@@ -177,6 +180,9 @@ func (m ClientModel) View() string {
 	}
 	if m.mode == modeNewTask {
 		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, m.input, max(36, min(m.width-16, 72)), m.newTaskField, m.newTaskSilent, m.newTaskTypeOpen))
+	}
+	if m.mode == modeCommand {
+		return m.modalView(renderCommandMenu(m.commandMenuIndex))
 	}
 	loadingText := m.snapshot.LoadingText
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
@@ -232,7 +238,15 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if bindingMatches(m.cfg.KeyBindings.Repaint, msg) {
-		return m, m.repaintClient()
+		if m.mode == modeCommand {
+			m.closeCommandMenu()
+			return m, nil
+		}
+		m.startCommandMenu()
+		return m, nil
+	}
+	if m.mode == modeCommand {
+		return m.handleCommandMenuKey(msg)
 	}
 	if m.mode == modeInput {
 		return m.handleInputKey(msg)

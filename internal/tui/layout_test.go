@@ -1299,8 +1299,8 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if !strings.Contains(got, "C-b dashboard") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
-	if !strings.Contains(got, "C-] repaint") {
-		t.Fatalf("collapsed codex top toolbar missing repaint shortcut:\n%s", got)
+	if !strings.Contains(got, "C-] menu") {
+		t.Fatalf("collapsed codex top toolbar missing menu shortcut:\n%s", got)
 	}
 	if strings.Contains(got, "WEFT") {
 		t.Fatalf("collapsed codex top toolbar should not include WEFT branding:\n%s", got)
@@ -1317,7 +1317,7 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	st.Tasks[0].Status = state.StatusRunning
 	st.Tasks[0].CodexTitle = "Fake Codex Working"
 	got = renderWorkspaceView(cfg, st, "alpha", "output", 80, 24, "", 0, 0, workspaceRenderOptions{})
-	if !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] repaint") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
+	if !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] menu") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("working codex toolbar should advertise only Weft-owned console shortcuts:\n%s", got)
 	}
 }

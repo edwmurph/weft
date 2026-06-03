@@ -537,7 +537,7 @@ func TestClientLaunchWorkspaceConfirmationEnterSubmits(t *testing.T) {
 	}
 }
 
-func TestClientRepaintShortcutWorksFromHelp(t *testing.T) {
+func TestClientCommandMenuOpensFromHelpAndCanRepaint(t *testing.T) {
 	rt := testRuntime(t)
 	model := NewClientModel(rt, config.DefaultConfig())
 	model.mode = modeHelp
@@ -545,23 +545,108 @@ func TestClientRepaintShortcutWorksFromHelp(t *testing.T) {
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	model = updated.(ClientModel)
 
+	if model.mode != modeCommand || model.commandMenuReturnMode != modeHelp {
+		t.Fatalf("command menu mode/return = %s/%s, want command/help", model.mode, model.commandMenuReturnMode)
+	}
+	if cmd != nil {
+		t.Fatal("opening command menu should not run a command")
+	}
+	view := ansi.Strip(model.View())
+	if !strings.Contains(view, "Command palette") || !strings.Contains(view, "Repaint") || !strings.Contains(view, "Copy pane content") {
+		t.Fatalf("command menu missing expected actions:\n%s", view)
+	}
+
+	updated, cmd = model.handleCommandMenuKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(ClientModel)
+
 	if model.mode != modeHelp {
-		t.Fatalf("repaint shortcut should not close help, mode=%s", model.mode)
+		t.Fatalf("repaint action should return to help, mode=%s", model.mode)
 	}
 	if cmd == nil {
-		t.Fatal("repaint shortcut should force clear-screen and refresh")
+		t.Fatal("repaint action should force clear-screen and refresh")
 	}
 	msg := cmd()
 	if got := fmt.Sprintf("%T", msg); got != "tea.sequenceMsg" {
-		t.Fatalf("repaint shortcut command = %T, want tea.sequenceMsg", msg)
+		t.Fatalf("repaint action command = %T, want tea.sequenceMsg", msg)
 	}
 	sequence := reflect.ValueOf(msg)
 	if sequence.Len() != 2 {
-		t.Fatalf("repaint shortcut scheduled %d commands, want clear-screen and refresh", sequence.Len())
+		t.Fatalf("repaint action scheduled %d commands, want clear-screen and refresh", sequence.Len())
 	}
 	first := sequence.Index(0).Interface().(tea.Cmd)
 	if got := fmt.Sprintf("%T", first()); got != "tea.clearScreenMsg" {
-		t.Fatalf("first repaint shortcut command = %s, want tea.clearScreenMsg", got)
+		t.Fatalf("first repaint action command = %s, want tea.clearScreenMsg", got)
+	}
+}
+
+func TestClientCommandMenuCopiesTaskPaneContent(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig())
+	st := state.Empty()
+	st.Workspaces = []state.Workspace{{ID: "w", Path: rt.Workspace}}
+	st.Tasks = []state.Task{{ID: "t", WorkspaceID: "w", TypeID: "codex", Title: "Codex", Status: state.StatusReady}}
+	st.ActiveTaskID = "t"
+	st.SelectedWorkspaceID = "w"
+	st.SelectedTaskID = "t"
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{
+		State:                st,
+		CodexScrollbackLines: []string{"alpha   ", "", "beta\t", ""},
+	}})
+	model.startCommandMenu()
+
+	oldWriteClipboard := writeClipboard
+	var copied string
+	writeClipboard = func(value string) error {
+		copied = value
+		return nil
+	}
+	defer func() { writeClipboard = oldWriteClipboard }()
+
+	updated, cmd := model.handleCommandMenuKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	model = updated.(ClientModel)
+
+	if copied != "alpha\n\nbeta" {
+		t.Fatalf("copied pane content = %q", copied)
+	}
+	if model.mode != modeNormal {
+		t.Fatalf("copy action should return to normal mode, got %s", model.mode)
+	}
+	if !strings.Contains(model.toastText, "Copied 11 characters") {
+		t.Fatalf("copy action missing toast, got %q", model.toastText)
+	}
+	if cmd == nil {
+		t.Fatal("copy action should schedule toast clear")
+	}
+}
+
+func TestClientCommandMenuHandlesEnhancedKeyboardActionFromConsole(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig())
+	st := state.Empty()
+	st.Workspaces = []state.Workspace{{ID: "w", Path: rt.Workspace}}
+	st.Tasks = []state.Task{{ID: "t", WorkspaceID: "w", TypeID: "codex", Title: "Codex", Status: state.StatusReady}}
+	st.ActiveTaskID = "t"
+	st.SelectedWorkspaceID = "w"
+	st.SelectedTaskID = "t"
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{State: st}})
+	model.startCommandMenu()
+
+	input, ok := enhancedKeyboardInputFromMsg(testCSIMessage(unknownCSIString("\x1b[114u")))
+	if !ok {
+		t.Fatal("expected enhanced keyboard input for r")
+	}
+	updated, cmd := model.handleEnhancedKeyboardInput(input)
+	model = updated.(ClientModel)
+
+	if model.mode != modeNormal {
+		t.Fatalf("enhanced command action should close palette, got mode %s", model.mode)
+	}
+	if cmd == nil {
+		t.Fatal("enhanced repaint action should run repaint command")
 	}
 }
 func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {

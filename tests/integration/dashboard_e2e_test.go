@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	collapsedCodexToolbar = "C-b dashboard  C-] repaint"
+	collapsedCodexToolbar = "C-b dashboard  C-] menu"
 	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
@@ -2241,8 +2241,13 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 			strings.Contains(active.CodexTitle, "Ready")
 	})
 	secondTaskID := st.ActiveTaskID
+	directRun(t, env, "send-keys", "-t", pane, "C-]")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Command palette") &&
+			strings.Contains(capture, "Repaint")
+	})
 	rawBeforeRepaint := capturePaneEscaped(t, env, pane)
-	directRun(t, env, "send-keys", "-l", "-t", pane, "\x1d")
+	directRun(t, env, "send-keys", "-t", pane, "r")
 	waitForEscapedCapture(t, env, pane, func(capture string) bool {
 		return strings.Contains(strings.TrimPrefix(capture, rawBeforeRepaint), "\x1b[2J\x1b[H")
 	})
@@ -2798,6 +2803,20 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 	})
 
+	timedStep(t, "command palette opens from task console and repaints", func() {
+		directRun(t, env, "send-keys", "-t", pane, "C-]")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Command palette") &&
+				strings.Contains(capture, "Repaint") &&
+				strings.Contains(capture, "Copy pane content")
+		})
+		directRun(t, env, "send-keys", "-l", "-t", pane, "\x1b[114u")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, collapsedCodexToolbar) &&
+				!strings.Contains(capture, "Command palette")
+		})
+	})
+
 	timedStep(t, "refresh and second attach preserve selected running task", func() {
 		out := runWeft(t, env, bin, "refresh")
 		if !strings.Contains(out, "refreshed Weft dashboard") {
@@ -3109,6 +3128,8 @@ func directRun(t *testing.T, env []string, args ...string) {
 		writeClientInput(t, "\x02")
 	case "C-c":
 		writeClientInput(t, "\x03")
+	case "C-]":
+		writeClientInput(t, "\x1d")
 	case "C-u":
 		writeClientInput(t, "\x15")
 	case "Escape":

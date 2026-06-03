@@ -20,15 +20,15 @@ const (
 )
 
 type clientInputRouter struct {
-	input              io.Reader
-	rt                 config.Runtime
-	clientID           string
-	drawer             []byte
-	drawerSequences    [][]byte
-	repaintSequences   [][]byte
-	interruptSequences [][]byte
-	send               func(command string, args map[string]string) error
-	repaint            func()
+	input                io.Reader
+	rt                   config.Runtime
+	clientID             string
+	drawer               []byte
+	drawerSequences      [][]byte
+	commandMenuSequences [][]byte
+	interruptSequences   [][]byte
+	send                 func(command string, args map[string]string) error
+	commandMenu          func()
 
 	inputMode            atomic.Int32
 	pending              []byte
@@ -37,24 +37,24 @@ type clientInputRouter struct {
 	bracketedPasteActive bool
 }
 
-func newClientInputRouter(input io.Reader, rt config.Runtime, clientID string, drawerBinding string, repaintBinding string) *clientInputRouter {
+func newClientInputRouter(input io.Reader, rt config.Runtime, clientID string, drawerBinding string, commandMenuBinding string) *clientInputRouter {
 	router := &clientInputRouter{
-		input:              input,
-		rt:                 rt,
-		clientID:           clientID,
-		drawer:             bindingRawSequence(drawerBinding),
-		drawerSequences:    bindingTerminalSequences(drawerBinding),
-		repaintSequences:   bindingTerminalSequences(repaintBinding),
-		interruptSequences: terminalInterruptSequences(),
+		input:                input,
+		rt:                   rt,
+		clientID:             clientID,
+		drawer:               bindingRawSequence(drawerBinding),
+		drawerSequences:      bindingTerminalSequences(drawerBinding),
+		commandMenuSequences: bindingTerminalSequences(commandMenuBinding),
+		interruptSequences:   terminalInterruptSequences(),
 	}
 	router.send = router.sendIPC
 	return router
 }
 
-func (r *clientInputRouter) UpdateBindings(drawerBinding string, repaintBinding string) {
+func (r *clientInputRouter) UpdateBindings(drawerBinding string, commandMenuBinding string) {
 	r.drawer = bindingRawSequence(drawerBinding)
 	r.drawerSequences = bindingTerminalSequences(drawerBinding)
-	r.repaintSequences = bindingTerminalSequences(repaintBinding)
+	r.commandMenuSequences = bindingTerminalSequences(commandMenuBinding)
 }
 
 func (r *clientInputRouter) SetCodexActive(active bool) {
@@ -157,7 +157,7 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 		data = next
 		r.hold = nil
 	}
-	if len(r.drawerSequences) == 0 && len(r.repaintSequences) == 0 && len(r.interruptSequences) == 0 {
+	if len(r.drawerSequences) == 0 && len(r.commandMenuSequences) == 0 && len(r.interruptSequences) == 0 {
 		r.sendCodexBytes(data)
 		return
 	}
@@ -175,8 +175,8 @@ func (r *clientInputRouter) routeCodexInput(data []byte) {
 				r.SetTaskInputMode(taskInputNone)
 				r.pending = append(r.pending, data[index+width:]...)
 				return
-			case codexControlRepaint:
-				r.triggerRepaint()
+			case codexControlCommandMenu:
+				r.triggerCommandMenu()
 				r.deferred = append(r.deferred, data[index+width:]...)
 				return
 			case codexControlInterrupt:
@@ -222,8 +222,8 @@ func (r *clientInputRouter) routeTerminalInput(data []byte) {
 				r.SetTaskInputMode(taskInputNone)
 				r.pending = append(r.pending, data[index+width:]...)
 				return
-			case codexControlRepaint:
-				r.triggerRepaint()
+			case codexControlCommandMenu:
+				r.triggerCommandMenu()
 				r.deferred = append(r.deferred, data[index+width:]...)
 				return
 			case codexControlMouse:
@@ -251,7 +251,7 @@ type codexControlKind string
 
 const (
 	codexControlDrawer       codexControlKind = "drawer"
-	codexControlRepaint      codexControlKind = "repaint"
+	codexControlCommandMenu  codexControlKind = "command_menu"
 	codexControlInterrupt    codexControlKind = "interrupt"
 	codexControlMouse        codexControlKind = "mouse"
 	terminalControlInterrupt codexControlKind = "terminal_interrupt"
@@ -283,8 +283,8 @@ func (r *clientInputRouter) findCodexControl(data []byte) (codexControlKind, int
 		if width := matchingTerminalSequenceWidth(data[index:], r.drawerSequences); width > 0 {
 			return codexControlDrawer, index, width
 		}
-		if width := matchingTerminalSequenceWidth(data[index:], r.repaintSequences); width > 0 {
-			return codexControlRepaint, index, width
+		if width := matchingTerminalSequenceWidth(data[index:], r.commandMenuSequences); width > 0 {
+			return codexControlCommandMenu, index, width
 		}
 		if width := matchingTerminalSequenceWidth(data[index:], r.interruptSequences); width > 0 {
 			return codexControlInterrupt, index, width
@@ -313,8 +313,8 @@ func (r *clientInputRouter) findTerminalControl(data []byte) (codexControlKind, 
 		if width := matchingTerminalSequenceWidth(data[index:], r.drawerSequences); width > 0 {
 			return codexControlDrawer, index, width
 		}
-		if width := matchingTerminalSequenceWidth(data[index:], r.repaintSequences); width > 0 {
-			return codexControlRepaint, index, width
+		if width := matchingTerminalSequenceWidth(data[index:], r.commandMenuSequences); width > 0 {
+			return codexControlCommandMenu, index, width
 		}
 		if width := matchingTerminalSequenceWidth(data[index:], r.interruptSequences); width > 0 {
 			return terminalControlInterrupt, index, width
@@ -458,9 +458,9 @@ func (r *clientInputRouter) sendIPC(command string, args map[string]string) erro
 	return err
 }
 
-func (r *clientInputRouter) triggerRepaint() {
-	if r.repaint != nil {
-		r.repaint()
+func (r *clientInputRouter) triggerCommandMenu() {
+	if r.commandMenu != nil {
+		r.commandMenu()
 	}
 }
 

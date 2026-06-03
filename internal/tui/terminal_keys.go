@@ -110,6 +110,9 @@ func (input enhancedKeyboardInput) shouldHandleAsKey(cfg config.Config, focus st
 }
 
 func (m ClientModel) handleEnhancedKeyboardInput(input enhancedKeyboardInput) (tea.Model, tea.Cmd) {
+	if m.mode != modeNormal && input.hasKey {
+		return m.handleKey(input.key)
+	}
 	active := state.ActiveTask(m.snapshot.State)
 	if input.shouldHandleAsKey(m.cfg, m.snapshot.State.Focus, active) {
 		return m.handleKey(input.key)

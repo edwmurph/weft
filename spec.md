@@ -283,7 +283,7 @@ When the user presses `Enter` on a task, navigation slides away left, `Task Cons
 
 Task PTYs can only receive input when `Task Console` is focused and maximized.
 
-When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured repaint key as `<key> repaint` without a `WEFT` prefix, and the top-right border shows only the active task title. If at least one other global unsilenced task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task and silenced tasks are excluded from that count, and the indicator is hidden when no other unsilenced tasks are ready. Other brief console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item. The active `Task Console` pane border remains the active Weft blue on every border segment and corner even when bottom-right notices use their own text styling.
+When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured command menu key as `<key> menu` without a `WEFT` prefix, and the top-right border shows only the active task title. If at least one other global unsilenced task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task and silenced tasks are excluded from that count, and the indicator is hidden when no other unsilenced tasks are ready. Other brief console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item. The active `Task Console` pane border remains the active Weft blue on every border segment and corner even when bottom-right notices use their own text styling.
 
 ## Navigation States
 
@@ -333,7 +333,7 @@ Autocomplete menus open directly under the input whenever the current value has 
 - Workspaces and Tasks panes are hidden offscreen to the left.
 - `Task Console` fills the terminal.
 - Weft keeps the framed `Task Console` pane visible while a task is focused.
-- The attached client forwards raw terminal input bytes into the active task PTY without key-name reconstruction. The configured drawer key, `C-b` by default, and the configured repaint key, `C-]` by default, are owned by Weft.
+- The attached client forwards raw terminal input bytes into the active task PTY without key-name reconstruction. The configured drawer key, `C-b` by default, and the configured command menu key, `C-]` by default, are owned by Weft.
 - Terminal-generated C-c belongs to the task whenever `Task Console` is focused and an active task exists. For configured terminal tasks with an active foreground command, Weft forwards C-c as the normal terminal interrupt byte. For configured terminal tasks at an idle prompt, Weft kills the task PTY, returns to the dashboard `Tasks` pane, and reports the task as killed. For Codex agent tasks, while Codex reports active work, Weft delivers C-c through Codex's interrupt path so running side-thread work is interrupted without returning from or closing the side thread. Weft does not use C-c to quit from `Task Console`, and the toolbar must not advertise C-c.
 - Terminal-owned behavior, including Vim mode, Esc timing, bracketed paste, Alt/Meta prefixes, and modified-key shortcuts such as Shift+Enter and Shift+Tab in supporting terminals, is preserved inside the framed pane.
 - The framed terminal renderer preserves cursor visibility and cursor shape requests, including block, underline, and bar cursor modes used by Vim insert/normal state.
@@ -348,7 +348,7 @@ These are product-level defaults and may map to existing config structures durin
 ```text
 Enter   Open selected task and maximize its console, or open the new-task form on the new-task template row
 C-b     Toggle dashboard navigation
-C-]     Repaint the attached client and refresh the dashboard snapshot
+C-]     Open the command palette
 Left/Right Move focus between workspaces and tasks panes
 j/k     Move selection within the focused navigation pane
 w       Add workspace
@@ -361,6 +361,8 @@ Backspace Delete/remove selected item
 ?       Help
 C-c     Quit Weft from dashboard focus
 ```
+
+The command palette currently offers `r` to repaint the attached client and refresh the dashboard snapshot, `c` to copy the current task pane's plain captured output to the clipboard for debugging, `Enter` to run the selected command, and `Esc` to close.
 
 Deletion behavior depends on selected item type and is defined below.
 
@@ -893,6 +895,8 @@ quit = "C-c"
 ```
 
 `key_bindings.delete = "d"` is not a valid current config value.
+
+`key_bindings.repaint` configures the current command palette shortcut even though the default `C-]` action now opens a menu before repainting.
 
 Only the current config keys are emitted by default. Unknown config keys are rejected generically instead of being mapped silently or returning alias-specific repair advice.
 

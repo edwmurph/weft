@@ -135,17 +135,17 @@ func TestClientInputRouterHandlesEnhancedDrawerSequence(t *testing.T) {
 	}
 }
 
-func TestClientInputRouterTriggersRepaintShortcutInCodexFocus(t *testing.T) {
+func TestClientInputRouterTriggersCommandMenuShortcutInCodexFocus(t *testing.T) {
 	router := &clientInputRouter{
-		input:              bytes.NewBufferString("ihello\x1dj"),
-		drawer:             []byte{0x02},
-		drawerSequences:    bindingTerminalSequences("C-b"),
-		repaintSequences:   bindingTerminalSequences("C-]"),
-		interruptSequences: terminalInterruptSequences(),
+		input:                bytes.NewBufferString("ihello\x1dj"),
+		drawer:               []byte{0x02},
+		drawerSequences:      bindingTerminalSequences("C-b"),
+		commandMenuSequences: bindingTerminalSequences("C-]"),
+		interruptSequences:   terminalInterruptSequences(),
 	}
 	router.SetCodexActive(true)
-	repaints := 0
-	router.repaint = func() { repaints++ }
+	menus := 0
+	router.commandMenu = func() { menus++ }
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -164,27 +164,27 @@ func TestClientInputRouterTriggersRepaintShortcutInCodexFocus(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 0 || err != io.EOF {
-		t.Fatalf("read = %d, %v; want EOF after consuming repaint shortcut", n, err)
+		t.Fatalf("read = %d, %v; want EOF after consuming command menu shortcut", n, err)
 	}
-	if repaints != 1 {
-		t.Fatalf("repaint callback count = %d, want 1", repaints)
+	if menus != 1 {
+		t.Fatalf("command menu callback count = %d, want 1", menus)
 	}
 	if len(sent) != 2 || sent[0].args["encoded"] != "ihello" || sent[1].args["encoded"] != "j" {
 		t.Fatalf("prefix and suffix should stay ordered Codex input: %#v", sent)
 	}
 }
 
-func TestClientInputRouterTriggersEnhancedRepaintShortcutInTerminalFocus(t *testing.T) {
+func TestClientInputRouterTriggersEnhancedCommandMenuShortcutInTerminalFocus(t *testing.T) {
 	router := &clientInputRouter{
-		input:              bytes.NewBufferString("typed\x1b[93;5uafter"),
-		drawer:             []byte{0x02},
-		drawerSequences:    bindingTerminalSequences("C-b"),
-		repaintSequences:   bindingTerminalSequences("C-]"),
-		interruptSequences: terminalInterruptSequences(),
+		input:                bytes.NewBufferString("typed\x1b[93;5uafter"),
+		drawer:               []byte{0x02},
+		drawerSequences:      bindingTerminalSequences("C-b"),
+		commandMenuSequences: bindingTerminalSequences("C-]"),
+		interruptSequences:   terminalInterruptSequences(),
 	}
 	router.SetTaskInputMode(taskInputTerminal)
-	repaints := 0
-	router.repaint = func() { repaints++ }
+	menus := 0
+	router.commandMenu = func() { menus++ }
 	var sent []struct {
 		command string
 		args    map[string]string
@@ -203,10 +203,10 @@ func TestClientInputRouterTriggersEnhancedRepaintShortcutInTerminalFocus(t *test
 		t.Fatal(err)
 	}
 	if n != 0 || err != io.EOF {
-		t.Fatalf("read = %d, %v; want EOF after consuming enhanced repaint shortcut", n, err)
+		t.Fatalf("read = %d, %v; want EOF after consuming enhanced command menu shortcut", n, err)
 	}
-	if repaints != 1 {
-		t.Fatalf("repaint callback count = %d, want 1", repaints)
+	if menus != 1 {
+		t.Fatalf("command menu callback count = %d, want 1", menus)
 	}
 	if len(sent) != 2 || sent[0].args["encoded"] != "typed" || sent[1].args["encoded"] != "after" {
 		t.Fatalf("prefix and suffix should stay ordered terminal input: %#v", sent)
