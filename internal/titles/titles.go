@@ -102,10 +102,6 @@ func LiveStatusIndicatesActivity(status string) bool {
 	}
 }
 
-func CodexLiveTitleIndicatesActivity(title string) bool {
-	return LiveStatusIndicatesActivity(CodexActivityStatus(title))
-}
-
 func CodexActivityStatus(title string) string {
 	title = NormalizeLiveTitle(title)
 	tokens := codexTitleTokens(title)

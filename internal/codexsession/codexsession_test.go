@@ -124,13 +124,6 @@ func TestBuildUpgradeReportClassifiesTerminalActivity(t *testing.T) {
 	}
 }
 
-func TestResumeCommandDefaultsCodexAndQuotesSession(t *testing.T) {
-	got := ResumeCommand("", "session-1")
-	if want := "codex resume 'session-1'"; got != want {
-		t.Fatalf("resume command = %q, want %q", got, want)
-	}
-}
-
 func writeSessionMeta(t *testing.T, home string, name string, id string, cwd string, ts time.Time) {
 	t.Helper()
 	dir := filepath.Join(home, "sessions", "2026", "05", "31")

@@ -25,7 +25,7 @@ func TestGlobalNeedsAttentionCountMatchesWorkspaceSemantics(t *testing.T) {
 		},
 	}
 
-	if got := globalNeedsAttentionCount(ipc.Snapshot{State: st}); got != 3 {
+	if got := len(globalAttentionTasks(ipc.Snapshot{State: st})); got != 3 {
 		t.Fatalf("global needs attention count = %d, want 3", got)
 	}
 }
@@ -39,7 +39,7 @@ func TestGlobalNeedsAttentionCountTreatsTerminalForegroundTasksAsActive(t *testi
 		},
 	}
 
-	if got := globalNeedsAttentionCount(ipc.Snapshot{State: st, TerminalForegroundTaskIDs: []string{"sleep"}}); got != 1 {
+	if got := len(globalAttentionTasks(ipc.Snapshot{State: st, TerminalForegroundTaskIDs: []string{"sleep"}})); got != 1 {
 		t.Fatalf("global needs attention count = %d, want only non-foreground ready task", got)
 	}
 }

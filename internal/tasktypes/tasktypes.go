@@ -1,7 +1,6 @@
 package tasktypes
 
 import (
-	"sort"
 	"strings"
 	"unicode"
 
@@ -59,15 +58,6 @@ var registry = map[string]Definition{
 func ForKind(kind string) (Definition, bool) {
 	definition, ok := registry[strings.TrimSpace(kind)]
 	return definition, ok
-}
-
-func SupportedKinds() []string {
-	kinds := make([]string, 0, len(registry))
-	for kind := range registry {
-		kinds = append(kinds, kind)
-	}
-	sort.Strings(kinds)
-	return kinds
 }
 
 func StatusShowsLoadingIndicator(task state.Task) bool {

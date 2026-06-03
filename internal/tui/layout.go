@@ -1616,17 +1616,6 @@ func paletteFor(active bool) framePalette {
 	return inactivePalette
 }
 
-func cornerLine(leftCorner string, rightCorner string, content string, innerWidth int) string {
-	if innerWidth <= 0 {
-		return leftCorner + rightCorner
-	}
-	if innerWidth == 1 {
-		return leftCorner + borderHorizontal + rightCorner
-	}
-	contentWidth := innerWidth - 2
-	return leftCorner + borderHorizontal + padVisual(clip(content, contentWidth), contentWidth) + borderHorizontal + rightCorner
-}
-
 func renderFrameBorderLine(palette framePalette, leftCorner string, rightCorner string, content string, innerWidth int) string {
 	if innerWidth <= 0 {
 		return palette.border.Render(leftCorner + rightCorner)

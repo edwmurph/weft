@@ -1485,8 +1485,9 @@ func TestCornerLinePreservesTinyWidths(t *testing.T) {
 		2: "╭──╮",
 	}
 	for innerWidth, want := range cases {
-		if got := cornerLine(borderTopLeft, borderTopRight, "", innerWidth); got != want {
-			t.Fatalf("cornerLine(%d) = %q, want %q", innerWidth, got, want)
+		got := ansi.Strip(renderFrameBorderLine(inactivePalette, borderTopLeft, borderTopRight, "", innerWidth))
+		if got != want {
+			t.Fatalf("renderFrameBorderLine(%d) = %q, want %q", innerWidth, got, want)
 		}
 	}
 }

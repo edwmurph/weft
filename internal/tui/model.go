@@ -328,10 +328,6 @@ func (m *Model) applyGroupCursor(row groupRow) {
 	m.save()
 }
 
-func (m *Model) newTask(title string, typeIDs ...string) tea.Cmd {
-	return m.newTaskWithSilent(title, false, typeIDs...)
-}
-
 func (m *Model) newTaskWithSilent(title string, silent bool, typeIDs ...string) tea.Cmd {
 	workspace := state.ActiveWorkspace(m.state)
 	if workspace == nil {

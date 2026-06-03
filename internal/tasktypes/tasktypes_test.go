@@ -1,7 +1,6 @@
 package tasktypes
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/edwmurph/weft/internal/state"
@@ -37,13 +36,6 @@ func TestRegistryExposesBuiltInDefinitions(t *testing.T) {
 	}
 	if !terminal.TracksTerminalCWD() || !terminal.TracksForegroundCommands() || !terminal.RestartableTerminal() {
 		t.Fatalf("terminal capabilities missing")
-	}
-}
-
-func TestSupportedKindsAreSorted(t *testing.T) {
-	got := strings.Join(SupportedKinds(), ",")
-	if got != "codex,terminal" {
-		t.Fatalf("supported kinds = %q", got)
 	}
 }
 

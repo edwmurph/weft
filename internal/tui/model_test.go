@@ -2510,7 +2510,7 @@ func TestNewTaskAlwaysCreatesTopLevelWhenGroupSelected(t *testing.T) {
 	model.state.ActiveTaskID = ""
 	model.groupCursor = 1
 
-	cmd := model.newTask("Grouped")
+	cmd := model.newTaskWithSilent("Grouped", false)
 	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")
@@ -2527,7 +2527,7 @@ func TestNewTaskAlwaysCreatesTopLevelWhenTaskSelected(t *testing.T) {
 	model.state.Focus = state.FocusTasks
 	model.syncGroupCursor()
 
-	cmd := model.newTask("Top-level")
+	cmd := model.newTaskWithSilent("Top-level", false)
 	defer killPTYs(model)
 	if cmd == nil {
 		t.Fatal("expected PTY start command")

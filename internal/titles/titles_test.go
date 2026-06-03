@@ -170,10 +170,10 @@ func TestCodexActivityStatusParsesTerminalTitle(t *testing.T) {
 			t.Fatalf("CodexActivityStatus(%q) = %q, want %q", tt.title, got, tt.want)
 		}
 	}
-	if !CodexLiveTitleIndicatesActivity("Fake Codex Crafting") {
+	if !LiveStatusIndicatesActivity(CodexActivityStatus("Fake Codex Crafting")) {
 		t.Fatal("crafting title should indicate Codex activity")
 	}
-	if CodexLiveTitleIndicatesActivity("Fake Codex Ready") {
+	if LiveStatusIndicatesActivity(CodexActivityStatus("Fake Codex Ready")) {
 		t.Fatal("ready title should not indicate Codex activity")
 	}
 }

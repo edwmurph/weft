@@ -165,10 +165,6 @@ func TaskFreshForUpgrade(task state.Task) bool {
 	return true
 }
 
-func ResumeCommand(codexCommand string, sessionID string) string {
-	return tasktypes.CodexResumeCommand(codexCommand, sessionID)
-}
-
 func Home() string {
 	if home := strings.TrimSpace(os.Getenv("CODEX_HOME")); home != "" {
 		return home

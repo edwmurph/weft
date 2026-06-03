@@ -218,7 +218,7 @@ func TestWorkspaceCanHaveNoGroupsAndUngroupedTasks(t *testing.T) {
 		t.Fatalf("workspace state = %#v", st)
 	}
 
-	next, task, err := AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", NowISO())
+	next, task, err := AddTaskWithTypeAndSilent(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", NowISO(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestWorkspaceTitleOverrideCanBeSetAndCleared(t *testing.T) {
 func TestAddTaskWithTypeRequiresTitle(t *testing.T) {
 	st := stateWithWorkspace(t)
 
-	_, task, err := AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "", NowISO())
+	_, task, err := AddTaskWithTypeAndSilent(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "", NowISO(), false)
 	if err == nil {
 		t.Fatal("expected title error")
 	}
@@ -273,7 +273,7 @@ func TestAddTaskWithTypeStoresTaskType(t *testing.T) {
 	st := stateWithWorkspace(t)
 	now := NowISO()
 
-	_, task, err := AddTaskWithType(st, "shell-task", st.SelectedWorkspaceID, "", "shell", "Shell", now)
+	_, task, err := AddTaskWithTypeAndSilent(st, "shell-task", st.SelectedWorkspaceID, "", "shell", "Shell", now, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestAddTaskWithTypeAndSilentSetsSilent(t *testing.T) {
 func TestAddTaskWithTypeRequiresTaskType(t *testing.T) {
 	st := stateWithWorkspace(t)
 
-	_, task, err := AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", " ", "Shell", NowISO())
+	_, task, err := AddTaskWithTypeAndSilent(st, "a", st.SelectedWorkspaceID, "", " ", "Shell", NowISO(), false)
 	if err == nil {
 		t.Fatal("expected task type error")
 	}
@@ -373,11 +373,11 @@ func TestAddGroupWithSilentRequiresExplicitIDAndTimestamp(t *testing.T) {
 func TestAddTaskWithTypeRequiresExplicitIDAndTimestamp(t *testing.T) {
 	st := stateWithWorkspace(t)
 
-	_, task, err := AddTaskWithType(st, "", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", NowISO())
+	_, task, err := AddTaskWithTypeAndSilent(st, "", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", NowISO(), false)
 	if err == nil || err.Error() != "task id is required" {
 		t.Fatalf("expected task id error, got task=%#v err=%v", task, err)
 	}
-	_, task, err = AddTaskWithType(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", "")
+	_, task, err = AddTaskWithTypeAndSilent(st, "a", st.SelectedWorkspaceID, "", codexTaskTypeID, "Codex", "", false)
 	if err == nil || err.Error() != "task timestamp is required" {
 		t.Fatalf("expected task timestamp error, got task=%#v err=%v", task, err)
 	}

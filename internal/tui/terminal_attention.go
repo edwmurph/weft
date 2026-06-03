@@ -122,10 +122,6 @@ func terminalAttentionClearSequence(previous terminalAttentionState) string {
 	return previous.provider.clearSequence(previous.attentionRequested)
 }
 
-func globalNeedsAttentionCount(snapshot ipc.Snapshot) int {
-	return len(globalAttentionTasks(snapshot))
-}
-
 func globalAttentionTasks(snapshot ipc.Snapshot) map[string]bool {
 	attentionTasks := map[string]bool{}
 	activeTasks := terminalAttentionActiveTasks(snapshot)

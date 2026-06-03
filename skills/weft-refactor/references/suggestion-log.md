@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-03 - Test-only wrapper prune
+
+- Request: Find and implement a safe refactor that reduces lines of code and makes Weft easier to manage, scale, and reason about.
+- Suggestions: Use `deadcode` to identify helpers reachable only from tests, remove thin wrappers around task creation, task-kind listing, Codex resume command construction, Codex title activity checks, terminal attention counts, frame border rendering, and direct model task creation, then keep tests pointed at the canonical functions.
+- Outcome: Implemented in `.worktrees/safe-loc-refactor`; awaiting review.
+- Evidence: `internal/state`, `internal/tasktypes`, `internal/codexsession`, `internal/titles`, `internal/tui`; `go run golang.org/x/tools/cmd/deadcode@latest ./...`.
+- Deferred: None.
+
 ## 2026-06-03 - Refactor skill suggestion-log path correction
 
 - Request: Update the repo-local refactor skill after the UX polish pass found the suggestion-log path was stale.

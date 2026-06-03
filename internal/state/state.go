@@ -1052,10 +1052,6 @@ func ToggleGroupCollapsed(st State, groupID string) State {
 	return st
 }
 
-func AddTaskWithType(st State, id string, workspaceID string, groupID string, typeID string, title string, now string) (State, Task, error) {
-	return AddTaskWithTypeAndSilent(st, id, workspaceID, groupID, typeID, title, now, false)
-}
-
 func AddTaskWithTypeAndSilent(st State, id string, workspaceID string, groupID string, typeID string, title string, now string, silent bool) (State, Task, error) {
 	if strings.TrimSpace(id) == "" {
 		return st, Task{}, fmt.Errorf("task id is required")
