@@ -57,6 +57,81 @@ func TestTerminalScreenAlternateScreenClearsPreviousContent(t *testing.T) {
 	if !strings.Contains(rendered, "new content") {
 		t.Fatalf("screen missing new content:\n%q", rendered)
 	}
+
+	screen.Write("\x1b[?1049l")
+	restored := screen.String()
+	if !strings.Contains(restored, "old content") {
+		t.Fatalf("normal screen was not restored after alternate screen exit:\n%q", restored)
+	}
+	if strings.Contains(restored, "new content") {
+		t.Fatalf("alternate screen content leaked after exit:\n%q", restored)
+	}
+}
+
+func TestTerminalScreenAlternateScreenRestoresScrollback(t *testing.T) {
+	screen := NewTerminalScreen(12, 3)
+	for row := 1; row <= 5; row++ {
+		screen.Write(fmt.Sprintf("chat%02d\r\n", row))
+	}
+
+	screen.Write("\x1b[?1049h\x1b[Hdiff page\r\n")
+	for row := 1; row <= 5; row++ {
+		screen.Write(fmt.Sprintf("diff%02d\r\n", row))
+	}
+	if !screen.InAlternateScreen() {
+		t.Fatal("screen should stay in alternate screen while full-screen content is active")
+	}
+	screen.Write("\x1b[?1049l")
+	scrollback := strings.Join(screen.ScrollbackPlainLines(), "\n")
+
+	if !strings.Contains(scrollback, "chat01") || !strings.Contains(scrollback, "chat05") {
+		t.Fatalf("normal scrollback was not restored:\n%q", scrollback)
+	}
+	if strings.Contains(scrollback, "diff01") || strings.Contains(scrollback, "diff page") {
+		t.Fatalf("alternate screen content leaked into normal scrollback:\n%q", scrollback)
+	}
+}
+
+func TestTerminalScreenRepeatedAlternateScreenEntryDoesNotNestBuffers(t *testing.T) {
+	screen := NewTerminalScreen(20, 5)
+
+	screen.Write("shell prompt\x1b[?1049h\x1b[Hpage one")
+	screen.Write("\x1b[?1049h\x1b[Hpage two")
+	if rendered := screen.String(); strings.Contains(rendered, "page one") || !strings.Contains(rendered, "page two") {
+		t.Fatalf("re-entering alternate screen should redraw the active alternate buffer:\n%q", rendered)
+	}
+
+	screen.Write("\x1b[?1049l")
+	restored := screen.String()
+	if !strings.Contains(restored, "shell prompt") {
+		t.Fatalf("alternate screen exit should restore the original normal buffer:\n%q", restored)
+	}
+	if strings.Contains(restored, "page one") || strings.Contains(restored, "page two") {
+		t.Fatalf("alternate screen page leaked after exit:\n%q", restored)
+	}
+}
+
+func TestTerminalScreenAlternateScreenResizeKeepsRestoredBufferAligned(t *testing.T) {
+	screen := NewTerminalScreen(12, 5)
+	for row := 1; row <= 5; row++ {
+		screen.Write(fmt.Sprintf("\x1b[%d;1Hchat%d", row, row))
+	}
+
+	screen.Write("\x1b[?1049h\x1b[Hdiff")
+	screen.Resize(12, 3)
+	screen.Write("\x1b[?1049l")
+	rendered := screen.String()
+
+	for _, expected := range []string{"chat3", "chat4", "chat5"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("restored resized buffer missing %q:\n%q", expected, rendered)
+		}
+	}
+	for _, forbidden := range []string{"chat1", "chat2", "diff"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("restored resized buffer should not contain %q:\n%q", forbidden, rendered)
+		}
+	}
 }
 
 func TestTerminalScreenTracksAlternateScreenMode(t *testing.T) {

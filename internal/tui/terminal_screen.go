@@ -29,6 +29,23 @@ type terminalCursorOverlay struct {
 	shape terminalCursorShape
 }
 
+type terminalScreenBuffer struct {
+	cols          int
+	rows          int
+	cells         [][]terminalCell
+	history       [][]terminalCell
+	row           int
+	col           int
+	savedRow      int
+	savedCol      int
+	scrollTop     int
+	scrollBottom  int
+	originMode    bool
+	cursorVisible bool
+	cursorShape   terminalCursorShape
+	style         cellbuf.Style
+}
+
 const terminalScrollbackLimit = 2000
 
 type TerminalScreen struct {
@@ -47,6 +64,7 @@ type TerminalScreen struct {
 	scrollBottom    int
 	originMode      bool
 	alternateScreen bool
+	normalBuffer    *terminalScreenBuffer
 	style           cellbuf.Style
 	defaults        cellbuf.Style
 	parser          *ansi.Parser
@@ -83,6 +101,9 @@ func (s *TerminalScreen) ResizeTopAligned(cols int, rows int) {
 func (s *TerminalScreen) resize(cols int, rows int, topAligned bool) {
 	cols = max(1, cols)
 	rows = max(1, rows)
+	if s.normalBuffer != nil {
+		resizeTerminalScreenBuffer(s.normalBuffer, cols, rows, topAligned)
+	}
 	if cols == s.cols && rows == s.rows {
 		return
 	}
@@ -116,6 +137,8 @@ func (s *TerminalScreen) resize(cols int, rows int, topAligned bool) {
 
 func (s *TerminalScreen) Clear() {
 	s.history = nil
+	s.normalBuffer = nil
+	s.alternateScreen = false
 	s.resetScrollRegion()
 	s.cursorHome()
 	s.clearAll()
@@ -357,10 +380,18 @@ func (s *TerminalScreen) handleCSI(cmd ansi.Cmd, params ansi.Params) {
 	case 'h', 'l':
 		if prefix == '?' {
 			if paramsContain(params, 47, 1047, 1049) {
-				s.alternateScreen = final == 'h'
-				s.history = nil
-				s.resetScrollRegion()
-				s.clearAll()
+				if final == 'h' {
+					s.enterAlternateScreen()
+				} else {
+					s.exitAlternateScreen()
+				}
+			}
+			if paramsContain(params, 1048) {
+				if final == 'h' {
+					s.savedRow, s.savedCol = s.row, s.col
+				} else {
+					s.row, s.col = s.savedRow, s.savedCol
+				}
 			}
 			if paramsContain(params, 25) {
 				s.cursorVisible = final == 'h'
@@ -382,6 +413,7 @@ func (s *TerminalScreen) handleESC(cmd ansi.Cmd) {
 	switch cmd.Final() {
 	case 'c':
 		s.history = nil
+		s.normalBuffer = nil
 		s.resetScrollRegion()
 		s.originMode = false
 		s.alternateScreen = false
@@ -400,6 +432,86 @@ func (s *TerminalScreen) handleESC(cmd ansi.Cmd) {
 	case 'M':
 		s.reverseIndex()
 	}
+	s.clampCursor()
+}
+
+func (s *TerminalScreen) enterAlternateScreen() {
+	if !s.alternateScreen {
+		buffer := s.captureBuffer()
+		s.normalBuffer = &buffer
+	}
+	s.alternateScreen = true
+	s.history = nil
+	s.resetScrollRegion()
+	s.clearAll()
+}
+
+func (s *TerminalScreen) exitAlternateScreen() {
+	if !s.alternateScreen {
+		return
+	}
+	if s.normalBuffer != nil {
+		s.restoreBuffer(*s.normalBuffer)
+		s.normalBuffer = nil
+	} else {
+		s.history = nil
+		s.resetScrollRegion()
+		s.clearAll()
+	}
+	s.alternateScreen = false
+}
+
+func (s *TerminalScreen) captureBuffer() terminalScreenBuffer {
+	return terminalScreenBuffer{
+		cols:          s.cols,
+		rows:          s.rows,
+		cells:         cloneTerminalRows(s.cells),
+		history:       cloneTerminalRows(s.history),
+		row:           s.row,
+		col:           s.col,
+		savedRow:      s.savedRow,
+		savedCol:      s.savedCol,
+		scrollTop:     s.scrollTop,
+		scrollBottom:  s.scrollBottom,
+		originMode:    s.originMode,
+		cursorVisible: s.cursorVisible,
+		cursorShape:   s.cursorShape,
+		style:         s.style,
+	}
+}
+
+func (s *TerminalScreen) restoreBuffer(buffer terminalScreenBuffer) {
+	s.cols = max(1, buffer.cols)
+	s.rows = max(1, buffer.rows)
+	s.cells = cloneTerminalRows(buffer.cells)
+	s.history = cloneTerminalRows(buffer.history)
+	if len(s.cells) != s.rows {
+		next := make([][]terminalCell, s.rows)
+		for row := range next {
+			next[row] = blankCells(s.cols, cellbuf.Style{})
+			if row < len(s.cells) {
+				copy(next[row], s.cells[row])
+			}
+		}
+		s.cells = next
+	}
+	for row := range s.cells {
+		if len(s.cells[row]) != s.cols {
+			next := blankCells(s.cols, cellbuf.Style{})
+			copy(next, s.cells[row])
+			s.cells[row] = next
+		}
+	}
+	s.row = buffer.row
+	s.col = buffer.col
+	s.savedRow = buffer.savedRow
+	s.savedCol = buffer.savedCol
+	s.scrollTop = buffer.scrollTop
+	s.scrollBottom = buffer.scrollBottom
+	s.originMode = buffer.originMode
+	s.cursorVisible = buffer.cursorVisible
+	s.cursorShape = buffer.cursorShape
+	s.style = buffer.style
 	s.clampCursor()
 }
 
@@ -705,6 +817,67 @@ func plainLineScreenRows(line string, cols int) [][]terminalCell {
 		col += width
 	}
 	return rows
+}
+
+func resizeTerminalScreenBuffer(buffer *terminalScreenBuffer, cols int, rows int, topAligned bool) {
+	if buffer == nil {
+		return
+	}
+	cols = max(1, cols)
+	rows = max(1, rows)
+	if cols == buffer.cols && rows == buffer.rows {
+		return
+	}
+	old := buffer.cells
+	oldRows := buffer.rows
+	rowsChanged := rows != buffer.rows
+	buffer.cols = cols
+	buffer.rows = rows
+	buffer.cells = make([][]terminalCell, rows)
+	sourceStart := max(0, oldRows-rows)
+	destStart := max(0, rows-oldRows)
+	if topAligned {
+		sourceStart = 0
+		destStart = 0
+	}
+	for row := range buffer.cells {
+		buffer.cells[row] = blankCells(cols, cellbuf.Style{})
+		sourceRow := sourceStart + row - destStart
+		if sourceRow >= 0 && sourceRow < len(old) {
+			copy(buffer.cells[row], old[sourceRow])
+		}
+	}
+	if rowsChanged {
+		rowDelta := destStart - sourceStart
+		buffer.row += rowDelta
+		buffer.savedRow += rowDelta
+		buffer.scrollTop = 0
+		buffer.scrollBottom = max(0, rows-1)
+	}
+	clampTerminalScreenBuffer(buffer)
+}
+
+func clampTerminalScreenBuffer(buffer *terminalScreenBuffer) {
+	if buffer == nil {
+		return
+	}
+	buffer.scrollTop = min(max(0, buffer.scrollTop), buffer.rows-1)
+	buffer.scrollBottom = min(max(buffer.scrollTop, buffer.scrollBottom), buffer.rows-1)
+	buffer.row = min(max(0, buffer.row), buffer.rows-1)
+	buffer.col = min(max(0, buffer.col), buffer.cols-1)
+	buffer.savedRow = min(max(0, buffer.savedRow), buffer.rows-1)
+	buffer.savedCol = min(max(0, buffer.savedCol), buffer.cols-1)
+}
+
+func cloneTerminalRows(rows [][]terminalCell) [][]terminalCell {
+	if rows == nil {
+		return nil
+	}
+	cloned := make([][]terminalCell, len(rows))
+	for row := range rows {
+		cloned[row] = cloneTerminalCells(rows[row])
+	}
+	return cloned
 }
 
 func cloneTerminalCells(cells []terminalCell) []terminalCell {

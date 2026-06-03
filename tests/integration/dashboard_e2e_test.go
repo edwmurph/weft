@@ -1300,6 +1300,59 @@ func TestTaskConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	assertDashboardNotCorrupt(t, clientOutput(), false)
 }
 
+func TestTaskConsoleRestoresCodexHistoryAfterAlternateScreenE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	diffDone := filepath.Join(tmp, "diff-done")
+	runtimeDir, workspace := createRuntime(t, tmp, writeAlternateScreenDiffFakeCodex(t, tmp, "fake-codex-diff.sh"))
+	env := append(baseIntegrationEnv(runtimeDir, workspace, bin), "DIFF_DONE="+diffDone)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+
+	pane := "alternate-screen-diff-client"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 140, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") && strings.Contains(capture, "Tasks")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		active := state.ActiveTask(st)
+		return active != nil && active.Status == state.StatusRunning && st.Focus == state.FocusConsole
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "main chat before diff") &&
+			strings.Contains(capture, "assistant history stays visible") &&
+			strings.Contains(capture, collapsedCodexToolbar)
+	})
+
+	directRun(t, env, "send-keys", "-l", "-t", pane, "diff")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	if !waitForBool(3*time.Second, func() bool {
+		_, err := os.Stat(diffDone)
+		return err == nil
+	}) {
+		t.Fatalf("fake Codex did not finish alternate-screen diff path:\n%s", clientOutput())
+	}
+	capture := waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "main chat before diff") &&
+			strings.Contains(capture, "assistant history stays visible") &&
+			!strings.Contains(capture, "temporary diff view")
+	})
+	assertDashboardNotCorrupt(t, capture, false)
+}
+
 func TestTaskConsolePagerWheelForwardsToAlternateScreenShellE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
@@ -3633,6 +3686,35 @@ func writeScrollbackFakeCodex(t *testing.T, dir string, name string) string {
 			"while [ \"$i\" -le 80 ]; do printf 'history line %02d\\r\\n' \"$i\"; i=$((i + 1)); done\n"+
 			"trap 'stty sane 2>/dev/null; exit 0' HUP INT TERM\n"+
 			"stty raw -echo -isig\n"+
+			"while :; do sleep 1; done\n",
+	), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return fakeCodex
+}
+
+func writeAlternateScreenDiffFakeCodex(t *testing.T, dir string, name string) string {
+	t.Helper()
+	fakeCodex := filepath.Join(dir, name)
+	if err := os.WriteFile(fakeCodex, []byte(
+		"#!/bin/bash\n"+
+			"printf '\\033]2;Diff Codex Ready\\007'\n"+
+			"printf 'main chat before diff\\r\\n'\n"+
+			"printf 'assistant history stays visible\\r\\n'\n"+
+			"trap 'exit 0' HUP INT TERM\n"+
+			"while IFS= read -r line; do\n"+
+			"  if [ \"$line\" = \"diff\" ]; then\n"+
+			"    printf '\\033]2;Diff Codex Working\\007'\n"+
+			"    printf '\\033[?1049h\\033[2J\\033[H'\n"+
+			"    printf 'temporary diff view\\r\\n'\n"+
+			"    sleep 0.2\n"+
+			"    printf '\\033[?1049l'\n"+
+			"    printf '\\033]2;Diff Codex Ready\\007'\n"+
+			"    if [ -n \"${DIFF_DONE:-}\" ]; then : > \"$DIFF_DONE\"; fi\n"+
+			"    continue\n"+
+			"  fi\n"+
+			"  printf 'received:%s\\r\\n' \"$line\"\n"+
+			"done\n"+
 			"while :; do sleep 1; done\n",
 	), 0o700); err != nil {
 		t.Fatal(err)

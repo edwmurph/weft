@@ -726,6 +726,7 @@ Rules:
 - The active task PTY height matches the visible content rows inside the frame.
 - Cached PTY screen resizes preserve bottom rows first, and terminal top/bottom scrolling regions are honored so terminal footers and composers do not disappear behind the frame.
 - Cached PTY screens preserve cursor visibility and DECSCUSR cursor shape requests so Vim-style block/bar/underline cursor changes render in the frame.
+- Cached PTY screens model alternate-screen buffers separately from the normal task buffer. When a full-screen or pager view exits alternate screen, the prior normal screen and scrollback are restored without requiring the task to redraw after a dashboard focus toggle.
 - Closing the TUI client does not stop PTYs.
 - Restarting the supervisor stops PTYs unless a future implementation supports explicit PTY handoff.
 - The active TUI client sends terminal size changes to the supervisor, and the supervisor resizes the active task PTY.
