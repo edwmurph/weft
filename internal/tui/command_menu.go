@@ -44,7 +44,7 @@ func renderCommandMenu(selected int) string {
 		}
 		lines = append(lines, modalKeyStyle.Render(item.key)+"  "+modalValueStyle.Render(item.label)+"  "+modalLabelStyle.Render(item.detail))
 	}
-	lines = append(lines, "", modalKeyStyle.Render("Enter")+" run  "+modalKeyStyle.Render("Up/Down")+" move  "+modalKeyStyle.Render("Esc")+" close")
+	lines = append(lines, "", modalKeyStyle.Render("Enter")+" run  "+modalKeyStyle.Render("↑/↓")+" move  "+modalKeyStyle.Render("Esc")+" close")
 	return strings.Join(lines, "\n")
 }
 

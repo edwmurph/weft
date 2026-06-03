@@ -2218,17 +2218,20 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 				strings.Contains(capture, "Codex Ready") &&
 				strings.Contains(capture, "Stops the terminal, then removes this task from Weft.") &&
 				strings.Contains(capture, "Enter stop and delete") &&
-				strings.Contains(capture, "N Esc") &&
+				strings.Contains(capture, "Esc") &&
 				!strings.Contains(capture, "Y stop and delete") &&
+				!strings.Contains(capture, "N Esc") &&
 				!strings.Contains(capture, "Esc cancel")
 		})
-		directRun(t, env, "send-keys", "-t", pane, "n")
+		directRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitState(t, env, bin, func(st state.State) bool { return len(st.Tasks) == 1 })
 		directRun(t, env, "send-keys", "-t", pane, "Backspace")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Delete task") &&
 				strings.Contains(capture, "Codex Ready") &&
-				strings.Contains(capture, "N Esc") &&
+				strings.Contains(capture, "Enter stop and delete") &&
+				strings.Contains(capture, "Esc") &&
+				!strings.Contains(capture, "N Esc") &&
 				!strings.Contains(capture, "N cancel")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Enter")
@@ -2728,7 +2731,9 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 				strings.Contains(capture, "Variables") &&
 				strings.Contains(capture, "{live}") &&
 				strings.Contains(capture, "Tab move") &&
-				strings.Contains(capture, "Space type/toggle")
+				strings.Contains(capture, "←/→ type") &&
+				strings.Contains(capture, "Space choices") &&
+				!strings.Contains(capture, "Space type/toggle")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Down")
 		directRun(t, env, "send-keys", "-t", pane, "Space")
@@ -2806,7 +2811,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Move task") &&
 				strings.Contains(capture, "Enter move") &&
-				strings.Contains(capture, "Down suggestions") &&
+				strings.Contains(capture, "↓ suggestions") &&
 				!strings.Contains(capture, "Esc close suggestions")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Escape")

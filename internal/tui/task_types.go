@@ -130,7 +130,7 @@ func renderNewTaskModal(cfg config.Config, selectedIndex int, input textinput.Mo
 		lines = append(lines, modalErrorStyle.Render("Title required"))
 	}
 	lines = append(lines, renderTitleTemplateVariables(width)...)
-	lines = append(lines, "", renderNewTaskActions(typeOpen))
+	lines = append(lines, "", renderNewTaskActions(field, typeOpen))
 	return strings.Join(lines, "\n")
 }
 
@@ -193,11 +193,23 @@ func taskTypeLabel(taskType config.TaskType) string {
 	return label
 }
 
-func renderNewTaskActions(typeOpen bool) string {
+func renderNewTaskActions(field int, typeOpen bool) string {
 	if typeOpen {
-		return modalKeyStyle.Render("Enter") + " choose  " + modalKeyStyle.Render("Tab") + " choose  " + modalKeyStyle.Render("Up/Down") + " type  " + modalKeyStyle.Render("Esc") + " close"
+		return modalKeyStyle.Render("Enter") + " choose  " + modalKeyStyle.Render("Tab") + " choose  " + modalKeyStyle.Render("↑/↓") + " type  " + modalKeyStyle.Render("Esc") + " close"
 	}
-	return modalKeyStyle.Render("Enter") + " create  " + modalKeyStyle.Render("Tab") + " move  " + modalKeyStyle.Render("Up/Down") + " move  " + modalKeyStyle.Render("Left/Right") + " type  " + modalKeyStyle.Render("Space") + " type/toggle  " + modalKeyStyle.Render("Esc") + " cancel"
+	actions := []string{
+		modalKeyStyle.Render("Enter") + " create",
+		modalKeyStyle.Render("Tab") + " move",
+		modalKeyStyle.Render("↑/↓") + " move",
+	}
+	switch field {
+	case 0:
+		actions = append(actions, modalKeyStyle.Render("←/→")+" type", modalKeyStyle.Render("Space")+" choices")
+	case 1:
+		actions = append(actions, modalKeyStyle.Render("Space")+" toggle")
+	}
+	actions = append(actions, modalKeyStyle.Render("Esc")+" cancel")
+	return strings.Join(actions, "  ")
 }
 
 type newTaskInputResult struct {

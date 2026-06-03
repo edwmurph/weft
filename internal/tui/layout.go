@@ -790,24 +790,7 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 			content = append(content, "")
 		}
 		collapsed := state.IsGroupCollapsed(st, group.ID)
-		indicator := "▾ "
-		if collapsed {
-			indicator = "▸ "
-		}
-		silentMarker := ""
-		if group.Silent {
-			silentMarker = "⊘ "
-		}
-		loadingMarker := ""
-		if collapsed && groupHasLoadingTask(st, group.ID, options.loadingTasks) {
-			loadingMarker = loadingFrameForRender(options.loadingFrame) + " "
-		}
-		groupRow := rowLine(indicator+loadingMarker+silentMarker+group.Path+" ("+fmtInt(state.TaskCountForGroup(st, group.ID))+")", "", rowWidth)
-		if rowIndex == groupCursor && st.Focus == state.FocusTasks {
-			groupRow = activeTaskStyle.Render(padVisual(groupRow, rowWidth))
-		} else {
-			groupRow = groupHeaderStyle.Render(groupRow)
-		}
+		groupRow := renderGroupRow(st, group, collapsed, rowWidth, rowIndex == groupCursor && st.Focus == state.FocusTasks, options)
 		if rowIndex == groupCursor {
 			selectedLine = len(content)
 		}
@@ -830,6 +813,30 @@ func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, h
 	}
 	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))
 	return renderPaneFrame("Tasks", "", width, height, st.Focus == state.FocusTasks, content)
+}
+
+func renderGroupRow(st state.State, group state.Group, collapsed bool, width int, selected bool, options workspaceRenderOptions) string {
+	if width <= 0 {
+		return ""
+	}
+	indicator := "▾ "
+	if collapsed {
+		indicator = "▸ "
+	}
+	silentMarker := ""
+	if group.Silent {
+		silentMarker = "⊘ "
+	}
+	loadingMarker := ""
+	if collapsed && groupHasLoadingTask(st, group.ID, options.loadingTasks) {
+		loadingMarker = loadingFrameForRender(options.loadingFrame) + " "
+	}
+	title := indicator + loadingMarker + silentMarker + group.Path
+	count := " (" + fmtInt(state.TaskCountForGroup(st, group.ID)) + ")"
+	if selected {
+		return activeTaskStyle.Render(padVisual(rowLine(title+count, "", width), width))
+	}
+	return rowLine(groupHeaderStyle.Render(title)+mutedStyle.Render(count), "", width)
 }
 
 func renderNewTaskTemplateRow(cfg config.Config, width int, selected bool, focused bool) string {
@@ -1196,7 +1203,7 @@ func renderCodexFrame(
 	empty := !taskActive
 	contentWidth := codexLineContentWidth(innerWidth, previewMode)
 	messageLines := renderStatusBanner(message, contentWidth, statusBannerMaxLines(message, contentHeight))
-	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, len(st.Workspaces) > 0, loadingText, codexEmptyTitle(previewMode), previewMode && empty, emptyArtFrame)
+	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, loadingText, codexEmptyTitle(previewMode), codexEmptyHint(cfg, st, previewMode), previewMode && empty, emptyArtFrame)
 	if len(messageLines) > 0 {
 		contentLines = append(messageLines, contentLines...)
 	}
@@ -1366,7 +1373,26 @@ func codexEmptyTitle(previewMode bool) string {
 	return "No task open"
 }
 
-func renderCodexContent(content string, width int, height int, empty bool, canCreateTask bool, loadingText string, emptyTitle string, previewEmpty bool, emptyArtFrame int) []string {
+func codexEmptyHint(cfg config.Config, st state.State, previewMode bool) string {
+	if state.ActiveWorkspace(st) == nil {
+		return "Add a workspace first."
+	}
+	if previewMode && workspaceHasTasks(st, st.SelectedWorkspaceID) {
+		return "Select a task to preview."
+	}
+	return "Press " + cfg.KeyBindings.NewTask + " to create one."
+}
+
+func workspaceHasTasks(st state.State, workspaceID string) bool {
+	for _, task := range st.Tasks {
+		if task.WorkspaceID == workspaceID {
+			return true
+		}
+	}
+	return false
+}
+
+func renderCodexContent(content string, width int, height int, empty bool, loadingText string, emptyTitle string, emptyHint string, previewEmpty bool, emptyArtFrame int) []string {
 	if height <= 0 {
 		return nil
 	}
@@ -1374,7 +1400,7 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 		return renderCenteredCodexContent([]string{loadingText}, width, height)
 	}
 	if empty {
-		return renderEmptyCodexContentWithFrame(width, height, canCreateTask, emptyTitle, previewEmpty, emptyArtFrame)
+		return renderEmptyCodexContentWithFrame(width, height, emptyTitle, emptyHint, previewEmpty, emptyArtFrame)
 	}
 	lines := lastLines(content, height)
 	for len(lines) < height {
@@ -1383,14 +1409,14 @@ func renderCodexContent(content string, width int, height int, empty bool, canCr
 	return lines
 }
 
-func renderEmptyCodexContentWithFrame(width int, height int, canCreateTask bool, title string, previewEmpty bool, emptyArtFrame int) []string {
+func renderEmptyCodexContentWithFrame(width int, height int, title string, hint string, previewEmpty bool, emptyArtFrame int) []string {
 	emptyTitle := "No task open"
 	if strings.TrimSpace(title) != "" {
 		emptyTitle = strings.TrimSpace(title)
 	}
-	hint := "Press n to create one."
-	if !canCreateTask {
-		hint = "Add a workspace first."
+	emptyHint := "Press n to create one."
+	if strings.TrimSpace(hint) != "" {
+		emptyHint = strings.TrimSpace(hint)
 	}
 	content := []string{}
 	logo := emptyWeftLogo
@@ -1403,10 +1429,10 @@ func renderEmptyCodexContentWithFrame(width int, height int, canCreateTask bool,
 			content = append(content, renderEmptyLogoLine(line, logoWidth, previewEmpty, emptyArtFrame, index))
 		}
 		content = append(content, "")
-		content = append(content, centerVisual(emptyTitle, logoWidth), centerVisual(hint, logoWidth))
+		content = append(content, centerVisual(emptyTitle, logoWidth), centerVisual(emptyHint, logoWidth))
 		return renderCenteredCodexBlockContent(content, width, height, logoWidth)
 	}
-	content = append(content, emptyTitle, hint)
+	content = append(content, emptyTitle, emptyHint)
 	return renderCenteredCodexContent(content, width, height)
 }
 

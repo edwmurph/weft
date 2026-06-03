@@ -263,7 +263,7 @@ func TestRenderTaskPreviewRequiresFocusedTaskRow(t *testing.T) {
 	got := ansi.Strip(renderWorkspaceView(cfg, st, "Preview Title", output, 140, 24, "", minTwoPaneNavWidth, 0, workspaceRenderOptions{
 		previewHeaderAnimation: "●",
 	}))
-	if !strings.Contains(got, "No task selected") || strings.Contains(got, output) || strings.Contains(got, "Preview Title") {
+	if !strings.Contains(got, "No task selected") || !strings.Contains(got, "Select a task to preview.") || strings.Contains(got, output) || strings.Contains(got, "Preview Title") {
 		t.Fatalf("group row focus should render an empty preview instead of the active task:\n%s", got)
 	}
 	if lines := strings.Split(got, "\n"); len(lines) == 0 || strings.Contains(lines[0], "Task Live Preview ●") {
@@ -798,6 +798,14 @@ func TestRenderTasksPaneShowsGroupCountInline(t *testing.T) {
 	if strings.Contains(got, "▾ inbox                 2") {
 		t.Fatalf("group count should not render as a far-right bare count:\n%s", got)
 	}
+
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previous)
+	styled := strings.Join(renderGroupsPaneWithOptions(cfg, st, 40, 12, 0, workspaceRenderOptions{}), "\n")
+	if !strings.Contains(styled, groupHeaderStyle.Render("▾ inbox")+mutedStyle.Render(" (2)")) {
+		t.Fatalf("group title should carry hierarchy while count stays muted:\n%s", styled)
+	}
 }
 
 func TestRenderTasksPaneShowsCollapsedGroupLoadingChild(t *testing.T) {
@@ -1237,7 +1245,7 @@ func TestRenderWorkspaceEmptyDashboardShowsNewHint(t *testing.T) {
 		t.Fatalf("empty command center should not show cropped preview styling:\n%s", stripped)
 	}
 
-	content := renderEmptyCodexContentWithFrame(100, 24, true, "No task open", false, 0)
+	content := renderEmptyCodexContentWithFrame(100, 24, "No task open", "Press n to create one.", false, 0)
 	logoWidth := maxVisualWidth(emptyWeftLogo)
 	expectedLeft := strings.Repeat(" ", (100-logoWidth)/2)
 	logoStart := -1

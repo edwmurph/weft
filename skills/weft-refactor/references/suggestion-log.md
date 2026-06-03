@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-03 - Refactor skill suggestion-log path correction
+
+- Request: Update the repo-local refactor skill after the UX polish pass found the suggestion-log path was stale.
+- Suggestions: Point the workflow and Suggestion Log section at `skills/weft-refactor/references/suggestion-log.md`, matching the actual checked-in file path.
+- Outcome: Implemented in `.worktrees/ux-polish`; awaiting review.
+- Evidence: `skills/weft-refactor/SKILL.md`, `skills/weft-refactor/references/suggestion-log.md`; `git diff --check`.
+- Deferred: None.
+
 ## 2026-06-02 - Provider-neutral task metadata cutover
 
 - Request: Continue the task type abstraction work so adding future agents such as Claude does not leave Codex-specific metadata names in the shared task schema.
@@ -17,6 +25,14 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Outcome: Implemented in `.worktrees/task-types-abstraction`; awaiting review.
 - Evidence: `internal/tasktypes`, `internal/config/config.go`, `internal/tui`, `internal/codexsession`, `spec.md`, `docs/technical.md`; `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`.
 - Deferred: None; the provider-neutral metadata cutover is tracked in the follow-up entry above.
+
+## 2026-06-02 - Dashboard UX polish pass
+
+- Request: Review the whole UX and implement subtle stylistic improvements to make the dashboard feel more polished, professional, and consistent.
+- Suggestions: Clarify empty live-preview hints when tasks exist but no task row is selected, keep group-row counts muted as metadata, make new-task modal footer actions field-specific, use arrow glyphs in modal footer labels, and align delete-task confirmations with the Enter/Esc-only modal contract.
+- Outcome: Implemented and verified in `.worktrees/ux-polish`; awaiting review.
+- Evidence: `internal/tui/layout.go`, `internal/tui/task_types.go`, `internal/tui/path_prompt.go`, `internal/tui/command_menu.go`, `internal/tui/model_shared.go`, `internal/tui/layout_test.go`, `internal/tui/model_test.go`, `tests/integration/dashboard_e2e_test.go`, `spec.md`; `gofmt -w cmd internal tests`, `go test ./internal/tui`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`.
+- Deferred: None.
 
 ## 2026-06-02 - IPC metadata hard cutover
 

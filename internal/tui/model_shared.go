@@ -29,9 +29,6 @@ func confirmKeyCancels(confirm confirmKind, msg tea.KeyMsg) bool {
 	if msg.Type == tea.KeyEsc || strings.EqualFold(msg.String(), "esc") {
 		return true
 	}
-	if confirm == confirmDeleteTask {
-		return strings.EqualFold(msg.String(), "n")
-	}
 	return false
 }
 

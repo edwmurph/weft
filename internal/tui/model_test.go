@@ -97,6 +97,12 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 	if !strings.Contains(raw, "\x1b[38;5;117m╭") {
 		t.Fatalf("focused title input should use blue border:\n%s", raw)
 	}
+	if strings.Contains(rendered, "Space choices") || strings.Contains(rendered, "Space toggle") {
+		t.Fatalf("title field actions should not advertise unrelated Space actions:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "↑/↓ move") || strings.Contains(rendered, "Up/Down move") {
+		t.Fatalf("new task modal should use arrow glyphs for field movement:\n%s", rendered)
+	}
 
 	result := handleNewTaskKey(cfg, index, input, 2, false, false, tea.KeyMsg{Type: tea.KeyUp})
 	if result.field != 1 || result.silent {
@@ -105,6 +111,9 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 	raw = renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen)
 	if !strings.Contains(raw, modalKeyStyle.Render("[ ]")+" "+modalValueStyle.Render("Silent")) {
 		t.Fatalf("focused silent checkbox should color only the checkbox glyph:\n%s", raw)
+	}
+	if rendered := ansi.Strip(raw); !strings.Contains(rendered, "Space toggle") || strings.Contains(rendered, "Space choices") {
+		t.Fatalf("silent field actions should advertise only checkbox toggling:\n%s", rendered)
 	}
 
 	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeySpace})
@@ -121,6 +130,10 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 	if result.field != 0 || !result.silent {
 		t.Fatalf("up should move to type while keeping checkbox state: %#v", result)
 	}
+	raw = renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen)
+	if rendered := ansi.Strip(raw); !strings.Contains(rendered, "Space choices") || !strings.Contains(rendered, "←/→ type") || strings.Contains(rendered, "Space toggle") {
+		t.Fatalf("type field actions should advertise only type controls:\n%s", rendered)
+	}
 	result = handleNewTaskKey(cfg, result.index, result.input, result.field, result.silent, result.typeOpen, tea.KeyMsg{Type: tea.KeySpace})
 	if !result.typeOpen {
 		t.Fatalf("space on type should open dropdown: %#v", result)
@@ -136,6 +149,29 @@ func TestNewTaskModalRendersAndTogglesSilentCheckbox(t *testing.T) {
 	rendered = ansi.Strip(renderNewTaskModal(cfg, result.index, result.input, 60, result.field, result.silent, result.typeOpen))
 	if !strings.Contains(rendered, "> Shell") {
 		t.Fatalf("new task modal should render open type dropdown:\n%s", rendered)
+	}
+}
+
+func TestPromptActionFootersUseArrowGlyphs(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	ctx := promptContext{prompt: promptMoveTask, state: st, selectedTask: &st.Tasks[0]}
+	input := textinput.New()
+	input.SetValue("in")
+
+	closed := ansi.Strip(renderPromptActions(ctx, input, false))
+	if !strings.Contains(closed, "↓ suggestions") || strings.Contains(closed, "Down suggestions") {
+		t.Fatalf("closed autocomplete footer should use down arrow glyph:\n%s", closed)
+	}
+
+	open := ansi.Strip(renderPromptActions(ctx, input, true))
+	if !strings.Contains(open, "↑/↓ move") || strings.Contains(open, "Up/Down move") {
+		t.Fatalf("open autocomplete footer should use arrow glyphs:\n%s", open)
+	}
+
+	silent := ansi.Strip(renderSilentPromptActions(promptEditTask, true))
+	if !strings.Contains(silent, "↑/↓ move") || strings.Contains(silent, "Up/Down move") {
+		t.Fatalf("silent prompt footer should use arrow glyphs:\n%s", silent)
 	}
 }
 
@@ -557,6 +593,9 @@ func TestClientCommandMenuOpensFromHelpAndCanRepaint(t *testing.T) {
 	if !strings.Contains(view, "Command palette") || !strings.Contains(view, "Repaint") || !strings.Contains(view, "Copy pane content") {
 		t.Fatalf("command menu missing expected actions:\n%s", view)
 	}
+	if !strings.Contains(view, "↑/↓ move") || strings.Contains(view, "Up/Down move") {
+		t.Fatalf("command menu should use arrow glyphs in footer actions:\n%s", view)
+	}
 
 	updated, cmd = model.handleCommandMenuKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(ClientModel)
@@ -675,8 +714,8 @@ func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {
 	if !confirmKeyCancels(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyEsc}) {
 		t.Fatal("delete task should cancel with esc")
 	}
-	if !confirmKeyCancels(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}) {
-		t.Fatal("delete task should cancel with n")
+	if confirmKeyCancels(confirmDeleteTask, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}) {
+		t.Fatal("delete task should not cancel with n")
 	}
 }
 

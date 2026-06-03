@@ -509,7 +509,7 @@ func renderPromptActions(ctx promptContext, input textinput.Model, menuOpen bool
 	submitLabel := promptSubmitActionLabel(ctx, input.Value())
 	if menuOpen {
 		actions := []string{modalKeyStyle.Render("Enter") + " choose", modalKeyStyle.Render("Tab") + " choose"}
-		actions = append(actions, modalKeyStyle.Render("Up/Down")+" move", modalKeyStyle.Render("Esc")+" close suggestions")
+		actions = append(actions, modalKeyStyle.Render("↑/↓")+" move", modalKeyStyle.Render("Esc")+" close suggestions")
 		return strings.Join(actions, "  ")
 	}
 	actions := []string{}
@@ -517,7 +517,7 @@ func renderPromptActions(ctx promptContext, input textinput.Model, menuOpen bool
 		actions = append(actions, modalKeyStyle.Render("Enter")+" "+submitLabel)
 	}
 	if promptHasAutocomplete(ctx.prompt) && len(promptMatchedSuggestions(ctx, input.Value())) > 0 {
-		actions = append(actions, modalKeyStyle.Render("Down")+" suggestions")
+		actions = append(actions, modalKeyStyle.Render("↓")+" suggestions")
 	}
 	actions = append(actions, modalKeyStyle.Render("Esc")+" cancel")
 	return strings.Join(actions, "  ")
@@ -578,7 +578,7 @@ func renderSilentPromptModal(ctx promptContext, input textinput.Model, width int
 func renderSilentPromptActions(prompt promptKind, canSubmit bool) string {
 	actions := []string{
 		modalKeyStyle.Render("Tab") + " move",
-		modalKeyStyle.Render("Up/Down") + " move",
+		modalKeyStyle.Render("↑/↓") + " move",
 		modalKeyStyle.Render("Space") + " toggle",
 		modalKeyStyle.Render("Esc") + " cancel",
 	}
@@ -704,7 +704,7 @@ func renderConfirmActions(confirm confirmKind) string {
 		return modalKeyStyle.Render("Enter") + " upgrade  " + modalKeyStyle.Render("Esc")
 	}
 	if confirm == confirmDeleteTask {
-		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("N") + " " + modalKeyStyle.Render("Esc")
+		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("Esc")
 	}
 	return modalKeyStyle.Render("Enter") + " delete  " + modalKeyStyle.Render("Esc")
 }
