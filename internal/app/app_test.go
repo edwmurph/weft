@@ -18,6 +18,16 @@ import (
 	weftversion "github.com/edwmurph/weft/internal/version"
 )
 
+func requireMacPlutil(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("iTerm2 plist checks require macOS plutil")
+	}
+	if _, err := os.Stat("/usr/bin/plutil"); err != nil {
+		t.Skipf("iTerm2 plist checks require /usr/bin/plutil: %v", err)
+	}
+}
+
 func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 	help := cliHelpText()
 
@@ -474,6 +484,8 @@ func writeAppTestSourceCheckout(t *testing.T) string {
 }
 
 func TestIterm2PlutilHelpersAddKeyMapping(t *testing.T) {
+	requireMacPlutil(t)
+
 	path := filepath.Join(t.TempDir(), "com.googlecode.iterm2.plist")
 	if err := os.WriteFile(path, []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -550,6 +562,8 @@ func TestIterm2PlutilHelpersAddKeyMapping(t *testing.T) {
 }
 
 func TestIterm2FixRequiresOptionKeysEsc(t *testing.T) {
+	requireMacPlutil(t)
+
 	path := filepath.Join(t.TempDir(), "com.googlecode.iterm2.plist")
 	if err := os.WriteFile(path, []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -596,9 +610,8 @@ func TestIterm2FixRequiresOptionKeysEsc(t *testing.T) {
 }
 
 func TestOfferDoctorKeyFixExplainsConfiguredButStaleItermSession(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("iTerm2 plist checks require macOS plutil")
-	}
+	requireMacPlutil(t)
+
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	prefsDir := filepath.Join(home, "Library", "Preferences")
@@ -669,9 +682,8 @@ func TestOfferDoctorKeyFixExplainsConfiguredButStaleItermSession(t *testing.T) {
 }
 
 func TestOfferDoctorKeyFixExplainsCustomPrefsNeedRestart(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("iTerm2 plist checks require macOS plutil")
-	}
+	requireMacPlutil(t)
+
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	defaultPrefsDir := filepath.Join(home, "Library", "Preferences")
