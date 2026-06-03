@@ -48,6 +48,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.TitleHookTimeoutSeconds != 10 {
 		t.Fatalf("TitleHookTimeoutSeconds = %d", cfg.TitleHookTimeoutSeconds)
 	}
+	if cfg.TerminalAttention.Enabled || cfg.TerminalAttention.RequestAttention != "once" {
+		t.Fatalf("TerminalAttention = %#v", cfg.TerminalAttention)
+	}
 	if cfg.KeyBindings.Drawer != "C-b" {
 		t.Fatalf("Drawer = %q", cfg.KeyBindings.Drawer)
 	}
@@ -79,6 +82,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	defaultText := "\n" + string(data)
 	for _, expected := range []string{
 		"\ndefault_task_type = \"codex\"",
+		"\n[terminal_attention]",
+		"\nenabled = false",
+		"\nrequest_attention = \"once\"",
 		"\n[task_types.codex]",
 		"\n[task_types.shell]",
 		"\nnew_task = \"n\"",
@@ -97,6 +103,10 @@ func TestLoadConfigAppliesCurrentTaskKeys(t *testing.T) {
 default_task_type = "shell"
 title_hook_command = "hooks/title.sh"
 title_hook_timeout_seconds = 3
+
+[terminal_attention]
+enabled = true
+request_attention = "off"
 
 [task_types.codex]
 command = "codex --model gpt-5"
@@ -156,6 +166,9 @@ quit = "Q"
 	if cfg.TitleHookCommand != "hooks/title.sh" || cfg.TitleHookTimeoutSeconds != 3 {
 		t.Fatalf("title hook = %q/%d", cfg.TitleHookCommand, cfg.TitleHookTimeoutSeconds)
 	}
+	if !cfg.TerminalAttention.Enabled || cfg.TerminalAttention.RequestAttention != "off" {
+		t.Fatalf("terminal attention = %#v", cfg.TerminalAttention)
+	}
 	if cfg.KeyBindings.Drawer != "C-a" ||
 		cfg.KeyBindings.FocusLeft != "h" ||
 		cfg.KeyBindings.FocusRight != "l" ||
@@ -172,6 +185,24 @@ quit = "Q"
 		cfg.KeyBindings.Help != "H" ||
 		cfg.KeyBindings.Quit != "Q" {
 		t.Fatalf("key bindings = %#v", cfg.KeyBindings)
+	}
+}
+
+func TestLoadConfigRejectsInvalidTerminalAttentionRequest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+[terminal_attention]
+request_attention = "yes"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected terminal attention config error")
+	}
+	if !strings.Contains(err.Error(), `terminal_attention.request_attention must be "off" or "once"`) {
+		t.Fatalf("error = %v", err)
 	}
 }
 

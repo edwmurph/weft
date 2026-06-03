@@ -23,6 +23,10 @@ default_task_type = "codex"
 title_hook_command = ""
 title_hook_timeout_seconds = 10
 
+[terminal_attention]
+enabled = false
+request_attention = "once"
+
 [task_types.codex]
 label = "Codex"
 kind = "codex"
@@ -52,6 +56,20 @@ title_template = "Tests"
 ```
 
 During dashboard upgrade, any idle terminal task can restart as a fresh task with saved history/cwd. A terminal task running foreground work blocks `U` until it becomes idle. This is not shell resume: Weft keeps prior visible history as read-only scrollback and starts the fresh command from the latest cwd reported by OSC 7, but jobs, environment mutations, shell variables, and unsubmitted input are not preserved.
+
+## Terminal Attention
+
+Enable terminal attention when you want Weft to signal attention outside the dashboard:
+
+```toml
+[terminal_attention]
+enabled = true
+request_attention = "once"
+```
+
+Today the attention provider is iTerm2-only. When the attached client is running in iTerm2, Weft posts an iTerm2 notification when an existing task newly needs attention after the initial snapshot. Notification text uses the task title, for example `Tests needs attention`, and avoids shell/session title prefixes when the task has its own title. Creating a new task does not notify, and the active task console is treated as already acknowledged. `request_attention = "once"` also asks iTerm2 to draw attention once for that transition. This includes configured shell commands that finish foreground work, such as a `sleep` command returning to the shell prompt, even when other tasks already need attention. Depending on iTerm2 and macOS settings, the notification can appear as a popup and the attention request can show iTerm2's tab attention indicator or request Dock attention. Weft does not set iTerm2's session badge text because that renders as an in-terminal watermark.
+
+Run `weft doctor attention` from iTerm2 if the Dock bounces but no notification popup appears. It can inspect and offer to enable iTerm2 profile notifications, then sends a test notification and prints the remaining iTerm2 Filter Alerts and macOS Notification settings to check.
 
 ## Title Templates
 

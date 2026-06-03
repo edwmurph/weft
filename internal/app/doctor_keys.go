@@ -669,6 +669,19 @@ func upsertPlistInteger(path string, keyPath string, value string) error {
 	return plutilEdit("set plist integer", path, "-insert", keyPath, "-integer", value)
 }
 
+func upsertPlistBool(path string, keyPath string, value bool) error {
+	raw := "false"
+	if value {
+		raw = "true"
+	}
+	if _, found, err := plistExtractRawOptional(path, keyPath); err != nil {
+		return err
+	} else if found {
+		return plutilEdit("set plist bool", path, "-replace", keyPath, "-bool", raw)
+	}
+	return plutilEdit("set plist bool", path, "-insert", keyPath, "-bool", raw)
+}
+
 func commandOutputError(action string, args []string, err error, output []byte) error {
 	lines := []string{
 		fmt.Sprintf("%s failed: %v", action, err),

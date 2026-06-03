@@ -56,11 +56,17 @@ type TaskType struct {
 	TitleTemplate string `toml:"title_template"`
 }
 
+type TerminalAttention struct {
+	Enabled          bool   `toml:"enabled"`
+	RequestAttention string `toml:"request_attention"`
+}
+
 type Config struct {
 	DefaultTaskType         string              `toml:"default_task_type"`
 	TaskTypes               map[string]TaskType `toml:"task_types"`
 	TitleHookCommand        string              `toml:"title_hook_command"`
 	TitleHookTimeoutSeconds int                 `toml:"title_hook_timeout_seconds"`
+	TerminalAttention       TerminalAttention   `toml:"terminal_attention"`
 	KeyBindings             KeyBindings         `toml:"key_bindings"`
 }
 
@@ -112,7 +118,11 @@ func DefaultConfig() Config {
 		TaskTypes:               taskTypes,
 		TitleHookCommand:        "",
 		TitleHookTimeoutSeconds: 10,
-		KeyBindings:             DefaultKeyBindings(),
+		TerminalAttention: TerminalAttention{
+			Enabled:          false,
+			RequestAttention: "once",
+		},
+		KeyBindings: DefaultKeyBindings(),
 	}
 }
 
@@ -256,7 +266,11 @@ func LoadConfig(path string) (Config, error) {
 		TaskTypes               map[string]TaskType `toml:"task_types"`
 		TitleHookCommand        string              `toml:"title_hook_command"`
 		TitleHookTimeoutSeconds int                 `toml:"title_hook_timeout_seconds"`
-		KeyBindings             struct {
+		TerminalAttention       struct {
+			Enabled          bool   `toml:"enabled"`
+			RequestAttention string `toml:"request_attention"`
+		} `toml:"terminal_attention"`
+		KeyBindings struct {
 			Drawer       string `toml:"drawer"`
 			FocusLeft    string `toml:"focus_left"`
 			FocusRight   string `toml:"focus_right"`
@@ -316,6 +330,13 @@ func LoadConfig(path string) (Config, error) {
 	if raw.TitleHookTimeoutSeconds != 0 {
 		cfg.TitleHookTimeoutSeconds = raw.TitleHookTimeoutSeconds
 	}
+	if md.IsDefined("terminal_attention", "enabled") {
+		cfg.TerminalAttention.Enabled = raw.TerminalAttention.Enabled
+	}
+	if strings.TrimSpace(raw.TerminalAttention.RequestAttention) != "" {
+		cfg.TerminalAttention.RequestAttention = raw.TerminalAttention.RequestAttention
+	}
+	cfg.TerminalAttention.RequestAttention = strings.ToLower(strings.TrimSpace(cfg.TerminalAttention.RequestAttention))
 	applyBinding := func(target *string, value string) {
 		if strings.TrimSpace(value) != "" {
 			*target = value
@@ -381,6 +402,15 @@ func (c Config) Validate() error {
 	c.normalizeTaskTypes()
 	if c.TitleHookTimeoutSeconds <= 0 {
 		return ConfigError{Message: "title_hook_timeout_seconds must be greater than zero"}
+	}
+	requestAttention := strings.ToLower(strings.TrimSpace(c.TerminalAttention.RequestAttention))
+	if requestAttention == "" {
+		requestAttention = "once"
+	}
+	switch requestAttention {
+	case "off", "once":
+	default:
+		return ConfigError{Message: "terminal_attention.request_attention must be \"off\" or \"once\""}
 	}
 	if _, ok := c.TaskTypes[c.DefaultTaskType]; !ok {
 		return ConfigError{Message: fmt.Sprintf("default_task_type %q is not defined in task_types", c.DefaultTaskType)}
@@ -494,6 +524,10 @@ default_task_type = "codex"
 # generated title for {auto}.
 title_hook_command = ""
 title_hook_timeout_seconds = 10
+
+[terminal_attention]
+enabled = false
+request_attention = "once"
 
 [task_types.codex]
 label = "Codex"

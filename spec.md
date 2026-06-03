@@ -97,6 +97,10 @@ The interactive client owns only terminal rendering, local input collection, and
 
 Only one interactive TUI client owns foreground rendering and input at a time in the first implementation. A second `weft` attach should take over cleanly and cause the previous client to exit with a short message that another client attached. Non-interactive CLI commands such as `weft status` can run concurrently.
 
+When an interactive client attaches, it sets the terminal icon, tab, and window title to exactly `Weft` using standard terminal title sequences.
+
+When `terminal_attention.enabled = true`, the attached interactive client may emit terminal-emulator attention sequences through a terminal-specific provider. Current attention support is iTerm2-only and is detected from the attached terminal environment. Weft must not emit iTerm2-private sequences in other terminals. Weft uses the global unsilenced `needs attention` task set, using the same semantics as workspace cards: active tasks are excluded; ready, sitting, and stopped tasks suppressed by task-level or group-level silence are excluded; killed and error tasks still count. The terminal-attention task set must also treat snapshot loading tasks and terminal foreground-command tasks as active so a configured shell command such as `sleep` notifies only after it returns to the prompt. After the initial snapshot, Weft posts a provider notification whenever an existing task newly enters that attention set, even if other tasks already need attention. Notification text should be concise and include the task title, for example `Tests needs attention`, avoiding shell/session title prefixes when the task has its own title. A task first observed after the client is initialized is treated as user-created and its first attention state is acknowledged without notification. If the active task console is open, that task is also treated as acknowledged and does not notify later merely because focus moves away. When `terminal_attention.request_attention = "once"`, the client also asks the provider to request attention once where supported; `"off"` disables the attention request. The iTerm2 provider must not set iTerm2 session badge text for this feature because that renders as an in-terminal watermark. The iTerm2 provider may emit an empty iTerm2 session-badge sequence only to clear stale badge text left by older test builds.
+
 ## IPC
 
 Client and supervisor communication should use a small versioned protocol over the local Unix socket. The protocol should support:
@@ -563,6 +567,10 @@ title_template = "Shell"
 
 title_hook_command = ""
 title_hook_timeout_seconds = 10
+
+[terminal_attention]
+enabled = false
+request_attention = "once"
 ```
 
 ## Focus Model
@@ -812,6 +820,14 @@ Global `--clear`:
 - rejects unknown task type IDs
 - applies an explicit title when supplied, otherwise copies the selected task type's `title_template`
 
+`weft doctor attention`:
+
+- detects known terminal emulators from environment metadata
+- for detected iTerm2 sessions on macOS, inspects the current/default profile's Notification Center alert setting, reports the preferences path and profile, offers to enable the setting after writing a plist backup, and requires explicit confirmation before mutating preferences
+- sends an OSC 9 notification test when iTerm2 profile alerts are enabled and prints the remaining manual checks for iTerm2 Filter Alerts and macOS Notification settings
+- if automatic terminal configuration fails, reports the failed step, preferences path, profile, wrapped command/output when available, and the manual fallback
+- does not mutate terminal profiles or Weft configuration without explicit confirmation
+
 `weft doctor keys`:
 
 - interactively captures Backspace, Option+Backspace, and Ctrl+Backspace from the current terminal
@@ -868,6 +884,10 @@ Default config:
 default_task_type = "codex"
 title_hook_command = ""
 title_hook_timeout_seconds = 10
+
+[terminal_attention]
+enabled = false
+request_attention = "once"
 
 [task_types.codex]
 label = "Codex"

@@ -73,6 +73,7 @@ type ClientModel struct {
 	lastResumeScan           time.Time
 	toastText                string
 	toastID                  int
+	terminalAttention        terminalAttentionState
 	mouseSelection           consoleSelection
 	newWorkspaceCardSelected bool
 	newTaskRowSelected       bool
@@ -97,7 +98,12 @@ func RunClient(rt config.Runtime, cfg config.Config) error {
 	inputRouter.commandMenu = func() {
 		program.Send(clientCommandMenuMsg{})
 	}
-	_, err := program.Run()
+	finalModel, err := program.Run()
+	if model, ok := finalModel.(ClientModel); ok {
+		if cmd := terminalAttentionExitCommand(model.terminalAttention); cmd != nil {
+			_ = cmd()
+		}
+	}
 	return err
 }
 
@@ -115,7 +121,7 @@ func NewClientModel(rt config.Runtime, cfg config.Config) ClientModel {
 }
 
 func (m ClientModel) Init() tea.Cmd {
-	return tea.Batch(m.request("attach_client", nil), tickClientSnapshot())
+	return tea.Batch(terminalTitleCommand(), m.request("attach_client", nil), tickClientSnapshot())
 }
 
 func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -133,12 +139,12 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = typed.err.Error()
 			return m, nil
 		}
-		m.applyResponse(typed.response)
+		attentionCmd := m.applyResponse(typed.response)
 		nextLoadingTick := m.ensureLoadingTick()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
-			return m, tea.Batch(nextLoadingTick, m.request("client_detached", nil), tea.Quit)
+			return m, tea.Batch(attentionCmd, nextLoadingTick, m.request("client_detached", nil), tea.Quit)
 		}
-		return m, nextLoadingTick
+		return m, tea.Batch(attentionCmd, nextLoadingTick)
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
 	case clientCommandMenuMsg:
@@ -698,7 +704,7 @@ func cloneArgs(args map[string]string) map[string]string {
 	return next
 }
 
-func (m *ClientModel) applyResponse(response ipc.Response) {
+func (m *ClientModel) applyResponse(response ipc.Response) tea.Cmd {
 	if response.Snapshot != nil {
 		m.snapshot = *response.Snapshot
 	} else if response.State != nil {
@@ -724,6 +730,9 @@ func (m *ClientModel) applyResponse(response ipc.Response) {
 	m.maybePromptForLaunchWorkspace()
 	m.syncCodexScroll()
 	m.syncInputRouter()
+	next, cmd := terminalAttentionCommand(m.cfg, m.snapshot, m.terminalAttention)
+	m.terminalAttention = next
+	return cmd
 }
 
 func (m *ClientModel) syncConfig(response ipc.Response) {

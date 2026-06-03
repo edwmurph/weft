@@ -51,6 +51,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		"weft new [--type id] [title] Create a task.",
 		"weft close --kill [--yes]    Stop the supervisor and all task PTYs.",
 		"weft backup create           Back up config, state, and logs.",
+		"weft doctor attention        Check terminal notification settings.",
 		"weft doctor keys             Diagnose terminal key encoding.",
 	} {
 		if !strings.Contains(help, expected) {
@@ -481,6 +482,170 @@ func writeAppTestSourceCheckout(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func TestIterm2AttentionPlutilHelpersEnableNotifications(t *testing.T) {
+	requireMacPlutil(t)
+
+	path := filepath.Join(t.TempDir(), "com.googlecode.iterm2.plist")
+	if err := os.WriteFile(path, []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Default Bookmark Guid</key>
+  <string>default-guid</string>
+  <key>New Bookmarks</key>
+  <array>
+    <dict>
+      <key>Guid</key>
+      <string>default-guid</string>
+      <key>Name</key>
+      <string>Default</string>
+      <key>BM Growl</key>
+      <false/>
+    </dict>
+  </array>
+</dict>
+</plist>
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := selectIterm2ProfileTarget(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := iterm2NotificationAlertsEnabled(path, target.Index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enabled {
+		t.Fatal("notifications should start disabled")
+	}
+
+	if err := updateIterm2NotificationAlertsFile(path, target.Index); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err = iterm2NotificationAlertsEnabled(path, target.Index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled {
+		t.Fatal("notifications should be enabled")
+	}
+}
+
+func TestDoctorAttentionReportsEnabledItermNotifications(t *testing.T) {
+	requireMacPlutil(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	prefsDir := filepath.Join(home, "Library", "Preferences")
+	if err := os.MkdirAll(prefsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(prefsDir, "com.googlecode.iterm2.plist")
+	if err := os.WriteFile(path, []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Default Bookmark Guid</key>
+  <string>default-guid</string>
+  <key>New Bookmarks</key>
+  <array>
+    <dict>
+      <key>Guid</key>
+      <string>default-guid</string>
+      <key>Name</key>
+      <string>Default</string>
+      <key>BM Growl</key>
+      <true/>
+    </dict>
+  </array>
+</dict>
+</plist>
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if err := doctorAttention(strings.NewReader(""), &out, []string{"TERM_PROGRAM=iTerm.app", "ITERM_PROFILE=Default"}); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	for _, expected := range []string{
+		"Weft attention doctor",
+		"Preferences: " + path,
+		"Profile: Default",
+		"Notification Center alerts: enabled",
+		"OK: iTerm2 Notification Center alerts are enabled",
+		"\x1b]9;Weft test notification\a",
+		"Sent iTerm2 test notification.",
+		"Filter Alerts",
+		"macOS System Settings",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("output missing %q:\n%s", expected, text)
+		}
+	}
+}
+
+func TestDoctorAttentionCanApplyItermNotificationFix(t *testing.T) {
+	requireMacPlutil(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	prefsDir := filepath.Join(home, "Library", "Preferences")
+	if err := os.MkdirAll(prefsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(prefsDir, "com.googlecode.iterm2.plist")
+	if err := os.WriteFile(path, []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Default Bookmark Guid</key>
+  <string>default-guid</string>
+  <key>New Bookmarks</key>
+  <array>
+    <dict>
+      <key>Guid</key>
+      <string>default-guid</string>
+      <key>Name</key>
+      <string>Default</string>
+      <key>BM Growl</key>
+      <false/>
+    </dict>
+  </array>
+</dict>
+</plist>
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if err := doctorAttention(strings.NewReader("y\n"), &out, []string{"TERM_PROGRAM=iTerm.app", "ITERM_PROFILE=Default"}); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := iterm2NotificationAlertsEnabled(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled {
+		t.Fatal("doctor attention should enable notifications")
+	}
+	text := out.String()
+	for _, expected := range []string{
+		"Issue: iTerm2 Notification Center alerts are disabled",
+		"Apply this iTerm2 notification fix now?",
+		"Updated iTerm2 profile \"Default\".",
+		"Backup: ",
+		"Open a new iTerm2 tab or window",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("output missing %q:\n%s", expected, text)
+		}
+	}
 }
 
 func TestIterm2PlutilHelpersAddKeyMapping(t *testing.T) {

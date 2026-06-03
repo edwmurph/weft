@@ -47,6 +47,7 @@ weft refresh                 Request a fresh dashboard snapshot.
 weft status [--json]         Show workspace, group, and task state.
 weft version                 Show CLI, runtime, and dashboard versions.
 weft doctor                  Check local runtime and task command health.
+weft doctor attention        Check terminal notification settings.
 weft doctor keys             Diagnose terminal key encoding.
 
 Tasks and organization:
@@ -72,6 +73,8 @@ weft config init [--force]   Write the default config.
 
 Run `weft close` without an id to detach the active Weft client while tasks keep running. Pass an id to close a task. Use `weft close --kill` only when you want to stop the runtime and all tasks after confirmation.
 
+When the interactive dashboard is open, Weft sets the terminal tab title to `Weft`.
+
 ## Upgrades
 
 After `brew upgrade weft`, reopen the dashboard with `weft`.
@@ -85,3 +88,7 @@ Codex agent tasks can be resumed after a confirmed dashboard upgrade when Weft h
 Use `weft doctor keys` when Option/Alt shortcuts do not behave like the rest of your terminal. It checks Backspace, Option+Backspace, and Ctrl+Backspace, then prints the terminal setting needed when Option is being sent as plain Backspace.
 
 On iTerm2, Weft can offer to update the current/default profile after writing a plist backup.
+
+## Attention Diagnostics
+
+Use `weft doctor attention` when terminal attention is enabled but iTerm2 does not show notification popups. On iTerm2, Weft can inspect the current/default profile, offer to enable Notification Center alerts after writing a plist backup, send a test notification, and print the remaining macOS and iTerm2 filter checks.

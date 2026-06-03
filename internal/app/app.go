@@ -148,6 +148,7 @@ func cliHelpText() string {
 		"  weft status [--json]         Show supervisor, workspace, group, and task state.",
 		"  weft version                 Show CLI, supervisor, and dashboard versions.",
 		"  weft doctor                  Check local runtime and task command health.",
+		"  weft doctor attention        Check terminal notification settings.",
 		"  weft doctor keys             Diagnose terminal key encoding.",
 		"",
 		"Tasks and organization:",
@@ -646,6 +647,9 @@ func waitForSupervisorStop(rt config.Runtime, timeout time.Duration) {
 
 func doctor(args []string) error {
 	if len(args) > 0 {
+		if len(args) == 1 && args[0] == "attention" {
+			return doctorAttention(os.Stdin, os.Stdout, os.Environ())
+		}
 		if len(args) == 1 && args[0] == "keys" {
 			return doctorKeys(os.Stdin, os.Stdout)
 		}
