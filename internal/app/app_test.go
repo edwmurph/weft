@@ -520,6 +520,9 @@ func TestSkillInstallUsesCodexHomeAndForce(t *testing.T) {
 	if !strings.Contains(string(data), "weft task notes set") ||
 		!strings.Contains(string(data), "weft status --json") ||
 		!strings.Contains(string(data), "resume_id") ||
+		!strings.HasPrefix(string(data), "---\nname: weft\n") ||
+		!strings.Contains(string(data), "\ndescription: ") ||
+		!strings.Contains(string(data), "\n---\n\n# Weft") ||
 		!strings.Contains(out.String(), filepath.Join(codexHome, "skills", "weft")) {
 		t.Fatalf("installed skill/output missing expected content:\n%s\n%s", data, out.String())
 	}

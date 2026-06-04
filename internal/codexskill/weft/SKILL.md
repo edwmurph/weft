@@ -1,3 +1,8 @@
+---
+name: weft
+description: Use when running inside a Weft task, updating Weft task notes, or diagnosing local Weft dashboard, supervisor, runtime, config, state, version, protocol, or task-type issues.
+---
+
 # Weft
 
 Use this skill when running as Codex inside a Weft task or when diagnosing a local Weft dashboard issue.
