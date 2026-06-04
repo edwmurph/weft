@@ -1199,6 +1199,11 @@ func TestTasksPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 			strings.Contains(capture, "planning (1)") &&
 			taskRowVisible(capture, "Planning Task")
 	})
+	planningDashboardVisible := func(capture string) bool {
+		return !strings.Contains(capture, "Edit group") &&
+			strings.Contains(capture, "planning (1)") &&
+			taskRowVisible(capture, "Planning Task")
+	}
 
 	directRun(t, env, "send-keys", "-t", pane, "k")
 	time.Sleep(250 * time.Millisecond)
@@ -1207,12 +1212,10 @@ func TestTasksPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	})
 	directRun(t, env, "send-keys", "-t", pane, "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Group") && strings.Contains(capture, "planning")
+		return strings.Contains(capture, "Edit group") && strings.Contains(capture, "planning")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "Escape")
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return !strings.Contains(capture, "Edit group")
-	})
+	waitForOutput(t, clientOutput, planningDashboardVisible)
 	directRun(t, env, "send-keys", "-t", pane, "C-c")
 	if !waitForBool(8*time.Second, func() bool { return clientExited(clientDone) }) {
 		t.Fatalf("planning cursor client did not exit")
@@ -1230,12 +1233,10 @@ func TestTasksPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	})
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "e")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Group") && strings.Contains(capture, "planning")
+		return strings.Contains(capture, "Edit group") && strings.Contains(capture, "planning")
 	})
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "Escape")
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return !strings.Contains(capture, "Edit group")
-	})
+	waitForOutput(t, clientOutput, planningDashboardVisible)
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "j")
 	time.Sleep(250 * time.Millisecond)
 	directRun(t, env, "send-keys", "-t", pane+"-reattach", "e")
