@@ -47,16 +47,47 @@ done
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)
 home_runtime=${HOME:-}/.weft
+registered_worktrees=()
+
+load_registered_worktrees() {
+	local record_path=
+
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		if [[ -z "$line" ]]; then
+			if [[ -n "$record_path" ]]; then
+				registered_worktrees+=("$record_path")
+			fi
+			record_path=
+			continue
+		fi
+		case "$line" in
+			worktree\ *)
+				record_path=${line#worktree }
+				;;
+		esac
+	done < <(git -C "$repo_root" worktree list --porcelain 2>/dev/null || true)
+	if [[ -n "$record_path" ]]; then
+		registered_worktrees+=("$record_path")
+	fi
+}
 
 is_weft_supervisor_command() {
 	local command=$1
 	local exe=
 	local arg=
+	local base=
 	# shellcheck disable=SC2086
 	set -- $command
 	exe=${1:-}
 	arg=${2:-}
-	[[ "${exe##*/}" == "weft" && "$arg" == "_supervisor" ]]
+	base=${exe##*/}
+	case "$base" in
+		weft | weft-* | weft_* | weft.*)
+			[[ "$arg" == "_supervisor" ]]
+			return
+			;;
+	esac
+	return 1
 }
 
 runtime_dir_for_pid() {
@@ -98,6 +129,16 @@ runtime_is_removable_dir() {
 	return 1
 }
 
+runtime_under_registered_worktree() {
+	local runtime_dir=$1
+	local worktree=
+
+	for worktree in "${registered_worktrees[@]}"; do
+		[[ "$runtime_dir" == "$worktree/.weft" || "$runtime_dir" == "$worktree/.weft-runtime" ]] && return 0
+	done
+	return 1
+}
+
 classify_runtime() {
 	local runtime_dir=$1
 	if [[ -z "$runtime_dir" ]]; then
@@ -106,8 +147,10 @@ classify_runtime() {
 		printf 'keep:installed ~/.weft runtime'
 	elif [[ "$runtime_dir" == "$repo_root/.weft" || "$runtime_dir" == "$repo_root/.weft-runtime" ]]; then
 		printf 'keep:primary checkout runtime'
-	elif [[ "$runtime_dir" == "$repo_root/.worktrees/"* ]]; then
+	elif runtime_under_registered_worktree "$runtime_dir"; then
 		printf 'keep:registered worktree runtime; use scripts/cleanup-worktrees.sh'
+	elif [[ "$runtime_dir" == "$repo_root/.worktrees/"* ]]; then
+		printf 'keep:unregistered .worktrees runtime; inspect separately'
 	elif is_temp_runtime_dir "$runtime_dir"; then
 		printf 'target:temp runtime'
 	else
@@ -152,8 +195,10 @@ wait_for_pid_exit() {
 targets=()
 kept=()
 total_target_kib=0
+load_registered_worktrees
 
 while IFS= read -r line || [[ -n "$line" ]]; do
+	line=${line#"${line%%[![:space:]]*}"}
 	[[ -z "$line" ]] && continue
 	pid=${line%%[[:space:]]*}
 	rest=${line#"$pid"}

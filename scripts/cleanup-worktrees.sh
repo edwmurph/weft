@@ -55,6 +55,8 @@ worktree_root=$repo_root/.worktrees
 targets=()
 stale_targets=()
 kept_external=()
+registered_paths=()
+unregistered_physical=()
 record_path=
 record_prunable=false
 
@@ -63,6 +65,7 @@ flush_record() {
 		return
 	fi
 
+	registered_paths+=("$record_path")
 	if [[ "$record_path" == "$repo_root" ]]; then
 		:
 	elif [[ "$record_path" == "$worktree_root"/* ]]; then
@@ -94,6 +97,24 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 	esac
 done < <(git -C "$repo_root" worktree list --porcelain)
 flush_record
+
+path_is_registered() {
+	local path=$1
+	local registered=
+
+	for registered in "${registered_paths[@]}"; do
+		[[ "$path" == "$registered" ]] && return 0
+	done
+	return 1
+}
+
+if [[ -d "$worktree_root" ]]; then
+	while IFS= read -r physical_path; do
+		if ! path_is_registered "$physical_path"; then
+			unregistered_physical+=("$physical_path")
+		fi
+	done < <(find "$worktree_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+fi
 
 display_path() {
 	local path=$1
@@ -202,6 +223,31 @@ runtime_status() {
 		printf 'no runtime dir'
 	else
 		printf '%s' "$summary"
+	fi
+}
+
+unregistered_physical_status() {
+	local path=$1
+	local git_file=$path/.git
+	local gitdir=
+	local status=
+
+	if [[ -f "$git_file" ]]; then
+		IFS= read -r gitdir <"$git_file" || true
+		gitdir=${gitdir#gitdir: }
+		if [[ -n "$gitdir" ]]; then
+			printf 'gitdir %s' "$gitdir"
+		else
+			printf 'git file present'
+		fi
+		return
+	fi
+
+	status=$(runtime_status "$path")
+	if [[ "$status" != 'no runtime dir' ]]; then
+		printf 'runtime-only: %s' "$status"
+	else
+		printf 'plain directory'
 	fi
 }
 
@@ -333,6 +379,13 @@ print_plan() {
 
 	if [[ ${#kept_external[@]} -gt 0 ]]; then
 		printf '\nKeeping %d registered worktree(s) outside %s.\n' "${#kept_external[@]}" "$worktree_root"
+	fi
+
+	if [[ ${#unregistered_physical[@]} -gt 0 ]]; then
+		printf '\nUnregistered physical .worktrees/ directories not removed (%d):\n' "${#unregistered_physical[@]}"
+		for target in "${unregistered_physical[@]}"; do
+			printf '  - %s (%s)\n' "$(display_path "$target")" "$(unregistered_physical_status "$target")"
+		done
 	fi
 }
 

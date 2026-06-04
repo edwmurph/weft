@@ -35,6 +35,7 @@ Report:
 - stale temp-runtime supervisors targeted by `cleanup-temp-supervisors.sh`
 - runtime dirs that would be removed only with `--remove-runtime-dirs`
 - supervisors/runtimes kept, especially `~/.weft`
+- unregistered physical directories under `./.worktrees/` that the registered-worktree wrapper will not remove
 - any dirty or unexpected worktrees that make broad cleanup unsafe
 
 ## Execute After Confirmation
@@ -60,7 +61,7 @@ git branch --format="%(refname:short)"
 go -C . run ./cmd/weft doctor memory || weft doctor memory
 ```
 
-Report what remains, including any kept installed supervisor, any kept external worktrees, and any temp supervisors that could not be safely classified.
+Report what remains, including any kept installed supervisor, any kept external worktrees, unregistered physical `./.worktrees/` directories that were not removed, and any temp supervisors that could not be safely classified.
 
 ## Local Branches
 
