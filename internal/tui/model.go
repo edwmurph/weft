@@ -979,18 +979,27 @@ func (m Model) taskCommandForTask(taskID string) string {
 }
 
 func (m *Model) activeOutput() string {
+	return m.activeTerminalANSI((*TerminalScreen).ANSIStringWithCursor)
+}
+
+func (m Model) activePlainLines() []string {
+	return m.activeTerminalPlainLines((*TerminalScreen).PlainLines)
+}
+
+func (m *Model) activeScrollbackOutput() string {
+	return m.activeTerminalANSI((*TerminalScreen).ScrollbackANSIStringWithCursor)
+}
+
+func (m Model) activeScrollbackPlainLines() []string {
+	return m.activeTerminalPlainLines((*TerminalScreen).ScrollbackPlainLines)
+}
+
+func (m Model) activeScreenFooter() (*TerminalScreen, string, bool) {
 	active := state.ActiveTask(m.state)
 	if active == nil {
-		return ""
+		return nil, "", false
 	}
-	footer := m.terminalExitFooter(*active)
-	if screen := m.screens[active.ID]; screen != nil {
-		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return footer
-		}
-		return appendTerminalExitFooter(screen.ANSIStringWithCursor(m.state.Focus == state.FocusConsole && footer == ""), footer)
-	}
-	return footer
+	return m.screens[active.ID], m.terminalExitFooter(*active), m.visible[active.ID]
 }
 
 func (m Model) terminalExitFooter(task state.Task) string {
@@ -1009,49 +1018,26 @@ func (m Model) terminalExitFooter(task state.Task) string {
 	return title + "\n\nProcess exited."
 }
 
-func (m Model) activePlainLines() []string {
-	active := state.ActiveTask(m.state)
-	if active == nil {
-		return nil
+func (m Model) activeTerminalANSI(render func(*TerminalScreen, bool) string) string {
+	screen, footer, visible := m.activeScreenFooter()
+	if screen == nil {
+		return footer
 	}
-	footer := m.terminalExitFooter(*active)
-	if screen := m.screens[active.ID]; screen != nil {
-		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return terminalExitFooterLines(footer)
-		}
-		return appendTerminalExitFooterPlainLines(screen.PlainLines(), footer)
+	if !screen.HasVisibleContent() && !visible {
+		return footer
 	}
-	return terminalExitFooterLines(footer)
+	return appendTerminalExitFooter(render(screen, m.state.Focus == state.FocusConsole && footer == ""), footer)
 }
 
-func (m *Model) activeScrollbackOutput() string {
-	active := state.ActiveTask(m.state)
-	if active == nil {
-		return ""
+func (m Model) activeTerminalPlainLines(render func(*TerminalScreen) []string) []string {
+	screen, footer, visible := m.activeScreenFooter()
+	if screen == nil {
+		return terminalExitFooterLines(footer)
 	}
-	footer := m.terminalExitFooter(*active)
-	if screen := m.screens[active.ID]; screen != nil {
-		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return footer
-		}
-		return appendTerminalExitFooter(screen.ScrollbackANSIStringWithCursor(m.state.Focus == state.FocusConsole && footer == ""), footer)
+	if !screen.HasVisibleContent() && !visible {
+		return terminalExitFooterLines(footer)
 	}
-	return footer
-}
-
-func (m Model) activeScrollbackPlainLines() []string {
-	active := state.ActiveTask(m.state)
-	if active == nil {
-		return nil
-	}
-	footer := m.terminalExitFooter(*active)
-	if screen := m.screens[active.ID]; screen != nil {
-		if !screen.HasVisibleContent() && !m.visible[active.ID] {
-			return terminalExitFooterLines(footer)
-		}
-		return appendTerminalExitFooterPlainLines(screen.ScrollbackPlainLines(), footer)
-	}
-	return terminalExitFooterLines(footer)
+	return appendTerminalExitFooterPlainLines(render(screen), footer)
 }
 
 func appendTerminalExitFooter(output string, footer string) string {

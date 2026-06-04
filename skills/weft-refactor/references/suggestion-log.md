@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-03 - TUI rendering dedupe
+
+- Request: Find and implement another safe refactor that reduces lines of code and makes Weft easier to manage, scale, and reason about.
+- Suggestions: Keep the current workspace/group/task UX unchanged, but make the Tasks pane renderer consume the shared `groupRowsForState` row model instead of rebuilding the new-task, ungrouped-task, group, and nested-task traversal separately from navigation; also route active current-screen and scrollback output through shared footer/visibility helpers.
+- Outcome: Implemented in `.worktrees/safe-scale-refactor`; awaiting review.
+- Evidence: `internal/tui/layout.go`, `internal/tui/model.go`, `internal/tui/model_shared.go`; `deadcode` was clean, and `dupl` identified duplicate task/group traversal plus active-output rendering in `internal/tui`.
+- Deferred: Further duplicate cleanup candidates remain in test fixtures, but this pass intentionally kept the target bounded to TUI rendering.
+
 ## 2026-06-03 - Test-only wrapper prune
 
 - Request: Find and implement a safe refactor that reduces lines of code and makes Weft easier to manage, scale, and reason about.

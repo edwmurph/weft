@@ -764,51 +764,48 @@ func workspaceCardCountLabels(counts workspaceCardCounts) []string {
 
 func renderGroupsPaneWithOptions(cfg config.Config, st state.State, width int, height int, groupCursor int, options workspaceRenderOptions) []string {
 	content := []string{}
-	rowIndex := 0
+	rows := groupRowsForState(st)
 	selectedLine := -1
 	rowWidth := max(0, width-2-(navHorizontalPadding*2))
-	if state.ActiveWorkspace(st) != nil {
-		selected := (rowIndex == groupCursor && st.Focus == state.FocusTasks) || options.newTaskRowSelected
-		taskRow := renderNewTaskTemplateRow(cfg, rowWidth, selected, st.Focus == state.FocusTasks)
-		if rowIndex == groupCursor {
-			selectedLine = len(content)
-		}
-		content = append(content, strings.Repeat(" ", navHorizontalPadding)+taskRow)
-		content = append(content, "")
-		rowIndex++
-	}
-	for _, task := range state.UngroupedTasksForWorkspace(st, st.SelectedWorkspaceID) {
-		taskRow := renderTaskRow(cfg, st, task, rowWidth, false, rowIndex == groupCursor && st.Focus == state.FocusTasks, options)
-		if rowIndex == groupCursor {
-			selectedLine = len(content)
-		}
-		content = append(content, strings.Repeat(" ", navHorizontalPadding)+taskRow)
-		rowIndex++
-	}
-	for _, group := range state.GroupsForWorkspace(st, st.SelectedWorkspaceID) {
-		if rowIndex > 0 && (len(content) == 0 || content[len(content)-1] != "") {
-			content = append(content, "")
-		}
-		collapsed := state.IsGroupCollapsed(st, group.ID)
-		groupRow := renderGroupRow(st, group, collapsed, rowWidth, rowIndex == groupCursor && st.Focus == state.FocusTasks, options)
-		if rowIndex == groupCursor {
-			selectedLine = len(content)
-		}
-		content = append(content, strings.Repeat(" ", navHorizontalPadding)+groupRow)
-		rowIndex++
-		if collapsed {
-			continue
-		}
-		for _, task := range state.TasksForGroup(st, group.ID) {
-			taskRow := renderTaskRow(cfg, st, task, rowWidth, true, rowIndex == groupCursor && st.Focus == state.FocusTasks, options)
+	indent := strings.Repeat(" ", navHorizontalPadding)
+	focused := st.Focus == state.FocusTasks
+	for rowIndex, row := range rows {
+		selected := rowIndex == groupCursor && focused
+		switch row.kind {
+		case groupRowNewTask:
+			selected = selected || options.newTaskRowSelected
 			if rowIndex == groupCursor {
 				selectedLine = len(content)
 			}
-			content = append(content, strings.Repeat(" ", navHorizontalPadding)+taskRow)
-			rowIndex++
+			taskRow := renderNewTaskTemplateRow(cfg, rowWidth, selected, st.Focus == state.FocusTasks)
+			content = append(content, indent+taskRow, "")
+		case groupRowTask:
+			task := state.TaskByID(st, row.taskID)
+			if task == nil {
+				continue
+			}
+			if rowIndex == groupCursor {
+				selectedLine = len(content)
+			}
+			taskRow := renderTaskRow(cfg, st, *task, rowWidth, row.groupID != "", selected, options)
+			content = append(content, indent+taskRow)
+		case groupRowGroup:
+			group := state.GroupByID(st, row.groupID)
+			if group == nil {
+				continue
+			}
+			if rowIndex > 0 && (len(content) == 0 || content[len(content)-1] != "") {
+				content = append(content, "")
+			}
+			if rowIndex == groupCursor {
+				selectedLine = len(content)
+			}
+			collapsed := state.IsGroupCollapsed(st, group.ID)
+			groupRow := renderGroupRow(st, *group, collapsed, rowWidth, selected, options)
+			content = append(content, indent+groupRow)
 		}
 	}
-	if len(content) == 0 && state.ActiveWorkspace(st) == nil {
+	if len(rows) == 0 && state.ActiveWorkspace(st) == nil {
 		content = renderCenteredPaneHelp(width, height, "No workspace selected", "Press "+cfg.KeyBindings.NewWorkspace+" to add one.")
 	}
 	content = scrollPaneContentToLine(content, selectedLine, max(0, height-2))
