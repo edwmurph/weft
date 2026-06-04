@@ -14,7 +14,7 @@ Use this skill for broad, deliberate local cleanup after the user says the activ
 - Preserve the installed-user runtime at `~/.weft` unless the user explicitly asks to stop the live installed Weft supervisor.
 - Preserve any worktree the user has not declared disposable.
 - Treat `scripts/cleanup-worktrees.sh` as authoritative for registered auxiliary worktrees under `./.worktrees/`.
-- Treat `skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh` as authoritative for stale temp-runtime Weft supervisors not registered as worktrees.
+- Treat `.agents/skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh` as authoritative for stale temp-runtime Weft supervisors not registered as worktrees.
 - Do not manually run broad `rm`, `kill`, `pkill`, or `killall` commands. Use the repo scripts so PID/runtime validation stays consistent.
 
 ## Dry Run
@@ -23,7 +23,7 @@ From the primary Weft checkout, run:
 
 ```bash
 scripts/cleanup-worktrees.sh --dry-run
-bash skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh --dry-run
+bash .agents/skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh --dry-run
 go -C . run ./cmd/weft doctor memory || weft doctor memory
 git worktree list --porcelain
 ```
@@ -43,7 +43,7 @@ Only after explicit confirmation that broad cleanup is safe:
 
 ```bash
 scripts/cleanup-worktrees.sh --yes
-bash skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh --yes --remove-runtime-dirs
+bash .agents/skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh --yes --remove-runtime-dirs
 ```
 
 Use `--remove-runtime-dirs` only for broad cleanup after confirmation. Without it, the temp-supervisor script stops matching supervisors but leaves their temp runtime directories on disk.
@@ -54,7 +54,7 @@ Run:
 
 ```bash
 scripts/cleanup-worktrees.sh --dry-run
-bash skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh --dry-run
+bash .agents/skills/weft-cleanup/scripts/cleanup-temp-supervisors.sh --dry-run
 git worktree list --porcelain
 git branch --format="%(refname:short)"
 go -C . run ./cmd/weft doctor memory || weft doctor memory
