@@ -11,12 +11,12 @@ Refactor weft with a bias toward less code, clearer boundaries, accurate docs, a
 
 ## Workflow
 
-1. Read the applicable `AGENTS.md` files, `README.md`, `go.mod`, relevant Go code/tests, and `skills/weft-refactor/references/suggestion-log.md`.
+1. Read the applicable `AGENTS.md` files, `README.md`, `go.mod`, relevant Go code/tests, and `.agents/skills/weft-refactor/references/suggestion-log.md`.
 2. For broad refactor asks, identify 1-3 concrete targets first: duplicated logic, dead or over-complex code, brittle boundaries, stale docs, weak tests, or slow/manual process steps.
 3. Prefer the smallest simplification that preserves behavior. Remove code before adding abstractions; add an abstraction only when it reduces real complexity.
 4. Update docs, examples, and AGENTS.md files in the same change when implementation behavior or workflow changes make them stale.
 5. Run the repo workflow after edits: `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, and `go build ./cmd/weft`.
-6. Before finishing, update `skills/weft-refactor/references/suggestion-log.md` with the suggestions made, outcome, evidence, and any deferred follow-up.
+6. Before finishing, update `.agents/skills/weft-refactor/references/suggestion-log.md` with the suggestions made, outcome, evidence, and any deferred follow-up.
 
 ## Refactor Heuristics
 
@@ -40,4 +40,4 @@ Refactor weft with a bias toward less code, clearer boundaries, accurate docs, a
 
 ## Suggestion Log
 
-Use `skills/weft-refactor/references/suggestion-log.md` as durable memory for refactor ideas. Log only concrete suggestions that were made to the user or implemented, and keep entries short enough to scan.
+Use `.agents/skills/weft-refactor/references/suggestion-log.md` as durable memory for refactor ideas. Log only concrete suggestions that were made to the user or implemented, and keep entries short enough to scan.

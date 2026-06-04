@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-04 - Repo-local skill discovery consolidation
+
+- Request: Move the demo video skill and any other repo-local skills with the same discovery problem into the standard Codex-discovered `.agents/skills` convention.
+- Suggestions: Consolidate `weft-demo-video`, `weft-refactor`, and existing repo-local skill guidance under `.agents/skills`, remove the repo-root `skills/` directory, and rewrite current instructions so future agents do not look in the undiscovered location.
+- Outcome: Implemented in `.worktrees/skill-consolidation`; awaiting review.
+- Evidence: `AGENTS.md`, `.agents/skills/weft-demo-video`, `.agents/skills/weft-refactor`, `.agents/skills/weft-cleanup`.
+- Deferred: None.
+
 ## 2026-06-04 - Test duplicate cleanup
 
 - Request: Do a safe refactor that reduces lines of code and makes Weft easier to manage, scale, and reason about.
@@ -29,9 +37,9 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 ## 2026-06-03 - Refactor skill suggestion-log path correction
 
 - Request: Update the repo-local refactor skill after the UX polish pass found the suggestion-log path was stale.
-- Suggestions: Point the workflow and Suggestion Log section at `skills/weft-refactor/references/suggestion-log.md`, matching the actual checked-in file path.
+- Suggestions: Point the workflow and Suggestion Log section at `.agents/skills/weft-refactor/references/suggestion-log.md`, matching the actual checked-in file path.
 - Outcome: Implemented in `.worktrees/ux-polish`; awaiting review.
-- Evidence: `skills/weft-refactor/SKILL.md`, `skills/weft-refactor/references/suggestion-log.md`; `git diff --check`.
+- Evidence: `.agents/skills/weft-refactor/SKILL.md`, `.agents/skills/weft-refactor/references/suggestion-log.md`; `git diff --check`.
 - Deferred: None.
 
 ## 2026-06-02 - Provider-neutral task metadata cutover
@@ -87,7 +95,7 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Request: Prune current-main legacy scaffolding and true dead helpers without merging stale cleanup worktrees or weakening dashboard `U`, supervisor-owned `upgrade_resume`, or Codex resume.
 - Suggestions: Make state creation helpers require caller-provided IDs and timestamps, remove the fallback `StableID` generator and dead `groupWorkspace` helper, keep strict IPC validation while testing it with generic unexpected arguments, and refresh stale refactor-skill wording around current supervisor-owned PTY behavior.
 - Outcome: Implemented and verified in `.worktrees/legacy-code-prune`; awaiting review.
-- Evidence: `internal/state`, `internal/tui/model_test.go`, `spec.md`, `skills/weft-refactor/SKILL.md`; `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`, `git diff --check`, isolated dashboard smoke.
+- Evidence: `internal/state`, `internal/tui/model_test.go`, `spec.md`, `.agents/skills/weft-refactor/SKILL.md`; `gofmt -w cmd internal tests`, `go test ./...`, `WEFT_RUN_INTEGRATION=1 go test ./...`, `go build ./cmd/weft`, `git diff --check`, isolated dashboard smoke.
 - Deferred: None.
 
 ## 2026-06-01 - Current-state hard cutover
@@ -95,7 +103,7 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Request: Remove repair/backfill paths that only make sense for malformed legacy state, while preserving dashboard `U`, supervisor-owned `upgrade_resume`, Codex session capture/resume, backups, typed task launching, and current workspace/group/task UX.
 - Suggestions: Delete generic `state.Repair`, make workspace/group deletion leave valid strict v5 state directly, drop the synthetic missing-task-type `[?]` UI fallback, and keep strict state/config rejection as the startup boundary.
 - Outcome: Implemented in `.worktrees/current-state-hard-cutover`; awaiting review.
-- Evidence: `internal/state`, `internal/tui`, `internal/app`, `internal/supervisor`, `skills/weft-refactor/references/suggestion-log.md`.
+- Evidence: `internal/state`, `internal/tui`, `internal/app`, `internal/supervisor`, `.agents/skills/weft-refactor/references/suggestion-log.md`.
 - Deferred: None.
 
 ## 2026-06-01 - Markdown hard-wrap cleanup
@@ -188,7 +196,7 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Request: Safely reduce Weft LOC without changing CLI, TUI, supervisor, IPC, config, state, or spec behavior.
 - Suggestions: Remove the unused direct/headless TUI socket path, keep only the supervisor-driven engine command helpers, drop the legacy TUI socket from `config.Runtime` while still clearing `weft-tui.sock`, share duplicated model/client TUI selection and prompt rendering helpers, and delete unused private layout helpers.
 - Outcome: Implemented and verified in `.worktrees/safe-loc-refactor`; awaiting review.
-- Evidence: `internal/tui/model.go`, `internal/tui/client.go`, `internal/tui/model_shared.go`, `internal/tui/engine.go`, `internal/config/config.go`, `internal/app/app.go`, `skills/weft-refactor/references/suggestion-log.md`.
+- Evidence: `internal/tui/model.go`, `internal/tui/client.go`, `internal/tui/model_shared.go`, `internal/tui/engine.go`, `internal/config/config.go`, `internal/app/app.go`, `.agents/skills/weft-refactor/references/suggestion-log.md`.
 
 ## 2026-05-30 - Dashboard form UX consistency
 
@@ -237,7 +245,7 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 - Request: Update the repo-local refactor skill after the single-pane Go rewrite made the old Python workflow stale.
 - Suggestions: Replace `pyproject.toml`/Python guidance with `go.mod`/Go guidance and update verification to gofmt, unit tests, live tmux integration, and Go build.
 - Outcome: Implemented in `.worktrees/single-pane-tui-dashboard`.
-- Evidence: `skills/weft-refactor/SKILL.md`.
+- Evidence: `.agents/skills/weft-refactor/SKILL.md`.
 
 ## 2026-05-28 - Single-pane Go TUI rewrite
 
@@ -270,6 +278,6 @@ Use this log to preserve concrete refactor suggestions, decisions, and evidence 
 ## 2026-05-27 - Repo-local refactor skill
 
 - Request: Create a weft refactor skill that minimizes code, simplifies implementation, updates docs/instructions, finds process inefficiencies, evaluates libraries, and learns over time.
-- Suggestions: Store the skill at `skills/weft-refactor`, include a durable suggestion log, and point repo agents at the skill.
+- Suggestions: Store the skill at `.agents/skills/weft-refactor`, include a durable suggestion log, and point repo agents at the skill.
 - Outcome: Implemented.
-- Evidence: `skills/weft-refactor/SKILL.md`, `skills/weft-refactor/agents/openai.yaml`, `skills/weft-refactor/references/suggestion-log.md`.
+- Evidence: `.agents/skills/weft-refactor/SKILL.md`, `.agents/skills/weft-refactor/agents/openai.yaml`, `.agents/skills/weft-refactor/references/suggestion-log.md`.
