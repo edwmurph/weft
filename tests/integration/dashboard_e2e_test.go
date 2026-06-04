@@ -54,11 +54,7 @@ func TestFreshDashboardNewTaskFallsBackWhenShellMissing(t *testing.T) {
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
 	)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	clientCmd := exec.Command(bin)
 	clientCmd.Env = env
@@ -251,11 +247,7 @@ title_template = "Shell"
 	}
 
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-shell-task"
 	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
@@ -359,11 +351,7 @@ func TestDashboardEditTaskWrapsFullAutoTitleErrorE2E(t *testing.T) {
 	}
 
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-auto-title-error"
 	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
@@ -447,11 +435,7 @@ title_template = "Shell"
 	}
 
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-shell-ctrl-c"
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
@@ -546,11 +530,7 @@ title_template = "Shell"
 	}
 
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-shell-loading-collapsed-group"
 	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
@@ -626,11 +606,7 @@ func TestStaleWorkspaceCanBeSelectedAndRemovedE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "workspace", "add", workspace)
 	runWeft(t, env, bin, "workspace", "add", staleWorkspace)
@@ -707,11 +683,7 @@ func TestDashboardReordersWorkspacesE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := baseIntegrationEnv(runtimeDir, alpha, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-workspace-reorder"
 	clientOutput, _ := startDirectDashboardClient(t, env, bin, alpha, pane, 120, 32)
@@ -805,11 +777,7 @@ func TestDashboardTaskCursorSurvivesWorkspaceNavigationE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := baseIntegrationEnv(runtimeDir, alpha, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	callSupervisor := func(command string, args map[string]string) ipc.Response {
@@ -893,11 +861,7 @@ func TestDashboardReordersGroupsE2E(t *testing.T) {
 	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
 	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-group-reorder"
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
@@ -1087,11 +1051,7 @@ func TestBottomShipitGroupTaskCanBeReachedE2E(t *testing.T) {
 	tmp := t.TempDir()
 	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -1201,11 +1161,7 @@ func TestTasksPaneGroupCursorSurvivesSupervisorRestartE2E(t *testing.T) {
 	tmp := t.TempDir()
 	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -1305,11 +1261,7 @@ func TestTaskConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	tmp := t.TempDir()
 	runtimeDir, workspace := createRuntime(t, tmp, writeScrollbackFakeCodex(t, tmp, "fake-codex-scrollback.sh"))
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -1384,11 +1336,7 @@ func TestTaskConsoleRestoresCodexHistoryAfterAlternateScreenE2E(t *testing.T) {
 	diffDone := filepath.Join(tmp, "diff-done")
 	runtimeDir, workspace := createRuntime(t, tmp, writeAlternateScreenDiffFakeCodex(t, tmp, "fake-codex-diff.sh"))
 	env := append(baseIntegrationEnv(runtimeDir, workspace, bin), "DIFF_DONE="+diffDone)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -1462,11 +1410,7 @@ title_template = "Shell"
 	}
 
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -1699,11 +1643,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		"PATH="+os.Getenv("PATH"),
 		"TERM=xterm-256color",
 	)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	clientCmd := exec.Command(bin)
 	clientCmd.Env = env
@@ -2401,11 +2341,7 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "ctrl-c-exit-client"
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
@@ -2505,11 +2441,7 @@ func TestTaskConsoleCtrlCSideWorkE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "ctrl-c-side-client"
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
@@ -2612,11 +2544,7 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		"PATH="+os.Getenv("PATH"),
 		"TERM=xterm-256color",
 	)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-organization"
 	clientOutput, clientDone := startDirectDashboardClient(t, env, bin, alpha, pane, 150, 36)
@@ -3127,11 +3055,7 @@ func TestDashboardPerformanceSmokeE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	pane := "direct-client-performance"
 	started := time.Now()

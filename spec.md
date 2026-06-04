@@ -882,6 +882,13 @@ Global `--clear`:
 - if automatic terminal configuration fails, reports the failed step, preferences path, profile, wrapped command/output when available, and the manual fallback
 - does not mutate terminal profiles or Weft configuration without explicit confirmation
 
+`weft doctor memory`:
+
+- reads the current runtime, state, supervisor pid file, and host process table
+- reports current supervisor RSS, descendant task-process RSS, total Weft supervisor RSS on the machine, and other Weft supervisor count/RSS outside the current runtime
+- warns when the pid file points to a missing supervisor process or when other Weft supervisors are present
+- does not stop processes, delete runtime files, mutate state, or change configuration
+
 `weft doctor keys`:
 
 - interactively captures Backspace, Option+Backspace, and Ctrl+Backspace from the current terminal

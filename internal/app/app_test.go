@@ -58,6 +58,7 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		"weft skill install           Install the bundled Codex skill.",
 		"weft doctor attention        Check terminal notification settings.",
 		"weft doctor keys             Diagnose terminal key encoding.",
+		"weft doctor memory           Diagnose supervisor and task memory use.",
 	} {
 		if !strings.Contains(help, expected) {
 			t.Fatalf("help missing %q:\n%s", expected, help)
@@ -120,6 +121,48 @@ func TestVersionFlagIsUnsupported(t *testing.T) {
 		err := Run(args)
 		if err == nil || !strings.Contains(err.Error(), "use `weft version`") {
 			t.Fatalf("Run(%q) error = %v", strings.Join(args, " "), err)
+		}
+	}
+}
+
+func TestMemoryDoctorProcessReportIncludesSupervisorChildrenAndOtherSupervisors(t *testing.T) {
+	rt := config.Runtime{Dir: "/tmp/weft-runtime"}
+	st := state.State{Tasks: []state.Task{{ID: "a"}, {ID: "b"}}}
+	processes := []processInfo{
+		{PID: 10, PPID: 1, RSSKB: 40000, Command: "/opt/homebrew/bin/weft _supervisor"},
+		{PID: 11, PPID: 10, RSSKB: 10000, Command: "node /path/to/codex"},
+		{PID: 12, PPID: 11, RSSKB: 5000, Command: "codex app-server --listen stdio://"},
+		{PID: 20, PPID: 1, RSSKB: 20000, Command: "/tmp/TestRootEnvLaunchesIsolatedRuntime/001/weft _supervisor"},
+		{PID: 21, PPID: 1, RSSKB: 30000, Command: "/tmp/other/weft _supervisor"},
+		{PID: 22, PPID: 1, RSSKB: 90000, Command: "rg weft _supervisor"},
+	}
+
+	report := buildMemoryDoctorReport(rt, st, 10, processes)
+
+	if !report.SupervisorFound || report.SupervisorRSSKB != 40000 {
+		t.Fatalf("supervisor report = %#v", report)
+	}
+	if report.TaskCount != 2 || report.TaskProcessCount != 2 || report.TaskProcessRSSKB != 15000 {
+		t.Fatalf("task process report = %#v", report)
+	}
+	if report.WeftSupervisorCount != 3 || report.WeftSupervisorRSSKB != 90000 {
+		t.Fatalf("weft supervisor totals = %#v", report)
+	}
+	if report.OtherSupervisorCount != 2 || report.OtherSupervisorRSSKB != 50000 || report.LargestOtherSupervisor.PID != 21 {
+		t.Fatalf("other supervisor report = %#v", report)
+	}
+
+	var out strings.Builder
+	renderMemoryDoctorReport(&out, report)
+	for _, expected := range []string{
+		"info supervisor rss: 39.1 MB (pid 10)",
+		"info task process rss: 14.6 MB (2 descendant process(es))",
+		"info Weft supervisors: 3 process(es), 87.9 MB RSS total",
+		"warn other Weft supervisors: 2 process(es), 48.8 MB RSS total outside this runtime",
+		"info largest other supervisor: pid 21, 29.3 MB RSS",
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("memory report missing %q:\n%s", expected, out.String())
 		}
 	}
 }

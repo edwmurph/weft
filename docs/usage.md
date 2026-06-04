@@ -63,6 +63,7 @@ weft version                 Show CLI, runtime, and dashboard versions.
 weft doctor                  Check local runtime and task command health.
 weft doctor attention        Check terminal notification settings.
 weft doctor keys             Diagnose terminal key encoding.
+weft doctor memory           Diagnose supervisor and task memory use.
 
 Tasks and organization:
 weft new [--type id] [title] Create a task.
@@ -111,3 +112,7 @@ On iTerm2, Weft can offer to update the current/default profile after writing a 
 ## Attention Diagnostics
 
 Use `weft doctor attention` when terminal attention is enabled but iTerm2 does not show notification popups. On iTerm2, Weft can inspect the current/default profile, offer to enable Notification Center alerts after writing a plist backup, send a test notification, and print the remaining macOS and iTerm2 filter checks.
+
+## Memory Diagnostics
+
+Use `weft doctor memory` when Weft or its task processes may be using unexpected memory. It reports the current supervisor RSS, descendant task-process RSS, total Weft supervisor RSS on the machine, and warns about other Weft supervisors outside the current runtime so stale runtimes or interrupted tests are easier to spot. It only reports diagnostics; it does not stop or delete processes.

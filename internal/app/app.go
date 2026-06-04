@@ -159,6 +159,7 @@ func cliHelpText() string {
 		"  weft doctor                  Check local runtime and task command health.",
 		"  weft doctor attention        Check terminal notification settings.",
 		"  weft doctor keys             Diagnose terminal key encoding.",
+		"  weft doctor memory           Diagnose supervisor and task memory use.",
 		"",
 		"Tasks and organization:",
 		"  weft new [--type id] [title] Create a task.",
@@ -841,6 +842,9 @@ func doctor(args []string) error {
 		}
 		if len(args) == 1 && args[0] == "keys" {
 			return doctorKeys(os.Stdin, os.Stdout)
+		}
+		if len(args) == 1 && args[0] == "memory" {
+			return doctorMemory(os.Stdout)
 		}
 		return fmt.Errorf("unknown doctor command %q", strings.Join(args, " "))
 	}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Weft Cleanup"
+  short_description: "Clean stale Weft worktrees and runtimes"
+  default_prompt: "Use $weft-cleanup to dry-run and then clean disposable Weft worktrees, temp supervisors, and stale local runtime resources."

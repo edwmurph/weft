@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -46,11 +47,7 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
 	)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	waitFor(t, "supervisor socket", 8*time.Second, func() bool {
@@ -87,6 +84,12 @@ func TestSupervisorRuntimeWithoutTmux(t *testing.T) {
 	})
 	if out := runWeft(t, env, bin, "doctor"); !strings.Contains(out, "supervisor owns task PTYs") {
 		t.Fatalf("doctor output missing supervisor ownership:\n%s", out)
+	}
+	memoryOut := runWeft(t, env, bin, "doctor", "memory")
+	for _, expected := range []string{"Weft memory doctor", "info runtime dir: " + runtimeDir, "ok supervisor: running", "info supervisor rss:", "info task process rss:", "info Weft supervisors:"} {
+		if !strings.Contains(memoryOut, expected) {
+			t.Fatalf("doctor memory output missing %q:\n%s", expected, memoryOut)
+		}
 	}
 
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -176,6 +179,7 @@ func TestRootEnvLaunchesIsolatedRuntime(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	root := filepath.Join(tmp, "worktree")
+	runtimeDir := filepath.Join(root, ".weft")
 	if err := os.Mkdir(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -188,9 +192,10 @@ func TestRootEnvLaunchesIsolatedRuntime(t *testing.T) {
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
 	)
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
-	if _, err := os.Stat(filepath.Join(root, ".weft", "config.toml")); err != nil {
+	if _, err := os.Stat(filepath.Join(runtimeDir, "config.toml")); err != nil {
 		t.Fatalf("root env should create root-local config: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".weft")); !os.IsNotExist(err) {
@@ -237,12 +242,7 @@ func TestSourceCheckoutCWDLaunchesIsolatedRuntime(t *testing.T) {
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
 	)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		cmd.Dir = root
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, root, runtimeDir)
 
 	runWeftInDir(t, env, root, bin, "--no-attach")
 	if _, err := os.Stat(filepath.Join(runtimeDir, "weft.sock")); err != nil {
@@ -273,11 +273,7 @@ func TestUpgradeSimulationNoRunningTasksRestartsSupervisor(t *testing.T) {
 	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
 	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
 	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = newEnv
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, newEnv, bin, "", runtimeDir)
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
@@ -302,11 +298,7 @@ func TestUpgradeSimulationWithRunningTaskPreservesSupervisor(t *testing.T) {
 	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
 	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
 	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = newEnv
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, newEnv, bin, "", runtimeDir)
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
@@ -356,11 +348,7 @@ func TestDashboardUpgradeResumeRestartsAndResumesIdleTask(t *testing.T) {
 	codexEnv := []string{"CODEX_HOME=" + codexHome, "FAKE_CODEX_LOG=" + resumeLog}
 	oldEnv := appendUniqueEnv(upgradeEnv(runtimeDir, workspace, bin, "3.9.0"), codexEnv...)
 	newEnv := appendUniqueEnv(baseIntegrationEnv(runtimeDir, workspace, bin), codexEnv...)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = newEnv
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, newEnv, bin, "", runtimeDir)
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
@@ -454,11 +442,7 @@ func TestDashboardUpgradeRestartStartsFreshCodexWithoutSession(t *testing.T) {
 	codexEnv := []string{"FAKE_CODEX_LOG=" + codexLog}
 	oldEnv := appendUniqueEnv(upgradeEnv(runtimeDir, workspace, bin, "3.9.0"), codexEnv...)
 	newEnv := appendUniqueEnv(baseIntegrationEnv(runtimeDir, workspace, bin), codexEnv...)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = newEnv
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, newEnv, bin, "", runtimeDir)
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
@@ -533,11 +517,7 @@ func TestDashboardConfigDriftRestartAppliesChangedConfig(t *testing.T) {
 	fakeCodex := writeFakeCodex(t, tmp, "fake-codex.sh")
 	runtimeDir, workspace := createRuntime(t, tmp, fakeCodex)
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
@@ -627,11 +607,7 @@ command = %q
 	shellEnv := []string{"SHELL=" + fakeShell, "FAKE_SHELL_LOG=" + shellLog}
 	oldEnv := appendUniqueEnv(upgradeEnv(runtimeDir, workspace, bin, "3.9.0"), shellEnv...)
 	newEnv := appendUniqueEnv(baseIntegrationEnv(runtimeDir, workspace, bin), shellEnv...)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = newEnv
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, newEnv, bin, "", runtimeDir)
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	oldPID := readPID(t, runtimeDir)
@@ -746,11 +722,7 @@ title_template = "{title}"
 	}
 	oldEnv := upgradeEnv(runtimeDir, workspace, bin, "3.9.0")
 	newEnv := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = newEnv
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, newEnv, bin, "", runtimeDir)
 
 	runWeft(t, oldEnv, bin, "--no-attach")
 	runWeft(t, oldEnv, bin, "workspace", "add", workspace)
@@ -804,11 +776,7 @@ func TestStartClearNoAttachClearsStateAndRestartsSupervisor(t *testing.T) {
 	tmp := t.TempDir()
 	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -838,11 +806,7 @@ func TestCloseKillCreatesBackup(t *testing.T) {
 	tmp := t.TempDir()
 	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	runWeft(t, env, bin, "workspace", "add", workspace)
@@ -871,11 +835,7 @@ func TestBackupRestoreRequiresConfirmationWhenSupervisorRunning(t *testing.T) {
 	tmp := t.TempDir()
 	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
 	env := baseIntegrationEnv(runtimeDir, workspace, bin)
-	t.Cleanup(func() {
-		cmd := exec.Command(bin, "close", "--kill", "--yes")
-		cmd.Env = env
-		_ = cmd.Run()
-	})
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
 
 	runWeft(t, env, bin, "--no-attach")
 	createOut := runWeft(t, env, bin, "backup", "create", "--reason", "restore point")
@@ -1138,6 +1098,48 @@ func runWeft(t *testing.T, env []string, bin string, args ...string) string {
 		t.Fatalf("weft %v: %v\n%s", args, err, out)
 	}
 	return string(out)
+}
+
+func registerSupervisorCleanup(t *testing.T, env []string, bin string, dir string, runtimeDir string) {
+	t.Helper()
+	t.Cleanup(func() {
+		pid := cleanupSupervisorPID(runtimeDir)
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		if dir != "" {
+			cmd.Dir = dir
+		}
+		_ = cmd.Run()
+		if pid > 0 && !waitForBool(2*time.Second, func() bool {
+			return !weftSupervisorProcessExists(pid)
+		}) {
+			t.Errorf("Weft supervisor process still exists after cleanup: pid %d runtime %s", pid, runtimeDir)
+		}
+		socket := filepath.Join(runtimeDir, "weft.sock")
+		if !waitForBool(2*time.Second, func() bool {
+			_, err := os.Stat(socket)
+			return os.IsNotExist(err)
+		}) {
+			t.Errorf("Weft supervisor socket still exists after cleanup: %s", socket)
+		}
+	})
+}
+
+func cleanupSupervisorPID(runtimeDir string) int {
+	data, err := os.ReadFile(filepath.Join(runtimeDir, "weftd.pid"))
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+func weftSupervisorProcessExists(pid int) bool {
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	return err == nil && strings.Contains(string(out), "weft _supervisor")
 }
 
 func runWeftInDir(t *testing.T, env []string, dir string, bin string, args ...string) string {
