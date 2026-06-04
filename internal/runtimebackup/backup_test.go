@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/taskcontext"
 )
 
 func TestCreateListRestoreHandlesMissingState(t *testing.T) {
@@ -50,6 +51,9 @@ func TestCreateListRestoreHandlesMissingState(t *testing.T) {
 	if err := os.WriteFile(rt.StatePath, []byte("current state\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := taskcontext.NewStore(rt.Dir).SetHeading("task-a", "current context"); err != nil {
+		t.Fatal(err)
+	}
 	pre, err := Create(rt, Options{Reason: "pre-restore " + backup.ID, IncludeLogs: true})
 	if err != nil {
 		t.Fatal(err)
@@ -64,12 +68,62 @@ func TestCreateListRestoreHandlesMissingState(t *testing.T) {
 	if _, err := os.Stat(rt.StatePath); !os.IsNotExist(err) {
 		t.Fatalf("state should be removed when missing from backup, err = %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(rt.Dir, taskcontext.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("task context should be removed when missing from backup, err = %v", err)
+	}
 	data, err := os.ReadFile(rt.ConfigPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != currentConfig {
 		t.Fatalf("config not restored:\n%s", data)
+	}
+}
+
+func TestCreateRestoreIncludesTaskContext(t *testing.T) {
+	rt := testRuntime(t)
+	if err := os.MkdirAll(rt.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rt.ConfigPath, []byte("config\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rt.StatePath, []byte("state\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	contextStore := taskcontext.NewStore(rt.Dir)
+	if _, err := contextStore.SetHeading("task-a", "original context"); err != nil {
+		t.Fatal(err)
+	}
+
+	backup, err := Create(rt, Options{Reason: "with context"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !metadataHasFile(backup, taskcontext.FileName) {
+		t.Fatalf("backup files missing task context: %#v", backup.Files)
+	}
+	if _, err := contextStore.SetHeading("task-a", "changed context"); err != nil {
+		t.Fatal(err)
+	}
+	pre, err := Create(rt, Options{Reason: "pre-restore"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := RestoreWithPreRestore(rt, backup, &pre)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(result.Restored, taskcontext.FileName) {
+		t.Fatalf("restored files missing task context: %#v", result.Restored)
+	}
+	record, ok, err := contextStore.Show("task-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || record.Heading != "original context" {
+		t.Fatalf("restored context = %#v ok=%t", record, ok)
 	}
 }
 
@@ -116,6 +170,15 @@ func testRuntime(t *testing.T) config.Runtime {
 func contains(items []string, want string) bool {
 	for _, item := range items {
 		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func metadataHasFile(meta Metadata, name string) bool {
+	for _, file := range meta.Files {
+		if file.Name == name {
 			return true
 		}
 	}

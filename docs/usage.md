@@ -37,6 +37,20 @@ weft new --type shell "Project shell"
 
 The default shell task starts an interactive login shell. Open it with `Enter`, run commands normally, then return to the dashboard with `C-b`.
 
+Persist a handy link from inside a Weft-managed Codex task:
+
+```sh
+weft task notes set "Waiting on CI: https://github.com/example/repo/actions/runs/123"
+```
+
+Persist longer notes for Task Tools:
+
+```sh
+printf '%s\n' "CI is still running." "Check the release notes before shipping." | weft task notes detail set
+```
+
+Use `weft task notes show` to print the short note, `weft task notes detail show` to print the longer notes, and the matching `clear` commands when either is stale. The focused Codex `Task Console` shows the short note in its top border; `C-]` opens Task Tools with notes and console commands.
+
 ## Common Commands
 
 ```text
@@ -52,6 +66,10 @@ weft doctor keys             Diagnose terminal key encoding.
 
 Tasks and organization:
 weft new [--type id] [title] Create a task.
+weft task notes set <text> Set a short note for the current Codex task.
+weft task notes detail set Set longer notes for the current Codex task.
+weft task notes show       Show the short note for the current Codex task.
+weft task notes clear      Clear the short note for the current Codex task.
 weft select <id>             Make a task active.
 weft rename [id] <title>     Rename the selected task or the given task.
 weft close [id]              Close the active client or a task.
@@ -69,6 +87,7 @@ weft backup restore <id>     Restore config and state from a backup.
 weft config info             Show runtime paths and active config.
 weft config show             Print config.toml.
 weft config init [--force]   Write the default config.
+weft skill install           Install the bundled Codex skill.
 ```
 
 Run `weft close` without an id to detach the active Weft client while tasks keep running. Pass an id to close a task. Use `weft close --kill` only when you want to stop the runtime and all tasks after confirmation.

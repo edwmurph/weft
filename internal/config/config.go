@@ -61,12 +61,17 @@ type TerminalAttention struct {
 	RequestAttention string `toml:"request_attention"`
 }
 
+type TaskContext struct {
+	Enabled bool `toml:"enabled"`
+}
+
 type Config struct {
 	DefaultTaskType         string              `toml:"default_task_type"`
 	TaskTypes               map[string]TaskType `toml:"task_types"`
 	TitleHookCommand        string              `toml:"title_hook_command"`
 	TitleHookTimeoutSeconds int                 `toml:"title_hook_timeout_seconds"`
 	TerminalAttention       TerminalAttention   `toml:"terminal_attention"`
+	TaskContext             TaskContext         `toml:"task_context"`
 	KeyBindings             KeyBindings         `toml:"key_bindings"`
 }
 
@@ -122,6 +127,7 @@ func DefaultConfig() Config {
 			Enabled:          false,
 			RequestAttention: "once",
 		},
+		TaskContext: TaskContext{Enabled: true},
 		KeyBindings: DefaultKeyBindings(),
 	}
 }
@@ -270,6 +276,9 @@ func LoadConfig(path string) (Config, error) {
 			Enabled          bool   `toml:"enabled"`
 			RequestAttention string `toml:"request_attention"`
 		} `toml:"terminal_attention"`
+		TaskContext struct {
+			Enabled bool `toml:"enabled"`
+		} `toml:"task_context"`
 		KeyBindings struct {
 			Drawer       string `toml:"drawer"`
 			FocusLeft    string `toml:"focus_left"`
@@ -337,6 +346,9 @@ func LoadConfig(path string) (Config, error) {
 		cfg.TerminalAttention.RequestAttention = raw.TerminalAttention.RequestAttention
 	}
 	cfg.TerminalAttention.RequestAttention = strings.ToLower(strings.TrimSpace(cfg.TerminalAttention.RequestAttention))
+	if md.IsDefined("task_context", "enabled") {
+		cfg.TaskContext.Enabled = raw.TaskContext.Enabled
+	}
 	applyBinding := func(target *string, value string) {
 		if strings.TrimSpace(value) != "" {
 			*target = value
@@ -528,6 +540,9 @@ title_hook_timeout_seconds = 10
 [terminal_attention]
 enabled = false
 request_attention = "once"
+
+[task_context]
+enabled = true
 
 [task_types.codex]
 label = "Codex"

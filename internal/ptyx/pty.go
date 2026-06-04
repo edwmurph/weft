@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -28,11 +29,19 @@ type Session struct {
 	text   string
 }
 
+type StartOptions struct {
+	Env map[string]string
+}
+
 func Start(ctx context.Context, taskID string, command string, workspace string, cols int, rows int, output func(Data)) (*Session, error) {
+	return StartWithOptions(ctx, taskID, command, workspace, cols, rows, StartOptions{}, output)
+}
+
+func StartWithOptions(ctx context.Context, taskID string, command string, workspace string, cols int, rows int, options StartOptions, output func(Data)) (*Session, error) {
 	shell := shellx.Resolve()
 	cmd := exec.CommandContext(ctx, shell, "-lc", command)
 	cmd.Dir = workspace
-	cmd.Env = childEnv(os.Environ(), shell)
+	cmd.Env = appendEnv(childEnv(os.Environ(), shell), options.Env)
 	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(max(cols, 20)), Rows: uint16(max(rows, 5))})
 	if err != nil {
 		return nil, err
@@ -40,6 +49,32 @@ func Start(ctx context.Context, taskID string, command string, workspace string,
 	session := &Session{TaskID: taskID, cmd: cmd, file: file}
 	go session.readLoop(output)
 	return session, nil
+}
+
+func appendEnv(env []string, extra map[string]string) []string {
+	if len(extra) == 0 {
+		return env
+	}
+	next := make([]string, 0, len(env)+len(extra))
+	for _, item := range env {
+		key := item
+		if index := strings.Index(item, "="); index >= 0 {
+			key = item[:index]
+		}
+		if _, replace := extra[key]; replace {
+			continue
+		}
+		next = append(next, item)
+	}
+	keys := make([]string, 0, len(extra))
+	for key := range extra {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		next = append(next, key+"="+extra[key])
+	}
+	return next
 }
 
 func (s *Session) Write(data []byte) error {

@@ -47,10 +47,13 @@ type consoleSelection struct {
 }
 
 func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	event := tea.MouseEvent(msg)
+	if m.mode == modeCommand {
+		return m.handleTaskPanelMouse(event)
+	}
 	if m.mode != modeNormal {
 		return m, nil
 	}
-	event := tea.MouseEvent(msg)
 	if next, cmd, handled := m.handleWorkspaceMouse(event); handled {
 		if cmd != nil || next.newWorkspaceCardSelected || event.Action == tea.MouseActionPress {
 			return next, cmd
@@ -144,6 +147,85 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	cmd := m.setToast(fmt.Sprintf("Copied %d character%s", len([]rune(text)), plural(len([]rune(text)))))
 	return m, cmd
+}
+
+func (m ClientModel) handleTaskPanelMouse(event tea.MouseEvent) (tea.Model, tea.Cmd) {
+	area, ok := m.taskPanelContextArea()
+	if !ok {
+		m.mouseSelection = consoleSelection{}
+		return m, nil
+	}
+	switch event.Button {
+	case tea.MouseButtonLeft:
+		switch event.Action {
+		case tea.MouseActionPress:
+			point, ok := consolePointFromMouse(event, area)
+			if !ok {
+				m.mouseSelection = consoleSelection{}
+				return m, nil
+			}
+			m.mouseSelection = consoleSelection{active: true, start: point, end: point}
+			return m, nil
+		case tea.MouseActionMotion:
+			if !m.mouseSelection.active {
+				return m, nil
+			}
+			m.mouseSelection.end = clampConsolePoint(event, area)
+			return m, nil
+		case tea.MouseActionRelease:
+			if !m.mouseSelection.active {
+				return m, nil
+			}
+			m.mouseSelection.end = clampConsolePoint(event, area)
+			text := selectedConsoleText(m.taskPanelLayout().contextLines, m.mouseSelection, area.width)
+			m.mouseSelection = consoleSelection{}
+			if strings.TrimSpace(text) == "" {
+				return m, nil
+			}
+			if err := writeClipboard(text); err != nil {
+				m.message = "copy failed: " + err.Error()
+				return m, nil
+			}
+			return m, m.setToast(fmt.Sprintf("Copied %d character%s", len([]rune(text)), plural(len([]rune(text)))))
+		}
+	}
+	if event.Action == tea.MouseActionMotion && m.mouseSelection.active {
+		m.mouseSelection.end = clampConsolePoint(event, area)
+		return m, nil
+	}
+	if event.Action == tea.MouseActionRelease && m.mouseSelection.active {
+		m.mouseSelection.end = clampConsolePoint(event, area)
+		text := selectedConsoleText(m.taskPanelLayout().contextLines, m.mouseSelection, area.width)
+		m.mouseSelection = consoleSelection{}
+		if strings.TrimSpace(text) == "" {
+			return m, nil
+		}
+		if err := writeClipboard(text); err != nil {
+			m.message = "copy failed: " + err.Error()
+			return m, nil
+		}
+		return m, m.setToast(fmt.Sprintf("Copied %d character%s", len([]rune(text)), plural(len([]rune(text)))))
+	}
+	return m, nil
+}
+
+func (m ClientModel) taskPanelContextArea() (consoleArea, bool) {
+	layout := m.taskPanelLayout()
+	if layout.contextBodyWidth() <= 0 || layout.contextBodyHeight() <= 0 {
+		return consoleArea{}, false
+	}
+	box := modalStyle.Width(m.taskPanelModalWidth()).Render(m.renderCommandMenu())
+	boxLines := strings.Split(box, "\n")
+	boxWidth := maxVisualWidth(boxLines)
+	boxHeight := len(boxLines)
+	contentX := max(0, (m.modalPlaceWidth()-boxWidth)/2) + 3
+	contentY := max(0, (m.height-boxHeight)/2) + 2
+	return consoleArea{
+		x:      contentX + layout.contextX + 1,
+		y:      contentY + layout.contextY + 1,
+		width:  layout.contextBodyWidth(),
+		height: layout.contextBodyHeight(),
+	}, true
 }
 
 func (m ClientModel) handleWorkspaceMouse(event tea.MouseEvent) (ClientModel, tea.Cmd, bool) {

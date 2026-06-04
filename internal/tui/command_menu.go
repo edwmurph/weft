@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/edwmurph/weft/internal/state"
 )
 
@@ -18,34 +19,220 @@ const (
 type commandMenuItem struct {
 	key    string
 	label  string
-	detail string
 	action commandAction
 }
 
 func commandMenuItems() []commandMenuItem {
 	return []commandMenuItem{
-		{key: "r", label: "Repaint", detail: "Refresh and redraw the dashboard", action: commandActionRepaint},
-		{key: "c", label: "Copy pane content", detail: "Copy plain task output for debugging", action: commandActionCopyPane},
+		{key: "r", label: "Repaint", action: commandActionRepaint},
+		{key: "c", label: "Copy full task console", action: commandActionCopyPane},
 	}
 }
 
-func renderCommandMenu(selected int) string {
+func (m ClientModel) renderCommandMenu() string {
+	layout := m.taskPanelLayout()
+	contextLines := renderTaskPanelContextRows(layout.contextLines, layout.contextBodyWidth(), layout.contextHeadingRows)
+	if m.mode == modeCommand && m.mouseSelection.active {
+		contextLines = strings.Split(selectedStyledCodexContent(strings.Join(contextLines, "\n"), m.mouseSelection, layout.contextBodyWidth()), "\n")
+	}
+	return renderTaskPanel(m.commandMenuIndex, layout, contextLines)
+}
+
+func (m ClientModel) taskPanelLayout() taskPanelLayout {
+	heading := ""
+	detail := ""
+	if context := m.snapshot.ActiveTaskContext; context != nil {
+		heading = strings.TrimSpace(context.Heading)
+		detail = strings.TrimSpace(context.Detail)
+	}
+	return newTaskPanelLayout(m.taskPanelContentWidth(), max(12, m.height-8), heading, detail)
+}
+
+func (m ClientModel) taskPanelContentWidth() int {
+	return max(56, m.taskPanelModalWidth()-4)
+}
+
+func (m ClientModel) taskPanelModalWidth() int {
+	return max(60, min(m.width-12, 126))
+}
+
+type taskPanelLayout struct {
+	width              int
+	height             int
+	split              bool
+	contextX           int
+	contextY           int
+	contextWidth       int
+	contextHeight      int
+	shortcutX          int
+	shortcutY          int
+	shortcutWidth      int
+	shortcutHeight     int
+	contextLines       []string
+	contextHeadingRows int
+}
+
+func (l taskPanelLayout) contextBodyWidth() int {
+	return max(0, l.contextWidth-2)
+}
+
+func (l taskPanelLayout) contextBodyHeight() int {
+	return max(0, l.contextHeight-2)
+}
+
+func newTaskPanelLayout(width int, height int, heading string, detail string) taskPanelLayout {
+	width = max(56, width)
+	height = max(12, height)
+	const sectionTop = 2
+	availableHeight := max(8, height-sectionTop)
+	split := width >= 86
+	layout := taskPanelLayout{width: width, height: height, split: split}
+	if split {
+		layout.shortcutWidth = 30
+		layout.contextWidth = max(46, width-layout.shortcutWidth-2)
+		layout.contextHeight = max(10, min(availableHeight, 26))
+		layout.shortcutHeight = layout.contextHeight
+		layout.contextY = sectionTop
+		layout.shortcutX = layout.contextWidth + 2
+		layout.shortcutY = sectionTop
+	} else {
+		layout.contextWidth = width
+		layout.contextHeight = max(8, min(availableHeight-9, 18))
+		layout.shortcutWidth = width
+		layout.shortcutHeight = 8
+		layout.contextY = sectionTop
+		layout.shortcutY = sectionTop + layout.contextHeight + 1
+	}
+	layout.contextLines = taskPanelContextPlainLines(heading, detail, layout.contextBodyWidth(), layout.contextBodyHeight())
+	if normalizedHeading := strings.Join(strings.Fields(heading), " "); normalizedHeading != "" {
+		layout.contextHeadingRows = len(wrapPlain(normalizedHeading, layout.contextBodyWidth(), layout.contextBodyHeight()))
+	}
+	return layout
+}
+
+func renderTaskPanel(selected int, layout taskPanelLayout, contextLines []string) string {
+	lines := []string{modalTitleStyle.Render("Task Tools"), ""}
+	contextBox := renderTaskPanelBox("Task Notes", contextLines, layout.contextWidth, layout.contextHeight)
+	shortcutBox := renderTaskPanelBox("Console Commands", renderTaskPanelShortcutRows(selected, layout.shortcutWidth-2, layout.shortcutHeight-2), layout.shortcutWidth, layout.shortcutHeight)
+	if layout.split {
+		for index := 0; index < max(len(contextBox), len(shortcutBox)); index++ {
+			lines = append(lines, lineAt(contextBox, index, layout.contextWidth)+"  "+lineAt(shortcutBox, index, layout.shortcutWidth))
+		}
+		return strings.Join(lines, "\n")
+	}
+	lines = append(lines, contextBox...)
+	lines = append(lines, "")
+	lines = append(lines, shortcutBox...)
+	return strings.Join(lines, "\n")
+}
+
+func renderTaskPanelShortcutRows(selected int, width int, height int) []string {
 	items := commandMenuItems()
 	selected = clampCommandMenuIndex(selected, len(items))
-	lines := []string{modalTitleStyle.Render("Command palette"), ""}
+	lines := make([]string, 0, height)
 	for index, item := range items {
 		text := fmt.Sprintf("%s  %s", item.key, item.label)
-		if item.detail != "" {
-			text += "  " + item.detail
-		}
 		if index == selected {
-			lines = append(lines, modalSuggestionSelectedStyle.Render(text))
+			lines = append(lines, modalSuggestionSelectedStyle.Render(padVisual(clip(text, width), width)))
 			continue
 		}
-		lines = append(lines, modalKeyStyle.Render(item.key)+"  "+modalValueStyle.Render(item.label)+"  "+modalLabelStyle.Render(item.detail))
+		lines = append(lines, modalKeyStyle.Render(item.key)+"  "+modalValueStyle.Render(item.label))
 	}
-	lines = append(lines, "", modalKeyStyle.Render("Enter")+" run  "+modalKeyStyle.Render("↑/↓")+" move  "+modalKeyStyle.Render("Esc")+" close")
-	return strings.Join(lines, "\n")
+	lines = append(lines, "")
+	lines = append(lines, modalKeyStyle.Render("Enter")+"  "+modalValueStyle.Render("Run selected"))
+	lines = append(lines, modalKeyStyle.Render("↑/↓")+"    "+modalValueStyle.Render("Select"))
+	lines = append(lines, modalKeyStyle.Render("Esc")+"   "+modalValueStyle.Render("Close"))
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	if len(lines) > height {
+		return lines[:height]
+	}
+	return lines
+}
+
+func taskPanelContextPlainLines(heading string, detail string, width int, maxLines int) []string {
+	heading = strings.Join(strings.Fields(heading), " ")
+	detail = strings.TrimSpace(strings.ReplaceAll(detail, "\r", ""))
+	if maxLines <= 0 {
+		return nil
+	}
+	lines := []string{}
+	if heading == "" && detail == "" {
+		return fitTaskPanelRows([]string{"No task notes set."}, maxLines)
+	}
+	if heading != "" {
+		lines = append(lines, wrapPlain(heading, width, maxLines)...)
+	}
+	if detail != "" {
+		if heading != "" {
+			lines = append(lines, "")
+		}
+		for _, raw := range strings.Split(detail, "\n") {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				lines = append(lines, "")
+				continue
+			}
+			lines = append(lines, wrapPlain(raw, width, maxLines)...)
+		}
+	}
+	return fitTaskPanelRows(lines, maxLines)
+}
+
+func fitTaskPanelRows(lines []string, height int) []string {
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+func renderTaskPanelContextRows(lines []string, width int, headingRows int) []string {
+	rendered := make([]string, 0, len(lines))
+	for index, line := range lines {
+		switch line {
+		case "No task notes set.":
+			rendered = append(rendered, mutedStyle.Render(line))
+		default:
+			if index < headingRows && strings.TrimSpace(line) != "" {
+				rendered = append(rendered, taskPanelLeadStyle.Render(clip(line, width)))
+				continue
+			}
+			rendered = append(rendered, modalValueStyle.Render(clip(line, width)))
+		}
+	}
+	return rendered
+}
+
+func renderTaskPanelBox(title string, body []string, width int, height int) []string {
+	if width < 4 || height < 2 {
+		return nil
+	}
+	innerWidth := max(0, width-2)
+	lines := []string{renderTaskPanelBoxTop(title, width)}
+	for index := 0; index < height-2; index++ {
+		lines = append(lines, taskPanelBorderStyle.Render(borderVertical)+lineAt(body, index, innerWidth)+taskPanelBorderStyle.Render(borderVertical))
+	}
+	lines = append(lines, taskPanelBorderStyle.Render(borderBottomLeft+strings.Repeat(borderHorizontal, innerWidth)+borderBottomRight))
+	return lines
+}
+
+func renderTaskPanelBoxTop(title string, width int) string {
+	innerWidth := max(0, width-2)
+	if strings.TrimSpace(title) == "" {
+		return taskPanelBorderStyle.Render(borderTopLeft + strings.Repeat(borderHorizontal, innerWidth) + borderTopRight)
+	}
+	title = " " + strings.Join(strings.Fields(title), " ") + " "
+	if lipgloss.Width(title)+2 >= innerWidth {
+		return taskPanelBorderStyle.Render(borderTopLeft + strings.Repeat(borderHorizontal, innerWidth) + borderTopRight)
+	}
+	right := innerWidth - lipgloss.Width(title) - 1
+	return taskPanelBorderStyle.Render(borderTopLeft+borderHorizontal) +
+		taskPanelTitleStyle.Render(title) +
+		taskPanelBorderStyle.Render(strings.Repeat(borderHorizontal, right)+borderTopRight)
 }
 
 func (m *ClientModel) startCommandMenu() {

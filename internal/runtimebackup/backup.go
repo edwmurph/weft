@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/edwmurph/weft/internal/config"
+	"github.com/edwmurph/weft/internal/taskcontext"
 )
 
 const MetadataFile = "metadata.json"
@@ -213,6 +214,7 @@ func backupItems(rt config.Runtime, includeLogs bool) []backupItem {
 	items := []backupItem{
 		{name: "config.toml", source: rt.ConfigPath, relative: "config.toml", required: true},
 		{name: "state.json", source: rt.StatePath, relative: "state.json", required: true},
+		{name: taskcontext.FileName, source: filepath.Join(rt.Dir, taskcontext.FileName), relative: taskcontext.FileName},
 	}
 	if includeLogs {
 		items = append(items,
@@ -227,6 +229,7 @@ func restorableItems(rt config.Runtime) []backupItem {
 	return []backupItem{
 		{name: "config.toml", source: rt.ConfigPath},
 		{name: "state.json", source: rt.StatePath},
+		{name: taskcontext.FileName, source: filepath.Join(rt.Dir, taskcontext.FileName)},
 	}
 }
 

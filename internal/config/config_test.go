@@ -51,6 +51,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	if cfg.TerminalAttention.Enabled || cfg.TerminalAttention.RequestAttention != "once" {
 		t.Fatalf("TerminalAttention = %#v", cfg.TerminalAttention)
 	}
+	if !cfg.TaskContext.Enabled {
+		t.Fatalf("TaskContext = %#v, want enabled by default", cfg.TaskContext)
+	}
 	if cfg.KeyBindings.Drawer != "C-b" {
 		t.Fatalf("Drawer = %q", cfg.KeyBindings.Drawer)
 	}
@@ -85,6 +88,8 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 		"\n[terminal_attention]",
 		"\nenabled = false",
 		"\nrequest_attention = \"once\"",
+		"\n[task_context]",
+		"\nenabled = true",
 		"\n[task_types.codex]",
 		"\n[task_types.shell]",
 		"\nnew_task = \"n\"",
@@ -107,6 +112,9 @@ title_hook_timeout_seconds = 3
 [terminal_attention]
 enabled = true
 request_attention = "off"
+
+[task_context]
+enabled = false
 
 [task_types.codex]
 command = "codex --model gpt-5"
@@ -169,6 +177,9 @@ quit = "Q"
 	if !cfg.TerminalAttention.Enabled || cfg.TerminalAttention.RequestAttention != "off" {
 		t.Fatalf("terminal attention = %#v", cfg.TerminalAttention)
 	}
+	if cfg.TaskContext.Enabled {
+		t.Fatalf("task context should be explicitly disabled: %#v", cfg.TaskContext)
+	}
 	if cfg.KeyBindings.Drawer != "C-a" ||
 		cfg.KeyBindings.FocusLeft != "h" ||
 		cfg.KeyBindings.FocusRight != "l" ||
@@ -203,6 +214,24 @@ request_attention = "yes"
 	}
 	if !strings.Contains(err.Error(), `terminal_attention.request_attention must be "off" or "once"`) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestLoadConfigDefaultsTaskContextEnabledWhenOmitted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+[task_types.codex]
+command = "codex"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TaskContext.Enabled {
+		t.Fatalf("task context should default enabled: %#v", cfg.TaskContext)
 	}
 }
 
@@ -286,6 +315,10 @@ launch = "L"
 		"task type": `
 [task_types.codex]
 surprise = "x"
+`,
+		"task context": `
+[task_context]
+surprise = true
 `,
 	} {
 		t.Run(name, func(t *testing.T) {

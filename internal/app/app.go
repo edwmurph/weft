@@ -6,18 +6,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/edwmurph/weft/internal/codexskill"
 	"github.com/edwmurph/weft/internal/config"
 	"github.com/edwmurph/weft/internal/ipc"
 	"github.com/edwmurph/weft/internal/pathx"
 	"github.com/edwmurph/weft/internal/runtimebackup"
 	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/supervisor"
+	"github.com/edwmurph/weft/internal/taskcontext"
 	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/edwmurph/weft/internal/tui"
 	"github.com/edwmurph/weft/internal/version"
@@ -59,6 +62,9 @@ func Run(args []string) error {
 			action = func() error { return groupCommand(args[1:]) }
 		case "workspace":
 			action = func() error { return workspaceCommand(args[1:]) }
+		case "task":
+			clearApplies = false
+			action = func() error { return taskCommand(args[1:], os.Stdin, os.Stdout) }
 		case "rename":
 			action = func() error { return rename(args[1:]) }
 		case "close":
@@ -84,6 +90,9 @@ func Run(args []string) error {
 			action = func() error { return doctor(args[1:]) }
 		case "config":
 			action = func() error { return configCommand(args[1:]) }
+		case "skill":
+			clearApplies = false
+			action = func() error { return skillCommand(args[1:], os.Stdout) }
 		default:
 			if strings.HasPrefix(args[0], "--") {
 				action = func() error { return start(args) }
@@ -153,6 +162,8 @@ func cliHelpText() string {
 		"",
 		"Tasks and organization:",
 		"  weft new [--type id] [title] Create a task.",
+		"  weft task notes set <text>   Set the current Codex task note.",
+		"  weft task notes detail set    Set longer notes for Task Tools.",
 		"  weft select <id>             Make a task active.",
 		"  weft rename [id] <title>     Rename the selected task or the given task.",
 		"  weft close [id]              Close the active client or a task.",
@@ -170,6 +181,7 @@ func cliHelpText() string {
 		"  weft config info             Show runtime paths and active config.",
 		"  weft config show             Print config.toml.",
 		"  weft config init [--force]   Write the default config.",
+		"  weft skill install           Install the bundled Codex skill.",
 		"",
 	)
 	return strings.Join(lines, "\n")
@@ -444,6 +456,162 @@ func workspaceCommand(args []string) error {
 	return callIPC("add_workspace", map[string]string{"path": path}, false)
 }
 
+func taskCommand(args []string, stdin *os.File, stdout io.Writer) error {
+	if len(args) == 0 || args[0] != "notes" {
+		return errors.New("task requires: notes set|show|clear|detail")
+	}
+	return taskContextCommand(args[1:], stdin, stdout)
+}
+
+func taskContextCommand(args []string, stdin *os.File, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("task notes requires one of: set, show, clear, detail")
+	}
+	switch args[0] {
+	case "set":
+		return taskContextSet("heading", args[1:], stdin, stdout)
+	case "show":
+		return taskContextShow("heading", args[1:], stdout)
+	case "clear":
+		return taskContextClear("heading", args[1:], stdout)
+	case "detail":
+		return taskContextDetailCommand(args[1:], stdin, stdout)
+	default:
+		return fmt.Errorf("unknown task notes command %q", args[0])
+	}
+}
+
+func taskContextDetailCommand(args []string, stdin *os.File, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("task notes detail requires one of: set, show, clear")
+	}
+	switch args[0] {
+	case "set":
+		return taskContextSet("detail", args[1:], stdin, stdout)
+	case "show":
+		return taskContextShow("detail", args[1:], stdout)
+	case "clear":
+		return taskContextClear("detail", args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown task notes detail command %q", args[0])
+	}
+}
+
+func taskContextSet(kind string, args []string, stdin *os.File, stdout io.Writer) error {
+	fs := flag.NewFlagSet("task notes set", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	taskID := fs.String("task", "", "task id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	content := strings.Join(fs.Args(), " ")
+	if strings.TrimSpace(content) == "" {
+		piped, err := readPipedTaskContext(stdin)
+		if err != nil {
+			return err
+		}
+		content = piped
+	}
+	response, err := taskContextCallIPC("task_context_set", map[string]string{
+		"task_id": taskContextTarget(*taskID),
+		"kind":    kind,
+		"content": content,
+	}, true)
+	if err != nil {
+		return err
+	}
+	if response.Message != "" {
+		fmt.Fprintln(stdout, response.Message)
+	}
+	return nil
+}
+
+func taskContextShow(kind string, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("task notes show", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	taskID := fs.String("task", "", "task id")
+	jsonOutput := fs.Bool("json", false, "print task notes as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("task notes show accepts only --task and --json")
+	}
+	response, err := taskContextCallIPC("task_context_show", map[string]string{"task_id": taskContextTarget(*taskID), "kind": kind}, true)
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return json.NewEncoder(stdout).Encode(response.TaskContext)
+	}
+	content := taskContextResponseContent(response.TaskContext, kind)
+	if response.TaskContext == nil || strings.TrimSpace(content) == "" {
+		if response.Message != "" {
+			fmt.Fprintln(stdout, response.Message)
+		}
+		return nil
+	}
+	fmt.Fprintln(stdout, content)
+	return nil
+}
+
+func taskContextClear(kind string, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("task notes clear", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	taskID := fs.String("task", "", "task id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("task notes clear accepts only --task")
+	}
+	response, err := taskContextCallIPC("task_context_clear", map[string]string{"task_id": taskContextTarget(*taskID), "kind": kind}, true)
+	if err != nil {
+		return err
+	}
+	if response.Message != "" {
+		fmt.Fprintln(stdout, response.Message)
+	}
+	return nil
+}
+
+func taskContextResponseContent(context *ipc.TaskContext, kind string) string {
+	if context == nil {
+		return ""
+	}
+	switch kind {
+	case "detail":
+		return context.Detail
+	default:
+		return context.Heading
+	}
+}
+
+func taskContextTarget(taskFlag string) string {
+	if taskID := strings.TrimSpace(taskFlag); taskID != "" {
+		return taskID
+	}
+	return strings.TrimSpace(os.Getenv("WEFT_TASK_ID"))
+}
+
+func readPipedTaskContext(stdin *os.File) (string, error) {
+	if stdin == nil {
+		return "", errors.New("task notes set requires text or piped stdin")
+	}
+	info, err := stdin.Stat()
+	if err == nil && info.Mode()&os.ModeCharDevice != 0 {
+		return "", errors.New("task notes set requires text or piped stdin")
+	}
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return "", errors.New("task notes cannot be empty")
+	}
+	return string(data), nil
+}
+
 func validateWorkspaceAddPath(path string) (string, error) {
 	path = state.NormalizeWorkspacePath(path)
 	info, err := os.Stat(path)
@@ -457,6 +625,27 @@ func validateWorkspaceAddPath(path string) (string, error) {
 		return "", fmt.Errorf("workspace path is not a directory: %s", path)
 	}
 	return path, nil
+}
+
+func skillCommand(args []string, stdout io.Writer) error {
+	if len(args) == 0 || args[0] != "install" {
+		return errors.New("skill requires: install [--force]")
+	}
+	fs := flag.NewFlagSet("skill install", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	force := fs.Bool("force", false, "replace an existing installed skill")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("skill install accepts only --force")
+	}
+	path, err := codexskill.Install(*force)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Installed Codex skill: %s\n", path)
+	return nil
 }
 
 func clear() error {
@@ -752,21 +941,34 @@ func configCommand(args []string) error {
 }
 
 func callIPC(command string, args map[string]string, quiet bool) error {
-	rt, cfg, store, err := resolveRuntime()
+	response, err := callIPCResponse(command, args, quiet)
 	if err != nil {
 		return err
+	}
+	if !quiet && response.Message != "" {
+		fmt.Println(response.Message)
+	}
+	return nil
+}
+
+var taskContextCallIPC = callIPCResponse
+
+func callIPCResponse(command string, args map[string]string, quiet bool) (ipc.Response, error) {
+	rt, cfg, store, err := resolveRuntime()
+	if err != nil {
+		return ipc.Response{}, err
 	}
 	st, err := store.Ensure()
 	if err != nil {
-		return err
+		return ipc.Response{}, err
 	}
 	if err := validateStateTaskTypes(cfg, st); err != nil {
-		return err
+		return ipc.Response{}, err
 	}
 	args = cloneArgs(args)
 	result, err := supervisor.Ensure(rt)
 	if err != nil {
-		return err
+		return result.Status, err
 	}
 	if !quiet {
 		printUpgrade(result.Status.Upgrade)
@@ -774,14 +976,11 @@ func callIPC(command string, args map[string]string, quiet bool) error {
 	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: command, Args: args}, 2*time.Second)
 	if err != nil {
 		if !response.OK && response.Message != "" {
-			return errors.New(response.Message)
+			return response, errors.New(response.Message)
 		}
-		return fmt.Errorf("Weft supervisor is not accepting IPC requests; start it with `weft --no-attach`: %w", err)
+		return response, fmt.Errorf("Weft supervisor is not accepting IPC requests; start it with `weft --no-attach`: %w", err)
 	}
-	if !quiet && response.Message != "" {
-		fmt.Println(response.Message)
-	}
-	return nil
+	return response, nil
 }
 
 func cloneArgs(args map[string]string) map[string]string {
@@ -882,6 +1081,8 @@ func existingRuntimeFiles(rt config.Runtime) []string {
 	candidates := []string{
 		rt.StatePath,
 		rt.StatePath + ".lock",
+		filepath.Join(rt.Dir, taskcontext.FileName),
+		filepath.Join(rt.Dir, taskcontext.FileName+".lock"),
 		rt.SocketPath,
 		supervisor.PIDPath(rt),
 		supervisor.LockPath(rt),

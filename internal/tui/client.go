@@ -189,7 +189,7 @@ func (m ClientModel) View() string {
 		return m.modalView(renderNewTaskModal(m.cfg, m.newTaskIndex, m.input, max(36, min(m.width-16, 72)), m.newTaskField, m.newTaskSilent, m.newTaskTypeOpen))
 	}
 	if m.mode == modeCommand {
-		return m.modalView(renderCommandMenu(m.commandMenuIndex))
+		return m.modalViewWithWidth(m.renderCommandMenu(), m.taskPanelModalWidth())
 	}
 	loadingText := m.snapshot.LoadingText
 	loadingFrame := loadingFrames[m.loading%len(loadingFrames)]
@@ -240,7 +240,23 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
 		newTaskRowSelected:       m.newTaskRowSelected,
 		codexToastText:           m.toastText,
+		taskContextHeading:       taskContextHeading(m.snapshot.ActiveTaskContext),
+		taskContextDetail:        taskContextDetail(m.snapshot.ActiveTaskContext),
 	}
+}
+
+func taskContextHeading(context *ipc.TaskContext) string {
+	if context == nil {
+		return ""
+	}
+	return strings.TrimSpace(context.Heading)
+}
+
+func taskContextDetail(context *ipc.TaskContext) string {
+	if context == nil {
+		return ""
+	}
+	return strings.TrimSpace(context.Detail)
 }
 
 func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1004,8 +1020,16 @@ func (m *ClientModel) maybePromptForLaunchWorkspace() {
 
 func (m ClientModel) modalView(content string) string {
 	w := max(40, min(m.width-4, 82))
+	return m.modalViewWithWidth(content, w)
+}
+
+func (m ClientModel) modalViewWithWidth(content string, w int) string {
 	box := modalStyle.Width(w).Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(m.modalPlaceWidth(), m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func (m ClientModel) modalPlaceWidth() int {
+	return max(1, m.width-2)
 }
 
 func (m ClientModel) renderInputModal() string {

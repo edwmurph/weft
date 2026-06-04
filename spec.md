@@ -117,7 +117,7 @@ Every IPC request must include the current `protocol_version`. The supervisor re
 
 The protocol does not need an external RPC framework. New dependencies should be added only if the standard library becomes clearly insufficient.
 
-Command payload contracts are strict. `new` accepts only `title`, `type`, and optional `silent=true|false`; invalid `silent` values return `invalid_silent`. `rename` may include optional `silent=true|false`; omitting it preserves the task's current silent value. `move` accepts only `id`, `direction`, and the current `group` path argument. Transport metadata inside command arguments, such as old `client_id`, `width`, or `height` entries, fails with the same unsupported-argument error as any other unknown command argument.
+Command payload contracts are strict. `new` accepts only `title`, `type`, and optional `silent=true|false`; invalid `silent` values return `invalid_silent`. `rename` may include optional `silent=true|false`; omitting it preserves the task's current silent value. `move` accepts only `id`, `direction`, and the current `group` path argument. `task_context_set`, `task_context_show`, and `task_context_clear` accept only the task-context arguments documented by their CLI commands. Transport metadata inside command arguments, such as old `client_id`, `width`, or `height` entries, fails with the same unsupported-argument error as any other unknown command argument.
 
 Client lifecycle commands are supervisor-owned. `attach_client`, `client_detached`, and `close_client` are handled by the supervisor client coordinator rather than by the engine that owns task and workspace state.
 
@@ -156,6 +156,7 @@ Weft stores runtime files globally under `~/.weft` by default, under `$WEFT_ROOT
 
 - `config.toml`
 - `state.json`
+- `task-context.json`
 - `weft.sock`
 - `weftd.pid`
 - `weftd.lock`
@@ -164,7 +165,9 @@ Weft stores runtime files globally under `~/.weft` by default, under `$WEFT_ROOT
 
 `WEFT_ROOT` sets both development/worktree paths from one value: runtime files go in `$WEFT_ROOT/.weft`, and the launch workspace is `$WEFT_ROOT`. When source-built Weft runs from a Weft source checkout or detached worktree without `WEFT_ROOT` or `WEFT_HOME`, the current working directory is treated as that root and runtime files go under `.weft-runtime`. This keeps `go -C /path/to/weft-or-worktree run ./cmd/weft ...` isolated to `/path/to/weft-or-worktree/.weft-runtime` without requiring an environment override and without touching `.weft/config.toml` symlinks created for other workflows. `WEFT_WORKSPACE` overrides only the launch directory used for attach-time workspace context. `WEFT_HOME` overrides only the runtime directory. Development and worktree runs should usually rely on checkout-local auto-rooting. The installed release command owns the real default `~/.weft` runtime.
 
-Runtime backups live under `backups/<id>/` by default. A backup includes `metadata.json`, `config.toml` when present, `state.json` when present, and log files when present. Backups must not include sockets, locks, pid files, or live PTY/process state.
+Codex task PTYs receive `WEFT_HOME=<runtime dir>`, `WEFT_TASK_ID=<task id>`, `WEFT_TASK_TYPE_ID=<task type id>`, and `WEFT_TASK_KIND=codex` so commands running inside that task can address their own supervisor-owned metadata. Configured shell task PTYs do not receive these task-context environment variables.
+
+Runtime backups live under `backups/<id>/` by default. A backup includes `metadata.json`, `config.toml` when present, `state.json` when present, `task-context.json` when present, and log files when present. Backups must not include sockets, locks, pid files, or live PTY/process state.
 
 ## Development Worktree Hygiene
 
@@ -289,7 +292,7 @@ When the user presses `Enter` on a task, navigation slides away left, `Task Cons
 
 Task PTYs can only receive input when `Task Console` is focused and maximized.
 
-When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured command menu key as `<key> menu` without a `WEFT` prefix, and the top-right border shows only the active task title. If at least one other global unsilenced task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task and silenced tasks are excluded from that count, and the indicator is hidden when no other unsilenced tasks are ready. Other brief console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item. The active `Task Console` pane border remains the active Weft blue on every border segment and corner even when bottom-right notices use their own text styling.
+When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured Task Tools key as `<key> tools` without a `WEFT` prefix, and the top-right border shows only the active task title. If task notes are enabled and the active task is a Codex task with a stored short note, the focused console shows a subtle `note` badge and the clipped one-line note beside the left toolbar. Multi-line notes never render as always-visible task output; they are shown when Task Tools is opened with the configured tools key. Task notes do not render in `Task Live Preview` or configured shell task consoles. If at least one other global unsilenced task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task and silenced tasks are excluded from that count, and the indicator is hidden when no other unsilenced tasks are ready. Other short console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item. The active `Task Console` pane border remains the active Weft blue on every border segment and corner even when bottom-right notices use their own text styling.
 
 ## Navigation States
 
@@ -340,7 +343,7 @@ Autocomplete menus open directly under the input whenever the current value has 
 - Workspaces and Tasks panes are hidden offscreen to the left.
 - `Task Console` fills the terminal.
 - Weft keeps the framed `Task Console` pane visible while a task is focused.
-- The attached client forwards raw terminal input bytes into the active task PTY without key-name reconstruction. The configured drawer key, `C-b` by default, and the configured command menu key, `C-]` by default, are owned by Weft.
+- The attached client forwards raw terminal input bytes into the active task PTY without key-name reconstruction. The configured drawer key, `C-b` by default, and the configured Task Tools key, `C-]` by default, are owned by Weft.
 - Terminal-generated C-c belongs to the task whenever `Task Console` is focused and an active task exists. For configured terminal tasks with an active foreground command, Weft forwards C-c as the normal terminal interrupt byte. For configured terminal tasks at an idle prompt, Weft kills the task PTY, returns to the dashboard `Tasks` pane, and reports the task as killed. For Codex agent tasks, while Codex reports active work, Weft delivers C-c through Codex's interrupt path so running side-thread work is interrupted without returning from or closing the side thread. Weft does not use C-c to quit from `Task Console`, and the toolbar must not advertise C-c.
 - Terminal-owned behavior, including Vim mode, Esc timing, bracketed paste, Alt/Meta prefixes, and modified-key shortcuts such as Shift+Enter and Shift+Tab in supporting terminals, is preserved inside the framed pane.
 - The framed terminal renderer preserves cursor visibility and cursor shape requests, including block, underline, and bar cursor modes used by Vim insert/normal state.
@@ -355,7 +358,7 @@ These are product-level defaults and may map to existing config structures durin
 ```text
 Enter   Open selected task and maximize its console, or open the new-task form on the new-task template row
 C-b     Toggle dashboard navigation
-C-]     Open the command palette
+C-]     Open Task Tools
 Left/Right Move focus between workspaces and tasks panes
 j/k     Move selection within the focused navigation pane
 w       Add workspace
@@ -369,7 +372,7 @@ Backspace Delete/remove selected item
 C-c     Quit Weft from dashboard focus
 ```
 
-The command palette currently offers `r` to repaint the attached client and refresh the dashboard snapshot, `c` to copy the current task pane's plain captured output to the clipboard for debugging, `Enter` to run the selected command, and `Esc` to close.
+Task Tools shows task notes and console commands in separate sections. The Task Notes area uses most of the available space and shows the concise note as the lead line, followed by wrapped longer notes when present, without separate field labels that repeat the section purpose. Left-button drag selection inside that section is bounded to the notes body and copies selected note text to the clipboard. The Console Commands section offers `r` to repaint the attached client and refresh the dashboard snapshot, `c` as `Copy full task console` to copy the current task console's plain captured content to the clipboard for debugging, `Enter` to run the selected command, and `Esc` to close.
 
 Deletion behavior depends on selected item type and is defined below.
 
@@ -428,6 +431,15 @@ command = "exec \"$SHELL\" -l"
 badge = "[shell]"
 title_template = "Shell"
 ```
+
+Task context defaults to enabled:
+
+```toml
+[task_context]
+enabled = true
+```
+
+Task notes have two independent fields. The short note is a concise one-line note shown in the focused Codex Task Console heading. The detail field accepts longer multi-line text and appears in Task Tools. Task notes do not render in Task Live Preview or configured shell task consoles.
 
 The dashboard new-task form has focused Type, `[ ] Silent`, and Title fields in that visual order. The form opens with Type focused so choosing between configured task types is the first interaction. `Up`/`Down` move between fields, `Tab` cycles fields, and `Enter` creates the task when the type dropdown is closed. Focused Type and Title inputs use the blue modal input border; focused Silent renders only the `[ ]` or `[x]` checkbox glyph in blue. The Type field renders the selected task type label only, such as `Codex` or `Shell`; `Left`/`Right` cycles task types, and `Space` opens a dropdown where `Up`/`Down` choose a task type and `Enter` or `Tab` closes the dropdown. `Space` toggles Silent when the checkbox is focused. The title input defaults to the selected task type's `title_template`, and supported title variables render under the title input. Changing the selected task type updates the title input to the newly selected type's default only while the input is blank or still matches the previous type default; once the user edits the title, type changes preserve that custom value. The edit-task form renders its Silent checkbox above the Title input, initializes it from the selected task, lists the same supported title variables under the Title input, and title-only command-line rename preserves the current silent value. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
 
@@ -758,7 +770,7 @@ Global `--clear`:
 - may be provided before or after any non-internal command, for example `weft --clear doctor keys` or `weft doctor keys --clear`
 - stops the supervisor and deletes runtime state without a separate confirmation prompt before running the requested command
 - creates a runtime backup before stopping or deleting state
-- is ignored for help, version, the internal supervisor command, and `weft clear`
+- is ignored for help, version, the internal supervisor command, `weft clear`, `weft task notes ...`, and `weft skill install`
 
 `weft close`:
 
@@ -809,8 +821,8 @@ Global `--clear`:
 
 - resolves ids from the current runtime backup directory, or accepts a backup path
 - creates a pre-restore backup before replacing current config and state
-- restores config and state only
-- removes current config or state when the selected backup did not contain it
+- restores config, state, and task notes only
+- removes current config, state, or task notes when the selected backup did not contain it
 - requires confirmation before stopping a running supervisor unless `--yes` is provided
 
 `weft new [--type <id>] [title]`:
@@ -819,6 +831,48 @@ Global `--clear`:
 - uses `default_task_type` when `--type` is omitted
 - rejects unknown task type IDs
 - applies an explicit title when supplied, otherwise copies the selected task type's `title_template`
+
+`weft task notes set [--task <id>] <text...>`:
+
+- persists a concise one-line note for a Codex task when `task_context.enabled = true`
+- reads piped stdin when no text arguments are provided
+- rejects empty terminal stdin, empty notes, multi-line short notes, and short notes larger than 512 bytes
+- defaults to `WEFT_TASK_ID` when present, otherwise to the supervisor's active task
+- rejects configured shell tasks because task notes are a Codex-task feature
+
+`weft task notes show [--task <id>] [--json]`:
+
+- prints the short note for the selected Codex task
+- prints the `task_context` response object as JSON when `--json` is provided
+
+`weft task notes clear [--task <id>]`:
+
+- removes the short note for the selected Codex task
+- also runs when there are no stored notes so automation can be idempotent
+
+`weft task notes detail set [--task <id>] <text...>`:
+
+- persists longer notes for a Codex task when `task_context.enabled = true`
+- reads piped stdin when no text arguments are provided
+- accepts newlines and rejects empty notes or content larger than 16 KiB
+- defaults to `WEFT_TASK_ID` when present, otherwise to the supervisor's active task
+- rejects configured shell tasks because task notes are a Codex-task feature
+
+`weft task notes detail show [--task <id>] [--json]`:
+
+- prints the longer notes for the selected Codex task
+- prints the `task_context` response object as JSON when `--json` is provided
+
+`weft task notes detail clear [--task <id>]`:
+
+- removes longer notes for the selected Codex task
+- also runs when there are no stored notes so automation can be idempotent
+
+`weft skill install [--force]`:
+
+- installs only the bundled `weft` Codex skill into `$CODEX_HOME/skills/weft`, defaulting to `~/.codex/skills/weft`
+- does not edit Weft config
+- fails when the skill already exists unless `--force` is provided
 
 `weft doctor attention`:
 
@@ -923,7 +977,7 @@ quit = "C-c"
 
 `key_bindings.delete = "d"` is not a valid current config value.
 
-`key_bindings.repaint` configures the current command palette shortcut even though the default `C-]` action now opens a menu before repainting.
+`key_bindings.repaint` configures the current Task Tools key. Inside Task Tools, `r` runs the repaint command.
 
 Only the current config keys are emitted by default. Unknown config keys are rejected generically instead of being mapped silently or returning alias-specific repair advice.
 

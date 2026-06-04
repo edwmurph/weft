@@ -76,6 +76,11 @@ var (
 	taskShippingStyle                 = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 	taskAttentionStyle                = attentionHighlightStyle
 	taskErrorStyle                    = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	taskContextHeadingTagStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117")).Bold(true).Padding(0, 1)
+	taskContextHeadingBodyStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	taskPanelLeadStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	taskPanelBorderStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	taskPanelTitleStyle               = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 )
 
 type workspaceRenderOptions struct {
@@ -90,6 +95,8 @@ type workspaceRenderOptions struct {
 	newWorkspaceCardSelected bool
 	newTaskRowSelected       bool
 	codexToastText           string
+	taskContextHeading       string
+	taskContextDetail        string
 }
 
 type workspacePaneContent struct {
@@ -175,14 +182,14 @@ func renderWorkspaceView(
 	}
 	if navWidth <= 0 {
 		codexState := codexFrameStateForSelection(st, groupCursor)
-		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusConsole, message, true, options.loadingText, options.codexToastText, options.previewHeaderAnimation, options.emptyArtFrame), "\n")
+		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusConsole, message, true, options.loadingText, options.codexToastText, options.taskContextHeading, options.previewHeaderAnimation, options.emptyArtFrame), "\n")
 	}
 	if codexWidth <= 0 {
 		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
 	}
 	codexState := codexFrameStateForSelection(st, groupCursor)
 	nav := renderNavSection(cfg, st, navWidth, height, groupCursor, options)
-	codex := renderCodexFrame(cfg, codexState, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.previewHeaderAnimation, options.emptyArtFrame)
+	codex := renderCodexFrame(cfg, codexState, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.taskContextHeading, options.previewHeaderAnimation, options.emptyArtFrame)
 	lines := make([]string, 0, height)
 	for index := 0; index < height; index++ {
 		left := lineAt(nav, index, navWidth)
@@ -1165,6 +1172,7 @@ func renderCodexFrame(
 	navCollapsed bool,
 	loadingText string,
 	toastText string,
+	taskContextHeading string,
 	previewHeaderAnimation string,
 	emptyArtFrame int,
 ) []string {
@@ -1192,6 +1200,11 @@ func renderCodexFrame(
 		topLabel = "Task Console"
 	} else if taskActive {
 		topRightLabel = previewTopRightLabel(title, toastText)
+	}
+	if heading := taskContextHeadingForConsole(cfg, st, taskContextHeading, active, navCollapsed); heading != "" {
+		if rendered := renderTaskContextHeadingChip(heading, taskContextHeadingAvailableWidth(topLabel, topRightLabel, max(0, innerWidth-2))); rendered != "" {
+			topLabel += "  " + rendered
+		}
 	}
 	lines := []string{
 		renderFrameBorderLine(palette, borderTopLeft, borderTopRight, borderTextLine(topLabel, topRightLabel, max(0, innerWidth-2)), innerWidth),
@@ -1223,6 +1236,43 @@ func renderCodexFrame(
 	}
 	lines = append(lines, renderFrameBorderLine(palette, borderBottomLeft, borderBottomRight, borderTextLine("", rightLabel, max(0, innerWidth-2)), innerWidth))
 	return lines
+}
+
+func taskContextHeadingForConsole(cfg config.Config, st state.State, heading string, active bool, navCollapsed bool) string {
+	heading = strings.Join(strings.Fields(heading), " ")
+	if !cfg.TaskContext.Enabled || heading == "" || !active || !navCollapsed {
+		return ""
+	}
+	task := state.ActiveTask(st)
+	if task == nil || !taskIsCodex(cfg, *task) {
+		return ""
+	}
+	return heading
+}
+
+func renderTaskContextHeadingChip(heading string, maxWidth int) string {
+	if maxWidth <= 4 {
+		return ""
+	}
+	tag := taskContextHeadingTagStyle.Render("note")
+	bodyWidth := max(0, maxWidth-lipgloss.Width(tag)-1)
+	if bodyWidth <= 0 {
+		return tag
+	}
+	return tag + " " + taskContextHeadingBodyStyle.Render(clip(heading, bodyWidth))
+}
+
+func taskContextHeadingAvailableWidth(left string, right string, width int) int {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if width <= 0 || left == "" {
+		return 0
+	}
+	used := lipgloss.Width(left) + 3 // separator before the note plus trailing label space.
+	if right != "" {
+		used += lipgloss.Width(right) + 1
+	}
+	return max(0, width-used)
 }
 
 func previewTopLabel(animation string) string {
@@ -1558,7 +1608,7 @@ func renderCenteredCodexContent(content []string, width int, height int) []strin
 }
 
 func codexCollapsedTopShortcuts(cfg config.Config) string {
-	return cfg.KeyBindings.Drawer + " dashboard  " + cfg.KeyBindings.Repaint + " menu"
+	return cfg.KeyBindings.Drawer + " dashboard  " + cfg.KeyBindings.Repaint + " tools"
 }
 
 func codexConsoleBottomRightLabel(st state.State, toastText string) string {

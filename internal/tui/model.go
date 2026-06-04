@@ -20,6 +20,7 @@ import (
 	"github.com/edwmurph/weft/internal/navigation"
 	"github.com/edwmurph/weft/internal/ptyx"
 	"github.com/edwmurph/weft/internal/state"
+	"github.com/edwmurph/weft/internal/taskcontext"
 	"github.com/edwmurph/weft/internal/tasktypes"
 	"github.com/edwmurph/weft/internal/titlehook"
 	"github.com/edwmurph/weft/internal/titles"
@@ -115,6 +116,9 @@ type Model struct {
 	operationStarts   *sync.Map
 	taskInterrupts    map[string]time.Time
 	sessionCaptures   map[string]time.Time
+	taskContextStore  *taskcontext.Store
+	taskContexts      map[string]taskcontext.Record
+	taskContextErr    error
 	dataCh            chan ptyx.Data
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -148,12 +152,15 @@ func NewModel(rt config.Runtime, cfg config.Config, st state.State) Model {
 		operationStarts:   &sync.Map{},
 		taskInterrupts:    map[string]time.Time{},
 		sessionCaptures:   map[string]time.Time{},
+		taskContextStore:  taskcontext.NewStore(rt.Dir),
+		taskContexts:      map[string]taskcontext.Record{},
 		dataCh:            make(chan ptyx.Data, 64),
 		ctx:               ctx, cancel: cancel, lastNavFocus: lastNav,
 	}
 	model.syncGroupCursor()
 	model.navWidth = model.targetNavWidth()
 	model.restoreTerminalUpgradeSnapshots()
+	model.loadTaskContexts()
 	for _, task := range model.state.Tasks {
 		model.startPTY(task.ID)
 	}
@@ -209,6 +216,7 @@ func (m *Model) Snapshot() ipc.Snapshot {
 	return ipc.Snapshot{
 		State:                       m.state,
 		LiveTitle:                   title,
+		ActiveTaskContext:           m.activeTaskContextForSnapshot(),
 		CodexContent:                content,
 		CodexPlainLines:             plainLines,
 		CodexScrollback:             scrollbackContent,
@@ -231,6 +239,63 @@ func (m Model) activeTaskInAlternateScreen() bool {
 	}
 	screen := m.screens[active.ID]
 	return screen != nil && screen.InAlternateScreen()
+}
+
+func (m *Model) loadTaskContexts() {
+	if m.taskContextStore == nil {
+		m.taskContextStore = taskcontext.NewStore(m.runtime.Dir)
+	}
+	records, err := m.taskContextStore.Load()
+	if err != nil {
+		m.taskContextErr = err
+		m.taskContexts = map[string]taskcontext.Record{}
+		return
+	}
+	m.taskContexts = records
+	if _, err := m.taskContextStore.Cleanup(taskIDSet(m.state)); err != nil {
+		m.taskContextErr = err
+		return
+	}
+	records, err = m.taskContextStore.Load()
+	if err != nil {
+		m.taskContextErr = err
+		return
+	}
+	m.taskContexts = records
+	m.taskContextErr = nil
+}
+
+func taskIDSet(st state.State) map[string]bool {
+	ids := make(map[string]bool, len(st.Tasks))
+	for _, task := range st.Tasks {
+		ids[task.ID] = true
+	}
+	return ids
+}
+
+func (m Model) activeTaskContextForSnapshot() *ipc.TaskContext {
+	if !m.cfg.TaskContext.Enabled {
+		return nil
+	}
+	active := state.ActiveTask(m.state)
+	if active == nil || !taskIsCodex(m.cfg, *active) {
+		return nil
+	}
+	record, ok := m.taskContexts[active.ID]
+	if !ok {
+		return nil
+	}
+	return taskContextRecordToIPC(record)
+}
+
+func taskContextRecordToIPC(record taskcontext.Record) *ipc.TaskContext {
+	return &ipc.TaskContext{
+		TaskID:    record.TaskID,
+		Heading:   record.Heading,
+		Detail:    record.Detail,
+		Summary:   record.Summary(),
+		UpdatedAt: record.UpdatedAt,
+	}
 }
 
 func (m *Model) PrepareUpgradeResume() codexsession.Report {
@@ -363,6 +428,7 @@ func (m *Model) closeTask(taskID string) tea.Cmd {
 		return nil
 	}
 	m.killTaskPTY(taskID)
+	m.clearTaskContextRecord(taskID)
 	m.state = state.CloseTask(m.state, taskID)
 	m.syncGroupCursor()
 	m.save()
@@ -779,9 +845,18 @@ func (m *Model) startPTY(taskID string) {
 		m.screens[taskID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
 	}
 	workspace := m.taskWorkspace(taskID)
-	ptySession, err := ptyx.Start(m.ctx, taskID, m.taskCommandForTask(taskID), workspace, m.ptyWidth(), m.ptyHeight(), func(data ptyx.Data) {
-		m.dataCh <- data
-	})
+	ptySession, err := ptyx.StartWithOptions(
+		m.ctx,
+		taskID,
+		m.taskCommandForTask(taskID),
+		workspace,
+		m.ptyWidth(),
+		m.ptyHeight(),
+		ptyx.StartOptions{Env: m.taskEnvForTask(taskID)},
+		func(data ptyx.Data) {
+			m.dataCh <- data
+		},
+	)
 	if err != nil {
 		m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 			task.Status = state.StatusError
@@ -815,14 +890,24 @@ func (m *Model) startPTYCmd(taskID string) tea.Cmd {
 	}
 	ctx := m.ctx
 	command := m.taskCommandForTask(taskID)
+	env := m.taskEnvForTask(taskID)
 	workspace := m.taskWorkspace(taskID)
 	cols := m.ptyWidth()
 	rows := m.ptyHeight()
 	dataCh := m.dataCh
 	return func() tea.Msg {
-		ptySession, err := ptyx.Start(ctx, taskID, command, workspace, cols, rows, func(data ptyx.Data) {
-			dataCh <- data
-		})
+		ptySession, err := ptyx.StartWithOptions(
+			ctx,
+			taskID,
+			command,
+			workspace,
+			cols,
+			rows,
+			ptyx.StartOptions{Env: env},
+			func(data ptyx.Data) {
+				dataCh <- data
+			},
+		)
 		return ptyStartedMsg{taskID: taskID, session: ptySession, err: err}
 	}
 }
@@ -976,6 +1061,19 @@ func (m Model) taskCommandForTask(taskID string) string {
 	}
 	taskType := taskTypeForTask(m.cfg, *task)
 	return taskDefinitionForTask(m.cfg, *task).Command(taskType.Command, *task)
+}
+
+func (m Model) taskEnvForTask(taskID string) map[string]string {
+	task := state.TaskByID(m.state, taskID)
+	if task == nil || !taskIsCodex(m.cfg, *task) {
+		return nil
+	}
+	return map[string]string{
+		config.AppDirEnv:    m.runtime.Dir,
+		"WEFT_TASK_ID":      task.ID,
+		"WEFT_TASK_TYPE_ID": state.TaskTypeID(*task),
+		"WEFT_TASK_KIND":    tasktypes.KindCodex,
+	}
 }
 
 func (m *Model) activeOutput() string {
@@ -1400,6 +1498,160 @@ func ipcError(code string, err error) ipc.Response {
 	return ipc.ErrorResponse(code, err.Error())
 }
 
+func (m *Model) handleTaskContextSet(args map[string]string) ipc.Response {
+	if response := m.taskContextCommandAvailable(); !response.OK {
+		return response
+	}
+	if arg := unsupportedIPCArg(args, "task_id", "kind", "content"); arg != "" {
+		return ipc.ErrorResponse("unsupported_arg", "unsupported argument: "+arg)
+	}
+	kind, response := taskContextKind(args["kind"])
+	if !response.OK {
+		return response
+	}
+	task, response := m.taskContextTarget(args)
+	if !response.OK {
+		return response
+	}
+	var record taskcontext.Record
+	var err error
+	switch kind {
+	case "heading":
+		record, err = m.taskContextStore.SetHeading(task.ID, args["content"])
+	case "detail":
+		record, err = m.taskContextStore.SetDetail(task.ID, args["content"])
+	}
+	if err != nil {
+		return ipcError("task_context_set_failed", err)
+	}
+	m.taskContexts[task.ID] = record
+	response = m.ipcResponse("Set task notes " + kind + " for task " + task.ID + ".")
+	response.TaskContext = taskContextRecordToIPC(record)
+	return response
+}
+
+func (m *Model) handleTaskContextShow(args map[string]string) ipc.Response {
+	if response := m.taskContextCommandAvailable(); !response.OK {
+		return response
+	}
+	if arg := unsupportedIPCArg(args, "task_id", "kind"); arg != "" {
+		return ipc.ErrorResponse("unsupported_arg", "unsupported argument: "+arg)
+	}
+	if _, response := taskContextKind(args["kind"]); !response.OK {
+		return response
+	}
+	task, response := m.taskContextTarget(args)
+	if !response.OK {
+		return response
+	}
+	record, ok, err := m.taskContextStore.Show(task.ID)
+	if err != nil {
+		return ipcError("task_context_show_failed", err)
+	}
+	response = m.ipcResponse("")
+	if !ok {
+		delete(m.taskContexts, task.ID)
+		response.Message = "No task notes for task " + task.ID + "."
+		response.TaskContext = &ipc.TaskContext{TaskID: task.ID}
+		return response
+	}
+	m.taskContexts[task.ID] = record
+	response.TaskContext = taskContextRecordToIPC(record)
+	return response
+}
+
+func (m *Model) handleTaskContextClear(args map[string]string) ipc.Response {
+	if response := m.taskContextCommandAvailable(); !response.OK {
+		return response
+	}
+	if arg := unsupportedIPCArg(args, "task_id", "kind"); arg != "" {
+		return ipc.ErrorResponse("unsupported_arg", "unsupported argument: "+arg)
+	}
+	kind, response := taskContextKind(args["kind"])
+	if !response.OK {
+		return response
+	}
+	task, response := m.taskContextTarget(args)
+	if !response.OK {
+		return response
+	}
+	removed, err := m.taskContextStore.Clear(task.ID, kind)
+	if err != nil {
+		return ipcError("task_context_clear_failed", err)
+	}
+	if record, ok, err := m.taskContextStore.Show(task.ID); err == nil && ok {
+		m.taskContexts[task.ID] = record
+	} else {
+		delete(m.taskContexts, task.ID)
+	}
+	if removed {
+		response = m.ipcResponse("Cleared task notes " + kind + " for task " + task.ID + ".")
+	} else {
+		response = m.ipcResponse("No task notes " + kind + " for task " + task.ID + ".")
+	}
+	response.TaskContext = &ipc.TaskContext{TaskID: task.ID}
+	return response
+}
+
+func taskContextKind(kind string) (string, ipc.Response) {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		kind = "heading"
+	}
+	switch kind {
+	case "heading", "detail":
+		return kind, ipc.Response{OK: true}
+	default:
+		return "", ipc.ErrorResponse("invalid_task_context_kind", "task notes kind must be heading or detail")
+	}
+}
+
+func (m *Model) taskContextCommandAvailable() ipc.Response {
+	if !m.cfg.TaskContext.Enabled {
+		return ipc.ErrorResponse("task_context_disabled", "task notes are disabled in config")
+	}
+	if m.taskContextErr != nil {
+		return ipc.ErrorResponse("task_context_unavailable", m.taskContextErr.Error())
+	}
+	if m.taskContextStore == nil {
+		m.taskContextStore = taskcontext.NewStore(m.runtime.Dir)
+	}
+	if m.taskContexts == nil {
+		m.taskContexts = map[string]taskcontext.Record{}
+	}
+	return ipc.Response{OK: true}
+}
+
+func (m *Model) taskContextTarget(args map[string]string) (*state.Task, ipc.Response) {
+	taskID := strings.TrimSpace(args["task_id"])
+	if taskID == "" {
+		taskID = m.state.ActiveTaskID
+	}
+	if taskID == "" {
+		return nil, ipc.ErrorResponse("task_not_found", "no active task")
+	}
+	task := state.TaskByID(m.state, taskID)
+	if task == nil {
+		return nil, ipc.ErrorResponse("task_not_found", "task not found: "+taskID)
+	}
+	if !taskIsCodex(m.cfg, *task) {
+		return nil, ipc.ErrorResponse("task_context_not_supported", "task notes are only supported for Codex tasks")
+	}
+	return task, ipc.Response{OK: true}
+}
+
+func (m *Model) clearTaskContextRecord(taskID string) {
+	if strings.TrimSpace(taskID) == "" || m.taskContextStore == nil {
+		return
+	}
+	_, err := m.taskContextStore.Clear(taskID, "all")
+	if err != nil {
+		m.taskContextErr = err
+		return
+	}
+	delete(m.taskContexts, taskID)
+}
+
 func unsupportedIPCArg(args map[string]string, allowed ...string) string {
 	allowedSet := map[string]bool{}
 	for _, key := range allowed {
@@ -1628,6 +1880,12 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		cmd := m.closeTask(id)
 		m.snapNavWidthToTarget()
 		return m.ipcResponse("closed task"), cmd
+	case "task_context_set":
+		return m.handleTaskContextSet(request.Args), nil
+	case "task_context_show":
+		return m.handleTaskContextShow(request.Args), nil
+	case "task_context_clear":
+		return m.handleTaskContextClear(request.Args), nil
 	case "remove_workspace":
 		next, tasks, err := state.RemoveWorkspace(m.state, request.Args["id"])
 		if err != nil {
@@ -1635,6 +1893,7 @@ func (m *Model) handleIPC(request ipc.Request) (ipc.Response, tea.Cmd) {
 		}
 		for _, task := range tasks {
 			m.killTaskPTY(task.ID)
+			m.clearTaskContextRecord(task.ID)
 		}
 		m.state = next
 		m.syncGroupCursor()
@@ -2202,7 +2461,7 @@ func renderHelp(cfg config.Config) string {
 		"Shift+Up/Down reorder selected workspace, task, or group",
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
-		fmt.Sprintf("%s command palette", cfg.KeyBindings.Repaint),
+		fmt.Sprintf("%s task tools", cfg.KeyBindings.Repaint),
 		"U upgrade supervisor, resume Codex, restart idle shells",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),

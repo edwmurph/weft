@@ -276,6 +276,135 @@ func TestClientMouseDragCopiesConsoleSelection(t *testing.T) {
 	}
 }
 
+func TestClientMouseDragCopiesTaskNotesSelection(t *testing.T) {
+	oldWriteClipboard := writeClipboard
+	var copied string
+	writeClipboard = func(value string) error {
+		copied = value
+		return nil
+	}
+	defer func() { writeClipboard = oldWriteClipboard }()
+
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  120,
+		height: 34,
+		mode:   modeCommand,
+		snapshot: ipc.Snapshot{
+			State: state.State{
+				Focus:        state.FocusConsole,
+				ActiveTaskID: "a",
+				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex}},
+			},
+			ActiveTaskContext: &ipc.TaskContext{
+				TaskID:  "a",
+				Heading: "Waiting on CI",
+				Detail:  "First detail line\nSecond detail line",
+			},
+		},
+	}
+	area, ok := model.taskPanelContextArea()
+	if !ok {
+		t.Fatal("expected task notes area")
+	}
+
+	updated, _ := model.handleMouse(tea.MouseMsg{
+		X:      area.x,
+		Y:      area.y + 2,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+	updated, _ = model.handleMouse(tea.MouseMsg{
+		X:      area.x + len("Second detail line") - 1,
+		Y:      area.y + 3,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	model = updated.(ClientModel)
+	if !model.mouseSelection.active {
+		t.Fatal("task notes drag should keep a visible selection active before release")
+	}
+	if !strings.Contains(model.View(), consoleSelectionANSIStart) {
+		t.Fatalf("task notes drag should render the selection highlight:\n%s", model.View())
+	}
+	updated, _ = model.handleMouse(tea.MouseMsg{
+		X:      area.x + len("Second detail line") - 1,
+		Y:      area.y + 3,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionRelease,
+	})
+	model = updated.(ClientModel)
+
+	if copied != "First detail line\nSecond detail line" {
+		t.Fatalf("copied = %q", copied)
+	}
+	if model.mode != modeCommand {
+		t.Fatalf("task notes copy should keep notes open, mode=%s", model.mode)
+	}
+	if model.toastText != "Copied 36 characters" {
+		t.Fatalf("toast = %q", model.toastText)
+	}
+	if model.mouseSelection.active {
+		t.Fatal("selection should clear after copy")
+	}
+}
+
+func TestClientMouseDragIgnoresTaskBriefConsoleCommands(t *testing.T) {
+	oldWriteClipboard := writeClipboard
+	var copied string
+	writeClipboard = func(value string) error {
+		copied = value
+		return nil
+	}
+	defer func() { writeClipboard = oldWriteClipboard }()
+
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  120,
+		height: 34,
+		mode:   modeCommand,
+		snapshot: ipc.Snapshot{
+			State: state.State{
+				Focus:        state.FocusConsole,
+				ActiveTaskID: "a",
+				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Tasks:        []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex}},
+			},
+			ActiveTaskContext: &ipc.TaskContext{TaskID: "a", Detail: "Notes only"},
+		},
+	}
+	layout := model.taskPanelLayout()
+	area, ok := model.taskPanelContextArea()
+	if !ok {
+		t.Fatal("expected task notes area")
+	}
+	shortcutX := area.x + layout.contextWidth + 2
+
+	updated, _ := model.handleMouse(tea.MouseMsg{
+		X:      shortcutX,
+		Y:      area.y,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+	updated, _ = model.handleMouse(tea.MouseMsg{
+		X:      shortcutX + 6,
+		Y:      area.y,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionRelease,
+	})
+	model = updated.(ClientModel)
+
+	if copied != "" {
+		t.Fatalf("console command drag copied %q", copied)
+	}
+	if model.mouseSelection.active {
+		t.Fatal("console command drag should not start a context selection")
+	}
+}
+
 func TestClientMouseDragCopiesTaskPreviewSelection(t *testing.T) {
 	oldWriteClipboard := writeClipboard
 	var copied string

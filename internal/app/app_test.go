@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -49,8 +51,11 @@ func TestCLIHelpIncludesLogoAndClearLaunch(t *testing.T) {
 		"weft version                 Show CLI, supervisor, and dashboard versions.",
 		"weft workspace add <path>    Add a workspace to the dashboard.",
 		"weft new [--type id] [title] Create a task.",
+		"weft task notes set <text>   Set the current Codex task note.",
+		"weft task notes detail set    Set longer notes for Task Tools.",
 		"weft close --kill [--yes]    Stop the supervisor and all task PTYs.",
 		"weft backup create           Back up config, state, and logs.",
+		"weft skill install           Install the bundled Codex skill.",
 		"weft doctor attention        Check terminal notification settings.",
 		"weft doctor keys             Diagnose terminal key encoding.",
 	} {
@@ -358,6 +363,132 @@ func TestExtractClearFlag(t *testing.T) {
 	}
 	if got := strings.Join(args, " "); got != "--no-attach" {
 		t.Fatalf("args = %q, want --no-attach", got)
+	}
+}
+
+func TestTaskContextSetUsesArgsAndEnvTarget(t *testing.T) {
+	t.Setenv("WEFT_TASK_ID", "env-task")
+	previous := taskContextCallIPC
+	t.Cleanup(func() { taskContextCallIPC = previous })
+	var gotCommand string
+	var gotArgs map[string]string
+	taskContextCallIPC = func(command string, args map[string]string, quiet bool) (ipc.Response, error) {
+		gotCommand = command
+		gotArgs = args
+		if !quiet {
+			t.Fatal("task notes commands should use quiet IPC")
+		}
+		return ipc.Response{OK: true, Message: "Set task notes heading for task env-task."}, nil
+	}
+
+	var out bytes.Buffer
+	if err := taskCommand([]string{"notes", "set", "review", "PR", "123"}, os.Stdin, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	if gotCommand != "task_context_set" || gotArgs["task_id"] != "env-task" || gotArgs["kind"] != "heading" || gotArgs["content"] != "review PR 123" {
+		t.Fatalf("ipc call = %s %#v", gotCommand, gotArgs)
+	}
+	if !strings.Contains(out.String(), "Set task notes") {
+		t.Fatalf("set output = %q", out.String())
+	}
+}
+
+func TestTaskContextSetReadsPipedStdinAndRejectsTerminalStdin(t *testing.T) {
+	previous := taskContextCallIPC
+	t.Cleanup(func() { taskContextCallIPC = previous })
+	var gotContent string
+	var gotKind string
+	taskContextCallIPC = func(command string, args map[string]string, quiet bool) (ipc.Response, error) {
+		gotContent = args["content"]
+		gotKind = args["kind"]
+		return ipc.Response{OK: true, Message: "Set task notes detail for task a."}, nil
+	}
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.WriteString("from stdin\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	var out bytes.Buffer
+	if err := taskCommand([]string{"notes", "detail", "set"}, reader, &out); err != nil {
+		t.Fatal(err)
+	}
+	if gotContent != "from stdin\n" {
+		t.Fatalf("piped content = %q", gotContent)
+	}
+	if gotKind != "detail" {
+		t.Fatalf("piped kind = %q", gotKind)
+	}
+
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devNull.Close()
+	if err := taskCommand([]string{"notes", "detail", "set"}, devNull, &out); err == nil || !strings.Contains(err.Error(), "requires text or piped stdin") {
+		t.Fatalf("terminal stdin error = %v", err)
+	}
+}
+
+func TestTaskContextShowJSONPrintsTaskContextField(t *testing.T) {
+	previous := taskContextCallIPC
+	t.Cleanup(func() { taskContextCallIPC = previous })
+	taskContextCallIPC = func(command string, args map[string]string, quiet bool) (ipc.Response, error) {
+		if command != "task_context_show" || args["task_id"] != "task-a" || args["kind"] != "detail" {
+			t.Fatalf("ipc call = %s %#v", command, args)
+		}
+		return ipc.Response{OK: true, TaskContext: &ipc.TaskContext{TaskID: "task-a", Heading: "full", Detail: "full\ntext", Summary: "full", UpdatedAt: "2026-06-03T12:00:00Z"}}, nil
+	}
+
+	var out bytes.Buffer
+	if err := taskCommand([]string{"notes", "detail", "show", "--task", "task-a", "--json"}, os.Stdin, &out); err != nil {
+		t.Fatal(err)
+	}
+	var got ipc.TaskContext
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("json output = %q err=%v", out.String(), err)
+	}
+	if got.TaskID != "task-a" || got.Heading != "full" || got.Detail != "full\ntext" || got.Summary != "full" {
+		t.Fatalf("json task notes = %#v", got)
+	}
+}
+
+func TestSkillInstallUsesCodexHomeAndForce(t *testing.T) {
+	codexHome := filepath.Join(t.TempDir(), "codex")
+	t.Setenv("CODEX_HOME", codexHome)
+
+	var out bytes.Buffer
+	if err := skillCommand([]string{"install"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	skillPath := filepath.Join(codexHome, "skills", "weft", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "weft task notes set") ||
+		!strings.Contains(string(data), "weft status --json") ||
+		!strings.Contains(string(data), "resume_id") ||
+		!strings.Contains(out.String(), filepath.Join(codexHome, "skills", "weft")) {
+		t.Fatalf("installed skill/output missing expected content:\n%s\n%s", data, out.String())
+	}
+
+	if err := skillCommand([]string{"install"}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("second install error = %v", err)
+	}
+	if err := skillCommand([]string{"install", "--force"}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("force install failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(codexHome, "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("skill install should not create Weft config, stat err=%v", err)
 	}
 }
 

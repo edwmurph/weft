@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	collapsedCodexToolbar = "C-b dashboard  C-] menu"
+	collapsedCodexToolbar = "C-b dashboard  C-] tools"
 	keyboardProtocolSetup = "\x1b[>4;2m\x1b[>29u"
 )
 
@@ -140,6 +140,80 @@ func TestFreshDashboardNewTaskFallsBackWhenShellMissing(t *testing.T) {
 	if strings.Contains(capture, "No task selected") || strings.Contains(capture, "fork/exec") {
 		t.Fatalf("new task rendered stale empty/error state:\n%s", capture)
 	}
+}
+
+func TestTaskNotesHeadingE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	t.Cleanup(func() {
+		cmd := exec.Command(bin, "close", "--kill", "--yes")
+		cmd.Env = env
+		_ = cmd.Run()
+	})
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+	runWeft(t, env, bin, "new", "Notes Task")
+	st := waitState(t, env, bin, func(st state.State) bool {
+		return len(st.Tasks) == 1 && st.Focus == state.FocusConsole && st.ActiveTaskID != ""
+	})
+	taskID := st.ActiveTaskID
+
+	pane := "task-notes"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar) &&
+			strings.Contains(capture, "Notes Task") &&
+			!strings.Contains(capture, "Pinned handoff link")
+	})
+
+	runWeft(t, env, bin, "task", "notes", "set", "--task", taskID, "Pinned handoff link")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, " note ") &&
+			strings.Contains(capture, "Pinned handoff link")
+	})
+	if show := runWeft(t, env, bin, "task", "notes", "show", "--task", taskID); strings.TrimSpace(show) != "Pinned handoff link" {
+		t.Fatalf("task notes show missing short note:\n%s", show)
+	}
+
+	detail := "Pinned detail line\nSecond detail line"
+	runWeft(t, env, bin, "task", "notes", "detail", "set", "--task", taskID, detail)
+	if show := runWeft(t, env, bin, "task", "notes", "detail", "show", "--task", taskID); !strings.Contains(show, detail) {
+		t.Fatalf("task notes detail show missing detail note:\n%s", show)
+	}
+	directRun(t, env, "send-keys", "-t", pane, "C-]")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Tools") &&
+			strings.Contains(capture, "Task Notes") &&
+			strings.Contains(capture, "Pinned handoff link") &&
+			strings.Contains(capture, "Pinned detail line") &&
+			strings.Contains(capture, "Second detail line") &&
+			strings.Contains(capture, "Console Commands")
+	})
+	directRun(t, env, "send-keys", "-t", pane, "Escape")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return !strings.Contains(capture, "Task Tools")
+	})
+
+	runWeft(t, env, bin, "task", "notes", "clear", "--task", taskID)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar) &&
+			!strings.Contains(capture, "Pinned handoff link")
+	})
+	runWeft(t, env, bin, "task", "notes", "detail", "clear", "--task", taskID)
+	directRun(t, env, "send-keys", "-t", pane, "C-]")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Tools") &&
+			strings.Contains(capture, "Task Notes") &&
+			!strings.Contains(capture, "Pinned detail line") &&
+			strings.Contains(capture, "Console Commands")
+	})
 }
 
 func TestDashboardCanCreateConfiguredShellTaskE2E(t *testing.T) {
@@ -2392,7 +2466,8 @@ func TestTaskConsoleCtrlCExitRecoveryE2E(t *testing.T) {
 	secondTaskID := st.ActiveTaskID
 	directRun(t, env, "send-keys", "-t", pane, "C-]")
 	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "Command palette") &&
+		return strings.Contains(capture, "Task Tools") &&
+			strings.Contains(capture, "Task Notes") &&
 			strings.Contains(capture, "Repaint")
 	})
 	rawBeforeRepaint := capturePaneEscaped(t, env, pane)
@@ -2954,17 +3029,18 @@ func TestDashboardOrganizationJourneysE2E(t *testing.T) {
 		})
 	})
 
-	timedStep(t, "command palette opens from task console and repaints", func() {
+	timedStep(t, "task tools opens from task console and repaints", func() {
 		directRun(t, env, "send-keys", "-t", pane, "C-]")
 		waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Command palette") &&
+			return strings.Contains(capture, "Task Tools") &&
+				strings.Contains(capture, "Task Notes") &&
 				strings.Contains(capture, "Repaint") &&
-				strings.Contains(capture, "Copy pane content")
+				strings.Contains(capture, "Copy full task console")
 		})
 		directRun(t, env, "send-keys", "-l", "-t", pane, "\x1b[114u")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, collapsedCodexToolbar) &&
-				!strings.Contains(capture, "Command palette")
+				!strings.Contains(capture, "Task Tools")
 		})
 	})
 

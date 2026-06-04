@@ -1309,8 +1309,8 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	if !strings.Contains(got, "C-b dashboard") {
 		t.Fatalf("collapsed codex top toolbar missing drawer shortcuts:\n%s", got)
 	}
-	if !strings.Contains(got, "C-] menu") {
-		t.Fatalf("collapsed codex top toolbar missing menu shortcut:\n%s", got)
+	if !strings.Contains(got, "C-] tools") {
+		t.Fatalf("collapsed codex top toolbar missing tools key:\n%s", got)
 	}
 	if strings.Contains(got, "WEFT") {
 		t.Fatalf("collapsed codex top toolbar should not include WEFT branding:\n%s", got)
@@ -1328,8 +1328,82 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	st.Tasks[0].LiveTitle = "Fake Codex Working"
 	st.Tasks[0].LiveStatus = "Working"
 	got = renderWorkspaceView(cfg, st, "alpha", "output", 80, 24, "", 0, 0, workspaceRenderOptions{})
-	if !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] menu") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
+	if !strings.Contains(got, "C-b dashboard") || !strings.Contains(got, "C-] tools") || strings.Contains(got, "WEFT") || strings.Contains(got, "C-c") {
 		t.Fatalf("working codex toolbar should advertise only Weft-owned console shortcuts:\n%s", got)
+	}
+}
+
+func TestTaskContextHeadingRendersOnlyFocusedCodexConsole(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	heading := "Investigate failing release workflow"
+
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 96, 10, "", 0, 0, workspaceRenderOptions{taskContextHeading: heading}))
+	if count := strings.Count(got, " note "); count != 1 {
+		t.Fatalf("focused Codex console should render one note label, count=%d:\n%s", count, got)
+	}
+	if !strings.Contains(got, heading) {
+		t.Fatalf("focused Codex console should render the full note when border space is available:\n%s", got)
+	}
+	if strings.Contains(got, "["+heading+"]") {
+		t.Fatalf("task note should not render centered in brackets:\n%s", got)
+	}
+	if strings.Contains(got, "Context:") {
+		t.Fatalf("task note should not render as a body banner:\n%s", got)
+	}
+	if strings.Index(got, " note ") > strings.Index(got, "output") {
+		t.Fatalf("task note should render in the top border before task output:\n%s", got)
+	}
+
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 140, 18, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{taskContextHeading: heading}))
+	if strings.Contains(got, heading) {
+		t.Fatalf("Task Live Preview should not render task notes:\n%s", got)
+	}
+
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 96, 10, "", 0, 0, workspaceRenderOptions{taskContextHeading: heading}))
+	if strings.Contains(got, heading) {
+		t.Fatalf("shell task console should not render task notes:\n%s", got)
+	}
+}
+
+func TestTaskContextHeadingUsesAvailableConsoleHeaderWidth(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	st.Tasks[0].Title = "A"
+	heading := "Workflow: https://github.com/example/repo/actions/runs/1234567890"
+
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "A", "output", 132, 10, "", 0, 0, workspaceRenderOptions{taskContextHeading: heading}))
+	if !strings.Contains(got, heading) {
+		t.Fatalf("focused Codex console should use available header width before truncating:\n%s", got)
+	}
+
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "A", "output", 78, 10, "", 0, 0, workspaceRenderOptions{taskContextHeading: heading}))
+	if !strings.Contains(got, "Workflow: https://githu") || !strings.Contains(got, "…") {
+		t.Fatalf("focused Codex console should truncate only when header space runs out:\n%s", got)
+	}
+}
+
+func TestTaskContextHeadingPreservesStatusBanner(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 90, 12, "Upgrade pending: wait for Codex task.", 0, 0, workspaceRenderOptions{taskContextHeading: "Review PR 123"}))
+
+	for _, expected := range []string{"Upgrade: pending", " note ", "Review PR 123", "output"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("console missing %q:\n%s", expected, got)
+		}
 	}
 }
 

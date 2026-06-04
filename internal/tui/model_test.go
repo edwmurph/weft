@@ -590,10 +590,10 @@ func TestClientCommandMenuOpensFromHelpAndCanRepaint(t *testing.T) {
 		t.Fatal("opening command menu should not run a command")
 	}
 	view := ansi.Strip(model.View())
-	if !strings.Contains(view, "Command palette") || !strings.Contains(view, "Repaint") || !strings.Contains(view, "Copy pane content") {
+	if !strings.Contains(view, "Task Tools") || !strings.Contains(view, "Task Notes") || !strings.Contains(view, "Repaint") || !strings.Contains(view, "Copy full task console") {
 		t.Fatalf("command menu missing expected actions:\n%s", view)
 	}
-	if !strings.Contains(view, "↑/↓ move") || strings.Contains(view, "Up/Down move") {
+	if !strings.Contains(view, "↑/↓") || !strings.Contains(view, "Select") || strings.Contains(view, "Up/Down select") {
 		t.Fatalf("command menu should use arrow glyphs in footer actions:\n%s", view)
 	}
 
@@ -617,6 +617,64 @@ func TestClientCommandMenuOpensFromHelpAndCanRepaint(t *testing.T) {
 	first := sequence.Index(0).Interface().(tea.Cmd)
 	if got := fmt.Sprintf("%T", first()); got != "tea.clearScreenMsg" {
 		t.Fatalf("first repaint action command = %s, want tea.clearScreenMsg", got)
+	}
+}
+
+func TestClientCommandMenuShowsTaskContextDetail(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig())
+	st := state.Empty()
+	st.Workspaces = []state.Workspace{{ID: "w", Path: rt.Workspace}}
+	st.Tasks = []state.Task{{ID: "t", WorkspaceID: "w", TypeID: "codex", Title: "Codex", Status: state.StatusReady}}
+	st.ActiveTaskID = "t"
+	st.SelectedWorkspaceID = "w"
+	st.SelectedTaskID = "t"
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{
+		State:             st,
+		ActiveTaskContext: &ipc.TaskContext{TaskID: "t", Heading: "Waiting on CI", Detail: "Run: https://github.com/example/repo/actions/runs/123\nCheck release notes."},
+	}})
+	model.startCommandMenu()
+
+	view := ansi.Strip(model.View())
+	for _, expected := range []string{"Task Tools", "Task Notes", "Waiting on CI", "Run: https://github.com/example", "Check release notes.", "Console Commands", "Copy full task console"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("task notes missing %q:\n%s", expected, view)
+		}
+	}
+	if strings.Contains(view, "Context") || strings.Contains(view, "Heading") || strings.Contains(view, "Detail") || strings.Contains(view, "Shortcuts") {
+		t.Fatalf("task notes should not spend context space on inferred labels:\n%s", view)
+	}
+}
+
+func TestClientTaskBriefModalFitsTerminalWidth(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 120
+	model.height = 32
+	st := state.Empty()
+	st.Workspaces = []state.Workspace{{ID: "w", Path: rt.Workspace}}
+	st.Tasks = []state.Task{{ID: "t", WorkspaceID: "w", TypeID: "codex", Title: "Codex", Status: state.StatusReady}}
+	st.ActiveTaskID = "t"
+	st.SelectedWorkspaceID = "w"
+	st.SelectedTaskID = "t"
+	st.Focus = state.FocusConsole
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{
+		State:             st,
+		ActiveTaskContext: &ipc.TaskContext{TaskID: "t", Heading: "Waiting on CI", Detail: "First detail line\nSecond detail line"},
+	}})
+	model.startCommandMenu()
+
+	view := model.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) > model.height {
+		t.Fatalf("task notes line count = %d, want <= %d:\n%s", len(lines), model.height, ansi.Strip(view))
+	}
+	for _, line := range lines {
+		if width := lipgloss.Width(line); width > model.width-2 {
+			t.Fatalf("task notes line width = %d, want <= %d:\n%q\n%s", width, model.width-2, ansi.Strip(line), ansi.Strip(view))
+		}
 	}
 }
 
@@ -2309,6 +2367,101 @@ func TestIPCMoveAcceptsCurrentGroupPathArg(t *testing.T) {
 	}
 	if task := state.TaskByID(model.state, "a"); task == nil || task.GroupID != "release" {
 		t.Fatalf("task not moved to release: %#v", task)
+	}
+}
+
+func TestIPCTaskContextSetShowClearForActiveCodexTask(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	response, cmd := model.handleIPC(ipc.Request{Command: "task_context_set", Args: map[string]string{"content": "Review PR 123"}})
+	if !response.OK || cmd != nil {
+		t.Fatalf("set response/cmd = %#v/%v", response, cmd)
+	}
+	if response.TaskContext == nil || response.TaskContext.TaskID != "a" || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Summary != "Review PR 123" {
+		t.Fatalf("set task notes = %#v", response.TaskContext)
+	}
+	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_set", Args: map[string]string{"kind": "detail", "content": "next line\nmore detail"}})
+	if !response.OK || cmd != nil {
+		t.Fatalf("set detail response/cmd = %#v/%v", response, cmd)
+	}
+	if response.TaskContext == nil || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Detail != "next line\nmore detail" {
+		t.Fatalf("set detail task notes = %#v", response.TaskContext)
+	}
+	snapshot := model.Snapshot()
+	if snapshot.ActiveTaskContext == nil || snapshot.ActiveTaskContext.Heading != "Review PR 123" || snapshot.ActiveTaskContext.Detail != "next line\nmore detail" {
+		t.Fatalf("snapshot active notes = %#v", snapshot.ActiveTaskContext)
+	}
+
+	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_show", Args: map[string]string{}})
+	if !response.OK || cmd != nil || response.TaskContext == nil || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Detail != "next line\nmore detail" {
+		t.Fatalf("show response/cmd = %#v/%v", response, cmd)
+	}
+
+	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_clear", Args: map[string]string{}})
+	if !response.OK || cmd != nil {
+		t.Fatalf("clear response/cmd = %#v/%v", response, cmd)
+	}
+	if snapshot := model.Snapshot(); snapshot.ActiveTaskContext == nil || snapshot.ActiveTaskContext.Heading != "" || snapshot.ActiveTaskContext.Detail != "next line\nmore detail" {
+		t.Fatalf("clearing short note should preserve detail in snapshot: %#v", snapshot.ActiveTaskContext)
+	}
+
+	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_clear", Args: map[string]string{"kind": "detail"}})
+	if !response.OK || cmd != nil {
+		t.Fatalf("clear detail response/cmd = %#v/%v", response, cmd)
+	}
+	if snapshot := model.Snapshot(); snapshot.ActiveTaskContext != nil {
+		t.Fatalf("cleared notes should disappear from snapshot: %#v", snapshot.ActiveTaskContext)
+	}
+}
+
+func TestIPCTaskContextRejectsShellTasksAndDisabledConfig(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+
+	response, _ := model.handleIPC(ipc.Request{Command: "task_context_set", Args: map[string]string{"content": "note"}})
+	if response.OK || response.Error == nil || response.Error.Code != "task_context_not_supported" {
+		t.Fatalf("shell task notes response = %#v", response)
+	}
+
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeCodex
+	model.cfg.TaskContext.Enabled = false
+	response, _ = model.handleIPC(ipc.Request{Command: "task_context_set", Args: map[string]string{"content": "note"}})
+	if response.OK || response.Error == nil || response.Error.Code != "task_context_disabled" {
+		t.Fatalf("disabled task notes response = %#v", response)
+	}
+}
+
+func TestTaskContextClearsWhenTaskCloses(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	response, _ := model.handleIPC(ipc.Request{Command: "task_context_set", Args: map[string]string{"content": "handoff"}})
+	if !response.OK {
+		t.Fatalf("set response = %#v", response)
+	}
+	response, _ = model.handleIPC(ipc.Request{Command: "close", Args: map[string]string{"id": "a"}})
+	if !response.OK {
+		t.Fatalf("close response = %#v", response)
+	}
+	if _, ok, err := model.taskContextStore.Show("a"); err != nil || ok {
+		t.Fatalf("closed task notes should be removed, ok=%t err=%v", ok, err)
+	}
+}
+
+func TestTaskEnvForCodexTaskOnly(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+
+	env := model.taskEnvForTask("a")
+	if env[config.AppDirEnv] != model.runtime.Dir || env["WEFT_TASK_ID"] != "a" || env["WEFT_TASK_TYPE_ID"] != config.DefaultTaskTypeCodex || env["WEFT_TASK_KIND"] != config.TaskKindCodex {
+		t.Fatalf("codex task env = %#v", env)
+	}
+
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	if env := model.taskEnvForTask("a"); len(env) != 0 {
+		t.Fatalf("shell task should not receive Weft task env: %#v", env)
 	}
 }
 

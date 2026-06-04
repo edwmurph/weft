@@ -15,7 +15,7 @@ import (
 	"github.com/edwmurph/weft/internal/version"
 )
 
-const ProtocolVersion = 3
+const ProtocolVersion = 5
 
 const (
 	UpgradeReasonVersion = "version"
@@ -40,6 +40,7 @@ type Response struct {
 	Error             *Error       `json:"error,omitempty"`
 	State             *state.State `json:"state,omitempty"`
 	Snapshot          *Snapshot    `json:"snapshot,omitempty"`
+	TaskContext       *TaskContext `json:"task_context,omitempty"`
 	Upgrade           *Upgrade     `json:"upgrade,omitempty"`
 	ProtocolVersion   int          `json:"protocol_version,omitempty"`
 	SupervisorVersion string       `json:"supervisor_version,omitempty"`
@@ -61,6 +62,7 @@ type Upgrade struct {
 type Snapshot struct {
 	State                       state.State          `json:"state"`
 	LiveTitle                   string               `json:"live_title,omitempty"`
+	ActiveTaskContext           *TaskContext         `json:"active_task_context,omitempty"`
 	CodexContent                string               `json:"codex_content,omitempty"`
 	CodexPlainLines             []string             `json:"codex_plain_lines,omitempty"`
 	CodexScrollback             string               `json:"codex_scrollback,omitempty"`
@@ -76,6 +78,14 @@ type Snapshot struct {
 	ActiveClientID              string               `json:"active_client_id,omitempty"`
 	ActiveClientVersion         string               `json:"active_client_version,omitempty"`
 	DetachClient                bool                 `json:"detach_client,omitempty"`
+}
+
+type TaskContext struct {
+	TaskID    string `json:"task_id"`
+	Heading   string `json:"heading,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type Error struct {
