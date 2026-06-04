@@ -9,14 +9,16 @@ import (
 
 const codexTaskTypeID = "codex"
 
-func TestStoreRejectsUnknownV6StateWithoutArchiving(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-	workspace := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workspace, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{
+func TestStoreRejectsInvalidStrictState(t *testing.T) {
+	tests := []struct {
+		name             string
+		raw              string
+		expectedMessages []string
+		preservedSnippet string
+	}{
+		{
+			name: "unknown field",
+			raw: `{
   "version": 6,
   "focus": "tasks",
   "nav_open": true,
@@ -25,39 +27,13 @@ func TestStoreRejectsUnknownV6StateWithoutArchiving(t *testing.T) {
   "tasks": [],
   "collapsed_group_ids": [],
   "unexpected": true
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := NewStore(path).Ensure()
-	if err == nil {
-		t.Fatal("expected unknown field error")
-	}
-	for _, expected := range []string{`unknown field "unexpected"`, "run `weft clear` to reset"} {
-		if !strings.Contains(err.Error(), expected) {
-			t.Fatalf("error missing %q: %v", expected, err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); !os.IsNotExist(err) {
-		t.Fatalf("state.legacy.json should not be written, err=%v", err)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), `"unexpected"`) {
-		t.Fatalf("unsupported state file should be left intact:\n%s", raw)
-	}
-}
-
-func TestStoreRejectsUnsupportedStateVersion(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-	workspace := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workspace, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{
+}`,
+			expectedMessages: []string{`unknown field "unexpected"`, "run `weft clear` to reset"},
+			preservedSnippet: `"unexpected"`,
+		},
+		{
+			name: "unsupported version",
+			raw: `{
   "version": 4,
   "focus": "tasks",
   "nav_open": true,
@@ -65,29 +41,12 @@ func TestStoreRejectsUnsupportedStateVersion(t *testing.T) {
   "groups": [],
   "tasks": [],
   "collapsed_group_ids": []
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := NewStore(path).Ensure()
-	if err == nil {
-		t.Fatal("expected version error")
-	}
-	for _, expected := range []string{"unsupported state version 4", "run `weft clear` to reset"} {
-		if !strings.Contains(err.Error(), expected) {
-			t.Fatalf("error missing %q: %v", expected, err)
-		}
-	}
-}
-
-func TestStoreRejectsUnknownFocusValues(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-	workspace := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workspace, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{
+}`,
+			expectedMessages: []string{"unsupported state version 4", "run `weft clear` to reset"},
+		},
+		{
+			name: "unknown focus",
+			raw: `{
   "version": 6,
   "focus": "sideways",
   "nav_open": true,
@@ -95,29 +54,12 @@ func TestStoreRejectsUnknownFocusValues(t *testing.T) {
   "groups": [],
   "tasks": [],
   "collapsed_group_ids": []
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := NewStore(path).Ensure()
-	if err == nil {
-		t.Fatal("expected focus error")
-	}
-	for _, expected := range []string{`unsupported focus value "sideways"`, "run `weft clear` to reset"} {
-		if !strings.Contains(err.Error(), expected) {
-			t.Fatalf("error missing %q: %v", expected, err)
-		}
-	}
-}
-
-func TestStoreRejectsTaskMissingTypeID(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-	workspace := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workspace, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{
+}`,
+			expectedMessages: []string{`unsupported focus value "sideways"`, "run `weft clear` to reset"},
+		},
+		{
+			name: "task missing type",
+			raw: `{
   "version": 6,
   "focus": "tasks",
   "nav_open": true,
@@ -125,28 +67,47 @@ func TestStoreRejectsTaskMissingTypeID(t *testing.T) {
   "groups": [],
   "tasks": [{"id": "a", "workspace_id": "w", "group_id": "", "title": "Alpha", "status": "running", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}],
   "collapsed_group_ids": []
-}`), 0o600); err != nil {
-		t.Fatal(err)
+}`,
+			expectedMessages: []string{`tasks[0].type_id is required`, "run `weft clear` to reset"},
+		},
 	}
 
-	_, err := NewStore(path).Ensure()
-	if err == nil {
-		t.Fatal("expected task type error")
-	}
-	for _, expected := range []string{`tasks[0].type_id is required`, "run `weft clear` to reset"} {
-		if !strings.Contains(err.Error(), expected) {
-			t.Fatalf("error missing %q: %v", expected, err)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "state.json")
+			if err := os.WriteFile(path, []byte(tt.raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := NewStore(path).Ensure()
+			if err == nil {
+				t.Fatal("expected strict state error")
+			}
+			for _, expected := range tt.expectedMessages {
+				if !strings.Contains(err.Error(), expected) {
+					t.Fatalf("error missing %q: %v", expected, err)
+				}
+			}
+			if tt.preservedSnippet != "" {
+				if _, err := os.Stat(filepath.Join(filepath.Dir(path), "state.legacy.json")); !os.IsNotExist(err) {
+					t.Fatalf("state.legacy.json should not be written, err=%v", err)
+				}
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(raw), tt.preservedSnippet) {
+					t.Fatalf("unsupported state file should be left intact:\n%s", raw)
+				}
+			}
+		})
 	}
 }
 
 func TestStoreReadsStrictV6TaskState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
-	workspace := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(workspace, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(path, []byte(`{
   "version": 6,
   "active_task_id": "a",

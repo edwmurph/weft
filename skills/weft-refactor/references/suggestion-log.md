@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-04 - Test duplicate cleanup
+
+- Request: Do a safe refactor that reduces lines of code and makes Weft easier to manage, scale, and reason about.
+- Suggestions: Keep runtime behavior unchanged and remove repeated test harness code by table-driving strict state rejection cases, client input router send/read setup, mouse selection-offset cases, and IPC `new` rejection cases.
+- Outcome: Implemented in `.worktrees/safe-refactor-cleanup`; awaiting review.
+- Evidence: `internal/state/state_test.go`, `internal/tui/client_input_test.go`, `internal/tui/mouse_test.go`, `internal/tui/model_test.go`; `dupl` clone groups dropped from 9 to 5, focused `go test ./internal/state` and `go test ./internal/tui` passed, and the test files are 284 net lines smaller.
+- Deferred: Remaining `dupl` groups are cross-file render fixtures and integration fake-Codex script bodies; they are larger and riskier than this bounded pass.
+
 ## 2026-06-03 - TUI rendering dedupe
 
 - Request: Find and implement another safe refactor that reduces lines of code and makes Weft easier to manage, scale, and reason about.

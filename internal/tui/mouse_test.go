@@ -130,45 +130,38 @@ func TestCodexSelectableMarginIgnoresChromeAtColumnZero(t *testing.T) {
 	}
 }
 
-func TestTerminalTaskSelectionStartsAtColumnZero(t *testing.T) {
-	model := ClientModel{
-		cfg:    config.DefaultConfig(),
-		width:  80,
-		height: 8,
-		snapshot: ipc.Snapshot{
-			State: state.State{
-				Focus:        state.FocusConsole,
-				ActiveTaskID: "shell",
-				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Tasks:        []state.Task{{ID: "shell", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
-			},
-			CodexPlainLines: []string{"        left side should copy"},
-		},
+func TestCodexSelectionColumnOffsetByTaskType(t *testing.T) {
+	tests := []struct {
+		name     string
+		taskID   string
+		taskType string
+		want     int
+	}{
+		{name: "terminal starts at zero", taskID: "shell", taskType: config.DefaultTaskTypeShell, want: 0},
+		{name: "codex keeps shared margin", taskID: "codex", taskType: config.DefaultTaskTypeCodex, want: 8},
 	}
 
-	if got := model.codexSelectionColumnOffset(); got != 0 {
-		t.Fatalf("terminal selection offset = %d, want 0", got)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := ClientModel{
+				cfg:    config.DefaultConfig(),
+				width:  80,
+				height: 8,
+				snapshot: ipc.Snapshot{
+					State: state.State{
+						Focus:        state.FocusConsole,
+						ActiveTaskID: tt.taskID,
+						Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+						Tasks:        []state.Task{{ID: tt.taskID, WorkspaceID: "w", TypeID: tt.taskType}},
+					},
+					CodexPlainLines: []string{"        content"},
+				},
+			}
 
-func TestCodexTaskSelectionKeepsSharedMargin(t *testing.T) {
-	model := ClientModel{
-		cfg:    config.DefaultConfig(),
-		width:  80,
-		height: 8,
-		snapshot: ipc.Snapshot{
-			State: state.State{
-				Focus:        state.FocusConsole,
-				ActiveTaskID: "codex",
-				Workspaces:   []state.Workspace{{ID: "w", Path: "/tmp/project"}},
-				Tasks:        []state.Task{{ID: "codex", WorkspaceID: "w", TypeID: config.DefaultTaskTypeCodex}},
-			},
-			CodexPlainLines: []string{"        codex margin"},
-		},
-	}
-
-	if got := model.codexSelectionColumnOffset(); got != 8 {
-		t.Fatalf("codex selection offset = %d, want 8", got)
+			if got := model.codexSelectionColumnOffset(); got != tt.want {
+				t.Fatalf("selection offset = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

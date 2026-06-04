@@ -2184,45 +2184,56 @@ func TestIPCNewCreatesSilentTask(t *testing.T) {
 	}
 }
 
-func TestIPCNewRejectsInvalidSilent(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Tasks = nil
-	model.state.ActiveTaskID = ""
-
-	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"silent": "sometimes"}})
-	defer killPTYs(model)
-
-	if response.OK || cmd != nil {
-		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+func TestIPCNewRejectsInvalidRequestsWithoutCreatingTask(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            map[string]string
+		code            string
+		messageContains string
+	}{
+		{
+			name: "invalid silent",
+			args: map[string]string{"silent": "sometimes"},
+			code: "invalid_silent",
+		},
+		{
+			name:            "transport metadata",
+			args:            map[string]string{"client_id": "dashboard-1"},
+			code:            "unsupported_arg",
+			messageContains: "client_id",
+		},
+		{
+			name:            "unknown task type",
+			args:            map[string]string{"type": "ghost"},
+			code:            "task_type_not_found",
+			messageContains: "ghost",
+		},
+		{
+			name:            "unsupported argument",
+			args:            map[string]string{"unexpected": config.DefaultTaskTypeShell},
+			code:            "unsupported_arg",
+			messageContains: "unexpected",
+		},
 	}
-	if response.Error == nil || response.Error.Code != "invalid_silent" {
-		t.Fatalf("expected invalid silent error: %#v", response)
-	}
-	if len(model.state.Tasks) != 0 {
-		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
-	}
-}
 
-func TestIPCNewRejectsTransportMetadataInArgs(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Tasks = nil
-	model.state.ActiveTaskID = ""
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := testModelWithTask(t)
+			defer killPTYs(model)
+			model.state.Tasks = nil
+			model.state.ActiveTaskID = ""
 
-	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{
-		"client_id": "dashboard-1",
-	}})
-	defer killPTYs(model)
-
-	if response.OK || cmd != nil {
-		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
-	}
-	if response.Error == nil || response.Error.Code != "unsupported_arg" || !strings.Contains(response.Message, "client_id") {
-		t.Fatalf("expected unsupported metadata arg error: %#v", response)
-	}
-	if len(model.state.Tasks) != 0 {
-		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
+			response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: tt.args})
+			if response.OK || cmd != nil {
+				t.Fatalf("new response/cmd = %#v/%v", response, cmd)
+			}
+			if response.Error == nil || response.Error.Code != tt.code || (tt.messageContains != "" && !strings.Contains(response.Message, tt.messageContains)) {
+				t.Fatalf("expected %s error containing %q: %#v", tt.code, tt.messageContains, response)
+			}
+			if len(model.state.Tasks) != 0 {
+				t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
+			}
+		})
 	}
 }
 
@@ -2269,46 +2280,6 @@ func TestIPCRenameRejectsInvalidSilent(t *testing.T) {
 	}
 	if task := state.TaskByID(model.state, "a"); task == nil || task.Title != "alpha" || task.Silent {
 		t.Fatalf("invalid silent should not mutate task: %#v", task)
-	}
-}
-
-func TestIPCNewRejectsUnknownTaskType(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Tasks = nil
-	model.state.ActiveTaskID = ""
-
-	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"type": "ghost"}})
-	defer killPTYs(model)
-
-	if response.OK || cmd != nil {
-		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
-	}
-	if response.Error == nil || response.Error.Code != "task_type_not_found" || !strings.Contains(response.Message, "ghost") {
-		t.Fatalf("expected unknown task type error: %#v", response)
-	}
-	if len(model.state.Tasks) != 0 {
-		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
-	}
-}
-
-func TestIPCNewRejectsUnsupportedArgument(t *testing.T) {
-	model := testModelWithTask(t)
-	defer killPTYs(model)
-	model.state.Tasks = nil
-	model.state.ActiveTaskID = ""
-
-	response, cmd := model.handleIPC(ipc.Request{Command: "new", Args: map[string]string{"unexpected": config.DefaultTaskTypeShell}})
-	defer killPTYs(model)
-
-	if response.OK || cmd != nil {
-		t.Fatalf("new response/cmd = %#v/%v", response, cmd)
-	}
-	if response.Error == nil || response.Error.Code != "unsupported_arg" || !strings.Contains(response.Message, "unexpected") {
-		t.Fatalf("expected unsupported arg error: %#v", response)
-	}
-	if len(model.state.Tasks) != 0 {
-		t.Fatalf("tasks should not be created: %#v", model.state.Tasks)
 	}
 }
 
