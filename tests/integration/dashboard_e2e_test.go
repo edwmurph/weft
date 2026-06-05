@@ -2218,7 +2218,13 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "?")
 		waitForOutput(t, clientOutput, func(capture string) bool {
 			return strings.Contains(capture, "Weft shortcuts") &&
-				strings.Contains(capture, "Backspace delete")
+				strings.Contains(capture, "Backspace delete") &&
+				strings.Contains(capture, "C-r repaint whole screen")
+		})
+		directRun(t, env, "send-keys", "-t", pane, "C-r")
+		waitForOutput(t, clientOutput, func(capture string) bool {
+			return strings.Contains(capture, "Weft shortcuts") &&
+				strings.Contains(capture, "C-r repaint whole screen")
 		})
 		directRun(t, env, "send-keys", "-t", pane, "Escape")
 		waitForOutput(t, clientOutput, func(capture string) bool {

@@ -372,6 +372,8 @@ Backspace Delete/remove selected item
 C-c     Quit Weft from dashboard focus
 ```
 
+While Help is open, `C-r` repaints the whole attached client screen and refreshes the dashboard snapshot without closing Help.
+
 Task Tools shows task notes and console commands in separate sections. The Task Notes area uses most of the available space and shows the concise note as the lead line, followed by wrapped longer notes when present, without separate field labels that repeat the section purpose. Left-button drag selection inside that section is bounded to the notes body and copies selected note text to the clipboard. The Console Commands section offers `r` to repaint the attached client and refresh the dashboard snapshot, `c` as `Copy full task console` to copy the current task console's plain captured content to the clipboard for debugging, `Enter` to run the selected command, and `Esc` to close.
 
 Deletion behavior depends on selected item type and is defined below.

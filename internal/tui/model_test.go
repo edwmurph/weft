@@ -620,6 +620,34 @@ func TestClientCommandMenuOpensFromHelpAndCanRepaint(t *testing.T) {
 	}
 }
 
+func TestClientHelpCtrlRRepaintsScreen(t *testing.T) {
+	rt := testRuntime(t)
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.mode = modeHelp
+
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyCtrlR})
+	model = updated.(ClientModel)
+
+	if model.mode != modeHelp {
+		t.Fatalf("C-r should keep help open, mode=%s", model.mode)
+	}
+	if cmd == nil {
+		t.Fatal("C-r should force clear-screen and refresh")
+	}
+	msg := cmd()
+	if got := fmt.Sprintf("%T", msg); got != "tea.sequenceMsg" {
+		t.Fatalf("C-r command = %T, want tea.sequenceMsg", msg)
+	}
+	sequence := reflect.ValueOf(msg)
+	if sequence.Len() != 2 {
+		t.Fatalf("C-r scheduled %d commands, want clear-screen and refresh", sequence.Len())
+	}
+	first := sequence.Index(0).Interface().(tea.Cmd)
+	if got := fmt.Sprintf("%T", first()); got != "tea.clearScreenMsg" {
+		t.Fatalf("first C-r command = %s, want tea.clearScreenMsg", got)
+	}
+}
+
 func TestClientCommandMenuShowsTaskContextDetail(t *testing.T) {
 	rt := testRuntime(t)
 	model := NewClientModel(rt, config.DefaultConfig())

@@ -275,6 +275,9 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInputKey(msg)
 	}
 	if m.mode == modeHelp {
+		if msg.Type == tea.KeyCtrlR {
+			return m, m.repaintClient()
+		}
 		if msg.Type == tea.KeyEsc || msg.String() == "q" || msg.String() == "?" {
 			m.mode = modeNormal
 		}

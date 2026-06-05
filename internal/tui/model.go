@@ -2464,6 +2464,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s task tools", cfg.KeyBindings.Repaint),
 		"U upgrade supervisor, resume Codex, restart idle shells",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
+		"C-r repaint whole screen",
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),
 		"",
 		"Esc close",
