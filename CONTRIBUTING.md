@@ -34,11 +34,13 @@ Live integration tests are opt-in because they start real supervisor and PTY pro
 
 Docs-only changes may skip live integration tests when they do not affect runtime behavior, generated output, release packaging, command output, or user-facing behavior. Explain any skipped check in the pull request.
 
+GitHub CI uses `CI Gate` as the required check. Source, workflow, script, test, or specification changes run the full Ubuntu and macOS matrix, including live integration tests and build. Documentation or process-only changes may take the minimal CI path. The `CI` workflow can also be manually dispatched to validate the current branch without publishing a release.
+
 Pull requests from public contributors may touch any file, but merges to `main` are maintainer-controlled. Maintainer repository settings and branch protection expectations are documented in [Repository Settings Checklist](docs/repository-settings.md).
 
 ## Homebrew Publishing
 
-Pushes to `main` run the `Publish Homebrew` workflow. The workflow infers the semantic version bump from the shipped commit, updates `VERSION` and `internal/version/version.go`, tags `vX.Y.Z`, creates a GitHub release, and writes `Formula/weft.rb` to `edwmurph/homebrew-tap`.
+Successful push-triggered CI runs on `main` start the `Publish Homebrew` workflow. Manually dispatched CI runs do not publish. The workflow infers the semantic version bump from the shipped commit, updates `VERSION` and `internal/version/version.go`, tags `vX.Y.Z`, creates a GitHub release, and writes `Formula/weft.rb` to `edwmurph/homebrew-tap`.
 
 Weft stays on the `0.x` prerelease line until an explicit stable `1.0` decision. While the current version is `0.y.z`, inferred or explicit major bumps publish `0.(y+1).0` instead of `1.0.0`; breaking changes during pre-1.0 are minor releases in the `0.x` line. Patch and minor bumps stay in the normal `0.x` semver shape, such as `0.0.1`, `0.2.0`, or `0.5.2`. GitHub releases for `v0.*` tags are marked as prereleases. Only a manual workflow dispatch with `bump=major` and `allow_stable_major=true` may cross from `0.x` to `1.0.0`.
 

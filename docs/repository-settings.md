@@ -30,7 +30,7 @@ These settings are applied in GitHub, not from files in this repository. They de
 - Require CODEOWNERS review.
 - Dismiss stale approvals when new commits are pushed.
 - Require conversation resolution.
-- Require CI status checks for both Ubuntu and macOS jobs.
+- Require the `CI Gate` status check. That single gate fails when commit-subject validation or the required Ubuntu/macOS matrix fails, and it allows documentation or process-only changes to avoid expensive OS jobs.
 - Require branches to be up to date before merging.
 - Require linear history.
 - Block force pushes.

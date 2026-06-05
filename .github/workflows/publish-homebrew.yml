@@ -1,7 +1,11 @@
 name: Publish Homebrew
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
@@ -46,12 +50,14 @@ env:
 
 jobs:
   publish:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
     runs-on: macos-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -66,7 +72,7 @@ jobs:
       - name: Determine release version
         id: version
         env:
-          BASE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.before || '' }}
           RELEASE_BUMP: ${{ github.event.inputs.bump || 'auto' }}
           ALLOW_STABLE_MAJOR: ${{ github.event.inputs.allow_stable_major || 'false' }}
         run: |
