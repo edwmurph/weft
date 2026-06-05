@@ -511,23 +511,9 @@ func selectedCodexContent(lines []string, selection consoleSelection, width int)
 	if width <= 0 || len(lines) == 0 {
 		return ""
 	}
-	start, end := normalizedSelection(selection)
-	contentWidth := width + selection.colOffset
-	rendered := make([]string, len(lines))
-	for row, line := range lines {
-		if row < start.row || row > end.row {
-			rendered[row] = line
-			continue
-		}
-		left := selection.colOffset
-		right := selection.colOffset + width - 1
-		if row == start.row {
-			left = selection.colOffset + start.col
-		}
-		if row == end.row {
-			right = selection.colOffset + end.col
-		}
-		rendered[row] = highlightedConsoleLine(line, left, right, contentWidth)
+	rendered, ok := selectedHighlightedConsoleLines(lines, selection, width, highlightedConsoleLine)
+	if !ok {
+		return strings.Join(lines, "\n")
 	}
 	return strings.Join(rendered, "\n")
 }
@@ -537,10 +523,18 @@ func selectedStyledCodexContent(content string, selection consoleSelection, widt
 		return ""
 	}
 	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	rendered, ok := selectedHighlightedConsoleLines(lines, selection, width, highlightedStyledConsoleLine)
+	if !ok {
+		return content
+	}
+	return strings.Join(rendered, "\n")
+}
+
+func selectedHighlightedConsoleLines(lines []string, selection consoleSelection, width int, highlighter func(string, int, int, int) string) ([]string, bool) {
 	start, end := normalizedSelection(selection)
 	contentWidth := width + selection.colOffset
 	if contentWidth <= 0 {
-		return content
+		return nil, false
 	}
 	rendered := make([]string, len(lines))
 	for row, line := range lines {
@@ -556,9 +550,9 @@ func selectedStyledCodexContent(content string, selection consoleSelection, widt
 		if row == end.row {
 			right = selection.colOffset + end.col
 		}
-		rendered[row] = highlightedStyledConsoleLine(line, left, right, contentWidth)
+		rendered[row] = highlighter(line, left, right, contentWidth)
 	}
-	return strings.Join(rendered, "\n")
+	return rendered, true
 }
 
 func selectedConsoleText(lines []string, selection consoleSelection, width int) string {
