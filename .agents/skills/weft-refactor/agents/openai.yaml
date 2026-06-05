@@ -1,4 +1,0 @@
-interface:
-  display_name: "Weft Refactor"
-  short_description: "Refactor weft with a learning log"
-  default_prompt: "Use $weft-refactor to simplify weft, improve docs and instructions, and log refactor suggestions."
