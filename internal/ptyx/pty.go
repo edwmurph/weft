@@ -33,10 +33,6 @@ type StartOptions struct {
 	Env map[string]string
 }
 
-func Start(ctx context.Context, taskID string, command string, workspace string, cols int, rows int, output func(Data)) (*Session, error) {
-	return StartWithOptions(ctx, taskID, command, workspace, cols, rows, StartOptions{}, output)
-}
-
 func StartWithOptions(ctx context.Context, taskID string, command string, workspace string, cols int, rows int, options StartOptions, output func(Data)) (*Session, error) {
 	shell := shellx.Resolve()
 	cmd := exec.CommandContext(ctx, shell, "-lc", command)

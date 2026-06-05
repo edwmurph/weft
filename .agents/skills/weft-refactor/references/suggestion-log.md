@@ -2,6 +2,14 @@
 
 Use this log to preserve concrete refactor suggestions, decisions, and evidence across sessions. Keep entries short, append new sessions at the top, and update an entry's outcome when the user accepts, rejects, or defers a suggestion.
 
+## 2026-06-05 - PTY start wrapper prune
+
+- Request: Implement a bounded safe refactor that removes an unused PTY start wrapper without changing runtime behavior.
+- Suggestions: Delete `internal/ptyx.Start` only; keep `StartOptions` and `StartWithOptions` unchanged because current PTY launches already route through `StartWithOptions` for task environment injection.
+- Outcome: Implemented in `.worktrees/safe-refactor-pty-start`; awaiting review.
+- Evidence: `rg` found no `ptyx.Start(...)` callers and only the live `StartWithOptions(...)` launch paths in `internal/tui/model.go`; `go test ./internal/ptyx`; `go run golang.org/x/tools/cmd/deadcode@latest ./...`; full repo verification.
+- Deferred: Broader `dupl` candidates remain deferred because they touch runtime and test flows with higher review cost than this narrow deletion.
+
 ## 2026-06-04 - Repo-local skill discovery consolidation
 
 - Request: Move the demo video skill and any other repo-local skills with the same discovery problem into the standard Codex-discovered `.agents/skills` convention.
