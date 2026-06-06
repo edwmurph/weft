@@ -283,8 +283,9 @@ func closeWeft(command string, args []string) error {
 	}
 	if *kill {
 		response, err := supervisor.Status(rt)
-		if err == nil && runningTaskCount(response.State) > 0 && !*yes {
-			fmt.Printf("Stopping the Weft supervisor will stop %d running task terminal(s). Saved layout and metadata remain.\n", runningTaskCount(response.State))
+		running := ipc.RunningTaskCount(response.State)
+		if err == nil && running > 0 && !*yes {
+			fmt.Printf("Stopping the Weft supervisor will stop %d running task terminal(s). Saved layout and metadata remain.\n", running)
 			if !confirm("Stop supervisor and running task terminals? [y/N] ") {
 				fmt.Println("Close canceled.")
 				return nil
@@ -769,7 +770,7 @@ func backupRestore(args []string) error {
 	response, statusErr := supervisor.Status(rt)
 	supervisorRunning := statusErr == nil
 	if supervisorRunning && !yes {
-		running := runningTaskCount(response.State)
+		running := ipc.RunningTaskCount(response.State)
 		if running > 0 {
 			fmt.Printf("Restoring a backup requires stopping the Weft supervisor and %d running task terminal(s).\n", running)
 		} else {
@@ -1058,20 +1059,6 @@ func safeDevRuntimeCommand(rt config.Runtime) string {
 		worktree = cwd
 	}
 	return fmt.Sprintf("%s=%s go -C %s run ./cmd/weft --clear", config.RootEnv, worktree, worktree)
-}
-
-func runningTaskCount(st *state.State) int {
-	if st == nil {
-		return 0
-	}
-	count := 0
-	for _, task := range st.Tasks {
-		switch task.Status {
-		case state.StatusStarting, state.StatusRunning, state.StatusReady, state.StatusSitting, state.StatusShipping:
-			count++
-		}
-	}
-	return count
 }
 
 func confirm(prompt string) bool {
