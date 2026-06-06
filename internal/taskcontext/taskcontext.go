@@ -10,8 +10,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/edwmurph/weft/internal/filex"
 )
 
 const (
@@ -65,11 +66,11 @@ func (r Record) HasContent() bool {
 }
 
 func (s *Store) Load() (map[string]Record, error) {
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return nil, err
 	}
 	records := map[string]Record{}
-	err := withFileLock(s.LockPath, func() error {
+	err := filex.WithFileLock(s.LockPath, func() error {
 		loaded, err := s.readUnlocked()
 		if err != nil {
 			return err
@@ -89,12 +90,12 @@ func (s *Store) SetHeading(taskID string, content string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return Record{}, err
 	}
 	var record Record
 	now := nowISO()
-	err = withFileLock(s.LockPath, func() error {
+	err = filex.WithFileLock(s.LockPath, func() error {
 		records, err := s.readUnlocked()
 		if err != nil {
 			return err
@@ -118,12 +119,12 @@ func (s *Store) SetDetail(taskID string, content string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return Record{}, err
 	}
 	var record Record
 	now := nowISO()
-	err = withFileLock(s.LockPath, func() error {
+	err = filex.WithFileLock(s.LockPath, func() error {
 		records, err := s.readUnlocked()
 		if err != nil {
 			return err
@@ -165,11 +166,11 @@ func (s *Store) Clear(taskID string, kind string) (bool, error) {
 	default:
 		return false, fmt.Errorf("unsupported task context kind %q", kind)
 	}
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return false, err
 	}
 	removed := false
-	err := withFileLock(s.LockPath, func() error {
+	err := filex.WithFileLock(s.LockPath, func() error {
 		records, err := s.readUnlocked()
 		if err != nil {
 			return err
@@ -205,11 +206,11 @@ func (s *Store) Cleanup(validTaskIDs map[string]bool) (int, error) {
 	if validTaskIDs == nil {
 		validTaskIDs = map[string]bool{}
 	}
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return 0, err
 	}
 	removed := 0
-	err := withFileLock(s.LockPath, func() error {
+	err := filex.WithFileLock(s.LockPath, func() error {
 		records, err := s.readUnlocked()
 		if err != nil {
 			return err
@@ -340,57 +341,7 @@ func (s *Store) writeUnlocked(records map[string]Record) error {
 		}
 		return nil
 	}
-	return writeJSONAtomic(s.Path, File{Version: Version, Records: ordered})
-}
-
-func ensureLockFile(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return err
-	}
-	return file.Close()
-}
-
-func withFileLock(path string, fn func() error) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-	return fn()
-}
-
-func writeJSONAtomic(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	payload = append(payload, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(payload); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return filex.WriteJSONAtomic(s.Path, File{Version: Version, Records: ordered})
 }
 
 func nowISO() string {

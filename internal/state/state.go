@@ -9,8 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/edwmurph/weft/internal/filex"
 )
 
 const Version = 6
@@ -108,14 +109,14 @@ func (s *Store) Ensure() (State, error) {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
 		return State{}, err
 	}
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return State{}, err
 	}
 	var loaded State
-	err := withFileLock(s.LockPath, func() error {
+	err := filex.WithFileLock(s.LockPath, func() error {
 		if _, err := os.Stat(s.Path); errors.Is(err, os.ErrNotExist) {
 			loaded = Empty()
-			return writeJSONAtomic(s.Path, loaded)
+			return filex.WriteJSONAtomic(s.Path, loaded)
 		}
 		raw, err := os.ReadFile(s.Path)
 		if err != nil {
@@ -134,11 +135,11 @@ func (s *Store) Read() (State, error) {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
 		return State{}, err
 	}
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return State{}, err
 	}
 	var loaded State
-	err := withFileLock(s.LockPath, func() error {
+	err := filex.WithFileLock(s.LockPath, func() error {
 		raw, err := os.ReadFile(s.Path)
 		if errors.Is(err, os.ErrNotExist) {
 			loaded = Empty()
@@ -158,14 +159,14 @@ func (s *Store) Write(next State) error {
 	if err := os.MkdirAll(filepath.Dir(s.Path), 0o700); err != nil {
 		return err
 	}
-	if err := ensureLockFile(s.LockPath); err != nil {
+	if err := filex.EnsureLockFile(s.LockPath); err != nil {
 		return err
 	}
-	return withFileLock(s.LockPath, func() error {
+	return filex.WithFileLock(s.LockPath, func() error {
 		if err := ValidateCurrent(next); err != nil {
 			return unsupportedStateError(err.Error())
 		}
-		return writeJSONAtomic(s.Path, next)
+		return filex.WriteJSONAtomic(s.Path, next)
 	})
 }
 
@@ -374,56 +375,6 @@ func ValidateTaskTypes(st State, hasTaskType func(string) bool) error {
 		}
 	}
 	return nil
-}
-
-func ensureLockFile(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return err
-	}
-	return file.Close()
-}
-
-func withFileLock(path string, fn func() error) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-	return fn()
-}
-
-func writeJSONAtomic(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	payload = append(payload, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(payload); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
 }
 
 func ActiveTask(st State) *Task {
