@@ -213,7 +213,7 @@ func start(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateStateTaskTypes(cfg, st); err != nil {
+	if err := cfg.ValidateStateTaskTypesWithResetHint(st); err != nil {
 		return err
 	}
 	result, err := supervisor.Ensure(rt)
@@ -967,7 +967,7 @@ func callIPCResponse(command string, args map[string]string, quiet bool) (ipc.Re
 	if err != nil {
 		return ipc.Response{}, err
 	}
-	if err := validateStateTaskTypes(cfg, st); err != nil {
+	if err := cfg.ValidateStateTaskTypesWithResetHint(st); err != nil {
 		return ipc.Response{}, err
 	}
 	args = cloneArgs(args)
@@ -1005,7 +1005,7 @@ func loadRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	if err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
-	if err := validateStateTaskTypes(cfg, st); err != nil {
+	if err := cfg.ValidateStateTaskTypesWithResetHint(st); err != nil {
 		return config.Runtime{}, config.Config{}, nil, err
 	}
 	return rt, cfg, store, nil
@@ -1025,17 +1025,6 @@ func resolveRuntime() (config.Runtime, config.Config, *state.Store, error) {
 	}
 	store := state.NewStore(rt.StatePath)
 	return rt, cfg, store, nil
-}
-
-func validateStateTaskTypes(cfg config.Config, st state.State) error {
-	err := state.ValidateTaskTypes(st, func(id string) bool {
-		_, ok := cfg.TaskType(id)
-		return ok
-	})
-	if err != nil {
-		return fmt.Errorf("%v; run `weft clear` to reset", err)
-	}
-	return nil
 }
 
 func runtimeResolveOptions() config.ResolveOptions {

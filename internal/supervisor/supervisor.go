@@ -170,7 +170,7 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 		_ = lock.Close()
 		return err
 	}
-	if err := validateStateTaskTypes(cfg, st); err != nil {
+	if err := cfg.ValidateStateTaskTypesWithResetHint(st); err != nil {
 		_ = lock.Close()
 		return err
 	}
@@ -219,17 +219,6 @@ func Run(ctx context.Context, rt config.Runtime, cfg config.Config, store *state
 			return nil
 		}
 	}
-}
-
-func validateStateTaskTypes(cfg config.Config, st state.State) error {
-	err := state.ValidateTaskTypes(st, func(id string) bool {
-		_, ok := cfg.TaskType(id)
-		return ok
-	})
-	if err != nil {
-		return fmt.Errorf("%v; run `weft clear` to reset", err)
-	}
-	return nil
 }
 
 type clientCoordinator struct {
@@ -448,11 +437,13 @@ func configDriftUpgrade(response ipc.Response, clientVersion string, drift confi
 		upgrade.Message = fmt.Sprintf("Config changed, but the supervisor cannot reload it yet: %v", drift.err)
 		return upgrade
 	}
-	if err := validateChangedConfigState(drift.cfg, responseState(response)); err != nil {
-		upgrade.Compatible = false
-		upgrade.RestartRequired = false
-		upgrade.Message = fmt.Sprintf("Config changed, but the supervisor cannot apply it yet: %v", err)
-		return upgrade
+	if st := responseState(response); st != nil {
+		if err := drift.cfg.ValidateStateTaskTypes(*st); err != nil {
+			upgrade.Compatible = false
+			upgrade.RestartRequired = false
+			upgrade.Message = fmt.Sprintf("Config changed, but the supervisor cannot apply it yet: %v", err)
+			return upgrade
+		}
 	}
 	if running == 0 {
 		upgrade.Message = "Config changed; the idle supervisor can restart safely to apply it."
@@ -460,16 +451,6 @@ func configDriftUpgrade(response ipc.Response, clientVersion string, drift confi
 	}
 	upgrade.Message = fmt.Sprintf("Config changed; restart the supervisor when %d live task terminal(s) are idle or resumable to apply it.", running)
 	return upgrade
-}
-
-func validateChangedConfigState(cfg config.Config, st *state.State) error {
-	if st == nil {
-		return nil
-	}
-	return state.ValidateTaskTypes(*st, func(id string) bool {
-		_, ok := cfg.TaskType(id)
-		return ok
-	})
 }
 
 func responseState(response ipc.Response) *state.State {

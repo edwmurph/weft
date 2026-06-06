@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/edwmurph/weft/internal/state"
 	"github.com/edwmurph/weft/internal/tasktypes"
 )
 
@@ -497,6 +498,20 @@ func (c Config) TaskType(id string) (TaskType, bool) {
 	c.normalizeTaskTypes()
 	taskType, ok := c.TaskTypes[strings.TrimSpace(id)]
 	return taskType, ok
+}
+
+func (c Config) ValidateStateTaskTypes(st state.State) error {
+	return state.ValidateTaskTypes(st, func(id string) bool {
+		_, ok := c.TaskType(id)
+		return ok
+	})
+}
+
+func (c Config) ValidateStateTaskTypesWithResetHint(st state.State) error {
+	if err := c.ValidateStateTaskTypes(st); err != nil {
+		return fmt.Errorf("%v; run `weft clear` to reset", err)
+	}
+	return nil
 }
 
 func (c Config) OrderedTaskTypes() []TaskType {
