@@ -271,12 +271,14 @@ func TestRenderTaskPreviewRequiresFocusedTaskRow(t *testing.T) {
 	}
 
 	st.Focus = state.FocusWorkspaces
-	st.SelectedWorkspaceID = ""
 	got = ansi.Strip(renderWorkspaceView(cfg, st, "Preview Title", output, 140, 24, "", minTwoPaneNavWidth, 1, workspaceRenderOptions{
 		previewHeaderAnimation: "●",
 	}))
 	if !strings.Contains(got, "No task selected") || strings.Contains(got, output) || strings.Contains(got, "Preview Title") {
-		t.Fatalf("no workspace selection should render an empty preview instead of the active task:\n%s", got)
+		t.Fatalf("workspace focus should render an empty preview instead of the active task:\n%s", got)
+	}
+	if lines := strings.Split(got, "\n"); len(lines) == 0 || strings.Contains(lines[0], "Task Live Preview ●") {
+		t.Fatalf("workspace focus should not show active preview animation:\n%s", got)
 	}
 }
 

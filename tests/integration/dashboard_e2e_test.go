@@ -851,6 +851,75 @@ func TestDashboardTaskCursorSurvivesWorkspaceNavigationE2E(t *testing.T) {
 	}
 }
 
+func TestDashboardWorkspaceFocusClearsTaskPreviewE2E(t *testing.T) {
+	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
+		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")
+	}
+
+	bin := buildWeft(t)
+	tmp := t.TempDir()
+	runtimeDir, workspace := createRuntime(t, tmp, writeFakeCodex(t, tmp, "fake-codex.sh"))
+	env := baseIntegrationEnv(runtimeDir, workspace, bin)
+	registerSupervisorCleanup(t, env, bin, "", runtimeDir)
+
+	runWeft(t, env, bin, "--no-attach")
+	runWeft(t, env, bin, "workspace", "add", workspace)
+
+	pane := "direct-client-workspace-focus-preview"
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 140, 32)
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Workspaces") &&
+			strings.Contains(capture, "Tasks")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "n")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitState(t, env, bin, func(st state.State) bool {
+		active := state.ActiveTask(st)
+		return active != nil && active.Status == state.StatusRunning && st.Focus == state.FocusConsole
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar)
+	})
+
+	directRun(t, env, "send-keys", "-l", "-t", pane, "preview-probe")
+	directRun(t, env, "send-keys", "-t", pane, "Enter")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "echo:preview-probe")
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusTasks && st.NavOpen && st.SelectedTaskID != ""
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Live Preview") &&
+			strings.Contains(capture, "echo:preview-probe") &&
+			containsTaskLivePreviewAnimation(capture)
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "Left")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusWorkspaces
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "No task selected") &&
+			strings.Contains(capture, "Select a task to previe") &&
+			!strings.Contains(capture, "echo:preview-probe") &&
+			!containsTaskLivePreviewAnimation(capture)
+	})
+
+	directRun(t, env, "send-keys", "-t", pane, "Right")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusTasks && st.SelectedTaskID != ""
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "echo:preview-probe") &&
+			containsTaskLivePreviewAnimation(capture) &&
+			!strings.Contains(capture, "No task selected")
+	})
+}
+
 func TestDashboardReordersGroupsE2E(t *testing.T) {
 	if os.Getenv("WEFT_RUN_INTEGRATION") != "1" {
 		t.Skip("set WEFT_RUN_INTEGRATION=1 to run live supervisor integration tests")

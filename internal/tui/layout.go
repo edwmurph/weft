@@ -203,9 +203,6 @@ func codexFrameStateForSelection(st state.State, groupCursor int) state.State {
 	if st.Focus == state.FocusConsole {
 		return st
 	}
-	if st.Focus == state.FocusWorkspaces && st.SelectedWorkspaceID != "" {
-		return st
-	}
 	if st.Focus == state.FocusTasks {
 		row := currentGroupRowForState(st, groupCursor)
 		if row.kind == groupRowTask {
