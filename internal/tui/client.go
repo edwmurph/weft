@@ -235,6 +235,7 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 	return workspaceRenderOptions{
 		loadingTasks:             loadingTaskSet(m.snapshot.LoadingTaskIDs),
 		taskOperationStartedAt:   m.snapshot.TaskOperationStartedAt,
+		taskOperationDurations:   m.snapshot.TaskOperationDurations,
 		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg, m.upgradeReport()),
 		workspaceInfoText:        m.workspaceInfoHeaderText(),
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,

@@ -90,6 +90,7 @@ type workspaceRenderOptions struct {
 	emptyArtFrame            int
 	loadingTasks             map[string]bool
 	taskOperationStartedAt   map[string]time.Time
+	taskOperationDurations   map[string]time.Duration
 	workspaceFooterText      string
 	workspaceInfoText        string
 	newWorkspaceCardSelected bool
@@ -910,17 +911,24 @@ func renderTaskRow(cfg config.Config, st state.State, task state.Task, width int
 }
 
 func taskOperationDurationSuffix(task state.Task, options workspaceRenderOptions) string {
-	if !taskIsLoadingForRender(task, options.loadingTasks) {
+	if taskIsLoadingForRender(task, options.loadingTasks) {
+		if len(options.taskOperationStartedAt) == 0 {
+			return ""
+		}
+		started, ok := options.taskOperationStartedAt[task.ID]
+		if !ok || started.IsZero() {
+			return ""
+		}
+		return formatTaskOperationDuration(time.Since(started))
+	}
+	if titles.ConsolidatedStatus(task) != string(state.StatusReady) || len(options.taskOperationDurations) == 0 {
 		return ""
 	}
-	if len(options.taskOperationStartedAt) == 0 {
+	duration, ok := options.taskOperationDurations[task.ID]
+	if !ok || duration <= 0 {
 		return ""
 	}
-	started, ok := options.taskOperationStartedAt[task.ID]
-	if !ok || started.IsZero() {
-		return ""
-	}
-	return formatTaskOperationDuration(time.Since(started))
+	return formatTaskOperationDuration(duration)
 }
 
 func taskSilentMarkerForRender(task state.Task) string {

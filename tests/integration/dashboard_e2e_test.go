@@ -314,7 +314,7 @@ title_template = "Shell"
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "Tasks") &&
-			strings.Contains(capture, "[shell] Ops Shell") &&
+			taskLineHasBadgeAdjacentDuration(capture, "Ops Shell", "[shell]") &&
 			containsTaskLivePreviewAnimation(capture)
 	})
 }
@@ -569,13 +569,13 @@ title_template = "Shell"
 	}
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "▾ repro (1)") &&
-			strings.Contains(capture, "[shell] Shell")
+			taskLineHasBadgeAdjacentDuration(capture, "Shell", "[shell]")
 	})
 	directRun(t, env, "send-keys", "-t", pane, "Up")
 	directRun(t, env, "send-keys", "-t", pane, "Enter")
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "▸ repro (1)") &&
-			!strings.Contains(capture, "[shell] Shell")
+			!taskLineHasBadgeAdjacentDuration(capture, "Shell", "[shell]")
 	})
 
 	directRun(t, env, "send-keys", "-t", pane, "C-b")
@@ -588,7 +588,7 @@ title_template = "Shell"
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, "repro (1)") &&
 			taskLineHasLoadingFrame(capture, "repro (1)") &&
-			!strings.Contains(capture, "[shell] Shell")
+			!taskLineHasBadgeAdjacentDuration(capture, "Shell", "[shell]")
 	})
 }
 
@@ -2183,13 +2183,11 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		directRun(t, env, "send-keys", "-t", pane, "C-b")
 		waitState(t, env, bin, func(st state.State) bool { return st.Focus == state.FocusTasks && st.NavOpen })
 		readyCapture := waitForOutput(t, clientOutput, func(capture string) bool {
-			return strings.Contains(capture, "Codex Ready")
+			return strings.Contains(capture, "Codex Ready") &&
+				taskLineHasBadgeAdjacentDuration(capture, "Codex Ready", "[codex]")
 		})
 		if taskLineHasLoadingFrame(readyCapture, "Codex Ready") {
 			t.Fatalf("ready Codex row should keep the static marker:\n%s", readyCapture)
-		}
-		if taskLineHasDuration(readyCapture, "Codex Ready") {
-			t.Fatalf("ready Codex row should not show operation duration:\n%s", readyCapture)
 		}
 	})
 

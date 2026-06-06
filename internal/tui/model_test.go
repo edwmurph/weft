@@ -335,6 +335,9 @@ func TestSnapshotMarksActiveTasksLoadingUntilReady(t *testing.T) {
 	if len(snapshot.TaskOperationStartedAt) != 0 {
 		t.Fatalf("ready task should not expose operation starts: %#v", snapshot.TaskOperationStartedAt)
 	}
+	if got, ok := snapshot.TaskOperationDurations["a"]; !ok || got < 12*time.Second {
+		t.Fatalf("ready task completed operation duration = %v/%t, want at least 12s", got, ok)
+	}
 
 	model.state.Tasks[0].LiveTitle = "Fake Codex Waiting"
 	model.state.Tasks[0].LiveStatus = "Waiting"
@@ -361,6 +364,9 @@ func TestCodexOperationStartTracksStartupAndSubmittedPrompt(t *testing.T) {
 	ready := model.Snapshot()
 	if len(ready.TaskOperationStartedAt) != 0 {
 		t.Fatalf("ready Codex task should clear operation start: %#v", ready.TaskOperationStartedAt)
+	}
+	if _, ok := ready.TaskOperationDurations["a"]; !ok {
+		t.Fatalf("ready Codex task should expose completed operation duration: %#v", ready.TaskOperationDurations)
 	}
 
 	task := state.TaskByID(model.state, "a")
@@ -2546,6 +2552,9 @@ func TestTerminalTaskCommandShowsLoadingUntilForegroundReturns(t *testing.T) {
 	snapshot = model.Snapshot()
 	if len(snapshot.TaskOperationStartedAt) != 0 {
 		t.Fatalf("ready terminal command should clear operation start: %#v", snapshot.TaskOperationStartedAt)
+	}
+	if _, ok := snapshot.TaskOperationDurations["a"]; !ok {
+		t.Fatalf("ready terminal command should expose completed operation duration: %#v", snapshot.TaskOperationDurations)
 	}
 }
 

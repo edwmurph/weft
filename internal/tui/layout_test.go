@@ -1016,10 +1016,15 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 			"working":          time.Now().Add(-2 * time.Minute),
 			"waiting":          time.Now().Add(-(time.Hour + 2*time.Minute)),
 			"terminal-waiting": time.Now().Add(-59 * time.Second),
-			"ready":            time.Now().Add(-12 * time.Second),
 			"failed":           time.Now().Add(-12 * time.Second),
 			"stopped":          time.Now().Add(-12 * time.Second),
 			"killed":           time.Now().Add(-12 * time.Second),
+		},
+		taskOperationDurations: map[string]time.Duration{
+			"ready":   9 * time.Second,
+			"failed":  9 * time.Second,
+			"stopped": 9 * time.Second,
+			"killed":  9 * time.Second,
 		},
 	}), "\n")
 	stripped := ansi.Strip(got)
@@ -1035,11 +1040,8 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 	if !taskLineContains(stripped, "Shell Awaiting", "⠼ [shell] 59s Shell Awaiting") || strings.Contains(stripped, "· [shell] 59s Shell Awaiting") {
 		t.Fatalf("waiting terminal row should show operation duration after the badge:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "· [codex] Respond") || strings.Contains(stripped, "⠼ [codex] Respond") {
+	if !strings.Contains(stripped, "· [codex] 9s Respond") || strings.Contains(stripped, "⠼ [codex] Respond") {
 		t.Fatalf("ready row should use the subtle ready marker instead of the spinner:\n%s", stripped)
-	}
-	if taskLineHasDurationToken(stripped, "Respond") {
-		t.Fatalf("ready row should not show operation duration:\n%s", stripped)
 	}
 	if !strings.Contains(stripped, "! [codex] Broken") {
 		t.Fatalf("error row should use the error marker:\n%s", stripped)
@@ -1064,7 +1066,7 @@ func TestRenderTasksPaneAnimatesLoadingRowsAndColorsStatuses(t *testing.T) {
 		taskWorkingStyle.Render("⠼ [codex] 2m Review"),
 		taskLoadingStyle.Render("⠼ [codex] 1h2m Approval"),
 		taskLoadingStyle.Render("⠼ [shell] 59s Shell Awaiting"),
-		taskReadyStyle.Render("· [codex] Respond"),
+		taskReadyStyle.Render("· [codex] 9s Respond"),
 		taskErrorStyle.Render("! [codex] Broken"),
 		taskAttentionStyle.Render("◦ [codex] Paused"),
 		taskAttentionStyle.Render("! [codex] Killed"),

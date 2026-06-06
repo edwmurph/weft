@@ -80,8 +80,9 @@ type loadingTick struct{}
 var loadingFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 type taskOperationStart struct {
-	startedAt  time.Time
-	allowReady bool
+	startedAt         time.Time
+	allowReady        bool
+	completedDuration time.Duration
 }
 
 type groupRowKind string
@@ -226,6 +227,7 @@ func (m *Model) Snapshot() ipc.Snapshot {
 		LoadingTaskIDs:              m.loadingTaskIDs(),
 		TerminalForegroundTaskIDs:   m.terminalForegroundTaskIDs(),
 		TaskOperationStartedAt:      m.taskOperationStartedAtForSnapshot(),
+		TaskOperationDurations:      m.taskOperationDurationsForSnapshot(),
 		Message:                     m.message,
 		NavWidth:                    m.targetNavWidth(),
 		GroupCursor:                 m.groupCursor,
@@ -1026,7 +1028,7 @@ func (m *Model) applyPTYData(data ptyx.Data) {
 			return definition.ApplyPTYTitle(task, data.Title, screenStatus)
 		})
 		if definition.InputMode() == tasktypes.InputModeCodex && m.codexOperationComplete(data.TaskID, screenStatus, data.Title) {
-			m.clearTaskOperationStarted(data.TaskID)
+			m.completeTaskOperationStarted(data.TaskID)
 		}
 		m.save()
 	}
@@ -1218,17 +1220,37 @@ func (m *Model) taskOperationStartedAtForSnapshot() map[string]time.Time {
 	return startedAt
 }
 
+func (m *Model) taskOperationDurationsForSnapshot() map[string]time.Duration {
+	if m.operationStarts == nil {
+		return nil
+	}
+	durations := map[string]time.Duration{}
+	for _, task := range m.state.Tasks {
+		if duration, ok := m.taskOperationCompletedDuration(task.ID); ok && titles.ConsolidatedStatus(task) == string(state.StatusReady) {
+			durations[task.ID] = duration
+		}
+	}
+	if len(durations) == 0 {
+		return nil
+	}
+	return durations
+}
+
 func (m *Model) syncTaskOperationStartsWithStatuses() {
 	for _, task := range m.state.Tasks {
 		if m.taskLoading(task.ID) || taskStatusIndicatesActivity(task) {
 			m.ensureTaskOperationStarted(task.ID)
 			continue
 		}
+		if titles.ConsolidatedStatus(task) == string(state.StatusReady) {
+			m.completeTaskOperationStarted(task.ID)
+			continue
+		}
 		m.clearTaskOperationStarted(task.ID)
 	}
 }
 
-func (m *Model) taskOperationStart(taskID string) (taskOperationStart, bool) {
+func (m *Model) taskOperationTiming(taskID string) (taskOperationStart, bool) {
 	if m.operationStarts == nil {
 		return taskOperationStart{}, false
 	}
@@ -1238,7 +1260,7 @@ func (m *Model) taskOperationStart(taskID string) (taskOperationStart, bool) {
 	}
 	switch typed := value.(type) {
 	case taskOperationStart:
-		if typed.startedAt.IsZero() {
+		if typed.startedAt.IsZero() && typed.completedDuration <= 0 {
 			return taskOperationStart{}, false
 		}
 		return typed, true
@@ -1252,9 +1274,25 @@ func (m *Model) taskOperationStart(taskID string) (taskOperationStart, bool) {
 	}
 }
 
+func (m *Model) taskOperationStart(taskID string) (taskOperationStart, bool) {
+	operation, ok := m.taskOperationTiming(taskID)
+	if !ok || operation.startedAt.IsZero() {
+		return taskOperationStart{}, false
+	}
+	return operation, true
+}
+
 func (m *Model) taskOperationStartedAt(taskID string) (time.Time, bool) {
 	start, ok := m.taskOperationStart(taskID)
 	return start.startedAt, ok
+}
+
+func (m *Model) taskOperationCompletedDuration(taskID string) (time.Duration, bool) {
+	operation, ok := m.taskOperationTiming(taskID)
+	if !ok || operation.completedDuration <= 0 {
+		return 0, false
+	}
+	return operation.completedDuration, true
 }
 
 func (m *Model) taskOperationActive(taskID string) bool {
@@ -1293,7 +1331,10 @@ func (m *Model) ensureTaskOperationStarted(taskID string) {
 	if m.operationStarts == nil {
 		m.operationStarts = &sync.Map{}
 	}
-	m.operationStarts.LoadOrStore(taskID, taskOperationStart{startedAt: time.Now()})
+	if _, ok := m.taskOperationStart(taskID); ok {
+		return
+	}
+	m.operationStarts.Store(taskID, taskOperationStart{startedAt: time.Now()})
 }
 
 func (m *Model) clearTaskOperationStarted(taskID string) {
@@ -1301,6 +1342,21 @@ func (m *Model) clearTaskOperationStarted(taskID string) {
 		return
 	}
 	m.operationStarts.Delete(taskID)
+}
+
+func (m *Model) completeTaskOperationStarted(taskID string) {
+	if m.operationStarts == nil {
+		return
+	}
+	operation, ok := m.taskOperationStart(taskID)
+	if !ok {
+		return
+	}
+	duration := time.Since(operation.startedAt)
+	if duration < time.Second {
+		duration = time.Second
+	}
+	m.operationStarts.Store(taskID, taskOperationStart{completedDuration: duration})
 }
 
 func (m *Model) codexOperationComplete(taskID string, screenStatus string, terminalTitle string) bool {
@@ -1379,7 +1435,7 @@ func (m *Model) refreshTerminalTaskActivity() {
 			continue
 		}
 		delete(m.terminalCommands, taskID)
-		m.clearTaskOperationStarted(taskID)
+		m.completeTaskOperationStarted(taskID)
 		m.state = state.WithUpdatedTask(m.state, taskID, func(task state.Task) state.Task {
 			if task.Status == state.StatusRunning {
 				task.Status = state.StatusReady
