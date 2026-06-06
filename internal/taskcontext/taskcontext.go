@@ -82,40 +82,23 @@ func (s *Store) Load() (map[string]Record, error) {
 }
 
 func (s *Store) SetHeading(taskID string, content string) (Record, error) {
-	taskID = strings.TrimSpace(taskID)
-	if taskID == "" {
-		return Record{}, errors.New("task id is required")
-	}
-	content, err := validateHeading(content)
-	if err != nil {
-		return Record{}, err
-	}
-	if err := filex.EnsureLockFile(s.LockPath); err != nil {
-		return Record{}, err
-	}
-	var record Record
-	now := nowISO()
-	err = filex.WithFileLock(s.LockPath, func() error {
-		records, err := s.readUnlocked()
-		if err != nil {
-			return err
-		}
-		record = records[taskID]
-		record.TaskID = taskID
+	return s.setContent(taskID, content, validateHeading, func(record *Record, content string) {
 		record.Heading = content
-		record.UpdatedAt = now
-		records[taskID] = record
-		return s.writeUnlocked(records)
 	})
-	return record, err
 }
 
 func (s *Store) SetDetail(taskID string, content string) (Record, error) {
+	return s.setContent(taskID, content, validateDetail, func(record *Record, content string) {
+		record.Detail = content
+	})
+}
+
+func (s *Store) setContent(taskID string, content string, validate func(string) (string, error), assign func(*Record, string)) (Record, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
 		return Record{}, errors.New("task id is required")
 	}
-	content, err := validateDetail(content)
+	content, err := validate(content)
 	if err != nil {
 		return Record{}, err
 	}
@@ -131,7 +114,7 @@ func (s *Store) SetDetail(taskID string, content string) (Record, error) {
 		}
 		record = records[taskID]
 		record.TaskID = taskID
-		record.Detail = content
+		assign(&record, content)
 		record.UpdatedAt = now
 		records[taskID] = record
 		return s.writeUnlocked(records)
