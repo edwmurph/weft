@@ -39,13 +39,15 @@ func (m ClientModel) renderCommandMenu() string {
 }
 
 func (m ClientModel) taskPanelLayout() taskPanelLayout {
+	preview := ""
 	heading := ""
 	detail := ""
 	if context := m.snapshot.ActiveTaskContext; context != nil {
+		preview = strings.TrimSpace(context.Preview)
 		heading = strings.TrimSpace(context.Heading)
 		detail = strings.TrimSpace(context.Detail)
 	}
-	return newTaskPanelLayout(m.taskPanelContentWidth(), max(12, m.height-8), heading, detail)
+	return newTaskPanelLayout(m.taskPanelContentWidth(), max(12, m.height-8), preview, heading, detail)
 }
 
 func (m ClientModel) taskPanelContentWidth() int {
@@ -80,7 +82,7 @@ func (l taskPanelLayout) contextBodyHeight() int {
 	return max(0, l.contextHeight-2)
 }
 
-func newTaskPanelLayout(width int, height int, heading string, detail string) taskPanelLayout {
+func newTaskPanelLayout(width int, height int, preview string, heading string, detail string) taskPanelLayout {
 	width = max(56, width)
 	height = max(12, height)
 	const sectionTop = 2
@@ -103,9 +105,9 @@ func newTaskPanelLayout(width int, height int, heading string, detail string) ta
 		layout.contextY = sectionTop
 		layout.shortcutY = sectionTop + layout.contextHeight + 1
 	}
-	layout.contextLines = taskPanelContextPlainLines(heading, detail, layout.contextBodyWidth(), layout.contextBodyHeight())
-	if normalizedHeading := strings.Join(strings.Fields(heading), " "); normalizedHeading != "" {
-		layout.contextHeadingRows = len(wrapPlain(normalizedHeading, layout.contextBodyWidth(), layout.contextBodyHeight()))
+	layout.contextLines = taskPanelContextPlainLines(preview, heading, detail, layout.contextBodyWidth(), layout.contextBodyHeight())
+	if lead := taskPanelContextLead(preview, heading); lead != "" {
+		layout.contextHeadingRows = len(wrapPlain(lead, layout.contextBodyWidth(), layout.contextBodyHeight()))
 	}
 	return layout
 }
@@ -151,8 +153,15 @@ func renderTaskPanelShortcutRows(selected int, width int, height int) []string {
 	return lines
 }
 
-func taskPanelContextPlainLines(heading string, detail string, width int, maxLines int) []string {
-	heading = strings.Join(strings.Fields(heading), " ")
+func taskPanelContextLead(preview string, heading string) string {
+	if lead := strings.Join(strings.Fields(heading), " "); lead != "" {
+		return lead
+	}
+	return strings.Join(strings.Fields(preview), " ")
+}
+
+func taskPanelContextPlainLines(preview string, heading string, detail string, width int, maxLines int) []string {
+	heading = taskPanelContextLead(preview, heading)
 	detail = strings.TrimSpace(strings.ReplaceAll(detail, "\r", ""))
 	if maxLines <= 0 {
 		return nil

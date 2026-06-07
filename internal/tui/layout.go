@@ -96,6 +96,7 @@ type workspaceRenderOptions struct {
 	newWorkspaceCardSelected bool
 	newTaskRowSelected       bool
 	codexToastText           string
+	taskContextPreview       string
 	taskContextHeading       string
 	taskContextDetail        string
 }
@@ -183,14 +184,14 @@ func renderWorkspaceView(
 	}
 	if navWidth <= 0 {
 		codexState := codexFrameStateForSelection(st, groupCursor)
-		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusConsole, message, true, options.loadingText, options.codexToastText, options.taskContextHeading, options.previewHeaderAnimation, options.emptyArtFrame), "\n")
+		return strings.Join(renderCodexFrame(cfg, codexState, codexTitle, codexContent, width, height, st.Focus == state.FocusConsole, message, true, options.loadingText, options.codexToastText, options.taskContextPreview, options.taskContextHeading, options.previewHeaderAnimation, options.emptyArtFrame), "\n")
 	}
 	if codexWidth <= 0 {
 		return strings.Join(renderNavSection(cfg, st, navWidth, height, groupCursor, options), "\n")
 	}
 	codexState := codexFrameStateForSelection(st, groupCursor)
 	nav := renderNavSection(cfg, st, navWidth, height, groupCursor, options)
-	codex := renderCodexFrame(cfg, codexState, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.taskContextHeading, options.previewHeaderAnimation, options.emptyArtFrame)
+	codex := renderCodexFrame(cfg, codexState, codexTitle, codexContent, codexWidth, height, false, message, false, options.loadingText, options.codexToastText, options.taskContextPreview, options.taskContextHeading, options.previewHeaderAnimation, options.emptyArtFrame)
 	lines := make([]string, 0, height)
 	for index := 0; index < height; index++ {
 		left := lineAt(nav, index, navWidth)
@@ -1177,6 +1178,7 @@ func renderCodexFrame(
 	navCollapsed bool,
 	loadingText string,
 	toastText string,
+	taskContextPreview string,
 	taskContextHeading string,
 	previewHeaderAnimation string,
 	emptyArtFrame int,
@@ -1206,7 +1208,7 @@ func renderCodexFrame(
 	} else if taskActive {
 		topRightLabel = previewTopRightLabel(title, toastText)
 	}
-	if heading := taskContextHeadingForConsole(cfg, st, taskContextHeading, active, navCollapsed); heading != "" {
+	if heading := taskContextHeadingForFrame(cfg, st, taskContextPreview, taskContextHeading, active, previewMode, navCollapsed); heading != "" {
 		if rendered := renderTaskContextHeadingChip(heading, taskContextHeadingAvailableWidth(topLabel, topRightLabel, max(0, innerWidth-2))); rendered != "" {
 			topLabel += "  " + rendered
 		}
@@ -1243,13 +1245,23 @@ func renderCodexFrame(
 	return lines
 }
 
-func taskContextHeadingForConsole(cfg config.Config, st state.State, heading string, active bool, navCollapsed bool) string {
+func taskContextHeadingForFrame(cfg config.Config, st state.State, preview string, heading string, active bool, previewMode bool, navCollapsed bool) string {
+	preview = strings.Join(strings.Fields(preview), " ")
 	heading = strings.Join(strings.Fields(heading), " ")
-	if !cfg.TaskContext.Enabled || heading == "" || !active || !navCollapsed {
+	if !cfg.TaskContext.Enabled || (!active && !previewMode) {
 		return ""
 	}
 	task := state.ActiveTask(st)
 	if task == nil || !taskIsCodex(cfg, *task) {
+		return ""
+	}
+	if previewMode {
+		if preview != "" {
+			return preview
+		}
+		return heading
+	}
+	if !navCollapsed {
 		return ""
 	}
 	return heading

@@ -680,6 +680,16 @@ func TestClientCommandMenuShowsTaskContextDetail(t *testing.T) {
 	if strings.Contains(view, "Context") || strings.Contains(view, "Heading") || strings.Contains(view, "Detail") || strings.Contains(view, "Shortcuts") {
 		t.Fatalf("task notes should not spend context space on inferred labels:\n%s", view)
 	}
+
+	model.applyResponse(ipc.Response{OK: true, Snapshot: &ipc.Snapshot{
+		State:             st,
+		ActiveTaskContext: &ipc.TaskContext{TaskID: "t", Preview: "CI wait"},
+	}})
+	model.startCommandMenu()
+	view = ansi.Strip(model.View())
+	if !strings.Contains(view, "Task Notes") || !strings.Contains(view, "CI wait") || strings.Contains(view, "No task notes set.") {
+		t.Fatalf("task tools should show preview-only task notes as fallback:\n%s", view)
+	}
 }
 
 func TestClientTaskBriefModalFitsTerminalWidth(t *testing.T) {
@@ -2467,20 +2477,27 @@ func TestIPCTaskContextSetShowClearForActiveCodexTask(t *testing.T) {
 	if response.TaskContext == nil || response.TaskContext.TaskID != "a" || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Summary != "Review PR 123" {
 		t.Fatalf("set task notes = %#v", response.TaskContext)
 	}
+	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_set", Args: map[string]string{"kind": "preview", "content": "CI wait"}})
+	if !response.OK || cmd != nil {
+		t.Fatalf("set preview response/cmd = %#v/%v", response, cmd)
+	}
+	if response.TaskContext == nil || response.TaskContext.Preview != "CI wait" || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Summary != "Review PR 123" {
+		t.Fatalf("set preview task notes = %#v", response.TaskContext)
+	}
 	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_set", Args: map[string]string{"kind": "detail", "content": "next line\nmore detail"}})
 	if !response.OK || cmd != nil {
 		t.Fatalf("set detail response/cmd = %#v/%v", response, cmd)
 	}
-	if response.TaskContext == nil || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Detail != "next line\nmore detail" {
+	if response.TaskContext == nil || response.TaskContext.Preview != "CI wait" || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Detail != "next line\nmore detail" {
 		t.Fatalf("set detail task notes = %#v", response.TaskContext)
 	}
 	snapshot := model.Snapshot()
-	if snapshot.ActiveTaskContext == nil || snapshot.ActiveTaskContext.Heading != "Review PR 123" || snapshot.ActiveTaskContext.Detail != "next line\nmore detail" {
+	if snapshot.ActiveTaskContext == nil || snapshot.ActiveTaskContext.Preview != "CI wait" || snapshot.ActiveTaskContext.Heading != "Review PR 123" || snapshot.ActiveTaskContext.Detail != "next line\nmore detail" {
 		t.Fatalf("snapshot active notes = %#v", snapshot.ActiveTaskContext)
 	}
 
 	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_show", Args: map[string]string{}})
-	if !response.OK || cmd != nil || response.TaskContext == nil || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Detail != "next line\nmore detail" {
+	if !response.OK || cmd != nil || response.TaskContext == nil || response.TaskContext.Preview != "CI wait" || response.TaskContext.Heading != "Review PR 123" || response.TaskContext.Detail != "next line\nmore detail" {
 		t.Fatalf("show response/cmd = %#v/%v", response, cmd)
 	}
 
@@ -2488,8 +2505,16 @@ func TestIPCTaskContextSetShowClearForActiveCodexTask(t *testing.T) {
 	if !response.OK || cmd != nil {
 		t.Fatalf("clear response/cmd = %#v/%v", response, cmd)
 	}
-	if snapshot := model.Snapshot(); snapshot.ActiveTaskContext == nil || snapshot.ActiveTaskContext.Heading != "" || snapshot.ActiveTaskContext.Detail != "next line\nmore detail" {
+	if snapshot := model.Snapshot(); snapshot.ActiveTaskContext == nil || snapshot.ActiveTaskContext.Preview != "CI wait" || snapshot.ActiveTaskContext.Heading != "" || snapshot.ActiveTaskContext.Detail != "next line\nmore detail" {
 		t.Fatalf("clearing short note should preserve detail in snapshot: %#v", snapshot.ActiveTaskContext)
+	}
+
+	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_clear", Args: map[string]string{"kind": "preview"}})
+	if !response.OK || cmd != nil {
+		t.Fatalf("clear preview response/cmd = %#v/%v", response, cmd)
+	}
+	if snapshot := model.Snapshot(); snapshot.ActiveTaskContext == nil || snapshot.ActiveTaskContext.Preview != "" || snapshot.ActiveTaskContext.Detail != "next line\nmore detail" {
+		t.Fatalf("clearing preview note should preserve detail in snapshot: %#v", snapshot.ActiveTaskContext)
 	}
 
 	response, cmd = model.handleIPC(ipc.Request{Command: "task_context_clear", Args: map[string]string{"kind": "detail"}})

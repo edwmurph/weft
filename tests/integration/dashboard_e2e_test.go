@@ -162,7 +162,7 @@ func TestTaskNotesHeadingE2E(t *testing.T) {
 	taskID := st.ActiveTaskID
 
 	pane := "task-notes"
-	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 120, 32)
+	clientOutput, _ := startDirectDashboardClient(t, env, bin, workspace, pane, 180, 32)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, collapsedCodexToolbar) &&
 			strings.Contains(capture, "Notes Task") &&
@@ -177,6 +177,32 @@ func TestTaskNotesHeadingE2E(t *testing.T) {
 	if show := runWeft(t, env, bin, "task", "notes", "show", "--task", taskID); strings.TrimSpace(show) != "Pinned handoff link" {
 		t.Fatalf("task notes show missing short note:\n%s", show)
 	}
+
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitState(t, env, bin, func(st state.State) bool {
+		return st.Focus == state.FocusTasks && st.NavOpen
+	})
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Live Preview") &&
+			strings.Contains(capture, " note ") &&
+			strings.Contains(capture, "Pinned handoff link")
+	})
+	runWeft(t, env, bin, "task", "notes", "preview", "set", "--task", taskID, "PR pending")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, "Task Live Preview") &&
+			strings.Contains(capture, " note ") &&
+			strings.Contains(capture, "PR pending") &&
+			!strings.Contains(capture, "Pinned handoff link")
+	})
+	if show := runWeft(t, env, bin, "task", "notes", "preview", "show", "--task", taskID); strings.TrimSpace(show) != "PR pending" {
+		t.Fatalf("task notes preview show missing preview note:\n%s", show)
+	}
+	directRun(t, env, "send-keys", "-t", pane, "C-b")
+	waitForOutput(t, clientOutput, func(capture string) bool {
+		return strings.Contains(capture, collapsedCodexToolbar) &&
+			strings.Contains(capture, "Pinned handoff link") &&
+			!strings.Contains(capture, "PR pending")
+	})
 
 	detail := "Pinned detail line\nSecond detail line"
 	runWeft(t, env, bin, "task", "notes", "detail", "set", "--task", taskID, detail)
@@ -198,9 +224,11 @@ func TestTaskNotesHeadingE2E(t *testing.T) {
 	})
 
 	runWeft(t, env, bin, "task", "notes", "clear", "--task", taskID)
+	runWeft(t, env, bin, "task", "notes", "preview", "clear", "--task", taskID)
 	waitForOutput(t, clientOutput, func(capture string) bool {
 		return strings.Contains(capture, collapsedCodexToolbar) &&
-			!strings.Contains(capture, "Pinned handoff link")
+			!strings.Contains(capture, "Pinned handoff link") &&
+			!strings.Contains(capture, "PR pending")
 	})
 	runWeft(t, env, bin, "task", "notes", "detail", "clear", "--task", taskID)
 	directRun(t, env, "send-keys", "-t", pane, "C-]")

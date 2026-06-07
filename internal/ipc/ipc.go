@@ -15,7 +15,7 @@ import (
 	"github.com/edwmurph/weft/internal/version"
 )
 
-const ProtocolVersion = 5
+const ProtocolVersion = 6
 
 const (
 	UpgradeReasonVersion = "version"
@@ -83,6 +83,7 @@ type Snapshot struct {
 
 type TaskContext struct {
 	TaskID    string `json:"task_id"`
+	Preview   string `json:"preview,omitempty"`
 	Heading   string `json:"heading,omitempty"`
 	Detail    string `json:"detail,omitempty"`
 	Summary   string `json:"summary,omitempty"`

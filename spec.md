@@ -288,13 +288,13 @@ The pane shows either:
 - a centered empty message when no task is open, with a subtle Weft wordmark when space allows. Dashboard version information belongs in the Workspaces pane header, not in the task pane empty state.
 - the selected task terminal when a task is open
 
-When navigation is open, the Workspaces and Tasks panes push `Task Live Preview` to the right. The preview shows live task output only when the current navigation focus is on a task row. Focusing a real workspace card, the new-workspace template card, a group row, or any other non-task navigation target renders `No task selected` instead of the last viewed task. If the focused task row and the captured task output owner disagree after a move, hover, refresh, or supervisor restart, the preview renders `No task selected` until the next synced snapshot instead of showing another task's output. When a workspace already has tasks but the current target is not a task row, the `No task selected` hint tells the user to select a task to preview rather than suggesting task creation. The `No task selected` state uses the shared Weft wordmark with balanced diamond input nodes, a centered solid output arrowhead, visible spacing before the block text, and a subtle faster left-to-right pulse in fixed-width chunks limited to the arrow graph, followed by a roughly three-second pause before the next pulse. That animation is presentation only and must not imply task activity. When a task row is focused, the preview title appends one space and a slowly pulsing dot to indicate the preview can update with live task output. The preview title animation is also presentation only and does not mean the selected task is busy; it is omitted when there is no selected task to preview. The preview is read-only: keyboard input controls Weft navigation and organization, not the task PTY. Trackpad or wheel scrolling inside the preview frame scrolls Weft's captured scrollback for the task and does not forward mouse packets into the task PTY. Left-button drag selection inside the preview uses the same selected-cell highlight, clipboard copy behavior, and brief copy-confirmation toast as `Task Console` without changing navigation focus. When a task row is focused, the preview top border shows the selected task title at the top right, except while the copy-confirmation toast is visible. Preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
+When navigation is open, the Workspaces and Tasks panes push `Task Live Preview` to the right. The preview shows live task output only when the current navigation focus is on a task row. Focusing a real workspace card, the new-workspace template card, a group row, or any other non-task navigation target renders `No task selected` instead of the last viewed task. If the focused task row and the captured task output owner disagree after a move, hover, refresh, or supervisor restart, the preview renders `No task selected` until the next synced snapshot instead of showing another task's output. When a workspace already has tasks but the current target is not a task row, the `No task selected` hint tells the user to select a task to preview rather than suggesting task creation. The `No task selected` state uses the shared Weft wordmark with balanced diamond input nodes, a centered solid output arrowhead, visible spacing before the block text, and a subtle faster left-to-right pulse in fixed-width chunks limited to the arrow graph, followed by a roughly three-second pause before the next pulse. That animation is presentation only and must not imply task activity. When a task row is focused, the preview title appends one space and a slowly pulsing dot to indicate the preview can update with live task output. The preview title animation is also presentation only and does not mean the selected task is busy; it is omitted when there is no selected task to preview. If task notes are enabled and the selected task is a Codex task, the preview top border shows a subtle `note` badge with the preview shortform note when present, otherwise the console heading note as a fallback. The preview is read-only: keyboard input controls Weft navigation and organization, not the task PTY. Trackpad or wheel scrolling inside the preview frame scrolls Weft's captured scrollback for the task and does not forward mouse packets into the task PTY. Left-button drag selection inside the preview uses the same selected-cell highlight, clipboard copy behavior, and brief copy-confirmation toast as `Task Console` without changing navigation focus. When a task row is focused, the preview top border shows the selected task title at the top right, except while the copy-confirmation toast is visible. Preview content reserves one inner column on both the left and right, and clipped terminal lines use a subtle reserved right-edge marker before the right padding so the pane reads as a live cropped lens instead of a full interactive terminal.
 
 When the user presses `Enter` on a task, navigation slides away left, `Task Console` expands to the full terminal, and focus moves to the task console.
 
 Task PTYs can only receive input when `Task Console` is focused and maximized.
 
-When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured Task Tools key as `<key> tools` without a `WEFT` prefix, and the top-right border shows only the active task title. If task notes are enabled and the active task is a Codex task with a stored short note, the focused console shows a subtle `note` badge and the clipped one-line note beside the left toolbar. Multi-line notes never render as always-visible task output; they are shown when Task Tools is opened with the configured tools key. Task notes do not render in `Task Live Preview` or configured shell task consoles. If at least one other global unsilenced task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task and silenced tasks are excluded from that count, and the indicator is hidden when no other unsilenced tasks are ready. Other short console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item. The active `Task Console` pane border remains the active Weft blue on every border segment and corner even when bottom-right notices use their own text styling.
+When `Task Console` is focused, the top border shows the configured drawer key as `<key> dashboard` and the configured Task Tools key as `<key> tools` without a `WEFT` prefix, and the top-right border shows only the active task title. If task notes are enabled and the active task is a Codex task with a stored heading note, the focused console shows a subtle `note` badge and the clipped one-line heading beside the left toolbar. Multi-line notes never render as always-visible task output; they are shown when Task Tools is opened with the configured tools key. Task notes do not render in configured shell task consoles. If at least one other global unsilenced task has rendered/live status `ready`, the bottom-right border shows an amber `<n> other task(s) ready` indicator. The active console task and silenced tasks are excluded from that count, and the indicator is hidden when no other unsilenced tasks are ready. Other short console notices, including copy-confirmation toasts, also render in the bottom-right border so the task title remains the only top-right console item. The active `Task Console` pane border remains the active Weft blue on every border segment and corner even when bottom-right notices use their own text styling.
 
 ## Navigation States
 
@@ -376,7 +376,7 @@ C-c     Quit Weft from dashboard focus
 
 While Help is open, `C-r` repaints the whole attached client screen and refreshes the dashboard snapshot without closing Help.
 
-Task Tools shows task notes and console commands in separate sections. The Task Notes area uses most of the available space and shows the concise note as the lead line, followed by wrapped longer notes when present, without separate field labels that repeat the section purpose. Left-button drag selection inside that section is bounded to the notes body and copies selected note text to the clipboard. The Console Commands section offers `r` to repaint the attached client and refresh the dashboard snapshot, `c` as `Copy full task console` to copy the current task console's plain captured content to the clipboard for debugging, `Enter` to run the selected command, and `Esc` to close.
+Task Tools shows task notes and console commands in separate sections. The Task Notes area uses most of the available space and shows the heading note as the lead line when present, otherwise the preview note as a fallback lead line, followed by wrapped longer detail notes when present, without separate field labels that repeat the section purpose. Left-button drag selection inside that section is bounded to the notes body and copies selected note text to the clipboard. The Console Commands section offers `r` to repaint the attached client and refresh the dashboard snapshot, `c` as `Copy full task console` to copy the current task console's plain captured content to the clipboard for debugging, `Enter` to run the selected command, and `Esc` to close.
 
 Deletion behavior depends on selected item type and is defined below.
 
@@ -443,7 +443,7 @@ Task context defaults to enabled:
 enabled = true
 ```
 
-Task notes have two independent fields. The short note is a concise one-line note shown in the focused Codex Task Console heading. The detail field accepts longer multi-line text and appears in Task Tools. Task notes do not render in Task Live Preview or configured shell task consoles.
+Task notes have three independent fields. The preview field is a compact one-line shortform shown in `Task Live Preview`. The heading field is a concise one-line medform shown in the focused Codex `Task Console` heading and used as the preview fallback when no preview field is set. The detail field accepts longer multi-line longform text and appears in Task Tools. Task notes do not render in configured shell task consoles.
 
 The dashboard new-task form has focused Type, `[ ] Silent`, and Title fields in that visual order. The form opens with Type focused so choosing between configured task types is the first interaction. `Up`/`Down` move between fields, `Tab` cycles fields, and `Enter` creates the task when the type dropdown is closed. Focused Type and Title inputs use the blue modal input border; focused Silent renders only the `[ ]` or `[x]` checkbox glyph in blue. The Type field renders the selected task type label only, such as `Codex` or `Shell`; `Left`/`Right` cycles task types, and `Space` opens a dropdown where `Up`/`Down` choose a task type and `Enter` or `Tab` closes the dropdown. `Space` toggles Silent when the checkbox is focused. The title input defaults to the selected task type's `title_template`, and supported title variables render under the title input. Changing the selected task type updates the title input to the newly selected type's default only while the input is blank or still matches the previous type default; once the user edits the title, type changes preserve that custom value. The edit-task form renders its Silent checkbox above the Title input, initializes it from the selected task, lists the same supported title variables under the Title input, and title-only command-line rename preserves the current silent value. The Tasks pane reserves a fixed badge column wide enough for the configured task type badges so task rows do not drift out of alignment.
 
@@ -836,22 +836,40 @@ Global `--clear`:
 - rejects unknown task type IDs
 - applies an explicit title when supplied, otherwise copies the selected task type's `title_template`
 
+`weft task notes preview set [--task <id>] <text...>`:
+
+- persists a compact one-line preview note for a Codex task when `task_context.enabled = true`
+- reads piped stdin when no text arguments are provided
+- rejects empty terminal stdin, empty notes, multi-line preview notes, and preview notes larger than 160 bytes
+- defaults to `WEFT_TASK_ID` when present, otherwise to the supervisor's active task
+- rejects configured shell tasks because task notes are a Codex-task feature
+
+`weft task notes preview show [--task <id>] [--json]`:
+
+- prints the preview note for the selected Codex task
+- prints the `task_context` response object as JSON when `--json` is provided
+
+`weft task notes preview clear [--task <id>]`:
+
+- removes the preview note for the selected Codex task
+- also runs when there are no stored preview notes so automation can be idempotent
+
 `weft task notes set [--task <id>] <text...>`:
 
-- persists a concise one-line note for a Codex task when `task_context.enabled = true`
+- persists a concise one-line heading note for a Codex task when `task_context.enabled = true`
 - reads piped stdin when no text arguments are provided
-- rejects empty terminal stdin, empty notes, multi-line short notes, and short notes larger than 512 bytes
+- rejects empty terminal stdin, empty notes, multi-line heading notes, and heading notes larger than 512 bytes
 - defaults to `WEFT_TASK_ID` when present, otherwise to the supervisor's active task
 - rejects configured shell tasks because task notes are a Codex-task feature
 
 `weft task notes show [--task <id>] [--json]`:
 
-- prints the short note for the selected Codex task
+- prints the heading note for the selected Codex task
 - prints the `task_context` response object as JSON when `--json` is provided
 
 `weft task notes clear [--task <id>]`:
 
-- removes the short note for the selected Codex task
+- removes the heading note for the selected Codex task
 - also runs when there are no stored notes so automation can be idempotent
 
 `weft task notes detail set [--task <id>] <text...>`:

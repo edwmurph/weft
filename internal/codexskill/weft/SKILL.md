@@ -12,15 +12,17 @@ Use this skill when running as Codex inside a Weft task or when diagnosing a loc
 - If `WEFT_TASK_ID` is set, the current process is running inside a Weft task.
 - If `WEFT_TASK_ID` is not set but you know the current Codex session id, run `weft status --json` and find the Codex task whose `resume_id` matches that session id. With `jq`: `weft status --json | jq -r --arg sid "$CODEX_SESSION_ID" '.tasks[] | select(.resume_id == $sid) | .id'`.
 - After you know the task id, pass `--task <id>` to update that task's notes from any shell connected to the same Weft runtime.
-- Use `weft task notes set "<concise note or link>"` to persist one short note for the current task.
-- Use `weft task notes detail set "<longer note>"` or piped input such as `printf '%s\n' "$note" | weft task notes detail set` for multi-line notes.
-- Use `weft task notes show` to read the short note, and `weft task notes detail show` to read the longer note.
-- Use `weft task notes clear` or `weft task notes detail clear` when either note is stale or no longer useful.
-- The focused Codex Task Console shows the short note in its top border; opening Task Tools with `C-]` shows Task Notes and Console Commands as separate sections.
-- For another Codex task, pass `--task <id>` to `set`, `show`, or `clear` in either notes command family.
+- Keep three versions available for each useful task update: shortform, medform, and longform.
+- Use `weft task notes preview set "<shortform>"` to persist a compact one-line shortform for Task Live Preview.
+- Use `weft task notes set "<medform>"` to persist a concise one-line medform for the focused Codex Task Console heading. Task Live Preview falls back to this medform when no preview shortform is set.
+- Use `weft task notes detail set "<longform>"` or piped input such as `printf '%s\n' "$note" | weft task notes detail set` for the longer Task Tools overlay note.
+- Use `weft task notes preview show`, `weft task notes show`, and `weft task notes detail show` to read the three note forms.
+- Use `weft task notes preview clear`, `weft task notes clear`, or `weft task notes detail clear` when the matching note is stale or no longer useful.
+- Opening Task Tools with `C-]` shows Task Notes and Console Commands as separate sections.
+- For another Codex task, pass `--task <id>` to `set`, `show`, or `clear` in any notes command family.
 - Follow any user, repo, or installed-skill instructions that define how task notes should be used.
 - If nothing else says otherwise, use task notes for handy links to running or slow external work: GitHub Actions workflow runs, pull request reviews, issue threads, deployment logs, long-running job dashboards, or any URL the user may need to reopen later.
-- Keep notes short and durable. Prefer the best current link plus one sentence of status or next check. Avoid secrets.
+- Keep preview shortforms very short, heading medforms concise and durable, and longforms detailed enough for handoff. Prefer the best current link plus status or next check. Avoid secrets.
 
 ## Weft Diagnostics
 

@@ -1337,19 +1337,23 @@ func TestActiveCodexToolbarUsesDrawerBinding(t *testing.T) {
 	}
 }
 
-func TestTaskContextHeadingRendersOnlyFocusedCodexConsole(t *testing.T) {
+func TestTaskContextHeadingRendersInCodexConsoleAndPreview(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusConsole
 	st.NavOpen = false
+	preview := "CI waiting"
 	heading := "Investigate failing release workflow"
 
-	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 96, 10, "", 0, 0, workspaceRenderOptions{taskContextHeading: heading}))
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 96, 10, "", 0, 0, workspaceRenderOptions{taskContextPreview: preview, taskContextHeading: heading}))
 	if count := strings.Count(got, " note "); count != 1 {
 		t.Fatalf("focused Codex console should render one note label, count=%d:\n%s", count, got)
 	}
 	if !strings.Contains(got, heading) {
 		t.Fatalf("focused Codex console should render the full note when border space is available:\n%s", got)
+	}
+	if strings.Contains(got, preview) {
+		t.Fatalf("focused Codex console should render the heading note, not the preview shortform:\n%s", got)
 	}
 	if strings.Contains(got, "["+heading+"]") {
 		t.Fatalf("task note should not render centered in brackets:\n%s", got)
@@ -1363,17 +1367,30 @@ func TestTaskContextHeadingRendersOnlyFocusedCodexConsole(t *testing.T) {
 
 	st.Focus = state.FocusTasks
 	st.NavOpen = true
-	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 140, 18, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{taskContextHeading: heading}))
-	if strings.Contains(got, heading) {
-		t.Fatalf("Task Live Preview should not render task notes:\n%s", got)
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 140, 18, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{taskContextPreview: preview, taskContextHeading: heading}))
+	if !strings.Contains(got, preview) || strings.Contains(got, heading) {
+		t.Fatalf("Task Live Preview should render the preview shortform note instead of the console heading:\n%s", got)
+	}
+
+	fallbackHeading := "Review PR"
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 140, 18, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{taskContextHeading: fallbackHeading}))
+	if !strings.Contains(got, fallbackHeading) {
+		t.Fatalf("Task Live Preview should fall back to the console heading when no preview shortform is set:\n%s", got)
 	}
 
 	st.Focus = state.FocusConsole
 	st.NavOpen = false
 	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
-	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 96, 10, "", 0, 0, workspaceRenderOptions{taskContextHeading: heading}))
-	if strings.Contains(got, heading) {
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 96, 10, "", 0, 0, workspaceRenderOptions{taskContextPreview: preview, taskContextHeading: heading}))
+	if strings.Contains(got, heading) || strings.Contains(got, preview) {
 		t.Fatalf("shell task console should not render task notes:\n%s", got)
+	}
+
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	got = ansi.Strip(renderWorkspaceView(cfg, st, "alpha", "output", 140, 18, "", minTwoPaneNavWidth, 2, workspaceRenderOptions{taskContextPreview: preview, taskContextHeading: heading}))
+	if strings.Contains(got, heading) || strings.Contains(got, preview) {
+		t.Fatalf("shell task preview should not render task notes:\n%s", got)
 	}
 }
 

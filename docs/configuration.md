@@ -76,7 +76,7 @@ Run `weft doctor attention` from iTerm2 if the Dock bounces but no notification 
 
 ## Task Notes
 
-Codex tasks can persist notes for their own task. `weft task notes set` stores a concise one-line note that appears in the focused Codex `Task Console` heading. `weft task notes detail set` stores longer multi-line notes that appear in Task Tools, opened with `C-]`.
+Codex tasks can persist notes for their own task. `weft task notes preview set` stores a compact one-line shortform note for `Task Live Preview`. `weft task notes set` stores a concise one-line medform note that appears in the focused Codex `Task Console` heading and acts as the preview fallback. `weft task notes detail set` stores longer multi-line longform notes that appear in Task Tools, opened with `C-]`.
 
 Task context is enabled by default. Disable it with:
 

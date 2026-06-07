@@ -17,11 +17,18 @@ func TestStoreSetShowClearAndSummary(t *testing.T) {
 	if record.TaskID != "task-a" || record.Heading != "First useful line" || record.Summary() != "First useful line" {
 		t.Fatalf("record = %#v summary=%q", record, record.Summary())
 	}
+	record, err = store.SetPreview("task-a", "  CI waiting  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Preview != "CI waiting" || record.Heading != "First useful line" || record.Summary() != "First useful line" {
+		t.Fatalf("record after preview = %#v summary=%q", record, record.Summary())
+	}
 	record, err = store.SetDetail("task-a", "\nsecond line\nthird line\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Heading != "First useful line" || record.Detail != "second line\nthird line" || record.Summary() != "First useful line" {
+	if record.Preview != "CI waiting" || record.Heading != "First useful line" || record.Detail != "second line\nthird line" || record.Summary() != "First useful line" {
 		t.Fatalf("record after detail = %#v summary=%q", record, record.Summary())
 	}
 
@@ -29,7 +36,7 @@ func TestStoreSetShowClearAndSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || got.Heading != record.Heading || got.Detail != record.Detail || got.Summary() != "First useful line" {
+	if !ok || got.Preview != record.Preview || got.Heading != record.Heading || got.Detail != record.Detail || got.Summary() != "First useful line" {
 		t.Fatalf("show = %#v ok=%t", got, ok)
 	}
 
@@ -44,8 +51,11 @@ func TestStoreSetShowClearAndSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || got.Heading != "" || got.Detail != "second line\nthird line" {
+	if !ok || got.Preview != "CI waiting" || got.Heading != "" || got.Detail != "second line\nthird line" {
 		t.Fatalf("detail should remain after heading clear: %#v ok=%t", got, ok)
+	}
+	if got.Summary() != "CI waiting" {
+		t.Fatalf("preview should provide summary after heading clear: %#v summary=%q", got, got.Summary())
 	}
 
 	removed, err = store.Clear("task-a", "detail")
@@ -54,6 +64,21 @@ func TestStoreSetShowClearAndSummary(t *testing.T) {
 	}
 	if !removed {
 		t.Fatal("clear should report removed detail context")
+	}
+	got, ok, err = store.Show("task-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got.Preview != "CI waiting" || got.Heading != "" || got.Detail != "" {
+		t.Fatalf("preview should remain after detail clear: %#v ok=%t", got, ok)
+	}
+
+	removed, err = store.Clear("task-a", "preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("clear should report removed preview context")
 	}
 	_, ok, err = store.Show("task-a")
 	if err != nil {
@@ -118,6 +143,12 @@ func TestStoreRejectsEmptyAndOversizeWithoutClobberingExisting(t *testing.T) {
 	if _, err := store.SetHeading("task-a", "one\ntwo"); err == nil || !strings.Contains(err.Error(), "must be one line") {
 		t.Fatalf("multi-line heading error = %v", err)
 	}
+	if _, err := store.SetPreview("task-a", "one\ntwo"); err == nil || !strings.Contains(err.Error(), "must be one line") {
+		t.Fatalf("multi-line preview error = %v", err)
+	}
+	if _, err := store.SetPreview("task-a", strings.Repeat("x", MaxPreviewBytes+1)); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("oversize preview error = %v", err)
+	}
 	if _, err := store.SetHeading("task-a", strings.Repeat("x", MaxHeadingBytes+1)); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("oversize error = %v", err)
 	}
@@ -130,5 +161,24 @@ func TestStoreRejectsEmptyAndOversizeWithoutClobberingExisting(t *testing.T) {
 	}
 	if !ok || record.Heading != "original" {
 		t.Fatalf("existing content should remain after failed writes: %#v ok=%t", record, ok)
+	}
+}
+
+func TestStoreLoadsLegacyTaskContextVersion(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(store.Path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.Path, []byte(`{"version":2,"records":{"task-a":{"task_id":"task-a","heading":"Legacy heading","detail":"Legacy detail","updated_at":"2026-06-06T12:00:00Z"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	records, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := records["task-a"]
+	if got.Preview != "" || got.Heading != "Legacy heading" || got.Detail != "Legacy detail" || got.Summary() != "Legacy heading" {
+		t.Fatalf("legacy record = %#v", got)
 	}
 }

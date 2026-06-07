@@ -294,6 +294,7 @@ func (m Model) activeTaskContextForSnapshot() *ipc.TaskContext {
 func taskContextRecordToIPC(record taskcontext.Record) *ipc.TaskContext {
 	return &ipc.TaskContext{
 		TaskID:    record.TaskID,
+		Preview:   record.Preview,
 		Heading:   record.Heading,
 		Detail:    record.Detail,
 		Summary:   record.Summary(),
@@ -1573,6 +1574,8 @@ func (m *Model) handleTaskContextSet(args map[string]string) ipc.Response {
 	var record taskcontext.Record
 	var err error
 	switch kind {
+	case "preview":
+		record, err = m.taskContextStore.SetPreview(task.ID, args["content"])
 	case "heading":
 		record, err = m.taskContextStore.SetHeading(task.ID, args["content"])
 	case "detail":
@@ -1656,10 +1659,10 @@ func taskContextKind(kind string) (string, ipc.Response) {
 		kind = "heading"
 	}
 	switch kind {
-	case "heading", "detail":
+	case "preview", "heading", "detail":
 		return kind, ipc.Response{OK: true}
 	default:
-		return "", ipc.ErrorResponse("invalid_task_context_kind", "task notes kind must be heading or detail")
+		return "", ipc.ErrorResponse("invalid_task_context_kind", "task notes kind must be preview, heading, or detail")
 	}
 }
 

@@ -17,13 +17,16 @@ import (
 
 const (
 	FileName        = "task-context.json"
-	Version         = 2
+	Version         = 3
+	LegacyVersion   = 2
+	MaxPreviewBytes = 160
 	MaxHeadingBytes = 512
 	MaxDetailBytes  = 16 * 1024
 )
 
 type Record struct {
 	TaskID    string `json:"task_id"`
+	Preview   string `json:"preview,omitempty"`
 	Heading   string `json:"heading,omitempty"`
 	Detail    string `json:"detail,omitempty"`
 	UpdatedAt string `json:"updated_at"`
@@ -58,11 +61,14 @@ func (r Record) Summary() string {
 	if strings.TrimSpace(r.Heading) != "" {
 		return strings.Join(strings.Fields(r.Heading), " ")
 	}
+	if strings.TrimSpace(r.Preview) != "" {
+		return strings.Join(strings.Fields(r.Preview), " ")
+	}
 	return Summary(r.Detail)
 }
 
 func (r Record) HasContent() bool {
-	return strings.TrimSpace(r.Heading) != "" || strings.TrimSpace(r.Detail) != ""
+	return strings.TrimSpace(r.Preview) != "" || strings.TrimSpace(r.Heading) != "" || strings.TrimSpace(r.Detail) != ""
 }
 
 func (s *Store) Load() (map[string]Record, error) {
@@ -79,6 +85,12 @@ func (s *Store) Load() (map[string]Record, error) {
 		return nil
 	})
 	return records, err
+}
+
+func (s *Store) SetPreview(taskID string, content string) (Record, error) {
+	return s.setContent(taskID, content, validatePreview, func(record *Record, content string) {
+		record.Preview = content
+	})
 }
 
 func (s *Store) SetHeading(taskID string, content string) (Record, error) {
@@ -145,7 +157,7 @@ func (s *Store) Clear(taskID string, kind string) (bool, error) {
 		kind = "all"
 	}
 	switch kind {
-	case "heading", "detail", "all":
+	case "preview", "heading", "detail", "all":
 	default:
 		return false, fmt.Errorf("unsupported task context kind %q", kind)
 	}
@@ -163,6 +175,9 @@ func (s *Store) Clear(taskID string, kind string) (bool, error) {
 			return s.writeUnlocked(records)
 		}
 		switch kind {
+		case "preview":
+			removed = strings.TrimSpace(record.Preview) != ""
+			record.Preview = ""
 		case "heading":
 			removed = strings.TrimSpace(record.Heading) != ""
 			record.Heading = ""
@@ -171,6 +186,7 @@ func (s *Store) Clear(taskID string, kind string) (bool, error) {
 			record.Detail = ""
 		case "all":
 			removed = record.HasContent()
+			record.Preview = ""
 			record.Heading = ""
 			record.Detail = ""
 		}
@@ -212,18 +228,26 @@ func (s *Store) Cleanup(validTaskIDs map[string]bool) (int, error) {
 	return removed, err
 }
 
+func validatePreview(content string) (string, error) {
+	return validateOneLine(content, "task preview context", MaxPreviewBytes)
+}
+
 func validateHeading(content string) (string, error) {
+	return validateOneLine(content, "task heading context", MaxHeadingBytes)
+}
+
+func validateOneLine(content string, label string, maxBytes int) (string, error) {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	content = strings.TrimSpace(content)
 	if content == "" {
-		return "", errors.New("task heading context cannot be empty")
+		return "", errors.New(label + " cannot be empty")
 	}
 	if strings.Contains(content, "\n") {
-		return "", errors.New("task heading context must be one line")
+		return "", errors.New(label + " must be one line")
 	}
 	content = strings.Join(strings.Fields(content), " ")
-	if len([]byte(content)) > MaxHeadingBytes {
-		return "", fmt.Errorf("task heading context is too large: maximum is %d bytes", MaxHeadingBytes)
+	if len([]byte(content)) > maxBytes {
+		return "", fmt.Errorf("%s is too large: maximum is %d bytes", label, maxBytes)
 	}
 	return content, nil
 }
@@ -260,7 +284,7 @@ func (s *Store) readUnlocked() (map[string]Record, error) {
 	} else if !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("could not parse %s: %w", FileName, err)
 	}
-	if file.Version != Version {
+	if file.Version != Version && file.Version != LegacyVersion {
 		return nil, fmt.Errorf("unsupported %s version %d", FileName, file.Version)
 	}
 	records := map[string]Record{}
@@ -275,8 +299,16 @@ func (s *Store) readUnlocked() (map[string]Record, error) {
 		if record.TaskID != id {
 			return nil, fmt.Errorf("%s record key %q does not match task_id %q", FileName, id, record.TaskID)
 		}
+		record.Preview = strings.TrimSpace(record.Preview)
 		record.Heading = strings.TrimSpace(record.Heading)
 		record.Detail = strings.TrimSpace(strings.ReplaceAll(record.Detail, "\r\n", "\n"))
+		if record.Preview != "" {
+			preview, err := validatePreview(record.Preview)
+			if err != nil {
+				return nil, fmt.Errorf("%s record %q is invalid: %w", FileName, id, err)
+			}
+			record.Preview = preview
+		}
 		if record.Heading != "" {
 			heading, err := validateHeading(record.Heading)
 			if err != nil {

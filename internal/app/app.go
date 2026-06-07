@@ -163,8 +163,9 @@ func cliHelpText() string {
 		"",
 		"Tasks and organization:",
 		"  weft new [--type id] [title] Create a task.",
-		"  weft task notes set <text>   Set the current Codex task note.",
-		"  weft task notes detail set    Set longer notes for Task Tools.",
+		"  weft task notes preview set   Set a short note for Task Live Preview.",
+		"  weft task notes set <text>    Set the current Codex task heading note.",
+		"  weft task notes detail set     Set longer notes for Task Tools.",
 		"  weft select <id>             Make a task active.",
 		"  weft rename [id] <title>     Rename the selected task or the given task.",
 		"  weft close [id]              Close the active client or a task.",
@@ -460,16 +461,18 @@ func workspaceCommand(args []string) error {
 
 func taskCommand(args []string, stdin *os.File, stdout io.Writer) error {
 	if len(args) == 0 || args[0] != "notes" {
-		return errors.New("task requires: notes set|show|clear|detail")
+		return errors.New("task requires: notes preview|set|show|clear|detail")
 	}
 	return taskContextCommand(args[1:], stdin, stdout)
 }
 
 func taskContextCommand(args []string, stdin *os.File, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("task notes requires one of: set, show, clear, detail")
+		return errors.New("task notes requires one of: preview, set, show, clear, detail")
 	}
 	switch args[0] {
+	case "preview":
+		return taskContextPreviewCommand(args[1:], stdin, stdout)
 	case "set":
 		return taskContextSet("heading", args[1:], stdin, stdout)
 	case "show":
@@ -480,6 +483,22 @@ func taskContextCommand(args []string, stdin *os.File, stdout io.Writer) error {
 		return taskContextDetailCommand(args[1:], stdin, stdout)
 	default:
 		return fmt.Errorf("unknown task notes command %q", args[0])
+	}
+}
+
+func taskContextPreviewCommand(args []string, stdin *os.File, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("task notes preview requires one of: set, show, clear")
+	}
+	switch args[0] {
+	case "set":
+		return taskContextSet("preview", args[1:], stdin, stdout)
+	case "show":
+		return taskContextShow("preview", args[1:], stdout)
+	case "clear":
+		return taskContextClear("preview", args[1:], stdout)
+	default:
+		return fmt.Errorf("unknown task notes preview command %q", args[0])
 	}
 }
 
@@ -582,6 +601,8 @@ func taskContextResponseContent(context *ipc.TaskContext, kind string) string {
 		return ""
 	}
 	switch kind {
+	case "preview":
+		return context.Preview
 	case "detail":
 		return context.Detail
 	default:

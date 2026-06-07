@@ -263,9 +263,17 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
 		newTaskRowSelected:       m.newTaskRowSelected,
 		codexToastText:           m.toastText,
+		taskContextPreview:       taskContextPreview(m.snapshot.ActiveTaskContext),
 		taskContextHeading:       taskContextHeading(m.snapshot.ActiveTaskContext),
 		taskContextDetail:        taskContextDetail(m.snapshot.ActiveTaskContext),
 	}
+}
+
+func taskContextPreview(context *ipc.TaskContext) string {
+	if context == nil {
+		return ""
+	}
+	return strings.TrimSpace(context.Preview)
 }
 
 func taskContextHeading(context *ipc.TaskContext) string {
