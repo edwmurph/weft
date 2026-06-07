@@ -16,6 +16,7 @@ import (
 )
 
 const ProtocolVersion = 6
+const UpgradeBridgeMinProtocolVersion = 5
 
 const (
 	UpgradeReasonVersion = "version"
@@ -129,7 +130,7 @@ func UpgradeStatus(response Response, clientVersion string) *Upgrade {
 		return nil
 	}
 	running := RunningTaskCount(responseState(response))
-	compatible := response.ProtocolVersion == ProtocolVersion
+	compatible := ProtocolSupportsUpgradeBridge(response.ProtocolVersion)
 	message := upgradeMessage(supervisorVersion, clientVersion, running)
 	if !compatible {
 		message = incompatibleUpgradeMessage(supervisorVersion, clientVersion, running)
@@ -143,6 +144,14 @@ func UpgradeStatus(response Response, clientVersion string) *Upgrade {
 		RunningTasks:      running,
 		Message:           message,
 	}
+}
+
+func ProtocolSupportsUpgradeBridge(protocolVersion int) bool {
+	return protocolVersion >= UpgradeBridgeMinProtocolVersion && protocolVersion <= ProtocolVersion
+}
+
+func ProtocolCanRequestUpgradeBridge(protocolVersion int) bool {
+	return protocolVersion >= UpgradeBridgeMinProtocolVersion
 }
 
 func ShouldAutoRestart(response Response) bool {

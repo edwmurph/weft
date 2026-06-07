@@ -983,6 +983,44 @@ func TestClientUpgradeBannerOpensUpgradeResumeConfirm(t *testing.T) {
 	}
 }
 
+func TestClientUpgradeBridgePausesEditsButAllowsUpgrade(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].LiveTitle = "Fake Codex Ready"
+	st.Tasks[0].LiveStatus = "Ready"
+	st.Tasks[0].ResumeID = "session-alpha"
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, LiveTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
+		ProtocolVersion:   ipc.UpgradeBridgeMinProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+
+	if !model.protocolBridgeActive() {
+		t.Fatalf("expected protocol bridge for supervisor protocol %d", model.supervisorProtocol)
+	}
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "Upgrade bridge: dashboard edits resume after restart.") {
+		t.Fatalf("bridge footer missing:\n%s", got)
+	}
+	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode != modeNormal || !strings.Contains(model.message, "Upgrade bridge is active") {
+		t.Fatalf("bridge edit should be paused mode=%s message=%q cmd=%v", model.mode, model.message, cmd)
+	}
+	updated, cmd = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmUpgradeResume {
+		t.Fatalf("bridge upgrade confirm state mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	}
+}
+
 func TestClientUpgradeWaitsUntilTaskIsIdleAndResumable(t *testing.T) {
 	rt := testRuntime(t)
 	st := testStateWithTask(rt.Workspace)

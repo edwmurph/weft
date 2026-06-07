@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -93,6 +94,9 @@ func Ensure(rt config.Runtime) (EnsureResult, error) {
 		}
 		return EnsureResult{Status: response}, nil
 	} else if hasSupervisorResponse(response) {
+		if protocolMismatch(err) && response.Upgrade != nil && response.Upgrade.Compatible {
+			return EnsureResult{Status: response}, nil
+		}
 		return EnsureResult{Status: response}, upgradeError(response, err)
 	}
 	return start(rt)
@@ -255,13 +259,43 @@ func notifySignals(ctx context.Context, cancel context.CancelFunc) func() {
 }
 
 func Status(rt config.Runtime) (ipc.Response, error) {
-	response, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "status"}, time.Second)
-	return AnnotateUpgrade(response, false), err
+	response, err := statusWithProtocol(rt, 0)
+	response = AnnotateUpgrade(response, false)
+	if protocolMismatch(err) && ipc.ProtocolSupportsUpgradeBridge(response.ProtocolVersion) {
+		bridged, bridgeErr := statusWithProtocol(rt, response.ProtocolVersion)
+		bridged = AnnotateUpgrade(bridged, false)
+		if bridgeErr == nil {
+			return bridged, nil
+		}
+		if hasSupervisorResponse(bridged) {
+			return bridged, bridgeErr
+		}
+	}
+	return response, err
+}
+
+func statusWithProtocol(rt config.Runtime, protocolVersion int) (ipc.Response, error) {
+	request := ipc.Request{Command: "status"}
+	if protocolVersion > 0 {
+		request.ProtocolVersion = protocolVersion
+	}
+	return ipc.Call(rt.SocketPath, request, time.Second)
 }
 
 func Shutdown(rt config.Runtime) error {
-	_, err := ipc.Call(rt.SocketPath, ipc.Request{Command: "shutdown"}, time.Second)
+	response, err := shutdownWithProtocol(rt, 0)
+	if protocolMismatch(err) && ipc.ProtocolSupportsUpgradeBridge(response.ProtocolVersion) {
+		_, err = shutdownWithProtocol(rt, response.ProtocolVersion)
+	}
 	return err
+}
+
+func shutdownWithProtocol(rt config.Runtime, protocolVersion int) (ipc.Response, error) {
+	request := ipc.Request{Command: "shutdown"}
+	if protocolVersion > 0 {
+		request.ProtocolVersion = protocolVersion
+	}
+	return ipc.Call(rt.SocketPath, request, time.Second)
 }
 
 func LockPath(rt config.Runtime) string {
@@ -292,7 +326,7 @@ func acquireLock(path string) (*os.File, error) {
 }
 
 func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordinator, control *supervisorControl, request ipc.Request, cancel context.CancelFunc) (ipc.Response, tea.Cmd) {
-	if request.ProtocolVersion != ipc.ProtocolVersion {
+	if request.ProtocolVersion != ipc.ProtocolVersion && !upgradeBridgeRequest(request) {
 		return withSupervisorFields(ipc.ErrorResponse("protocol_mismatch", fmt.Sprintf("unsupported protocol version %d", request.ProtocolVersion)), request, control, rt), nil
 	}
 	applyRequestSize(engine, request)
@@ -350,6 +384,18 @@ func handleRequest(rt config.Runtime, engine *tui.Model, clients *clientCoordina
 		response, cmd := engine.HandleSupervisorRequest(request)
 		applyClientState(&response, clients, request.ClientID)
 		return withSupervisorFields(response, request, control, rt), cmd
+	}
+}
+
+func upgradeBridgeRequest(request ipc.Request) bool {
+	if !ipc.ProtocolCanRequestUpgradeBridge(request.ProtocolVersion) {
+		return false
+	}
+	switch request.Command {
+	case "attach_client", "client_detached", "handshake", "snapshot", "status", "resize", "upgrade_resume":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -716,6 +762,11 @@ func hasSupervisorResponse(response ipc.Response) bool {
 	return response.SupervisorVersion != "" || response.ProtocolVersion != 0 || response.Error != nil
 }
 
+func protocolMismatch(err error) bool {
+	var ipcErr ipc.Error
+	return errors.As(err, &ipcErr) && ipcErr.Code == "protocol_mismatch"
+}
+
 func upgradeError(response ipc.Response, err error) error {
 	if response.Upgrade != nil && !response.Upgrade.Compatible {
 		return fmt.Errorf("%s Run `weft close --kill` when ready to restart the supervisor; saved layout and metadata remain.", response.Upgrade.Message)
@@ -724,6 +775,73 @@ func upgradeError(response ipc.Response, err error) error {
 		return *response.Error
 	}
 	return err
+}
+
+func ForceShutdown(rt config.Runtime, timeout time.Duration) error {
+	pid, err := readPID(PIDPath(rt))
+	if err != nil {
+		return err
+	}
+	if !processExists(pid) {
+		return nil
+	}
+	if err := signalProcessGroup(pid, syscall.SIGTERM); err != nil {
+		return err
+	}
+	if waitForPIDExit(pid, timeout) {
+		_ = os.Remove(PIDPath(rt))
+		return nil
+	}
+	if err := signalProcessGroup(pid, syscall.SIGKILL); err != nil {
+		return err
+	}
+	if waitForPIDExit(pid, time.Second) {
+		_ = os.Remove(PIDPath(rt))
+		return nil
+	}
+	return fmt.Errorf("supervisor process %d did not stop", pid)
+}
+
+func readPID(path string) (int, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || pid <= 0 {
+		return 0, fmt.Errorf("invalid supervisor pid file %s", path)
+	}
+	return pid, nil
+}
+
+func signalProcessGroup(pid int, signal syscall.Signal) error {
+	if err := syscall.Kill(-pid, signal); err == nil {
+		return nil
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	if err := process.Signal(signal); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	return nil
+}
+
+func processExists(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+func waitForPIDExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !processExists(pid) {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return !processExists(pid)
 }
 
 func waitForStop(rt config.Runtime, timeout time.Duration) {

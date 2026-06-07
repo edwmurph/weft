@@ -298,8 +298,11 @@ func closeWeft(command string, args []string) error {
 		}
 		fmt.Printf("Created backup: %s\n", backup.ID)
 		if err := supervisor.Shutdown(rt); err != nil {
-			fmt.Printf("Weft supervisor is not running: %v\n", err)
-			return nil
+			fmt.Printf("Supervisor did not accept IPC shutdown: %v\n", err)
+			if forceErr := supervisor.ForceShutdown(rt, 3*time.Second); forceErr != nil {
+				fmt.Printf("Weft supervisor is not running: %v\n", forceErr)
+				return nil
+			}
 		}
 		fmt.Println("Weft supervisor stopped.")
 		return nil

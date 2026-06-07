@@ -71,39 +71,125 @@ func TestSupervisorServesHandshakeStatusAndStructuredErrors(t *testing.T) {
 	}
 }
 
+func TestStatusRetriesUpgradeBridgeProtocol(t *testing.T) {
+	tmp := t.TempDir()
+	rt := config.Runtime{SocketPath: filepath.Join(tmp, "weft.sock")}
+	st := state.Empty()
+	calls := 0
+	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
+		calls++
+		if request.ProtocolVersion != ipc.UpgradeBridgeMinProtocolVersion {
+			return ipc.Response{
+				OK:                false,
+				Error:             &ipc.Error{Code: "protocol_mismatch", Message: "unsupported protocol version"},
+				Message:           "unsupported protocol version",
+				ProtocolVersion:   ipc.UpgradeBridgeMinProtocolVersion,
+				SupervisorVersion: "0.17.4",
+			}
+		}
+		return ipc.Response{
+			OK:                true,
+			Message:           "supervisor: running",
+			State:             &st,
+			ProtocolVersion:   ipc.UpgradeBridgeMinProtocolVersion,
+			SupervisorVersion: "0.17.4",
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	response, err := Status(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("status calls = %d, want default plus bridge retry", calls)
+	}
+	if response.Upgrade == nil || !response.Upgrade.Compatible || response.ProtocolVersion != ipc.UpgradeBridgeMinProtocolVersion {
+		t.Fatalf("bridge status response = %#v", response)
+	}
+}
+
+func TestShutdownRetriesUpgradeBridgeProtocol(t *testing.T) {
+	tmp := t.TempDir()
+	rt := config.Runtime{SocketPath: filepath.Join(tmp, "weft.sock")}
+	calls := 0
+	stop, err := ipc.Serve(rt.SocketPath, func(request ipc.Request) ipc.Response {
+		calls++
+		if request.ProtocolVersion != ipc.UpgradeBridgeMinProtocolVersion {
+			return ipc.Response{
+				OK:                false,
+				Error:             &ipc.Error{Code: "protocol_mismatch", Message: "unsupported protocol version"},
+				Message:           "unsupported protocol version",
+				ProtocolVersion:   ipc.UpgradeBridgeMinProtocolVersion,
+				SupervisorVersion: "0.17.4",
+			}
+		}
+		return ipc.Response{OK: true, Message: "Weft supervisor stopped", ProtocolVersion: ipc.UpgradeBridgeMinProtocolVersion, SupervisorVersion: "0.17.4"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	if err := Shutdown(rt); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("shutdown calls = %d, want default plus bridge retry", calls)
+	}
+}
+
 func TestSupervisorRejectsRawProtocolMismatch(t *testing.T) {
 	rt, cfg, store := testRuntime(t)
 	stop := runTestSupervisor(t, rt, cfg, store)
 	defer stop()
 
-	for _, tc := range []struct {
-		name    string
-		request map[string]any
-	}{
-		{
-			name:    "missing protocol",
-			request: map[string]any{"command": "handshake"},
-		},
-		{
-			name:    "unsupported protocol",
-			request: map[string]any{"protocol_version": ipc.ProtocolVersion + 1, "command": "handshake"},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			response := rawSupervisorCall(t, rt.SocketPath, tc.request)
-			if response.OK {
-				t.Fatalf("raw request succeeded: %#v", response)
-			}
-			if response.Error == nil || response.Error.Code != "protocol_mismatch" {
-				t.Fatalf("structured error = %#v", response.Error)
-			}
-			if response.ProtocolVersion != ipc.ProtocolVersion {
-				t.Fatalf("response protocol version = %d", response.ProtocolVersion)
-			}
-			if response.SupervisorVersion != version.Version {
-				t.Fatalf("supervisor version = %q", response.SupervisorVersion)
-			}
-		})
+	response := rawSupervisorCall(t, rt.SocketPath, map[string]any{"command": "handshake"})
+	if response.OK {
+		t.Fatalf("raw request succeeded: %#v", response)
+	}
+	if response.Error == nil || response.Error.Code != "protocol_mismatch" {
+		t.Fatalf("structured error = %#v", response.Error)
+	}
+	if response.ProtocolVersion != ipc.ProtocolVersion {
+		t.Fatalf("response protocol version = %d", response.ProtocolVersion)
+	}
+	if response.SupervisorVersion != version.Version {
+		t.Fatalf("supervisor version = %q", response.SupervisorVersion)
+	}
+}
+
+func TestSupervisorServesUpgradeBridgeProtocol(t *testing.T) {
+	rt, cfg, store := testRuntime(t)
+	stop := runTestSupervisor(t, rt, cfg, store)
+	defer stop()
+
+	response := rawSupervisorCall(t, rt.SocketPath, map[string]any{
+		"protocol_version": ipc.ProtocolVersion + 1,
+		"command":          "attach_client",
+		"client_id":        "future-client",
+		"client_version":   "9.9.0",
+	})
+	if !response.OK || response.Snapshot == nil {
+		t.Fatalf("bridge attach response = %#v", response)
+	}
+	if response.ProtocolVersion != ipc.ProtocolVersion || response.SupervisorVersion != version.Version {
+		t.Fatalf("bridge supervisor fields = %#v", response)
+	}
+	if response.Upgrade == nil || !response.Upgrade.Compatible || !response.Upgrade.RestartRequired {
+		t.Fatalf("bridge upgrade = %#v", response.Upgrade)
+	}
+
+	rejected := rawSupervisorCall(t, rt.SocketPath, map[string]any{
+		"protocol_version": ipc.ProtocolVersion + 1,
+		"command":          "new",
+		"args":             map[string]string{"title": "blocked"},
+	})
+	if rejected.OK || rejected.Error == nil || rejected.Error.Code != "protocol_mismatch" {
+		t.Fatalf("non-bridge command should reject mismatch: %#v", rejected)
 	}
 }
 
@@ -247,7 +333,7 @@ func TestUpgradeStatusDecisions(t *testing.T) {
 
 func TestUpgradeStatusRejectsIncompatibleProtocol(t *testing.T) {
 	st := state.Empty()
-	response := ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.ProtocolVersion + 1, SupervisorVersion: "3.9.0"}
+	response := ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.UpgradeBridgeMinProtocolVersion - 1, SupervisorVersion: "3.9.0"}
 	response = AnnotateUpgrade(response, false)
 	if response.Upgrade == nil {
 		t.Fatal("expected upgrade status")
@@ -257,6 +343,21 @@ func TestUpgradeStatusRejectsIncompatibleProtocol(t *testing.T) {
 	}
 	if ShouldAutoRestart(response) {
 		t.Fatal("incompatible protocol must not auto restart")
+	}
+}
+
+func TestUpgradeStatusAllowsBridgeProtocol(t *testing.T) {
+	st := state.Empty()
+	response := ipc.Response{OK: true, State: &st, ProtocolVersion: ipc.UpgradeBridgeMinProtocolVersion, SupervisorVersion: "3.9.0"}
+	response = AnnotateUpgrade(response, false)
+	if response.Upgrade == nil {
+		t.Fatal("expected upgrade status")
+	}
+	if !response.Upgrade.Compatible {
+		t.Fatalf("bridge protocol marked incompatible: %#v", response.Upgrade)
+	}
+	if !ShouldAutoRestart(response) {
+		t.Fatalf("idle bridge supervisor should auto restart: %#v", response.Upgrade)
 	}
 }
 

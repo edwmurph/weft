@@ -115,7 +115,7 @@ Client and supervisor communication should use a small versioned protocol over t
 - terminal size updates from the active TUI client
 - structured errors suitable for CLI output and TUI footer messages
 
-Every IPC request must include the current `protocol_version`. The supervisor rejects missing, zero, stale, or future protocol versions with a structured `protocol_mismatch` error before applying any command. Current Weft CLI and TUI clients populate the field automatically. Client metadata such as `client_id`, terminal `width`, terminal `height`, launch workspace, and upgrade client executable belongs in typed request fields, not inside command arguments.
+Every IPC request must include `protocol_version`. The supervisor rejects missing or zero protocol versions with a structured `protocol_mismatch` error before applying any command. When a stale or future protocol version is bridgeable for upgrade recovery, the supervisor may serve only the upgrade bridge command set: `attach_client`, `client_detached`, `handshake`, `snapshot`, `status`, `resize`, and `upgrade_resume`. All ordinary workspace, group, task, input, note, and close-client mutations still reject stale or future protocols until the supervisor restarts on the current client version. Current Weft CLI and TUI clients populate the field automatically. Client metadata such as `client_id`, terminal `width`, terminal `height`, launch workspace, and upgrade client executable belongs in typed request fields, not inside command arguments.
 
 The protocol does not need an external RPC framework. New dependencies should be added only if the standard library becomes clearly insufficient.
 
@@ -127,7 +127,7 @@ Client lifecycle commands are supervisor-owned. `attach_client`, `client_detache
 
 Users should not need `weft clear` after upgrades or config reloads that preserve the current state/config contract. Unsupported stale state, config, or IPC shapes fail loudly and may require `weft clear` or config restoration.
 
-When a newly installed `weft` client finds an older compatible supervisor:
+When a newly installed `weft` client finds an older compatible or upgrade-bridgeable supervisor:
 
 - attach to it successfully
 - show a concise upgrade banner in the TUI and `weft status`
@@ -135,6 +135,7 @@ When a newly installed `weft` client finds an older compatible supervisor:
 - show a concise bottom-of-Workspaces-pane tip with the client version, supervisor version, and the `U` upgrade/resume action while the dashboard navigation is open when that action can proceed
 - keep existing tasks and PTYs running
 - offer the dashboard upgrade action only through the supervisor-owned `upgrade_resume` IPC command
+- if the normal protocol is stale, open an upgrade bridge that keeps the dashboard visible for upgrade status, pauses ordinary dashboard edits, and keeps `U` as the safe upgrade/resume path
 
 When `config.toml` changes after the supervisor has started, the supervisor keeps using the active in-memory config until a safe restart applies the changed config. A valid changed config is surfaced as the same restart-needed dashboard path as a compatible supervisor upgrade: `weft status` and the Workspaces-pane footer show that config reload is pending or ready, `U` opens the same safe confirmation when ready or a schedule confirmation while blocked, and the restart creates a pre-config-reload backup before closing/restarting task PTYs. An invalid changed config must not trigger restart; Weft should show that config reload is blocked until the config error is fixed.
 
@@ -142,13 +143,7 @@ When no tasks are running, Weft may restart the supervisor automatically to fini
 
 The in-dashboard upgrade/config-reload action must be safe by default. While Codex agent tasks are busy, missing saved resume IDs after user input has been submitted, or any terminal task is running a foreground command, the dashboard shows pending copy, lists blocking tasks as YAML-style workspace/task entries using resolved task display titles rather than stored title templates, and offers `U` only to schedule auto-upgrade/config-reload when ready. A scheduled action is an intent held by the attached dashboard client so it can work with the older supervisor that is being upgraded; the dashboard must stay open, and pressing `U` again cancels the schedule. When the scheduled target becomes safe, the client sends the existing supervisor-owned `upgrade_resume` IPC command. A live Codex agent task that has not submitted input yet and has no resume ID is safe to recreate as a fresh agent task after restart. An idle/ready terminal task with no active foreground process is safe for explicit `U`; this is not shell resume. Once every remaining live task is either an idle resumable Codex agent task, a fresh unsubmitted Codex agent task, or an idle terminal task, `U` opens a confirmation where `Enter` proceeds and `Esc` cancels. The confirmed or scheduled action creates a pre-upgrade or pre-config-reload backup, preserves task rows, saves read-only terminal task history snapshots, closes idle task terminals, restarts the supervisor, resumes Codex agent tasks with `codex resume <session-id>`, starts fresh Codex agent tasks without a resume ID, and restarts idle shell task(s) with saved history/cwd. Terminal jobs, environment mutations, shell variables, and unsubmitted input are not preserved. The client must not run duplicate local restart/resume logic or synthesize upgrade/config state that was not sent by the supervisor. An already-open dashboard client reloads its local config only after the replacement supervisor reports the new active config fingerprint.
 
-If the supervisor protocol is incompatible with the client, the client should explain the situation and offer the least destructive recovery path:
-
-```text
-Weft was upgraded, but the running supervisor is too old for this client.
-Restarting the supervisor will stop running Codex terminals. Saved layout and
-metadata will remain.
-```
+If the supervisor protocol is too old for the upgrade bridge, the client should explain the situation and offer the least destructive recovery path. A recommended explicit `weft close --kill` fallback must be reliable: after creating a backup, it should first try IPC shutdown with any advertised bridge protocol and then stop the recorded supervisor process if IPC shutdown is rejected by protocol mismatch.
 
 `weft clear` remains a destructive last-resort reset. It must not be presented as the normal upgrade path.
 

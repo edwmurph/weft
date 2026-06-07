@@ -21,9 +21,10 @@ import (
 const clientSnapshotInterval = 120 * time.Millisecond
 
 type clientResponseMsg struct {
-	command  string
-	response ipc.Response
-	err      error
+	command         string
+	protocolVersion int
+	response        ipc.Response
+	err             error
 }
 
 type clientSnapshotTick struct{}
@@ -49,17 +50,18 @@ type scheduledUpgrade struct {
 }
 
 type ClientModel struct {
-	cfg               config.Config
-	runtime           config.Runtime
-	clientID          string
-	snapshot          ipc.Snapshot
-	width             int
-	height            int
-	mode              mode
-	message           string
-	upgrade           *ipc.Upgrade
-	loading           int
-	supervisorVersion string
+	cfg                config.Config
+	runtime            config.Runtime
+	clientID           string
+	snapshot           ipc.Snapshot
+	width              int
+	height             int
+	mode               mode
+	message            string
+	upgrade            *ipc.Upgrade
+	loading            int
+	supervisorVersion  string
+	supervisorProtocol int
 
 	input                    textinput.Model
 	prompt                   promptKind
@@ -141,6 +143,14 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.request("resize", nil)
 	case clientResponseMsg:
 		if typed.err != nil {
+			if typed.command == "attach_client" && typed.protocolVersion == 0 && typed.response.Error != nil && typed.response.Error.Code == "protocol_mismatch" && ipc.ProtocolSupportsUpgradeBridge(typed.response.ProtocolVersion) {
+				if strings.TrimSpace(typed.response.SupervisorVersion) != "" {
+					m.supervisorVersion = strings.TrimSpace(typed.response.SupervisorVersion)
+				}
+				m.supervisorProtocol = typed.response.ProtocolVersion
+				m.message = "Opened upgrade bridge for older supervisor protocol. Press U to restart before editing."
+				return m, m.requestWithProtocol("attach_client", nil, typed.response.ProtocolVersion)
+			}
 			if typed.command == "upgrade_resume" {
 				m.autoUpgradeRequesting = false
 				if typed.response.Error != nil && typed.response.Error.Code == "upgrade_resume_blocked" && m.scheduledUpgrade != nil {
@@ -258,7 +268,7 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 		loadingTasks:             loadingTaskSet(m.snapshot.LoadingTaskIDs),
 		taskOperationStartedAt:   m.snapshot.TaskOperationStartedAt,
 		taskOperationDurations:   m.snapshot.TaskOperationDurations,
-		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg, m.upgradeReport(), m.scheduledUpgrade),
+		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg, m.upgradeReport(), m.scheduledUpgrade, m.protocolBridgeActive()),
 		workspaceInfoText:        m.workspaceInfoHeaderText(),
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
 		newTaskRowSelected:       m.newTaskRowSelected,
@@ -342,6 +352,14 @@ func (m ClientModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if bindingMatches(m.cfg.KeyBindings.Help, msg) {
 		m.mode = modeHelp
+		return m, nil
+	}
+	if m.protocolBridgeActive() {
+		if m.canUpgradePending() && strings.EqualFold(msg.String(), "u") {
+			m.startUpgradeConfirm()
+			return m, nil
+		}
+		m.message = "Upgrade bridge is active. Press U to restart the supervisor before editing."
 		return m, nil
 	}
 	return m.handleNavKey(msg)
@@ -708,14 +726,34 @@ func (m *ClientModel) applyConfirm() tea.Cmd {
 }
 
 func (m ClientModel) request(command string, args map[string]string) tea.Cmd {
+	protocolVersion := 0
+	if m.protocolBridgeActive() && clientUpgradeBridgeCommand(command) {
+		protocolVersion = m.supervisorProtocol
+	}
+	return m.requestWithProtocol(command, args, protocolVersion)
+}
+
+func (m ClientModel) requestWithProtocol(command string, args map[string]string, protocolVersion int) tea.Cmd {
 	rt := m.runtime
 	clientID := m.clientID
 	width := m.width
 	height := m.height
 	return func() tea.Msg {
 		request := clientRequest(rt, clientID, width, height, command, args)
+		if protocolVersion > 0 {
+			request.ProtocolVersion = protocolVersion
+		}
 		response, err := ipc.Call(rt.SocketPath, request, clientRequestTimeout(command))
-		return clientResponseMsg{command: command, response: response, err: err}
+		return clientResponseMsg{command: command, protocolVersion: protocolVersion, response: response, err: err}
+	}
+}
+
+func clientUpgradeBridgeCommand(command string) bool {
+	switch command {
+	case "attach_client", "client_detached", "snapshot", "resize", "upgrade_resume":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -773,6 +811,9 @@ func (m *ClientModel) applyResponse(response ipc.Response) tea.Cmd {
 	}
 	if strings.TrimSpace(response.SupervisorVersion) != "" {
 		m.supervisorVersion = strings.TrimSpace(response.SupervisorVersion)
+	}
+	if response.ProtocolVersion > 0 {
+		m.supervisorProtocol = response.ProtocolVersion
 	}
 	m.syncConfig(response)
 	if strings.TrimSpace(response.Message) != "" {
@@ -834,6 +875,10 @@ func (m ClientModel) workspaceInfoHeaderText() string {
 	return fmt.Sprintf("Weft\n%-10s %s\n%-10s %s", "CLI", clientVersion, "Supervisor", supervisorVersion)
 }
 
+func (m ClientModel) protocolBridgeActive() bool {
+	return m.supervisorProtocol > 0 && m.supervisorProtocol != ipc.ProtocolVersion && ipc.ProtocolSupportsUpgradeBridge(m.supervisorProtocol)
+}
+
 func (m *ClientModel) syncCodexScroll() {
 	activeID := ""
 	if active := state.ActiveTask(m.snapshot.State); active != nil {
@@ -892,7 +937,7 @@ func (m ClientModel) snapshotTerminalForegroundActive(taskID string) bool {
 	return false
 }
 
-func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config.Config, report codexsession.Report, scheduled *scheduledUpgrade) string {
+func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config.Config, report codexsession.Report, scheduled *scheduledUpgrade, protocolBridge bool) string {
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
 	}
@@ -900,23 +945,30 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config
 	scheduledActive := scheduled != nil && scheduled.matches(upgrade)
 	if !upgrade.Compatible {
 		if upgrade.Reason == ipc.UpgradeReasonConfig {
-			return "Config reload blocked: config.toml changed.\nFix the config error before restarting."
+			return appendUpgradeBridgeFooter("Config reload blocked: config.toml changed.\nFix the config error before restarting.", protocolBridge)
 		}
-		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop tasks before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
+		return appendUpgradeBridgeFooter(fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop tasks before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion), protocolBridge)
 	}
 	if len(report.TerminalBusy) > 0 {
-		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report, scheduledActive)
+		return appendUpgradeBridgeFooter(pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report, scheduledActive), protocolBridge)
 	}
 	if len(report.Busy) > 0 {
-		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d Codex task(s) to become idle.", len(report.Busy)), st, report, scheduledActive)
+		return appendUpgradeBridgeFooter(pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d Codex task(s) to become idle.", len(report.Busy)), st, report, scheduledActive), protocolBridge)
 	}
 	if len(report.Missing) > 0 {
-		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Waiting for %d Codex session id(s).", len(report.Missing)), st, report, scheduledActive)
+		return appendUpgradeBridgeFooter(pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Waiting for %d Codex session id(s).", len(report.Missing)), st, report, scheduledActive), protocolBridge)
 	}
 	if action := upgradeReadyActionText(report); action != "" {
-		return readyUpgradeFooter(upgrade, delta, fmt.Sprintf("Press U to upgrade and %s.", action))
+		return appendUpgradeBridgeFooter(readyUpgradeFooter(upgrade, delta, fmt.Sprintf("Press U to upgrade and %s.", action)), protocolBridge)
 	}
-	return readyUpgradeFooter(upgrade, delta, "Press U to restart now.")
+	return appendUpgradeBridgeFooter(readyUpgradeFooter(upgrade, delta, "Press U to restart now."), protocolBridge)
+}
+
+func appendUpgradeBridgeFooter(text string, protocolBridge bool) string {
+	if !protocolBridge {
+		return text
+	}
+	return text + "\nUpgrade bridge: dashboard edits resume after restart."
 }
 
 func pendingUpgradeFooter(cfg config.Config, upgrade *ipc.Upgrade, target string, wait string, st state.State, report codexsession.Report, scheduled bool) string {
