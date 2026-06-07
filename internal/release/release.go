@@ -198,17 +198,7 @@ func RenderReleaseNotes(commits []Commit) string {
 		builder.WriteString("## Breaking Changes\n\n")
 		builder.WriteString("Review these before upgrading.\n\n")
 		for _, note := range breakingNotes {
-			builder.WriteString("- **")
-			builder.WriteString(note.Text)
-			builder.WriteString("**\n")
-			if note.Impact != "" {
-				builder.WriteString("  - Impact: ")
-				builder.WriteString(note.Impact)
-				builder.WriteString("\n")
-			}
-			builder.WriteString("  - Migration: ")
-			builder.WriteString(migrationText(note.Migration))
-			builder.WriteString("\n")
+			writeBreakingChange(&builder, note, "- ", "**", "  - ")
 		}
 	}
 	for _, section := range order {
@@ -219,13 +209,9 @@ func RenderReleaseNotes(commits []Commit) string {
 		if builder.Len() > 0 {
 			builder.WriteString("\n")
 		}
-		builder.WriteString("## ")
-		builder.WriteString(section.title)
-		builder.WriteString("\n\n")
+		fmt.Fprintf(&builder, "## %s\n\n", section.title)
 		for _, note := range notes {
-			builder.WriteString("- ")
-			builder.WriteString(note)
-			builder.WriteString("\n")
+			fmt.Fprintf(&builder, "- %s\n", note)
 		}
 	}
 	if builder.Len() == 0 {
@@ -340,17 +326,7 @@ func renderFormulaCaveats(breakingChanges []BreakingChange) string {
 	builder.WriteString("    notes = <<~WEFT_CAVEATS\n")
 	builder.WriteString("      This Weft release includes breaking changes.\n\n")
 	for _, change := range breakingChanges {
-		builder.WriteString("      - ")
-		builder.WriteString(change.Text)
-		builder.WriteString("\n")
-		if change.Impact != "" {
-			builder.WriteString("        Impact: ")
-			builder.WriteString(change.Impact)
-			builder.WriteString("\n")
-		}
-		builder.WriteString("        Migration: ")
-		builder.WriteString(migrationText(change.Migration))
-		builder.WriteString("\n")
+		writeBreakingChange(&builder, change, "      - ", "", "        ")
 	}
 	builder.WriteString("    WEFT_CAVEATS\n")
 	builder.WriteString("    notes + <<~EOS\n\n")
@@ -359,6 +335,14 @@ func renderFormulaCaveats(breakingChanges []BreakingChange) string {
 	builder.WriteString("    EOS\n")
 	builder.WriteString("  end\n")
 	return builder.String()
+}
+
+func writeBreakingChange(builder *strings.Builder, change BreakingChange, bulletPrefix string, textWrapper string, detailPrefix string) {
+	fmt.Fprintf(builder, "%s%s%s%s\n", bulletPrefix, textWrapper, change.Text, textWrapper)
+	if change.Impact != "" {
+		fmt.Fprintf(builder, "%sImpact: %s\n", detailPrefix, change.Impact)
+	}
+	fmt.Fprintf(builder, "%sMigration: %s\n", detailPrefix, migrationText(change.Migration))
 }
 
 func migrationText(migration string) string {
