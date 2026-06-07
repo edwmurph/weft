@@ -1951,12 +1951,15 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 	model := testModelWithTask(t)
 	defer killPTYs(model)
 	screen := NewTerminalScreen(20, 3)
-	screen.Write("prompt")
+	screen.Write("› prompt")
 	model.screens["a"] = screen
 
 	output := model.activeOutput()
 	if !strings.Contains(output, "48;2;255;255;255") {
 		t.Fatalf("codex-focused output should paint terminal cursor:\n%q", output)
+	}
+	if !strings.Contains(output, "48;2;60;66;71") {
+		t.Fatalf("codex-focused output should paint Codex input guide:\n%q", output)
 	}
 
 	model.state.Focus = state.FocusTasks
@@ -1964,6 +1967,24 @@ func TestActiveOutputPaintsCursorOnlyWhenCodexFocused(t *testing.T) {
 	output = model.activeOutput()
 	if strings.Contains(output, "48;2;255;255;255") {
 		t.Fatalf("nav-focused output should not paint Codex cursor:\n%q", output)
+	}
+	if !strings.Contains(output, "48;2;60;66;71") {
+		t.Fatalf("nav-focused Codex preview should keep input guide without cursor:\n%q", output)
+	}
+}
+
+func TestActiveOutputDoesNotPaintCodexInputGuideForShellTask(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	screen := NewTerminalScreen(20, 3)
+	screen.Write("› shell prompt")
+	model.screens["a"] = screen
+
+	output := model.activeOutput()
+
+	if strings.Contains(output, "48;2;60;66;71") {
+		t.Fatalf("shell task output should not paint Codex input guide:\n%q", output)
 	}
 }
 

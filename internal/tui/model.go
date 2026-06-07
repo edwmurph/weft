@@ -1081,7 +1081,7 @@ func (m Model) taskEnvForTask(taskID string) map[string]string {
 }
 
 func (m *Model) activeOutput() string {
-	return m.activeTerminalANSI((*TerminalScreen).ANSIStringWithCursor)
+	return m.activeTerminalANSI(false)
 }
 
 func (m Model) activePlainLines() []string {
@@ -1089,19 +1089,19 @@ func (m Model) activePlainLines() []string {
 }
 
 func (m *Model) activeScrollbackOutput() string {
-	return m.activeTerminalANSI((*TerminalScreen).ScrollbackANSIStringWithCursor)
+	return m.activeTerminalANSI(true)
 }
 
 func (m Model) activeScrollbackPlainLines() []string {
 	return m.activeTerminalPlainLines((*TerminalScreen).ScrollbackPlainLines)
 }
 
-func (m Model) activeScreenFooter() (*TerminalScreen, string, bool) {
+func (m Model) activeScreenFooter() (*state.Task, *TerminalScreen, string, bool) {
 	active := state.ActiveTask(m.state)
 	if active == nil {
-		return nil, "", false
+		return nil, nil, "", false
 	}
-	return m.screens[active.ID], m.terminalExitFooter(*active), m.visible[active.ID]
+	return active, m.screens[active.ID], m.terminalExitFooter(*active), m.visible[active.ID]
 }
 
 func (m Model) terminalExitFooter(task state.Task) string {
@@ -1120,19 +1120,29 @@ func (m Model) terminalExitFooter(task state.Task) string {
 	return title + "\n\nProcess exited."
 }
 
-func (m Model) activeTerminalANSI(render func(*TerminalScreen, bool) string) string {
-	screen, footer, visible := m.activeScreenFooter()
+func (m Model) activeTerminalANSI(scrollback bool) string {
+	task, screen, footer, visible := m.activeScreenFooter()
 	if screen == nil {
 		return footer
 	}
 	if !screen.HasVisibleContent() && !visible {
 		return footer
 	}
-	return appendTerminalExitFooter(render(screen, m.state.Focus == state.FocusConsole && footer == ""), footer)
+	showCursor := m.state.Focus == state.FocusConsole && footer == ""
+	if task != nil && taskIsCodex(m.cfg, *task) {
+		if scrollback {
+			return appendTerminalExitFooter(screen.CodexScrollbackANSIStringWithCursorGuide(showCursor), footer)
+		}
+		return appendTerminalExitFooter(screen.CodexANSIStringWithCursorGuide(showCursor), footer)
+	}
+	if scrollback {
+		return appendTerminalExitFooter(screen.ScrollbackANSIStringWithCursor(showCursor), footer)
+	}
+	return appendTerminalExitFooter(screen.ANSIStringWithCursor(showCursor), footer)
 }
 
 func (m Model) activeTerminalPlainLines(render func(*TerminalScreen) []string) []string {
-	screen, footer, visible := m.activeScreenFooter()
+	_, screen, footer, visible := m.activeScreenFooter()
 	if screen == nil {
 		return terminalExitFooterLines(footer)
 	}

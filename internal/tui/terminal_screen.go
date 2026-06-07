@@ -29,6 +29,11 @@ type terminalCursorOverlay struct {
 	shape terminalCursorShape
 }
 
+type terminalRowGuide struct {
+	bg              ansi.Color
+	fillBlankSuffix bool
+}
+
 type terminalScreenBuffer struct {
 	cols          int
 	rows          int
@@ -223,13 +228,26 @@ func (s *TerminalScreen) ANSIStringWithCursor(showCursor bool) string {
 	return s.ansiString(showCursor && s.cursorVisible)
 }
 
+func (s *TerminalScreen) CodexANSIStringWithCursorGuide(showCursor bool) string {
+	return s.ansiStringWithRowGuides(showCursor && s.cursorVisible, codexInputRowGuides)
+}
+
 func (s *TerminalScreen) ScrollbackANSIStringWithCursor(showCursor bool) string {
 	rows := s.scrollbackRows()
 	cursorRow := -1
 	if showCursor && s.cursorVisible {
 		cursorRow = len(s.history) + s.row
 	}
-	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, s.defaults)
+	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, nil, s.defaults)
+}
+
+func (s *TerminalScreen) CodexScrollbackANSIStringWithCursorGuide(showCursor bool) string {
+	rows := s.scrollbackRows()
+	cursorRow := -1
+	if showCursor && s.cursorVisible {
+		cursorRow = len(s.history) + s.row
+	}
+	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, codexInputRowGuides(rows, cursorRow, s.defaults), s.defaults)
 }
 
 func (s *TerminalScreen) ansiString(showCursor bool) string {
@@ -237,17 +255,25 @@ func (s *TerminalScreen) ansiString(showCursor bool) string {
 	if showCursor {
 		cursorRow = s.row
 	}
-	return ansiRowsString(s.cells, cursorRow, s.col, s.cursorShape, s.defaults)
+	return ansiRowsString(s.cells, cursorRow, s.col, s.cursorShape, nil, s.defaults)
 }
 
-func ansiRowsString(rows [][]terminalCell, cursorRow int, cursorCol int, cursorShape terminalCursorShape, defaults cellbuf.Style) string {
+func (s *TerminalScreen) ansiStringWithRowGuides(showCursor bool, rowGuides func([][]terminalCell, int, cellbuf.Style) map[int]terminalRowGuide) string {
+	cursorRow := -1
+	if showCursor {
+		cursorRow = s.row
+	}
+	return ansiRowsString(s.cells, cursorRow, s.col, s.cursorShape, rowGuides(s.cells, cursorRow, s.defaults), s.defaults)
+}
+
+func ansiRowsString(rows [][]terminalCell, cursorRow int, cursorCol int, cursorShape terminalCursorShape, rowGuides map[int]terminalRowGuide, defaults cellbuf.Style) string {
 	lines := make([]string, len(rows))
 	for row, cells := range rows {
 		cursor := terminalCursorOverlay{col: -1}
 		if row == cursorRow {
 			cursor = terminalCursorOverlay{col: cursorCol, shape: cursorShape}
 		}
-		lines[row] = styledCells(cells, defaults, cursor)
+		lines[row] = styledCells(cells, defaults, cursor, rowGuides[row])
 	}
 	return strings.Join(lines, "\n")
 }
@@ -898,13 +924,16 @@ func plainCells(cells []terminalCell) string {
 	return string(runes)
 }
 
-func styledCells(cells []terminalCell, defaults cellbuf.Style, cursor terminalCursorOverlay) string {
+func styledCells(cells []terminalCell, defaults cellbuf.Style, cursor terminalCursorOverlay, rowGuide terminalRowGuide) string {
 	last := -1
 	for index, cell := range cells {
 		style := styleWithDefaults(cell.style, defaults)
 		if index == cursor.col || cell.r != ' ' || !style.Clear() {
 			last = index
 		}
+	}
+	if rowGuide.fillBlankSuffix && len(cells) > 0 {
+		last = len(cells) - 1
 	}
 	if last < 0 {
 		return ""
@@ -915,6 +944,9 @@ func styledCells(cells []terminalCell, defaults cellbuf.Style, cursor terminalCu
 	for index, cell := range cells[:last+1] {
 		style := styleWithDefaults(cell.style, defaults)
 		r := cell.r
+		if rowGuide.bg != nil && cell.style.Bg == nil {
+			style.Bg = rowGuide.bg
+		}
 		if index == cursor.col {
 			style, r = cursorCell(style, cursor.shape, r)
 		}
@@ -937,6 +969,69 @@ func styledCells(cells []terminalCell, defaults cellbuf.Style, cursor terminalCu
 		builder.WriteString(ansi.ResetStyle)
 	}
 	return builder.String()
+}
+
+func codexInputRowGuides(rows [][]terminalCell, cursorRow int, defaults cellbuf.Style) map[int]terminalRowGuide {
+	guides := make(map[int]terminalRowGuide)
+	for row, cells := range rows {
+		if codexPromptRow(cells) {
+			addCodexInputRowGuides(guides, row, len(rows), defaults)
+		}
+	}
+	if cursorRow >= 0 {
+		addCodexInputRowGuides(guides, cursorRow, len(rows), defaults)
+	}
+	if len(guides) == 0 {
+		return nil
+	}
+	return guides
+}
+
+func codexPromptRow(cells []terminalCell) bool {
+	return strings.HasPrefix(strings.TrimLeft(plainCells(cells), " "), "›")
+}
+
+func addCodexInputRowGuides(guides map[int]terminalRowGuide, row int, rows int, defaults cellbuf.Style) {
+	for target := row - 1; target <= row+1; target++ {
+		if target < 0 || target >= rows {
+			continue
+		}
+		guides[target] = terminalInputRowGuide(defaults)
+	}
+}
+
+func terminalInputRowGuide(defaults cellbuf.Style) terminalRowGuide {
+	return terminalRowGuide{
+		bg:              codexInputBackground(defaults.Bg),
+		fillBlankSuffix: true,
+	}
+}
+
+func codexInputBackground(bg ansi.Color) ansi.Color {
+	if rgba, ok := ansiColorRGBA(bg); ok {
+		return color.RGBA{
+			R: lightenByte(rgba.R, 0.13),
+			G: lightenByte(rgba.G, 0.13),
+			B: lightenByte(rgba.B, 0.13),
+			A: 0xff,
+		}
+	}
+	return color.RGBA{R: 60, G: 66, B: 71, A: 0xff}
+}
+
+func ansiColorRGBA(value ansi.Color) (color.RGBA, bool) {
+	switch c := value.(type) {
+	case color.RGBA:
+		return c, true
+	case color.NRGBA:
+		return color.RGBA{R: c.R, G: c.G, B: c.B, A: c.A}, true
+	default:
+		return color.RGBA{}, false
+	}
+}
+
+func lightenByte(value uint8, amount float64) uint8 {
+	return uint8(float64(value) + (255-float64(value))*amount + 0.5)
 }
 
 func cursorCell(style cellbuf.Style, shape terminalCursorShape, r rune) (cellbuf.Style, rune) {

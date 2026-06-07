@@ -386,6 +386,26 @@ func TestTerminalScreenANSIStringWithCursorPaintsWhiteCursor(t *testing.T) {
 	}
 }
 
+func TestTerminalScreenCodexInputGuidePaintsPromptRowsWithPadding(t *testing.T) {
+	screen := NewTerminalScreen(20, 5)
+
+	screen.Write("intro\r\n\r\n› prior input\r\n\r\nstatus")
+	styled := screen.CodexANSIStringWithCursorGuide(false)
+	lines := strings.Split(styled, "\n")
+
+	for _, row := range []int{1, 2, 3} {
+		if !strings.Contains(lines[row], "48;2;60;66;71") {
+			t.Fatalf("Codex input guide should paint prompt row and one-row padding, row %d:\n%q", row, lines[row])
+		}
+	}
+	if got := strings.TrimSpace(ansi.Strip(lines[2])); got != "› prior input" {
+		t.Fatalf("Codex input guide should preserve prompt text, got %q", got)
+	}
+	if strings.Contains(lines[0], "48;2;60;66;71") || strings.Contains(lines[4], "48;2;60;66;71") {
+		t.Fatalf("Codex input guide should not paint unrelated rows:\n%q", styled)
+	}
+}
+
 func TestTerminalScreenANSIStringWithCursorRespectsVisibilityMode(t *testing.T) {
 	screen := NewTerminalScreen(6, 1)
 

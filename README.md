@@ -16,7 +16,7 @@ It is meant for the practical mess of running several agent sessions next to tes
 
 ## Demo
 
-https://github.com/user-attachments/assets/1aa89fbd-7fc0-48ba-8cb2-d3ea7f48dac7
+https://github.com/user-attachments/assets/76bfa4c7-9398-4d2b-afd1-882816f7ebb5
 
 ## Quickstart
 

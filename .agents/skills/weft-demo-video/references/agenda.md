@@ -9,6 +9,11 @@ Use this as the canonical public demo flow. Adapt task prompts when a current re
   - `WEFT_HOME=/tmp/weft-demo-runtime`
   - `WEFT_ROOT=/tmp/weft-demo-runtime/supervisor`
 - Build or install Weft before capture. Do not show setup, build, cleanup, or Git commands in the recording.
+- When using a recorder wrapper, seed the default/main workspace plus groups `refactor` and `checks` before capture. The demo shows task movement into existing groups, not group creation.
+- Keep the real `HOME` and use a temporary `CODEX_HOME` copied from normal Codex auth/config with the demo workspace marked trusted. The recording should not show Codex login or trust setup prompts.
+- Unset `NO_COLOR` for the recorder process so Weft's own dashboard colors are captured.
+- Match the user's iTerm default profile in the recorder. Native iTerm capture should use the real default profile; VHS should use the profile palette in the tape. Do not pass demo-only terminal color environment variables to Weft just to make a recorder palette line up.
+- Preserve Codex's lighter grey prompt/input box in task console and task preview. Verify it appears on current and prior Codex prompt rows, is lighter than the pane background, and is not applied to shell task output.
 - Use a neutral terminal prompt and a fixed terminal size. Clear the screen before recording starts.
 - Start recording only after setup is complete.
 - Use the default/main workspace. This demo should show groups inside one workspace, not workspace creation.
@@ -18,31 +23,37 @@ Use this as the canonical public demo flow. Adapt task prompts when a current re
 Target length: 90-120 seconds.
 
 1. Start from a fresh terminal.
-   - Visible command: `weft --clear` or the shortest command that starts the intended Weft build.
-   - Hold the empty dashboard for about 3 seconds.
-   - Overlay: `weft --clear`.
+   - Visible command: `weft` when the disposable workspace is seeded before capture, or `weft --clear` when the recording intentionally shows first-run setup.
+   - Hold the initial dashboard for about 3 seconds.
+   - Overlay: `weft` or `weft --clear`, matching the visible command.
 
 2. Create the first Codex task in group `refactor`.
-   - Press `n`, choose `Codex`, set group `refactor`.
-   - Prompt: `Find one small readability cleanup in the TUI rendering code, keep the diff tiny, and run the narrowest useful check.`
+   - Press `n`, choose `Codex`.
+   - Prompt: `Find one tiny TUI rendering cleanup and run a narrow check.`
    - Press `Enter` to submit, then immediately press `Ctrl-B`.
    - Hold dashboard at least 2 seconds so the viewer sees auto-title generation and the live preview update.
-   - Overlays: `n`, `Enter`, `Ctrl-B`.
+   - Press `m`, type `refactor`, hold the filled move form for at least 2 seconds, then press `Enter`.
+   - Hold the dashboard at least 2 seconds after the task moves into the group.
+   - Overlays: `n`, `Enter`, `Ctrl-B`, `m refactor`, `Enter`.
 
 3. Create a shell task in group `checks`.
-   - Press `n`, choose `Shell`, set group `checks`.
-   - Command: `go test ./... && sleep 10`
+   - Press `n`, choose `Shell`.
+   - Command: `go test ./internal/titlehook`
    - Press `Enter` to submit, then immediately press `Ctrl-B`.
    - Hold dashboard while the shell task is active/loading.
-   - Overlays: `n`, `Enter`, `Ctrl-B`, `go test ./... && sleep 10`.
+   - Press `m`, type `checks`, hold the filled move form for at least 2 seconds, then press `Enter`.
+   - Hold the dashboard at least 2 seconds after the task moves into the group.
+   - Overlays: `n`, `Enter`, `Ctrl-B`, `go test ./internal/titlehook`, `m checks`, `Enter`.
 
 4. Create a plan-mode Codex task in group `refactor`.
-   - Press `n`, choose `Codex`, set group `refactor`.
+   - Press `n`, choose `Codex`.
    - Press `Shift-Tab` to enter plan mode before sending the prompt.
-   - Prompt: `Make a short plan for keeping the README demo video current as Weft workflows evolve. Do not edit files yet.`
+   - Prompt: `Plan README demo upkeep. Do not edit files.`
    - Press `Enter` to submit, then immediately press `Ctrl-B`.
    - Hold dashboard at least 2 seconds so the plan task title and preview start changing.
-   - Overlays: `n`, `Shift-Tab`, `Enter`, `Ctrl-B`.
+   - Press `m`, type `refactor`, hold the filled move form for at least 2 seconds, then press `Enter`.
+   - Hold the dashboard at least 2 seconds after the task moves into the group.
+   - Overlays: `n`, `Shift-Tab`, `Enter`, `Ctrl-B`, `m refactor`, `Enter`.
 
 5. Show parallel work from the dashboard.
    - Move selection across the three tasks.
@@ -56,17 +67,10 @@ Target length: 90-120 seconds.
    - Close help with `Esc` or return to the dashboard.
    - Overlays: `?`, `Esc`.
 
-7. Show completion or attention.
+7. End on the dashboard.
    - Wait until one task completes or needs attention.
-   - Keep the dashboard visible for at least 3 seconds after the status changes so the attention cue is obvious.
-   - Select the plan task once it is ready.
-
-8. End on an actionable follow-up.
-   - Open the plan task.
-   - Enter: `Implement the plan.`
-   - Press `Enter`.
-   - Return to the dashboard or end on the submitted console.
-   - Overlays: `Enter`, `Ctrl-B` if returning.
+   - Keep the dashboard visible for at least 3 seconds after the status changes or after closing help so the final state is readable.
+   - Do not open the plan task or submit `Implement the plan.` unless the plan is visibly ready before that segment starts. If the plan is still streaming, stop on the dashboard instead.
 
 ## Continuity Rules
 
@@ -82,11 +86,11 @@ Create a simple cue sheet during or immediately after the raw capture. Use relat
 
 ```json
 [
-  { "time": 3.2, "duration": 1.2, "label": "weft --clear" },
+  { "time": 3.2, "duration": 1.2, "label": "weft" },
   { "time": 9.5, "duration": 0.9, "label": "n" },
   { "time": 22.1, "duration": 1.0, "label": "Enter" },
   { "time": 22.9, "duration": 1.0, "label": "Ctrl-B" },
-  { "time": 45.0, "duration": 1.4, "label": "go test ./... && sleep 10" },
+  { "time": 45.0, "duration": 1.4, "label": "go test ./internal/titlehook" },
   { "time": 63.4, "duration": 1.0, "label": "Shift-Tab" }
 ]
 ```
