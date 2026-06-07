@@ -68,6 +68,7 @@ const (
 	confirmDeleteGroup        confirmKind = "delete-group"
 	confirmDeleteTask         confirmKind = "delete-task"
 	confirmUpgradeResume      confirmKind = "upgrade-resume"
+	confirmScheduleUpgrade    confirmKind = "schedule-upgrade"
 )
 
 const (
@@ -2518,7 +2519,7 @@ func renderHelp(cfg config.Config) string {
 		fmt.Sprintf("%s edit", cfg.KeyBindings.Edit),
 		fmt.Sprintf("%s delete", cfg.KeyBindings.Delete),
 		fmt.Sprintf("%s task tools", cfg.KeyBindings.Repaint),
-		"U upgrade supervisor, resume Codex, restart idle shells",
+		"U upgrade now, or schedule when tasks are idle",
 		fmt.Sprintf("%s help", cfg.KeyBindings.Help),
 		"C-r repaint whole screen",
 		fmt.Sprintf("%s quit", cfg.KeyBindings.Quit),

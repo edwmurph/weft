@@ -99,7 +99,7 @@ When the interactive dashboard is open, Weft sets the terminal tab title to `Wef
 
 After `brew upgrade weft`, reopen the dashboard with `weft`.
 
-If only the client needed to reopen, Weft is current. If an older background runtime is still running, the dashboard shows an upgrade banner. When running tasks are safe to resume or restart, Weft shows `U` as the upgrade action.
+If only the client needed to reopen, Weft is current. If an older background runtime is still running, the dashboard shows an upgrade banner. When running tasks are safe to resume or restart, Weft shows `U` as the upgrade action. If tasks are still busy, `U` can schedule auto-upgrade from the open dashboard; keep that dashboard open and Weft will run the same safe upgrade once every Codex task is idle/resumable and every shell task is idle.
 
 Codex agent tasks can be resumed after a confirmed dashboard upgrade when Weft has a saved resume id. Terminal tasks can restart only when idle, retaining prior scrollback as read-only history and launching from the latest OSC 7 cwd. This is not shell resume: jobs, environment mutations, shell variables, and unsubmitted input are not preserved, so finish important command work before upgrading.
 

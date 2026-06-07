@@ -783,7 +783,7 @@ func TestClientCommandMenuHandlesEnhancedKeyboardActionFromConsole(t *testing.T)
 	}
 }
 func TestConfirmShortcutsUseEnterAndEsc(t *testing.T) {
-	for _, confirm := range []confirmKind{confirmAddLaunchWorkspace, confirmDeleteWorkspace, confirmDeleteGroup, confirmUpgradeResume} {
+	for _, confirm := range []confirmKind{confirmAddLaunchWorkspace, confirmDeleteWorkspace, confirmDeleteGroup, confirmUpgradeResume, confirmScheduleUpgrade} {
 		if !confirmKeySubmits(confirm, tea.KeyMsg{Type: tea.KeyEnter}) {
 			t.Fatalf("%s should submit with enter", confirm)
 		}
@@ -993,18 +993,95 @@ func TestClientUpgradeWaitsUntilTaskIsIdleAndResumable(t *testing.T) {
 	})
 
 	got := ansi.Strip(model.View())
-	for _, expected := range []string{"Upgrade pending", "Wait for 1 Codex task(s) to become idle"} {
+	for _, expected := range []string{"Upgrade pending", "Wait for 1 Codex task(s) to become idle", "Press U to schedule auto-upgrade when ready"} {
 		if !strings.Contains(got, expected) {
 			t.Fatalf("upgrade wait copy missing %q:\n%s", expected, got)
 		}
 	}
-	if strings.Contains(got, "Press U to upgrade") {
-		t.Fatalf("upgrade action should not show while task is working:\n%s", got)
-	}
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = updated.(ClientModel)
-	if cmd != nil || model.mode == modeConfirm {
-		t.Fatalf("blocked upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmScheduleUpgrade {
+		t.Fatalf("blocked upgrade should open schedule confirm, mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
+	}
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{
+		"Upgrade when ready?",
+		"supervisor 3.9.0",
+		"Enter schedule",
+		"keep checking blockers",
+		"Keep this dashboard open",
+		"upgrade automatically",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("schedule confirm missing %q:\n%s", expected, got)
+		}
+	}
+	updated, cmd = model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(ClientModel)
+	if cmd != nil || model.mode != modeNormal || model.scheduledUpgrade == nil {
+		t.Fatalf("schedule confirm should arm without command, mode=%s scheduled=%#v cmd=%v", model.mode, model.scheduledUpgrade, cmd)
+	}
+	if !strings.Contains(model.message, "Auto-upgrade scheduled") {
+		t.Fatalf("schedule message = %q", model.message)
+	}
+	got = ansi.Strip(model.View())
+	for _, expected := range []string{"Auto-upgrade scheduled in this dashboard"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("scheduled footer missing %q:\n%s", expected, got)
+		}
+	}
+	updated, cmd = model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	if cmd != nil || model.scheduledUpgrade != nil || model.message != "Scheduled upgrade canceled." {
+		t.Fatalf("second U should cancel schedule, scheduled=%#v message=%q cmd=%v", model.scheduledUpgrade, model.message, cmd)
+	}
+}
+
+func TestScheduledUpgradeRequestsResumeWhenTasksBecomeReady(t *testing.T) {
+	rt := testRuntime(t)
+	st := testStateWithTask(rt.Workspace)
+	st.Tasks[0].LiveTitle = "Fake Codex Working"
+	st.Tasks[0].LiveStatus = "Working"
+	st.Tasks[0].InputSubmitted = true
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, config.DefaultConfig())
+	model.width = 160
+	model.applyResponse(ipc.Response{
+		OK:                true,
+		Snapshot:          &ipc.Snapshot{State: st, LiveTitle: "alpha", CodexContent: "output", NavWidth: 92},
+		Upgrade:           testClientUpgrade("3.9.0", 1),
+		ProtocolVersion:   ipc.ProtocolVersion,
+		SupervisorVersion: "3.9.0",
+	})
+	updated, _ := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	model = updated.(ClientModel)
+	updated, cmd := model.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(ClientModel)
+	if cmd != nil || model.scheduledUpgrade == nil {
+		t.Fatalf("schedule setup failed, scheduled=%#v cmd=%v", model.scheduledUpgrade, cmd)
+	}
+
+	st.Tasks[0].Status = state.StatusReady
+	st.Tasks[0].LiveTitle = "Fake Codex Ready"
+	st.Tasks[0].LiveStatus = "Ready"
+	st.Tasks[0].ResumeID = "session-alpha"
+	updatedModel, cmd := model.Update(clientResponseMsg{
+		command: "snapshot",
+		response: ipc.Response{
+			OK:                true,
+			Snapshot:          &ipc.Snapshot{State: st, LiveTitle: "alpha", CodexContent: "output", NavWidth: 92},
+			Upgrade:           testClientUpgrade("3.9.0", 1),
+			ProtocolVersion:   ipc.ProtocolVersion,
+			SupervisorVersion: "3.9.0",
+		},
+	})
+	model = updatedModel.(ClientModel)
+	if cmd == nil || !model.autoUpgradeRequesting {
+		t.Fatalf("ready scheduled upgrade should request upgrade_resume, requesting=%t cmd=%v", model.autoUpgradeRequesting, cmd)
+	}
+	if !strings.Contains(model.message, "Scheduled upgrade is ready") {
+		t.Fatalf("ready scheduled message = %q", model.message)
 	}
 }
 
@@ -1123,18 +1200,8 @@ func TestClientUpgradeBlocksForegroundShellTaskWithReadyStatus(t *testing.T) {
 			t.Fatalf("foreground shell footer missing %q:\n%s", expected, got)
 		}
 	}
-	if strings.Contains(got, "Press U to upgrade") {
-		t.Fatalf("foreground shell upgrade action should not show:\n%s", got)
-	}
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
-	model = updated.(ClientModel)
-	if cmd != nil || model.mode == modeConfirm {
-		t.Fatalf("foreground shell upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
-	}
-	for _, expected := range []string{"Blocking:", "- workspace: Core", "  task: Server"} {
-		if !strings.Contains(model.message, expected) {
-			t.Fatalf("blocked foreground shell message missing %q: %q", expected, model.message)
-		}
+	if !strings.Contains(got, "Press U to schedule auto-upgrade when ready") {
+		t.Fatalf("foreground shell upgrade should offer scheduling:\n%s", got)
 	}
 }
 
@@ -1166,8 +1233,8 @@ func TestClientUpgradeBlocksRunningShellTask(t *testing.T) {
 	}
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = updated.(ClientModel)
-	if cmd != nil || model.mode == modeConfirm {
-		t.Fatalf("running shell upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmScheduleUpgrade {
+		t.Fatalf("running shell upgrade should open schedule confirm, mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
 	}
 }
 
@@ -1203,18 +1270,8 @@ func TestClientUpgradeBlockerResolvesTaskTitleTemplate(t *testing.T) {
 	if strings.Contains(got, "{status}") || strings.Contains(got, "{auto}") {
 		t.Fatalf("running Codex footer leaked title template:\n%s", got)
 	}
-	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
-	model = updated.(ClientModel)
-	if cmd != nil || model.mode == modeConfirm {
-		t.Fatalf("running Codex upgrade should not open confirm, mode=%s cmd=%v", model.mode, cmd)
-	}
-	for _, expected := range []string{"Blocking:", "- workspace: Core", "  task: Working Fix config"} {
-		if !strings.Contains(model.message, expected) {
-			t.Fatalf("blocked upgrade message missing %q: %q", expected, model.message)
-		}
-	}
-	if strings.Contains(model.message, "{status}") || strings.Contains(model.message, "{auto}") {
-		t.Fatalf("blocked upgrade message leaked title template: %q", model.message)
+	if !strings.Contains(got, "Press U to schedule auto-upgrade when ready") {
+		t.Fatalf("running Codex upgrade should offer scheduling:\n%s", got)
 	}
 }
 
@@ -1255,13 +1312,8 @@ func TestClientConfigDriftFooterUsesUpgradePathAndListsBlocker(t *testing.T) {
 	}
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = updated.(ClientModel)
-	if cmd != nil || model.mode == modeConfirm {
-		t.Fatalf("blocked config reload should not open confirm, mode=%s cmd=%v", model.mode, cmd)
-	}
-	for _, expected := range []string{"Blocking:", "- workspace: Core", "  task: Shell"} {
-		if !strings.Contains(model.message, expected) {
-			t.Fatalf("blocked config reload message missing %q: %q", expected, model.message)
-		}
+	if cmd != nil || model.mode != modeConfirm || model.confirm != confirmScheduleUpgrade {
+		t.Fatalf("blocked config reload should open schedule confirm, mode=%s confirm=%s cmd=%v", model.mode, model.confirm, cmd)
 	}
 }
 

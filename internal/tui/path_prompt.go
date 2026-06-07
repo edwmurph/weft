@@ -668,6 +668,8 @@ func confirmTitle(confirm confirmKind) string {
 		return "Delete task"
 	case confirmUpgradeResume:
 		return "Upgrade supervisor?"
+	case confirmScheduleUpgrade:
+		return "Upgrade when ready?"
 	default:
 		return "Delete item"
 	}
@@ -680,6 +682,9 @@ func confirmTargetLabel(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
 		return "Supervisor"
 	}
+	if confirm == confirmScheduleUpgrade {
+		return "Supervisor"
+	}
 	if confirm == confirmDeleteTask {
 		return "Task"
 	}
@@ -689,6 +694,9 @@ func confirmTargetLabel(confirm confirmKind) string {
 func confirmDetail(confirm confirmKind) string {
 	if confirm == confirmUpgradeResume {
 		return "Closes idle Codex terminals, restarts the supervisor, resumes Codex tasks with saved session IDs, starts fresh Codex tasks without one, and restarts idle shell task(s) with saved history/cwd. Shell jobs, env mutations, shell variables, and unsubmitted input are not preserved."
+	}
+	if confirm == confirmScheduleUpgrade {
+		return "Arms this dashboard to keep checking blockers and run the same safe upgrade automatically once every Codex task is idle/resumable and every shell task is idle. Keep this dashboard open. The upgrade will close idle Codex terminals, restart the supervisor, resume saved Codex sessions, start fresh Codex tasks without one, and restart idle shell task(s) with saved history/cwd. Shell jobs, env mutations, shell variables, and unsubmitted input are not preserved."
 	}
 	if confirm == confirmDeleteTask {
 		return "Stops the terminal, then removes this task from Weft."
@@ -702,6 +710,9 @@ func renderConfirmActions(confirm confirmKind) string {
 	}
 	if confirm == confirmUpgradeResume {
 		return modalKeyStyle.Render("Enter") + " upgrade  " + modalKeyStyle.Render("Esc")
+	}
+	if confirm == confirmScheduleUpgrade {
+		return modalKeyStyle.Render("Enter") + " schedule  " + modalKeyStyle.Render("Esc")
 	}
 	if confirm == confirmDeleteTask {
 		return modalKeyStyle.Render("Enter") + " stop and delete  " + modalKeyStyle.Render("Esc")
@@ -726,6 +737,8 @@ func confirmTarget(confirm confirmKind, st state.State, pendingID string, render
 			return renderTaskTitle(*task)
 		}
 	case confirmUpgradeResume:
+		return pendingID
+	case confirmScheduleUpgrade:
 		return pendingID
 	}
 	return "item"

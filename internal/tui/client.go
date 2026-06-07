@@ -41,6 +41,13 @@ type upgradeBlockingTask struct {
 	task      string
 }
 
+type scheduledUpgrade struct {
+	target            string
+	reason            string
+	clientVersion     string
+	supervisorVersion string
+}
+
 type ClientModel struct {
 	cfg               config.Config
 	runtime           config.Runtime
@@ -71,6 +78,8 @@ type ClientModel struct {
 	loadingTickerActive      bool
 	launchWorkspacePrompted  bool
 	lastResumeScan           time.Time
+	scheduledUpgrade         *scheduledUpgrade
+	autoUpgradeRequesting    bool
 	toastText                string
 	toastID                  int
 	terminalAttention        terminalAttentionState
@@ -132,6 +141,14 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.request("resize", nil)
 	case clientResponseMsg:
 		if typed.err != nil {
+			if typed.command == "upgrade_resume" {
+				m.autoUpgradeRequesting = false
+				if typed.response.Error != nil && typed.response.Error.Code == "upgrade_resume_blocked" && m.scheduledUpgrade != nil {
+					m.message = "Scheduled upgrade still waiting: " + typed.err.Error()
+					return m, nil
+				}
+				m.scheduledUpgrade = nil
+			}
 			if typed.command == "attach_client" && typed.response.Error == nil {
 				m.message = typed.err.Error()
 				return m, tickClientAttachRetry()
@@ -139,12 +156,17 @@ func (m ClientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = typed.err.Error()
 			return m, nil
 		}
+		if typed.command == "upgrade_resume" {
+			m.scheduledUpgrade = nil
+			m.autoUpgradeRequesting = false
+		}
 		attentionCmd := m.applyResponse(typed.response)
+		autoUpgradeCmd := m.scheduledUpgradeCommand()
 		nextLoadingTick := m.ensureLoadingTick()
 		if typed.response.Snapshot != nil && typed.response.Snapshot.DetachClient {
-			return m, tea.Batch(attentionCmd, nextLoadingTick, m.request("client_detached", nil), tea.Quit)
+			return m, tea.Batch(attentionCmd, autoUpgradeCmd, nextLoadingTick, m.request("client_detached", nil), tea.Quit)
 		}
-		return m, tea.Batch(attentionCmd, nextLoadingTick)
+		return m, tea.Batch(attentionCmd, autoUpgradeCmd, nextLoadingTick)
 	case clientSnapshotTick:
 		return m, tea.Batch(m.request("snapshot", nil), tickClientSnapshot())
 	case clientCommandMenuMsg:
@@ -236,7 +258,7 @@ func (m ClientModel) workspaceRenderOptions() workspaceRenderOptions {
 		loadingTasks:             loadingTaskSet(m.snapshot.LoadingTaskIDs),
 		taskOperationStartedAt:   m.snapshot.TaskOperationStartedAt,
 		taskOperationDurations:   m.snapshot.TaskOperationDurations,
-		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg, m.upgradeReport()),
+		workspaceFooterText:      workspaceUpgradeFooterText(m.upgrade, m.snapshot.State, m.cfg, m.upgradeReport(), m.scheduledUpgrade),
 		workspaceInfoText:        m.workspaceInfoHeaderText(),
 		newWorkspaceCardSelected: m.newWorkspaceCardSelected,
 		newTaskRowSelected:       m.newTaskRowSelected,
@@ -621,8 +643,16 @@ func (m *ClientModel) startUpgradeConfirm() {
 	if m.upgrade == nil {
 		return
 	}
+	if m.scheduledUpgradeMatches(m.upgrade) {
+		m.scheduledUpgrade = nil
+		m.autoUpgradeRequesting = false
+		m.message = "Scheduled upgrade canceled."
+		return
+	}
 	if !m.canUpgradeResumeNow() {
-		m.message = upgradeResumeWaitingMessage(m.cfg, m.upgradeReport(), m.snapshot.State)
+		m.confirm = confirmScheduleUpgrade
+		m.pendingID = upgradeTarget(*m.upgrade)
+		m.mode = modeConfirm
 		return
 	}
 	m.confirm = confirmUpgradeResume
@@ -662,6 +692,9 @@ func (m *ClientModel) applyConfirm() tea.Cmd {
 		return m.request("close", map[string]string{"id": m.pendingID})
 	case confirmUpgradeResume:
 		return m.request("upgrade_resume", nil)
+	case confirmScheduleUpgrade:
+		m.scheduleUpgrade()
+		return nil
 	}
 	return nil
 }
@@ -851,11 +884,12 @@ func (m ClientModel) snapshotTerminalForegroundActive(taskID string) bool {
 	return false
 }
 
-func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config.Config, report codexsession.Report) string {
+func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config.Config, report codexsession.Report, scheduled *scheduledUpgrade) string {
 	if upgrade == nil || !upgrade.RestartRequired {
 		return ""
 	}
 	delta := upgradeTarget(*upgrade)
+	scheduledActive := scheduled != nil && scheduled.matches(upgrade)
 	if !upgrade.Compatible {
 		if upgrade.Reason == ipc.UpgradeReasonConfig {
 			return "Config reload blocked: config.toml changed.\nFix the config error before restarting."
@@ -863,13 +897,13 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config
 		return fmt.Sprintf("Upgrade blocked: client %s, supervisor %s.\nStop tasks before forced restart.", upgrade.ClientVersion, upgrade.SupervisorVersion)
 	}
 	if len(report.TerminalBusy) > 0 {
-		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report)
+		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d shell task(s) to become idle.", len(report.TerminalBusy)), st, report, scheduledActive)
 	}
 	if len(report.Busy) > 0 {
-		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d Codex task(s) to become idle.", len(report.Busy)), st, report)
+		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Wait for %d Codex task(s) to become idle.", len(report.Busy)), st, report, scheduledActive)
 	}
 	if len(report.Missing) > 0 {
-		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Waiting for %d Codex session id(s).", len(report.Missing)), st, report)
+		return pendingUpgradeFooter(cfg, upgrade, delta, fmt.Sprintf("Waiting for %d Codex session id(s).", len(report.Missing)), st, report, scheduledActive)
 	}
 	if action := upgradeReadyActionText(report); action != "" {
 		return readyUpgradeFooter(upgrade, delta, fmt.Sprintf("Press U to upgrade and %s.", action))
@@ -877,12 +911,17 @@ func workspaceUpgradeFooterText(upgrade *ipc.Upgrade, st state.State, cfg config
 	return readyUpgradeFooter(upgrade, delta, "Press U to restart now.")
 }
 
-func pendingUpgradeFooter(cfg config.Config, upgrade *ipc.Upgrade, target string, wait string, st state.State, report codexsession.Report) string {
+func pendingUpgradeFooter(cfg config.Config, upgrade *ipc.Upgrade, target string, wait string, st state.State, report codexsession.Report, scheduled bool) string {
 	prefix := "Upgrade pending"
 	if upgrade.Reason == ipc.UpgradeReasonConfig {
 		prefix = "Config pending"
 	}
 	lines := []string{fmt.Sprintf("%s: %s.", prefix, target), wait}
+	if scheduled {
+		lines = append(lines, "Auto-upgrade scheduled in this dashboard. Press U to cancel.")
+	} else {
+		lines = append(lines, "Press U to schedule auto-upgrade when ready.")
+	}
 	lines = append(lines, upgradeBlockingTaskLines(cfg, st, report)...)
 	return strings.Join(lines, "\n")
 }
@@ -966,12 +1005,75 @@ func upgradeTarget(upgrade ipc.Upgrade) string {
 	return fmt.Sprintf("supervisor %s → %s", upgrade.SupervisorVersion, upgrade.ClientVersion)
 }
 
+func upgradeScheduleFor(upgrade ipc.Upgrade) scheduledUpgrade {
+	return scheduledUpgrade{
+		target:            upgradeTarget(upgrade),
+		reason:            strings.TrimSpace(upgrade.Reason),
+		clientVersion:     strings.TrimSpace(upgrade.ClientVersion),
+		supervisorVersion: strings.TrimSpace(upgrade.SupervisorVersion),
+	}
+}
+
+func (scheduled scheduledUpgrade) matches(upgrade *ipc.Upgrade) bool {
+	if upgrade == nil || !upgrade.RestartRequired {
+		return false
+	}
+	current := upgradeScheduleFor(*upgrade)
+	return scheduled.target == current.target &&
+		scheduled.reason == current.reason &&
+		scheduled.clientVersion == current.clientVersion &&
+		scheduled.supervisorVersion == current.supervisorVersion
+}
+
 func (m ClientModel) canUpgradePending() bool {
 	return m.upgrade != nil && m.upgrade.Compatible && m.upgrade.RestartRequired
 }
 
 func (m ClientModel) canUpgradeResumeNow() bool {
 	return m.canUpgradePending() && m.upgradeReport().CanUpgrade()
+}
+
+func (m ClientModel) scheduledUpgradeMatches(upgrade *ipc.Upgrade) bool {
+	return m.scheduledUpgrade != nil && m.scheduledUpgrade.matches(upgrade)
+}
+
+func (m *ClientModel) scheduleUpgrade() {
+	if m.upgrade == nil {
+		return
+	}
+	scheduled := upgradeScheduleFor(*m.upgrade)
+	m.scheduledUpgrade = &scheduled
+	m.autoUpgradeRequesting = false
+	m.message = "Auto-upgrade scheduled in this dashboard. Keep it open until blockers clear."
+	if m.upgrade.Reason == ipc.UpgradeReasonConfig {
+		m.message = "Config reload scheduled in this dashboard. Keep it open until blockers clear."
+	}
+}
+
+func (m *ClientModel) scheduledUpgradeCommand() tea.Cmd {
+	if m.scheduledUpgrade == nil || m.autoUpgradeRequesting {
+		return nil
+	}
+	if m.upgrade == nil || !m.canUpgradePending() {
+		m.scheduledUpgrade = nil
+		m.autoUpgradeRequesting = false
+		return nil
+	}
+	if !m.scheduledUpgrade.matches(m.upgrade) {
+		m.scheduledUpgrade = nil
+		m.autoUpgradeRequesting = false
+		m.message = "Scheduled upgrade canceled because the upgrade target changed."
+		return nil
+	}
+	if !m.canUpgradeResumeNow() {
+		return nil
+	}
+	m.autoUpgradeRequesting = true
+	m.message = "Scheduled upgrade is ready; restarting supervisor."
+	if m.upgrade.Reason == ipc.UpgradeReasonConfig {
+		m.message = "Scheduled config reload is ready; restarting supervisor."
+	}
+	return m.request("upgrade_resume", nil)
 }
 
 func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
@@ -988,23 +1090,6 @@ func (m *ClientModel) prepareSnapshotUpgradeResume(upgrade ipc.Upgrade) {
 	if prepared.Assigned > 0 {
 		m.message = fmt.Sprintf("Found %d Codex session id(s) for upgrade resume.", prepared.Assigned)
 	}
-}
-
-func upgradeResumeWaitingMessage(cfg config.Config, report codexsession.Report, st state.State) string {
-	detail := ""
-	if lines := upgradeBlockingTaskLines(cfg, st, report); len(lines) > 0 {
-		detail = "\n" + strings.Join(lines, "\n")
-	}
-	if len(report.TerminalBusy) > 0 {
-		return fmt.Sprintf("Upgrade waits until %d shell task(s) are idle.%s", len(report.TerminalBusy), detail)
-	}
-	if len(report.Busy) > 0 {
-		return fmt.Sprintf("Upgrade waits until %d Codex task(s) are idle.%s", len(report.Busy), detail)
-	}
-	if len(report.Missing) > 0 {
-		return fmt.Sprintf("Upgrade waits until %d Codex session id(s) are available.%s", len(report.Missing), detail)
-	}
-	return "Upgrade is not ready yet."
 }
 
 func (m *ClientModel) maybePromptForLaunchWorkspace() {
