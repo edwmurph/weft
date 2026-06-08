@@ -433,7 +433,7 @@ func TestTerminalScreenANSIStringWithCursorPaintsWhiteCursor(t *testing.T) {
 	screen := NewTerminalScreen(6, 2)
 
 	screen.Write("abc")
-	styled := screen.ANSIStringWithCursor(true)
+	styled := screen.ANSIStringWithCursorRightPromptProjection(true)
 	firstLine := strings.Split(ansi.Strip(styled), "\n")[0]
 
 	if !strings.Contains(styled, "38;2;0;0;0") || !strings.Contains(styled, "48;2;255;255;255") {
@@ -468,13 +468,13 @@ func TestTerminalScreenANSIStringWithCursorRespectsVisibilityMode(t *testing.T) 
 	screen := NewTerminalScreen(6, 1)
 
 	screen.Write("abc\x1b[?25l")
-	hidden := screen.ANSIStringWithCursor(true)
+	hidden := screen.ANSIStringWithCursorRightPromptProjection(true)
 	if strings.Contains(hidden, "48;2;255;255;255") {
 		t.Fatalf("hidden terminal cursor should not be painted:\n%q", hidden)
 	}
 
 	screen.Write("\x1b[?25h")
-	shown := screen.ANSIStringWithCursor(true)
+	shown := screen.ANSIStringWithCursorRightPromptProjection(true)
 	if !strings.Contains(shown, "48;2;255;255;255") {
 		t.Fatalf("shown terminal cursor should be painted:\n%q", shown)
 	}
@@ -484,19 +484,19 @@ func TestTerminalScreenANSIStringWithCursorPreservesCursorShape(t *testing.T) {
 	screen := NewTerminalScreen(8, 1)
 
 	screen.Write("abc\x1b[4 q")
-	underline := screen.ANSIStringWithCursor(true)
+	underline := screen.ANSIStringWithCursorRightPromptProjection(true)
 	if !strings.Contains(underline, "\x1b[4") || strings.Contains(underline, "48;2;255;255;255") {
 		t.Fatalf("underline cursor should render as an underlined cell, got %q", underline)
 	}
 
 	screen.Write("\x1b[6 q")
-	bar := screen.ANSIStringWithCursor(true)
+	bar := screen.ANSIStringWithCursorRightPromptProjection(true)
 	if !strings.Contains(ansi.Strip(bar), "abc▏") || strings.Contains(bar, "48;2;255;255;255") {
 		t.Fatalf("bar cursor should render as a vertical bar glyph, got %q", bar)
 	}
 
 	screen.Write("\x1b[2 q")
-	block := screen.ANSIStringWithCursor(true)
+	block := screen.ANSIStringWithCursorRightPromptProjection(true)
 	if !strings.Contains(block, "48;2;255;255;255") {
 		t.Fatalf("block cursor should render as an inverted cell, got %q", block)
 	}

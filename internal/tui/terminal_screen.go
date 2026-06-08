@@ -230,66 +230,39 @@ func plainRows(rows [][]terminalCell) []string {
 }
 
 func (s *TerminalScreen) ANSIString() string {
-	return s.ansiString(false)
-}
-
-func (s *TerminalScreen) ANSIStringWithCursor(showCursor bool) string {
-	return s.ansiString(showCursor && s.cursorVisible)
+	return ansiRowsString(s.cells, -1, s.col, s.cursorShape, nil, s.defaults)
 }
 
 func (s *TerminalScreen) ANSIStringWithCursorRightPromptProjection(showCursor bool) string {
-	cursorRow := -1
-	if showCursor && s.cursorVisible {
-		cursorRow = s.row
-	}
+	cursorRow := s.renderCursorRow(showCursor, 0)
 	return ansiRowsString(projectRightPromptRows(s.cells), cursorRow, s.col, s.cursorShape, nil, s.defaults)
 }
 
 func (s *TerminalScreen) CodexANSIStringWithCursorGuide(showCursor bool) string {
-	return s.ansiStringWithRowGuides(showCursor && s.cursorVisible, codexInputRowGuides)
-}
-
-func (s *TerminalScreen) ScrollbackANSIStringWithCursor(showCursor bool) string {
-	rows := s.scrollbackRows()
-	cursorRow := -1
-	if showCursor && s.cursorVisible {
-		cursorRow = len(s.history) + s.row
-	}
-	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, nil, s.defaults)
+	return s.ansiStringWithRowGuides(s.cells, s.renderCursorRow(showCursor, 0), codexInputRowGuides)
 }
 
 func (s *TerminalScreen) ScrollbackANSIStringWithCursorRightPromptProjection(showCursor bool) string {
 	rows := projectRightPromptRows(s.scrollbackRows())
-	cursorRow := -1
-	if showCursor && s.cursorVisible {
-		cursorRow = len(s.history) + s.row
-	}
+	cursorRow := s.renderCursorRow(showCursor, len(s.history))
 	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, nil, s.defaults)
 }
 
 func (s *TerminalScreen) CodexScrollbackANSIStringWithCursorGuide(showCursor bool) string {
 	rows := s.scrollbackRows()
-	cursorRow := -1
+	cursorRow := s.renderCursorRow(showCursor, len(s.history))
+	return s.ansiStringWithRowGuides(rows, cursorRow, codexInputRowGuides)
+}
+
+func (s *TerminalScreen) renderCursorRow(showCursor bool, offset int) int {
 	if showCursor && s.cursorVisible {
-		cursorRow = len(s.history) + s.row
+		return offset + s.row
 	}
-	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, codexInputRowGuides(rows, cursorRow, s.defaults), s.defaults)
+	return -1
 }
 
-func (s *TerminalScreen) ansiString(showCursor bool) string {
-	cursorRow := -1
-	if showCursor {
-		cursorRow = s.row
-	}
-	return ansiRowsString(s.cells, cursorRow, s.col, s.cursorShape, nil, s.defaults)
-}
-
-func (s *TerminalScreen) ansiStringWithRowGuides(showCursor bool, rowGuides func([][]terminalCell, int, cellbuf.Style) map[int]terminalRowGuide) string {
-	cursorRow := -1
-	if showCursor {
-		cursorRow = s.row
-	}
-	return ansiRowsString(s.cells, cursorRow, s.col, s.cursorShape, rowGuides(s.cells, cursorRow, s.defaults), s.defaults)
+func (s *TerminalScreen) ansiStringWithRowGuides(rows [][]terminalCell, cursorRow int, rowGuides func([][]terminalCell, int, cellbuf.Style) map[int]terminalRowGuide) string {
+	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, rowGuides(rows, cursorRow, s.defaults), s.defaults)
 }
 
 func ansiRowsString(rows [][]terminalCell, cursorRow int, cursorCol int, cursorShape terminalCursorShape, rowGuides map[int]terminalRowGuide, defaults cellbuf.Style) string {
