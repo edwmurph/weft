@@ -15,21 +15,22 @@ import (
 )
 
 const (
-	codexLeftPadding         = 1
-	codexPreviewRightPadding = 1
-	navHorizontalPadding     = 1
-	fixedWorkspacePaneWidth  = 60
-	minTasksPaneWidth        = 28
-	defaultTasksPaneWidth    = 54
-	minCodexPaneWidth        = 28
-	minTwoPaneNavWidth       = fixedWorkspacePaneWidth + minTasksPaneWidth
-	minThreePaneWidth        = minTwoPaneNavWidth + minCodexPaneWidth
-	borderHorizontal         = "─"
-	borderVertical           = "│"
-	borderTopLeft            = "╭"
-	borderTopRight           = "╮"
-	borderBottomLeft         = "╰"
-	borderBottomRight        = "╯"
+	codexLeftPadding        = 1
+	codexRightPadding       = 1
+	navHorizontalPadding    = 1
+	fixedWorkspacePaneWidth = 60
+	minTasksPaneWidth       = 28
+	defaultTasksPaneWidth   = 54
+	minCodexPaneWidth       = 28
+	minTwoPaneNavWidth      = fixedWorkspacePaneWidth + minTasksPaneWidth
+	minThreePaneWidth       = minTwoPaneNavWidth + minCodexPaneWidth
+	borderHorizontal        = "─"
+	borderVertical          = "│"
+	borderTopLeft           = "╭"
+	borderTopRight          = "╮"
+	borderBottomLeft        = "╰"
+	borderBottomRight       = "╯"
+	rightPromptGap          = 3
 )
 
 var (
@@ -67,7 +68,6 @@ var (
 	emptyLogoAccentStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true)
 	newWorkspaceCardHintStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	newTaskRowStyle                   = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
-	previewCropMarkerStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	taskReadyStyle                    = taskReadyHighlightStyle
 	taskReadySelectedStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("220")).Bold(true)
 	taskRunningStyle                  = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
@@ -1218,7 +1218,7 @@ func renderCodexFrame(
 	}
 	contentHeight := max(0, height-2)
 	empty := !taskActive
-	contentWidth := codexLineContentWidth(innerWidth, previewMode)
+	contentWidth := codexLineContentWidth(innerWidth)
 	messageLines := renderStatusBanner(message, contentWidth, statusBannerMaxLines(message, contentHeight))
 	contentLines := renderCodexContent(content, contentWidth, max(0, contentHeight-len(messageLines)), empty, loadingText, codexEmptyTitle(previewMode), codexEmptyHint(cfg, st, previewMode), previewMode && empty, emptyArtFrame)
 	if len(messageLines) > 0 {
@@ -1228,12 +1228,12 @@ func renderCodexFrame(
 		contentLines = append(contentLines, "")
 	}
 	leftPadding := codexLeftPad(innerWidth)
-	rightPadding := codexRightPad(innerWidth, previewMode)
+	rightPadding := codexRightPad(innerWidth)
 	for _, line := range contentLines[:contentHeight] {
-		contentWidth := codexLineContentWidth(innerWidth, previewMode)
+		contentWidth := codexLineContentWidth(innerWidth)
 		renderedLine := padVisual(clip(line, contentWidth), contentWidth)
 		if previewMode && !empty {
-			renderedLine = previewClipLine(line, contentWidth)
+			renderedLine = previewProjectLine(line, contentWidth)
 		}
 		lines = append(lines, palette.border.Render(borderVertical)+leftPadding+renderedLine+rightPadding+palette.border.Render(borderVertical))
 	}
@@ -1771,49 +1771,98 @@ func codexLeftPad(width int) string {
 	return strings.Repeat(" ", min(codexLeftPadding, width))
 }
 
-func codexRightPad(width int, previewMode bool) string {
-	if width <= codexLeftPadding || !previewMode {
+func codexRightPad(width int) string {
+	if width <= codexLeftPadding {
 		return ""
 	}
-	return strings.Repeat(" ", min(codexPreviewRightPadding, width-codexLeftPadding))
+	return strings.Repeat(" ", min(codexRightPadding, width-codexLeftPadding))
 }
 
-func codexLineContentWidth(width int, previewMode bool) int {
+func codexLineContentWidth(width int) int {
 	if width <= 0 {
 		return 0
 	}
 	padding := min(codexLeftPadding, width)
-	if previewMode {
-		padding += min(codexPreviewRightPadding, max(0, width-padding))
-	}
+	padding += min(codexRightPadding, max(0, width-padding))
 	return max(0, width-padding)
 }
 
-func previewClipLine(value string, width int) string {
+func previewProjectLines(lines []string, width int) []string {
+	if width <= 0 || len(lines) == 0 {
+		return nil
+	}
+	projected := make([]string, len(lines))
+	for index, line := range lines {
+		projected[index] = previewProjectLine(line, width)
+	}
+	return projected
+}
+
+func previewProjectLine(value string, width int) string {
 	if width <= 0 {
 		return ""
+	}
+	meaningfulWidth := previewMeaningfulWidth(value)
+	if projected, ok := previewProjectRightPromptTail(value, width, meaningfulWidth); ok {
+		return projected
 	}
 	if lipgloss.Width(value) <= width {
 		return padVisual(value, width)
 	}
-	marker := previewCropMarkerStyle.Render(" …")
-	markerWidth := lipgloss.Width(marker)
-	contentWidth := max(0, width-markerWidth)
-	return padVisual(clipPlain(value, contentWidth), contentWidth) + marker
+	if meaningfulWidth <= width {
+		return padVisual(ansi.Cut(value, 0, width), width)
+	}
+	return padVisual(ansi.Cut(value, 0, width), width)
 }
 
-func clipPlain(value string, width int) string {
-	if width <= 0 {
-		return ""
+func previewMeaningfulWidth(value string) int {
+	return lipgloss.Width(strings.TrimRight(ansi.Strip(value), " "))
+}
+
+func previewProjectRightPromptTail(value string, width int, meaningfulWidth int) (string, bool) {
+	tailStart, tailWidth, ok := previewRightPromptTail(ansi.Strip(value))
+	if !ok || tailWidth <= 0 || tailWidth >= width {
+		return "", false
 	}
-	if lipgloss.Width(value) <= width {
-		return value
+	if tailWidth > max(8, width/2) {
+		return "", false
 	}
-	runes := []rune(value)
-	for len(runes) > 0 && lipgloss.Width(string(runes)) > width {
-		runes = runes[:len(runes)-1]
+	leftWidth := width - tailWidth
+	hiddenGap := tailStart - leftWidth
+	if hiddenGap < 0 && meaningfulWidth < width-1 {
+		return "", false
 	}
-	return string(runes)
+	if hiddenGap > 0 && hiddenGap < rightPromptGap {
+		return "", false
+	}
+	leftEnd := min(tailStart, leftWidth)
+	left := padVisual(ansi.Cut(value, 0, leftEnd), leftWidth)
+	tail := padVisual(ansi.Cut(value, tailStart, meaningfulWidth), tailWidth)
+	return left + tail, true
+}
+
+func previewRightPromptTail(value string) (int, int, bool) {
+	trimmed := strings.TrimRight(value, " ")
+	if trimmed == "" {
+		return 0, 0, false
+	}
+	runes := []rune(trimmed)
+	for index := len(runes) - 1; index >= 0; index-- {
+		if runes[index] != ' ' {
+			continue
+		}
+		end := index + 1
+		for index >= 0 && runes[index] == ' ' {
+			index--
+		}
+		start := index + 1
+		if end-start < rightPromptGap || end >= len(runes) {
+			continue
+		}
+		tail := string(runes[end:])
+		return lipgloss.Width(string(runes[:end])), lipgloss.Width(tail), true
+	}
+	return 0, 0, false
 }
 
 func clip(value string, width int) string {

@@ -846,7 +846,7 @@ func (m *Model) startPTY(taskID string) {
 		}
 	}
 	if m.screens[taskID] == nil {
-		m.screens[taskID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
+		m.screens[taskID] = NewTerminalScreen(m.ptyWidthForTask(taskID), m.ptyHeight())
 	}
 	workspace := m.taskWorkspace(taskID)
 	ptySession, err := ptyx.StartWithOptions(
@@ -854,7 +854,7 @@ func (m *Model) startPTY(taskID string) {
 		taskID,
 		m.taskCommandForTask(taskID),
 		workspace,
-		m.ptyWidth(),
+		m.ptyWidthForTask(taskID),
 		m.ptyHeight(),
 		ptyx.StartOptions{Env: m.taskEnvForTask(taskID)},
 		func(data ptyx.Data) {
@@ -936,7 +936,7 @@ func (m *Model) applyPTYStarted(msg ptyStartedMsg) {
 		return
 	}
 	if m.screens[msg.taskID] == nil {
-		m.screens[msg.taskID] = NewTerminalScreen(m.ptyWidth(), m.ptyHeight())
+		m.screens[msg.taskID] = NewTerminalScreen(m.ptyWidthForTask(msg.taskID), m.ptyHeight())
 	}
 	m.ptys[msg.taskID] = msg.session
 	m.state = state.WithUpdatedTask(m.state, msg.taskID, func(task state.Task) state.Task {
@@ -1085,7 +1085,7 @@ func (m *Model) activeOutput() string {
 }
 
 func (m Model) activePlainLines() []string {
-	return m.activeTerminalPlainLines((*TerminalScreen).PlainLines)
+	return m.activeTerminalPlainLines(false)
 }
 
 func (m *Model) activeScrollbackOutput() string {
@@ -1093,7 +1093,7 @@ func (m *Model) activeScrollbackOutput() string {
 }
 
 func (m Model) activeScrollbackPlainLines() []string {
-	return m.activeTerminalPlainLines((*TerminalScreen).ScrollbackPlainLines)
+	return m.activeTerminalPlainLines(true)
 }
 
 func (m Model) activeScreenFooter() (*state.Task, *TerminalScreen, string, bool) {
@@ -1136,20 +1136,32 @@ func (m Model) activeTerminalANSI(scrollback bool) string {
 		return appendTerminalExitFooter(screen.CodexANSIStringWithCursorGuide(showCursor), footer)
 	}
 	if scrollback {
-		return appendTerminalExitFooter(screen.ScrollbackANSIStringWithCursor(showCursor), footer)
+		return appendTerminalExitFooter(screen.ScrollbackANSIStringWithCursorRightPromptProjection(showCursor), footer)
 	}
-	return appendTerminalExitFooter(screen.ANSIStringWithCursor(showCursor), footer)
+	return appendTerminalExitFooter(screen.ANSIStringWithCursorRightPromptProjection(showCursor), footer)
 }
 
-func (m Model) activeTerminalPlainLines(render func(*TerminalScreen) []string) []string {
-	_, screen, footer, visible := m.activeScreenFooter()
+func (m Model) activeTerminalPlainLines(scrollback bool) []string {
+	task, screen, footer, visible := m.activeScreenFooter()
 	if screen == nil {
 		return terminalExitFooterLines(footer)
 	}
 	if !screen.HasVisibleContent() && !visible {
 		return terminalExitFooterLines(footer)
 	}
-	return appendTerminalExitFooterPlainLines(render(screen), footer)
+	var lines []string
+	if task != nil && taskIsCodex(m.cfg, *task) {
+		if scrollback {
+			lines = screen.ScrollbackPlainLines()
+		} else {
+			lines = screen.PlainLines()
+		}
+	} else if scrollback {
+		lines = screen.ScrollbackPlainLinesWithRightPromptProjection()
+	} else {
+		lines = screen.PlainLinesWithRightPromptProjection()
+	}
+	return appendTerminalExitFooterPlainLines(lines, footer)
 }
 
 func appendTerminalExitFooter(output string, footer string) string {
@@ -1489,8 +1501,8 @@ func (m *Model) save() {
 }
 
 func (m *Model) resizePTYs() {
-	for _, pty := range m.ptys {
-		pty.Resize(m.ptyWidth(), m.ptyHeight())
+	for taskID, pty := range m.ptys {
+		pty.Resize(m.ptyWidthForTask(taskID), m.ptyHeight())
 	}
 }
 
@@ -1498,10 +1510,10 @@ func (m *Model) resizeScreens() {
 	for taskID, screen := range m.screens {
 		task := state.TaskByID(m.state, taskID)
 		if task != nil && taskDefinitionForTask(m.cfg, *task).TopAlignedResize() {
-			screen.ResizeTopAligned(max(screen.cols, m.ptyWidth()), m.ptyHeight())
+			screen.ResizeTopAligned(m.ptyWidthForTask(taskID), m.ptyHeight())
 			continue
 		}
-		screen.Resize(m.ptyWidth(), m.ptyHeight())
+		screen.Resize(m.ptyWidthForTask(taskID), m.ptyHeight())
 	}
 }
 
@@ -1516,7 +1528,22 @@ func (m *Model) snapNavWidthToTarget() {
 }
 
 func (m Model) ptyWidth() int {
-	return max(20, codexLineContentWidth(max(0, m.codexPaneWidth()-2), m.effectiveNavWidth() > 0))
+	return max(20, codexLineContentWidth(max(0, m.codexPaneWidth()-2)))
+}
+
+func (m Model) ptyWidthForTask(taskID string) int {
+	width := m.ptyWidth()
+	task := state.TaskByID(m.state, taskID)
+	if task == nil || !taskDefinitionForTask(m.cfg, *task).TopAlignedResize() {
+		return width
+	}
+	if m.state.Focus == state.FocusConsole && m.state.ActiveTaskID == taskID {
+		return width
+	}
+	if screen := m.screens[taskID]; screen != nil {
+		return max(screen.cols, width)
+	}
+	return width
 }
 
 func (m Model) ptyHeight() int {

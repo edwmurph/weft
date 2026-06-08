@@ -341,7 +341,12 @@ func (m ClientModel) codexFrameTaskForSelection() *state.Task {
 }
 
 func (m ClientModel) codexPlainLines() []string {
-	return m.codexVisiblePlainLines()
+	lines := m.codexVisiblePlainLines()
+	if m.codexPreviewMode() {
+		width, _ := m.codexVisibleSize()
+		return previewProjectLines(lines, width)
+	}
+	return lines
 }
 
 func codexContentAreaFor(st state.State, width int, height int, navWidth int, message string) (consoleArea, bool) {
@@ -359,10 +364,9 @@ func codexContentAreaFor(st state.State, width int, height int, navWidth int, me
 		return consoleArea{}, false
 	}
 	frameX := navWidth
-	navCollapsed := navWidth <= 0
 	innerWidth := max(0, codexWidth-2)
 	contentHeight := max(0, height-2)
-	contentWidth := codexLineContentWidth(innerWidth, !navCollapsed)
+	contentWidth := codexLineContentWidth(innerWidth)
 	if contentWidth <= 0 || contentHeight <= 0 {
 		return consoleArea{}, false
 	}
@@ -457,7 +461,12 @@ func (m ClientModel) maxCodexScrollOffset() int {
 
 func (m ClientModel) codexVisibleContent() string {
 	lines := strings.Split(m.codexScrollbackContent(), "\n")
-	return strings.Join(codexViewportLines(lines, m.codexVisibleHeight(), m.codexScrollOffset), "\n")
+	visible := codexViewportLines(lines, m.codexVisibleHeight(), m.codexScrollOffset)
+	if m.codexPreviewMode() {
+		width, _ := m.codexVisibleSize()
+		visible = previewProjectLines(visible, width)
+	}
+	return strings.Join(visible, "\n")
 }
 
 func (m ClientModel) codexVisiblePlainLines() []string {
@@ -495,6 +504,10 @@ func (m ClientModel) codexVisibleSize() (int, int) {
 		return 0, 0
 	}
 	return area.width, area.height
+}
+
+func (m ClientModel) codexPreviewMode() bool {
+	return m.snapshot.NavWidth > 0
 }
 
 func codexViewportLines(lines []string, height int, scrollOffset int) []string {

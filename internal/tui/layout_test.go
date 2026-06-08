@@ -244,15 +244,64 @@ func TestRenderWorkspaceShowsWorkspacesTasksAndTaskPreview(t *testing.T) {
 	if strings.Contains(stripped, "● Live") || strings.Contains(stripped, " Live─") {
 		t.Fatalf("preview should not render live indicator text:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, " … │") {
-		t.Fatalf("wide preview should reserve a right-edge crop marker with right padding:\n%s", stripped)
-	}
-	if strings.Contains(stripped, "cropped by the preview lens…") {
-		t.Fatalf("preview should not attach generic clipping ellipsis to task text:\n%s", stripped)
+	if strings.Contains(stripped, "cropped by the preview lens…") || strings.Contains(stripped, "cropped by the preview lens │") {
+		t.Fatalf("preview should clip task text without replacing terminal cells:\n%s", stripped)
 	}
 	if strings.Contains(got, "ready") {
 		t.Fatalf("task rows should not render fixed status tags unless template asks for them:\n%s", got)
 	}
+}
+
+func TestTaskPreviewProjectionPreservesRightPromptTail(t *testing.T) {
+	line := "0s 5:30:15 console-right-padding⟩ echo asdf" + strings.Repeat(" ", 60) + "± ● v0.20.3^0"
+
+	got := previewProjectLine(line, 64)
+
+	if lipgloss.Width(got) != 64 {
+		t.Fatalf("projected width = %d, want 64: %q", lipgloss.Width(got), got)
+	}
+	if !strings.Contains(got, "± ● v0.20.3^0") {
+		t.Fatalf("preview should preserve the full right prompt tail, got %q", got)
+	}
+	if strings.Contains(got, "v0.20.3^ ") || strings.Contains(got, "…") {
+		t.Fatalf("preview should not replace right-prompt cells with crop chrome, got %q", got)
+	}
+}
+
+func TestTaskPreviewProjectionReanchorsNearFullRightPromptTail(t *testing.T) {
+	width := 64
+	tail := "± ● v0.20.3^0"
+	prefix := "0s 5:47:17 ⋯/console-right-padding⟩"
+	leftWidth := width - lipgloss.Width(tail)
+	spaces := max(0, leftWidth-lipgloss.Width(prefix)-1)
+	line := prefix + strings.Repeat(" ", spaces) + tail
+
+	got := previewProjectLine(line, width)
+
+	if gotTailColumn := visualPrefixWidthBefore(got, tail); gotTailColumn != leftWidth {
+		t.Fatalf("right prompt tail column = %d, want %d:\n%q", gotTailColumn, leftWidth, got)
+	}
+	if lipgloss.Width(got) != width {
+		t.Fatalf("projected width = %d, want %d: %q", lipgloss.Width(got), width, got)
+	}
+}
+
+func TestTaskPreviewProjectionIgnoresTrailingBlankTerminalCells(t *testing.T) {
+	line := "asdf" + strings.Repeat(" ", 80)
+
+	got := previewProjectLine(line, 24)
+
+	if got != "asdf"+strings.Repeat(" ", 20) {
+		t.Fatalf("preview should not mark trailing blank terminal cells as cropped, got %q", got)
+	}
+}
+
+func visualPrefixWidthBefore(value string, marker string) int {
+	index := strings.Index(value, marker)
+	if index < 0 {
+		return -1
+	}
+	return lipgloss.Width(value[:index])
 }
 
 func TestRenderTaskPreviewRequiresFocusedTaskRow(t *testing.T) {
@@ -1529,7 +1578,7 @@ func TestTaskConsoleBottomNoticeKeepsActiveBorderCornerStyle(t *testing.T) {
 	}
 }
 
-func TestCodexLeftPaddingStaysBeforeLeadingANSIStyle(t *testing.T) {
+func TestCodexContentPaddingStaysOutsideLeadingANSIStyle(t *testing.T) {
 	cfg := config.DefaultConfig()
 	st := layoutState("/tmp/project")
 	st.Focus = state.FocusConsole
@@ -1549,6 +1598,29 @@ func TestCodexLeftPaddingStaysBeforeLeadingANSIStyle(t *testing.T) {
 		}
 	}
 	t.Fatalf("missing styled content line:\n%q", got)
+}
+
+func TestFocusedTaskConsoleReservesRightPadding(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusConsole
+	st.NavOpen = false
+	content := strings.Repeat("x", 37)
+
+	got := ansi.Strip(renderWorkspaceView(cfg, st, "alpha", content, 40, 8, "", 0, 0, workspaceRenderOptions{}))
+
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "xxx") {
+			if strings.Contains(line, strings.Repeat("x", 37)+"│") {
+				t.Fatalf("console content should not reach the right border:\n%s", got)
+			}
+			if !strings.HasSuffix(line, "… │") {
+				t.Fatalf("console content should reserve one right padding column, got %q:\n%s", line, got)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing console content line:\n%s", got)
 }
 
 func TestFocusedCodexAndNavUseSeparateFocusColors(t *testing.T) {

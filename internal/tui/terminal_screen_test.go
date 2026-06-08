@@ -221,6 +221,64 @@ func TestTerminalScreenResizeTopAlignedKeepsPromptAtTop(t *testing.T) {
 	}
 }
 
+func TestTerminalScreenResizeKeepsRightPromptTailAnchored(t *testing.T) {
+	screen := NewTerminalScreen(80, 5)
+	tail := "git-status"
+	prefix := "0s 5:55:09 /console-right-padding> "
+	screen.Write(prefix + strings.Repeat(" ", 80-len(prefix)-len(tail)) + tail)
+
+	screen.ResizeTopAligned(52, 5)
+	narrow := screen.PlainLines()[0]
+	if !strings.HasSuffix(narrow, tail) {
+		t.Fatalf("narrow resize should keep right prompt tail anchored:\n%q", narrow)
+	}
+	if got, want := strings.Index(narrow, tail), 52-len(tail); got != want {
+		t.Fatalf("narrow right prompt tail column = %d, want %d:\n%q", got, want, narrow)
+	}
+
+	screen.ResizeTopAligned(72, 5)
+	wide := screen.PlainLines()[0]
+	if !strings.HasSuffix(wide, tail) {
+		t.Fatalf("wide resize should keep right prompt tail anchored:\n%q", wide)
+	}
+	if got, want := strings.Index(wide, tail), 72-len(tail); got != want {
+		t.Fatalf("wide right prompt tail column = %d, want %d:\n%q", got, want, wide)
+	}
+}
+
+func TestTerminalScreenRenderProjectsOneCellShortRightPromptTail(t *testing.T) {
+	screen := NewTerminalScreen(52, 5)
+	tail := "git-status"
+	prefix := "0s 6:16:42 /console-right-padding> "
+	screen.Write(prefix + strings.Repeat(" ", 51-len(prefix)-len(tail)) + tail)
+
+	projected := screen.PlainLinesWithRightPromptProjection()[0]
+
+	if !strings.HasSuffix(projected, tail) {
+		t.Fatalf("projected render should remove the extra right blank cell:\n%q", projected)
+	}
+	if got, want := strings.Index(projected, tail), 52-len(tail); got != want {
+		t.Fatalf("projected right prompt tail column = %d, want %d:\n%q", got, want, projected)
+	}
+	raw := screen.PlainLines()[0]
+	if !strings.HasSuffix(raw, tail+" ") {
+		t.Fatalf("test setup expected raw row to retain one trailing blank:\n%q", raw)
+	}
+}
+
+func TestTerminalScreenResizeDoesNotProjectOrdinarySeparatedText(t *testing.T) {
+	screen := NewTerminalScreen(80, 5)
+	line := "hello     world"
+	screen.Write(line)
+
+	screen.ResizeTopAligned(40, 5)
+
+	got := screen.PlainLines()[0]
+	if !strings.HasPrefix(got, line) {
+		t.Fatalf("ordinary separated text should not be projected as a right prompt:\n%q", got)
+	}
+}
+
 func TestTerminalScreenClearRemovesScrollbackAndVisibleContent(t *testing.T) {
 	screen := NewTerminalScreen(12, 2)
 	screen.Write("old\r\ncontent")

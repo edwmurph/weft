@@ -125,10 +125,11 @@ func (s *TerminalScreen) resize(cols int, rows int, topAligned bool) {
 		destStart = 0
 	}
 	for row := range s.cells {
-		s.cells[row] = blankCells(cols, cellbuf.Style{})
 		sourceRow := sourceStart + row - destStart
 		if sourceRow >= 0 && sourceRow < len(old) {
-			copy(s.cells[row], old[sourceRow])
+			s.cells[row] = resizeTerminalRow(old[sourceRow], cols)
+		} else {
+			s.cells[row] = blankCells(cols, cellbuf.Style{})
 		}
 	}
 	if rowsChanged {
@@ -208,8 +209,16 @@ func (s *TerminalScreen) PlainLines() []string {
 	return plainRows(s.cells)
 }
 
+func (s *TerminalScreen) PlainLinesWithRightPromptProjection() []string {
+	return plainRows(projectRightPromptRows(s.cells))
+}
+
 func (s *TerminalScreen) ScrollbackPlainLines() []string {
 	return plainRows(s.scrollbackRows())
+}
+
+func (s *TerminalScreen) ScrollbackPlainLinesWithRightPromptProjection() []string {
+	return plainRows(projectRightPromptRows(s.scrollbackRows()))
 }
 
 func plainRows(rows [][]terminalCell) []string {
@@ -228,12 +237,29 @@ func (s *TerminalScreen) ANSIStringWithCursor(showCursor bool) string {
 	return s.ansiString(showCursor && s.cursorVisible)
 }
 
+func (s *TerminalScreen) ANSIStringWithCursorRightPromptProjection(showCursor bool) string {
+	cursorRow := -1
+	if showCursor && s.cursorVisible {
+		cursorRow = s.row
+	}
+	return ansiRowsString(projectRightPromptRows(s.cells), cursorRow, s.col, s.cursorShape, nil, s.defaults)
+}
+
 func (s *TerminalScreen) CodexANSIStringWithCursorGuide(showCursor bool) string {
 	return s.ansiStringWithRowGuides(showCursor && s.cursorVisible, codexInputRowGuides)
 }
 
 func (s *TerminalScreen) ScrollbackANSIStringWithCursor(showCursor bool) string {
 	rows := s.scrollbackRows()
+	cursorRow := -1
+	if showCursor && s.cursorVisible {
+		cursorRow = len(s.history) + s.row
+	}
+	return ansiRowsString(rows, cursorRow, s.col, s.cursorShape, nil, s.defaults)
+}
+
+func (s *TerminalScreen) ScrollbackANSIStringWithCursorRightPromptProjection(showCursor bool) string {
+	rows := projectRightPromptRows(s.scrollbackRows())
 	cursorRow := -1
 	if showCursor && s.cursorVisible {
 		cursorRow = len(s.history) + s.row
@@ -867,10 +893,11 @@ func resizeTerminalScreenBuffer(buffer *terminalScreenBuffer, cols int, rows int
 		destStart = 0
 	}
 	for row := range buffer.cells {
-		buffer.cells[row] = blankCells(cols, cellbuf.Style{})
 		sourceRow := sourceStart + row - destStart
 		if sourceRow >= 0 && sourceRow < len(old) {
-			copy(buffer.cells[row], old[sourceRow])
+			buffer.cells[row] = resizeTerminalRow(old[sourceRow], cols)
+		} else {
+			buffer.cells[row] = blankCells(cols, cellbuf.Style{})
 		}
 	}
 	if rowsChanged {
@@ -881,6 +908,79 @@ func resizeTerminalScreenBuffer(buffer *terminalScreenBuffer, cols int, rows int
 		buffer.scrollBottom = max(0, rows-1)
 	}
 	clampTerminalScreenBuffer(buffer)
+}
+
+func resizeTerminalRow(source []terminalCell, cols int) []terminalCell {
+	cols = max(1, cols)
+	if projected, ok := resizeRightPromptRow(source, cols); ok {
+		return projected
+	}
+	row := blankCells(cols, cellbuf.Style{})
+	copy(row, source)
+	return row
+}
+
+func projectRightPromptRows(rows [][]terminalCell) [][]terminalCell {
+	if rows == nil {
+		return nil
+	}
+	projected := make([][]terminalCell, len(rows))
+	for index, row := range rows {
+		projected[index] = resizeTerminalRow(row, len(row))
+	}
+	return projected
+}
+
+func resizeRightPromptRow(source []terminalCell, cols int) ([]terminalCell, bool) {
+	tailStart, tailEnd, ok := rightPromptTailCells(source)
+	tailWidth := tailEnd - tailStart
+	if !ok || tailWidth <= 0 || tailWidth >= cols {
+		return nil, false
+	}
+	if tailEnd < len(source)-1 {
+		return nil, false
+	}
+	if tailWidth > max(8, cols/2) {
+		return nil, false
+	}
+	leftWidth := cols - tailWidth
+	hiddenGap := tailStart - leftWidth
+	if hiddenGap > 0 && hiddenGap < rightPromptGap {
+		return nil, false
+	}
+	row := blankCells(cols, cellbuf.Style{})
+	copy(row, source[:min(tailStart, leftWidth)])
+	copy(row[leftWidth:], source[tailStart:tailEnd])
+	return row, true
+}
+
+func rightPromptTailCells(cells []terminalCell) (int, int, bool) {
+	meaningfulEnd := len(cells)
+	for meaningfulEnd > 0 && terminalCellBlank(cells[meaningfulEnd-1]) {
+		meaningfulEnd--
+	}
+	if meaningfulEnd == 0 {
+		return 0, 0, false
+	}
+	for index := meaningfulEnd - 1; index >= 0; index-- {
+		if !terminalCellBlank(cells[index]) {
+			continue
+		}
+		end := index + 1
+		for index >= 0 && terminalCellBlank(cells[index]) {
+			index--
+		}
+		start := index + 1
+		if end-start < rightPromptGap || end >= meaningfulEnd {
+			continue
+		}
+		return end, meaningfulEnd, true
+	}
+	return 0, 0, false
+}
+
+func terminalCellBlank(cell terminalCell) bool {
+	return cell.r == 0 || cell.r == ' '
 }
 
 func clampTerminalScreenBuffer(buffer *terminalScreenBuffer) {

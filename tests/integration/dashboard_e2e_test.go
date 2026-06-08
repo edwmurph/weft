@@ -1893,7 +1893,7 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		})
 		if !waitForBool(2*time.Second, func() bool {
 			data, _ := os.ReadFile(ptySizeLog)
-			return strings.TrimSpace(string(data)) == "157"
+			return strings.TrimSpace(string(data)) == "156"
 		}) {
 			data, _ := os.ReadFile(ptySizeLog)
 			t.Fatalf("new Codex PTY should start at the full visible console width, got %q:\n%s", strings.TrimSpace(string(data)), capture)

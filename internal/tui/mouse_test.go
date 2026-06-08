@@ -165,6 +165,34 @@ func TestCodexSelectionColumnOffsetByTaskType(t *testing.T) {
 	}
 }
 
+func TestPreviewPlainLinesUseProjectedShellPromptForCopy(t *testing.T) {
+	st := layoutState("/tmp/project")
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	st.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	line := "0s 5:30:15 console-right-padding⟩ echo asdf" + strings.Repeat(" ", 60) + "± ● v0.20.3^0"
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  140,
+		height: 10,
+		snapshot: ipc.Snapshot{
+			State:           st,
+			NavWidth:        minTwoPaneNavWidth,
+			GroupCursor:     2,
+			CodexPlainLines: []string{line},
+		},
+	}
+
+	got := strings.Join(model.codexPlainLines(), "\n")
+
+	if !strings.Contains(got, "± ● v0.20.3^0") {
+		t.Fatalf("preview copy lines should preserve the right prompt tail, got %q", got)
+	}
+	if strings.Contains(got, "…") {
+		t.Fatalf("preview copy lines should not contain crop chrome, got %q", got)
+	}
+}
+
 func TestSelectedCodexContentHighlightsDraggedCells(t *testing.T) {
 	selection := consoleSelection{
 		active: true,

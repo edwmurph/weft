@@ -1644,7 +1644,7 @@ func TestPTYWidthMatchesVisibleCodexContentWidth(t *testing.T) {
 	model.width = 100
 	model.navWidth = 0
 
-	if got, want := model.ptyWidth(), 97; got != want {
+	if got, want := model.ptyWidth(), 96; got != want {
 		t.Fatalf("focused pty width = %d, want visible content width %d", got, want)
 	}
 
@@ -1695,7 +1695,7 @@ func TestIPCCodexFocusResizesScreenToVisibleConsoleWidth(t *testing.T) {
 	if got, want := model.navWidth, 0; got != want {
 		t.Fatalf("codex focus nav width = %d, want %d", got, want)
 	}
-	if got, want := model.screens[taskID].cols, 157; got != want {
+	if got, want := model.screens[taskID].cols, 156; got != want {
 		t.Fatalf("focused screen width = %d, want visible console width %d", got, want)
 	}
 }
@@ -1711,9 +1711,12 @@ func TestTerminalScreenResizeDoesNotShrinkForPreview(t *testing.T) {
 	model.navWidth = model.targetNavWidth()
 	taskID := model.state.ActiveTaskID
 	model.screens[taskID] = NewTerminalScreen(120, 10)
-	targetWidth := model.ptyWidth()
-	if targetWidth >= 120 {
-		t.Fatalf("test setup expected narrower preview width, got %d", targetWidth)
+	previewWidth := model.ptyWidth()
+	if previewWidth >= 120 {
+		t.Fatalf("test setup expected narrower preview width, got %d", previewWidth)
+	}
+	if got := model.ptyWidthForTask(taskID); got != 120 {
+		t.Fatalf("terminal preview pty width should preserve wider shell width, got %d", got)
 	}
 
 	model.resizeScreens()
@@ -1723,6 +1726,85 @@ func TestTerminalScreenResizeDoesNotShrinkForPreview(t *testing.T) {
 	}
 	if got, want := model.screens[taskID].rows, model.ptyHeight(); got != want {
 		t.Fatalf("terminal preview resize rows = %d, want %d", got, want)
+	}
+}
+
+func TestTerminalScreenResizeShrinksForFocusedConsole(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.width = 72
+	model.height = 20
+	model.state.Focus = state.FocusConsole
+	model.state.NavOpen = false
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	taskID := model.state.ActiveTaskID
+	model.screens[taskID] = NewTerminalScreen(120, 10)
+	targetWidth := model.ptyWidth()
+	if targetWidth >= 120 {
+		t.Fatalf("test setup expected narrower focused console width, got %d", targetWidth)
+	}
+	if got := model.ptyWidthForTask(taskID); got != targetWidth {
+		t.Fatalf("focused terminal pty width = %d, want visible console width %d", got, targetWidth)
+	}
+
+	model.resizeScreens()
+
+	if got := model.screens[taskID].cols; got != targetWidth {
+		t.Fatalf("focused terminal resize should match visible console width, got %d want %d", got, targetWidth)
+	}
+	if got, want := model.screens[taskID].rows, model.ptyHeight(); got != want {
+		t.Fatalf("focused terminal resize rows = %d, want %d", got, want)
+	}
+}
+
+func TestTerminalPTYWidthDoesNotShrinkWhenOpeningPreview(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.width = 160
+	model.height = 20
+	model.state.Focus = state.FocusConsole
+	model.state.NavOpen = false
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	model.navWidth = 0
+	taskID := model.state.ActiveTaskID
+	focusedWidth := model.ptyWidth()
+	model.screens[taskID] = NewTerminalScreen(focusedWidth, model.ptyHeight())
+
+	model.openNav()
+	model.snapNavWidthToTarget()
+
+	if previewWidth := model.ptyWidth(); previewWidth >= focusedWidth {
+		t.Fatalf("test setup expected preview width %d to be narrower than focused width %d", previewWidth, focusedWidth)
+	}
+	if got := model.ptyWidthForTask(taskID); got != focusedWidth {
+		t.Fatalf("terminal preview should not shrink PTY width, got %d want %d", got, focusedWidth)
+	}
+	if got := model.screens[taskID].cols; got != focusedWidth {
+		t.Fatalf("terminal preview should not shrink screen width, got %d want %d", got, focusedWidth)
+	}
+}
+
+func TestActiveTerminalOutputProjectsShellRightPromptTail(t *testing.T) {
+	model := testModelWithTask(t)
+	defer killPTYs(model)
+	model.state.Focus = state.FocusConsole
+	model.state.NavOpen = false
+	model.state.Tasks[0].TypeID = config.DefaultTaskTypeShell
+	taskID := model.state.ActiveTaskID
+	screen := NewTerminalScreen(52, 5)
+	tail := "git-status"
+	prefix := "0s 6:16:42 /console-right-padding> "
+	screen.Write(prefix + strings.Repeat(" ", 51-len(prefix)-len(tail)) + tail)
+	model.screens[taskID] = screen
+	model.visible[taskID] = true
+
+	line := strings.Split(ansi.Strip(model.activeOutput()), "\n")[0]
+
+	if !strings.HasSuffix(line, tail) {
+		t.Fatalf("shell output should project one-cell-short right prompt tail:\n%q", line)
+	}
+	if got, want := strings.Index(line, tail), 52-len(tail); got != want {
+		t.Fatalf("shell right prompt tail column = %d, want %d:\n%q", got, want, line)
 	}
 }
 
