@@ -908,20 +908,29 @@ func createRuntime(t *testing.T, tmp string, fakeCodex string) (string, string) 
 func writeFakeCodex(t *testing.T, dir string, name string) string {
 	t.Helper()
 	fakeCodex := filepath.Join(dir, name)
-	if err := os.WriteFile(fakeCodex, []byte(
+	writeExecutable(t, fakeCodex, fakeCodexEchoLoopScript(
 		"#!/bin/sh\n"+
-			"printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"trap 'exit 0' HUP INT TERM\n"+
-			"while IFS= read -r line; do\n"+
-			"  printf '\\033]2;Fake Codex Working\\007'\n"+
-			"  printf 'echo:%s\\n' \"$line\"\n"+
-			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"done\n"+
-			"while :; do sleep 1; done\n",
-	), 0o700); err != nil {
+			"printf '\\033]2;Fake Codex Ready\\007'\n",
+	))
+	return fakeCodex
+}
+
+func writeExecutable(t *testing.T, path string, script string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	return fakeCodex
+}
+
+func fakeCodexEchoLoopScript(header string) string {
+	return header +
+		"trap 'exit 0' HUP INT TERM\n" +
+		"while IFS= read -r line; do\n" +
+		"  printf '\\033]2;Fake Codex Working\\007'\n" +
+		"  printf 'echo:%s\\n' \"$line\"\n" +
+		"  printf '\\033]2;Fake Codex Ready\\007'\n" +
+		"done\n" +
+		"while :; do sleep 1; done\n"
 }
 
 func writeResumeFakeCodex(t *testing.T, dir string, name string) (string, string, string) {
@@ -929,7 +938,7 @@ func writeResumeFakeCodex(t *testing.T, dir string, name string) (string, string
 	codexHome := filepath.Join(dir, "codex-home")
 	resumeLog := filepath.Join(dir, "fake-codex.log")
 	fakeCodex := filepath.Join(dir, name)
-	if err := os.WriteFile(fakeCodex, []byte(
+	writeExecutable(t, fakeCodex, fakeCodexEchoLoopScript(
 		"#!/bin/sh\n"+
 			"mkdir -p \"$CODEX_HOME/sessions/2026/05/31\"\n"+
 			"if [ \"$1\" = \"resume\" ]; then\n"+
@@ -941,17 +950,8 @@ func writeResumeFakeCodex(t *testing.T, dir string, name string) (string, string
 			"  printf '{\"type\":\"session_meta\",\"payload\":{\"id\":\"%s\",\"cwd\":\"%s\",\"timestamp\":\"%s\"}}\\n' \"$sid\" \"$PWD\" \"$ts\" > \"$session\"\n"+
 			"  printf 'session:%s\\n' \"$sid\" >> \"$FAKE_CODEX_LOG\"\n"+
 			"fi\n"+
-			"printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"trap 'exit 0' HUP INT TERM\n"+
-			"while IFS= read -r line; do\n"+
-			"  printf '\\033]2;Fake Codex Working\\007'\n"+
-			"  printf 'echo:%s\\n' \"$line\"\n"+
-			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"done\n"+
-			"while :; do sleep 1; done\n",
-	), 0o700); err != nil {
-		t.Fatal(err)
-	}
+			"printf '\\033]2;Fake Codex Ready\\007'\n",
+	))
 	return fakeCodex, codexHome, resumeLog
 }
 
@@ -959,24 +959,15 @@ func writeFreshFakeCodex(t *testing.T, dir string, name string) (string, string)
 	t.Helper()
 	codexLog := filepath.Join(dir, "fake-codex-fresh.log")
 	fakeCodex := filepath.Join(dir, name)
-	if err := os.WriteFile(fakeCodex, []byte(
+	writeExecutable(t, fakeCodex, fakeCodexEchoLoopScript(
 		"#!/bin/sh\n"+
 			"if [ \"$1\" = \"resume\" ]; then\n"+
 			"  printf 'resume:%s\\n' \"$2\" >> \"$FAKE_CODEX_LOG\"\n"+
 			"else\n"+
 			"  printf 'start:%s\\n' \"$$\" >> \"$FAKE_CODEX_LOG\"\n"+
 			"fi\n"+
-			"printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"trap 'exit 0' HUP INT TERM\n"+
-			"while IFS= read -r line; do\n"+
-			"  printf '\\033]2;Fake Codex Working\\007'\n"+
-			"  printf 'echo:%s\\n' \"$line\"\n"+
-			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"done\n"+
-			"while :; do sleep 1; done\n",
-	), 0o700); err != nil {
-		t.Fatal(err)
-	}
+			"printf '\\033]2;Fake Codex Ready\\007'\n",
+	))
 	return fakeCodex, codexLog
 }
 

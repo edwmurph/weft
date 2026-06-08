@@ -3766,20 +3766,11 @@ func startDirectDashboardClient(t *testing.T, env []string, bin string, workspac
 func writeVisibleFakeCodex(t *testing.T, dir string, name string) string {
 	t.Helper()
 	fakeCodex := filepath.Join(dir, name)
-	if err := os.WriteFile(fakeCodex, []byte(
+	writeExecutable(t, fakeCodex, fakeCodexEchoLoopScript(
 		"#!/bin/sh\n"+
 			"printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"printf 'Fake Codex dashboard ready\\n'\n"+
-			"trap 'exit 0' HUP INT TERM\n"+
-			"while IFS= read -r line; do\n"+
-			"  printf '\\033]2;Fake Codex Working\\007'\n"+
-			"  printf 'echo:%s\\n' \"$line\"\n"+
-			"  printf '\\033]2;Fake Codex Ready\\007'\n"+
-			"done\n"+
-			"while :; do sleep 1; done\n",
-	), 0o700); err != nil {
-		t.Fatal(err)
-	}
+			"printf 'Fake Codex dashboard ready\\n'\n",
+	))
 	return fakeCodex
 }
 
