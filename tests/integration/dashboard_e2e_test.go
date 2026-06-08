@@ -3248,19 +3248,6 @@ func assertPerformanceBudget(t *testing.T, metric string, elapsed time.Duration,
 	}
 }
 
-func waitForCapture(t *testing.T, env []string, pane string, accept func(string) bool) string {
-	t.Helper()
-	var capture string
-	if waitForBool(8*time.Second, func() bool {
-		capture = capturePane(t, env, pane)
-		return accept(capture)
-	}) {
-		return capture
-	}
-	t.Fatalf("timed out waiting for dashboard capture; pane:\n%s\ncapture:\n%s", paneInfo(t, env, pane), capture)
-	return capture
-}
-
 func waitForEscapedCapture(t *testing.T, env []string, pane string, accept func(string) bool) string {
 	t.Helper()
 	var capture string
@@ -3534,21 +3521,6 @@ func taskLineHasLoadingFrame(capture string, title string) bool {
 		}
 		for _, frame := range []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"} {
 			if strings.Contains(line, frame) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func taskLineHasDuration(capture string, title string) bool {
-	for _, line := range strings.Split(capture, "\n") {
-		if !strings.Contains(line, title) {
-			continue
-		}
-		fields := strings.Fields(strings.Trim(line, " │"))
-		for _, field := range fields {
-			if taskDurationToken(field) {
 				return true
 			}
 		}
