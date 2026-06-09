@@ -475,7 +475,7 @@ func taskContextCommand(args []string, stdin *os.File, stdout io.Writer) error {
 	}
 	switch args[0] {
 	case "preview":
-		return taskContextPreviewCommand(args[1:], stdin, stdout)
+		return taskContextFieldCommand("preview", args[1:], stdin, stdout)
 	case "set":
 		return taskContextSet("heading", args[1:], stdin, stdout)
 	case "show":
@@ -483,41 +483,25 @@ func taskContextCommand(args []string, stdin *os.File, stdout io.Writer) error {
 	case "clear":
 		return taskContextClear("heading", args[1:], stdout)
 	case "detail":
-		return taskContextDetailCommand(args[1:], stdin, stdout)
+		return taskContextFieldCommand("detail", args[1:], stdin, stdout)
 	default:
 		return fmt.Errorf("unknown task notes command %q", args[0])
 	}
 }
 
-func taskContextPreviewCommand(args []string, stdin *os.File, stdout io.Writer) error {
+func taskContextFieldCommand(kind string, args []string, stdin *os.File, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("task notes preview requires one of: set, show, clear")
+		return fmt.Errorf("task notes %s requires one of: set, show, clear", kind)
 	}
 	switch args[0] {
 	case "set":
-		return taskContextSet("preview", args[1:], stdin, stdout)
+		return taskContextSet(kind, args[1:], stdin, stdout)
 	case "show":
-		return taskContextShow("preview", args[1:], stdout)
+		return taskContextShow(kind, args[1:], stdout)
 	case "clear":
-		return taskContextClear("preview", args[1:], stdout)
+		return taskContextClear(kind, args[1:], stdout)
 	default:
-		return fmt.Errorf("unknown task notes preview command %q", args[0])
-	}
-}
-
-func taskContextDetailCommand(args []string, stdin *os.File, stdout io.Writer) error {
-	if len(args) == 0 {
-		return errors.New("task notes detail requires one of: set, show, clear")
-	}
-	switch args[0] {
-	case "set":
-		return taskContextSet("detail", args[1:], stdin, stdout)
-	case "show":
-		return taskContextShow("detail", args[1:], stdout)
-	case "clear":
-		return taskContextClear("detail", args[1:], stdout)
-	default:
-		return fmt.Errorf("unknown task notes detail command %q", args[0])
+		return fmt.Errorf("unknown task notes %s command %q", kind, args[0])
 	}
 }
 
