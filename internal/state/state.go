@@ -382,27 +382,11 @@ func ActiveTask(st State) *Task {
 }
 
 func TaskByID(st State, taskID string) *Task {
-	if taskID == "" {
-		return nil
-	}
-	for index := range st.Tasks {
-		if st.Tasks[index].ID == taskID {
-			return &st.Tasks[index]
-		}
-	}
-	return nil
+	return findByID(st.Tasks, taskID, func(task *Task) string { return task.ID })
 }
 
 func WorkspaceByID(st State, workspaceID string) *Workspace {
-	if workspaceID == "" {
-		return nil
-	}
-	for index := range st.Workspaces {
-		if st.Workspaces[index].ID == workspaceID {
-			return &st.Workspaces[index]
-		}
-	}
-	return nil
+	return findByID(st.Workspaces, workspaceID, func(workspace *Workspace) string { return workspace.ID })
 }
 
 func WorkspaceByPath(st State, path string) *Workspace {
@@ -416,15 +400,7 @@ func WorkspaceByPath(st State, path string) *Workspace {
 }
 
 func GroupByID(st State, groupID string) *Group {
-	if groupID == "" {
-		return nil
-	}
-	for index := range st.Groups {
-		if st.Groups[index].ID == groupID {
-			return &st.Groups[index]
-		}
-	}
-	return nil
+	return findByID(st.Groups, groupID, func(group *Group) string { return group.ID })
 }
 
 func ActiveWorkspace(st State) *Workspace {
@@ -1119,30 +1095,34 @@ func tasksForWorkspace(st State, workspaceID string) []Task {
 }
 
 func removeString(values []string, value string) []string {
-	out := values[:0]
-	for _, item := range values {
-		if item != value {
-			out = append(out, item)
-		}
-	}
-	return out
+	return filterInPlace(values, func(item string) bool { return item != value })
 }
 
 func filterGroups(groups []Group, keep func(Group) bool) []Group {
-	out := groups[:0]
-	for _, group := range groups {
-		if keep(group) {
-			out = append(out, group)
-		}
-	}
-	return out
+	return filterInPlace(groups, keep)
 }
 
 func filterWorkspaces(workspaces []Workspace, keep func(Workspace) bool) []Workspace {
-	out := workspaces[:0]
-	for _, workspace := range workspaces {
-		if keep(workspace) {
-			out = append(out, workspace)
+	return filterInPlace(workspaces, keep)
+}
+
+func findByID[T any](items []T, id string, itemID func(*T) string) *T {
+	if id == "" {
+		return nil
+	}
+	for index := range items {
+		if itemID(&items[index]) == id {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
+func filterInPlace[T any](items []T, keep func(T) bool) []T {
+	out := items[:0]
+	for _, item := range items {
+		if keep(item) {
+			out = append(out, item)
 		}
 	}
 	return out
