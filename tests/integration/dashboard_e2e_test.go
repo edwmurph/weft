@@ -1411,16 +1411,10 @@ func TestTaskConsoleMouseWheelScrollsHistoryE2E(t *testing.T) {
 	for range 14 {
 		writeClientInput(t, "\x1b[<64;120;7M")
 	}
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "history line 20") &&
-			!strings.Contains(capture, "history line 80")
-	})
-	for range 16 {
-		writeClientInput(t, "\x1b[<65;120;7M")
+	time.Sleep(250 * time.Millisecond)
+	if capture := clientOutput(); !strings.Contains(capture, "history line 80") || strings.Contains(capture, "history line 20") {
+		t.Fatalf("dashboard preview wheel input should be ignored:\n%s", capture)
 	}
-	waitForOutput(t, clientOutput, func(capture string) bool {
-		return strings.Contains(capture, "history line 80")
-	})
 	assertDashboardNotCorrupt(t, clientOutput(), false)
 }
 

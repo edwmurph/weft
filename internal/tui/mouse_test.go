@@ -661,7 +661,7 @@ func TestTerminalMouseWheelInputEncodesSGRWheel(t *testing.T) {
 	}
 }
 
-func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
+func TestClientMouseWheelIgnoredInTaskPreview(t *testing.T) {
 	model := ClientModel{
 		cfg:    config.DefaultConfig(),
 		width:  140,
@@ -700,25 +700,25 @@ func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 	model = updated.(ClientModel)
 
 	if cmd != nil {
-		t.Fatal("preview mouse wheel scrollback should not forward input to Codex")
+		t.Fatal("preview mouse wheel should not forward input to Codex")
 	}
-	if model.codexScrollOffset != 3 {
-		t.Fatalf("scroll offset = %d, want 3", model.codexScrollOffset)
+	if model.codexScrollOffset != 0 {
+		t.Fatalf("scroll offset = %d, want 0", model.codexScrollOffset)
 	}
 	view := model.View()
-	if !strings.Contains(view, "history line 02") || strings.Contains(view, "history line 10") {
-		t.Fatalf("preview should show older scrollback instead of bottom:\n%s", view)
+	if !strings.Contains(view, "history line 10") || strings.Contains(view, "history line 02") {
+		t.Fatalf("preview should stay at the bottom after wheel input:\n%s", view)
 	}
 	if model.snapshot.State.Focus != state.FocusTasks || !model.snapshot.State.NavOpen {
-		t.Fatalf("preview scroll should keep dashboard focus/nav, got %s/%t", model.snapshot.State.Focus, model.snapshot.State.NavOpen)
+		t.Fatalf("preview wheel should keep dashboard focus/nav, got %s/%t", model.snapshot.State.Focus, model.snapshot.State.NavOpen)
 	}
 }
 
-func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
+func TestClientMouseIgnoresNewWorkspaceCard(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 	st := testStateWithTask(rt.Workspace)
-	st.Focus = state.FocusWorkspaces
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, cfg)
 	model.width = 120
@@ -733,6 +733,8 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	if !ok {
 		t.Fatal("expected new workspace card hit area")
 	}
+	originalFocus := model.snapshot.State.Focus
+	originalWorkspace := model.snapshot.State.SelectedWorkspaceID
 
 	updated, cmd := model.handleMouse(tea.MouseMsg{
 		X:      area.x + 1,
@@ -742,16 +744,57 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	})
 	model = updated.(ClientModel)
 
-	if cmd == nil {
-		t.Fatal("clicking the new workspace card should focus the Workspaces pane")
+	if cmd != nil {
+		t.Fatal("clicking the new workspace card should not call the supervisor")
 	}
-	if !model.newWorkspaceCardSelected || model.snapshot.State.Focus != state.FocusWorkspaces {
-		t.Fatalf("new workspace card should be selected, selected=%t focus=%s", model.newWorkspaceCardSelected, model.snapshot.State.Focus)
+	if model.newWorkspaceCardSelected || model.snapshot.State.Focus != originalFocus || model.snapshot.State.SelectedWorkspaceID != originalWorkspace {
+		t.Fatalf("click should leave dashboard selection unchanged, selected=%t focus=%s workspace=%q", model.newWorkspaceCardSelected, model.snapshot.State.Focus, model.snapshot.State.SelectedWorkspaceID)
 	}
-	renderState := model.dashboardState()
-	if renderState.SelectedWorkspaceID != "" {
-		t.Fatalf("new workspace card render state should clear selected workspace, got %q", renderState.SelectedWorkspaceID)
+	updated, cmd = model.handleMouse(tea.MouseMsg{
+		X:      area.x + 1,
+		Y:      area.y + 1,
+		Button: tea.MouseButtonNone,
+		Action: tea.MouseActionMotion,
+	})
+	model = updated.(ClientModel)
+	if cmd != nil {
+		t.Fatal("moving over the new workspace card should not call the supervisor")
 	}
+	if model.newWorkspaceCardSelected || model.snapshot.State.Focus != originalFocus || model.snapshot.State.SelectedWorkspaceID != originalWorkspace {
+		t.Fatalf("motion should leave dashboard selection unchanged, selected=%t focus=%s workspace=%q", model.newWorkspaceCardSelected, model.snapshot.State.Focus, model.snapshot.State.SelectedWorkspaceID)
+	}
+	got := ansi.Strip(model.View())
+	if !strings.Contains(got, "alpha") || strings.Contains(got, "No workspace selected") {
+		t.Fatalf("mouse input should not empty the Tasks pane or preview:\n%s", got)
+	}
+}
+
+func TestClientKeyboardNewWorkspaceCardEnterOpensPrompt(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	st := testStateWithWorkspace(t, rt.Workspace)
+	st.Focus = state.FocusWorkspaces
+	st.NavOpen = true
+	model := NewClientModel(rt, cfg)
+	model.width = 120
+	model.height = 16
+	model.snapshot = ipc.Snapshot{
+		State:        st,
+		LiveTitle:    "Codex",
+		CodexContent: "No task open.",
+		NavWidth:     workspaceNavFrameWidth(st, model.width),
+	}
+
+	updated, cmd := model.handleNavKey(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("down from the last workspace should select the local new workspace card")
+	}
+	if !model.newWorkspaceCardSelected {
+		t.Fatal("down from the last workspace should select the new workspace card")
+	}
+
 	got := ansi.Strip(model.View())
 	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "No task selected") || strings.Contains(got, "alpha") || strings.Contains(got, "last task output") {
 		t.Fatalf("new workspace card selection should empty the Tasks pane and preview:\n%s", got)
@@ -788,70 +831,11 @@ func TestClientMouseSelectsNewWorkspaceCardAndEnterOpensPrompt(t *testing.T) {
 	}
 }
 
-func TestClientHoverSelectsNewWorkspaceCard(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	st := testStateWithTask(rt.Workspace)
-	st.Focus = state.FocusTasks
-	st.NavOpen = true
-	model := NewClientModel(rt, cfg)
-	model.width = 120
-	model.height = 16
-	model.snapshot = ipc.Snapshot{
-		State:        st,
-		LiveTitle:    "alpha",
-		CodexContent: "last task output",
-		NavWidth:     workspaceNavFrameWidth(st, model.width),
-	}
-	area, ok := model.newWorkspaceCardArea()
-	if !ok {
-		t.Fatal("expected new workspace card hit area")
-	}
-
-	updated, cmd := model.handleMouse(tea.MouseMsg{
-		X:      area.x + 1,
-		Y:      area.y + 1,
-		Button: tea.MouseButtonNone,
-		Action: tea.MouseActionMotion,
-	})
-	model = updated.(ClientModel)
-
-	if cmd == nil {
-		t.Fatal("hovering the new workspace card should focus the Workspaces pane")
-	}
-	if !model.newWorkspaceCardSelected || model.snapshot.State.Focus != state.FocusWorkspaces {
-		t.Fatalf("hover should select the new workspace card, selected=%t focus=%s", model.newWorkspaceCardSelected, model.snapshot.State.Focus)
-	}
-	got := ansi.Strip(model.View())
-	if !strings.Contains(got, "No workspace selected") || !strings.Contains(got, "No task selected") || strings.Contains(got, "alpha") || strings.Contains(got, "last task output") {
-		t.Fatalf("hovering the new workspace card should empty the Tasks pane and preview:\n%s", got)
-	}
-
-	updated, cmd = model.handleMouse(tea.MouseMsg{
-		X:      area.x,
-		Y:      area.y + area.height + 1,
-		Button: tea.MouseButtonNone,
-		Action: tea.MouseActionMotion,
-	})
-	model = updated.(ClientModel)
-
-	if cmd != nil {
-		t.Fatal("leaving the new workspace card should not call the supervisor")
-	}
-	if model.newWorkspaceCardSelected {
-		t.Fatal("leaving the new workspace card should restore the real workspace selection")
-	}
-	got = ansi.Strip(model.View())
-	if !strings.Contains(got, "alpha") || strings.Contains(got, "No workspace selected") {
-		t.Fatalf("leaving hover should restore the real workspace Tasks pane:\n%s", got)
-	}
-}
-
-func TestClientDownFromLastWorkspaceSelectsNewWorkspaceCard(t *testing.T) {
+func TestClientMouseIgnoresNewTaskRow(t *testing.T) {
 	rt := testRuntime(t)
 	cfg := config.DefaultConfig()
 	st := testStateWithWorkspace(t, rt.Workspace)
-	st.Focus = state.FocusWorkspaces
+	st.Focus = state.FocusTasks
 	st.NavOpen = true
 	model := NewClientModel(rt, cfg)
 	model.width = 120
@@ -859,33 +843,6 @@ func TestClientDownFromLastWorkspaceSelectsNewWorkspaceCard(t *testing.T) {
 	model.snapshot = ipc.Snapshot{
 		State:        st,
 		LiveTitle:    "Codex",
-		CodexContent: "No task open.",
-		NavWidth:     workspaceNavFrameWidth(st, model.width),
-	}
-
-	updated, cmd := model.handleNavKey(tea.KeyMsg{Type: tea.KeyDown})
-	model = updated.(ClientModel)
-
-	if cmd != nil {
-		t.Fatal("down from the last workspace should select the local new workspace card")
-	}
-	if !model.newWorkspaceCardSelected {
-		t.Fatal("down from the last workspace should select the new workspace card")
-	}
-}
-
-func TestClientHoverSelectsNewTaskRowAndEnterOpensMenu(t *testing.T) {
-	rt := testRuntime(t)
-	cfg := config.DefaultConfig()
-	st := testStateWithWorkspace(t, rt.Workspace)
-	st.Focus = state.FocusTasks
-	st.NavOpen = true
-	model := NewClientModel(rt, cfg)
-	model.width = 120
-	model.height = 16
-	model.snapshot = ipc.Snapshot{
-		State:        st,
-		LiveTitle:    "Task",
 		CodexContent: "No task open.",
 		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
@@ -902,18 +859,48 @@ func TestClientHoverSelectsNewTaskRowAndEnterOpensMenu(t *testing.T) {
 	})
 	model = updated.(ClientModel)
 
-	if cmd == nil {
-		t.Fatal("hovering the new task row should select it through the supervisor")
+	if cmd != nil {
+		t.Fatal("moving over the new task row should not call the supervisor")
 	}
-	if !model.newTaskRowSelected || model.snapshot.State.Focus != state.FocusTasks || model.snapshot.GroupCursor != 0 {
-		t.Fatalf("new task row should be selected, selected=%t focus=%s cursor=%d", model.newTaskRowSelected, model.snapshot.State.Focus, model.snapshot.GroupCursor)
+	if model.newTaskRowSelected || model.snapshot.State.Focus != state.FocusTasks || model.snapshot.GroupCursor != 0 {
+		t.Fatalf("motion should leave new task row state unchanged, selected=%t focus=%s cursor=%d", model.newTaskRowSelected, model.snapshot.State.Focus, model.snapshot.GroupCursor)
+	}
+	updated, cmd = model.handleMouse(tea.MouseMsg{
+		X:      area.x + 1,
+		Y:      area.y,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+	if cmd != nil {
+		t.Fatal("clicking the new task row should not call the supervisor")
+	}
+	if model.newTaskRowSelected || model.snapshot.State.Focus != state.FocusTasks || model.snapshot.GroupCursor != 0 {
+		t.Fatalf("click should leave new task row state unchanged, selected=%t focus=%s cursor=%d", model.newTaskRowSelected, model.snapshot.State.Focus, model.snapshot.GroupCursor)
+	}
+}
+
+func TestClientKeyboardNewTaskRowEnterOpensMenu(t *testing.T) {
+	rt := testRuntime(t)
+	cfg := config.DefaultConfig()
+	st := testStateWithWorkspace(t, rt.Workspace)
+	st.Focus = state.FocusTasks
+	st.NavOpen = true
+	model := NewClientModel(rt, cfg)
+	model.width = 120
+	model.height = 16
+	model.snapshot = ipc.Snapshot{
+		State:        st,
+		LiveTitle:    "Task",
+		CodexContent: "No task open.",
+		NavWidth:     workspaceNavFrameWidth(st, model.width),
 	}
 	got := ansi.Strip(model.View())
 	if !strings.Contains(got, "+ New task") || !strings.Contains(got, "Press n to create") {
 		t.Fatalf("new task row should be visible and actionable:\n%s", got)
 	}
 
-	updated, cmd = model.handleNavKey(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := model.handleNavKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(ClientModel)
 
 	if cmd != nil {

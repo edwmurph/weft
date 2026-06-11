@@ -54,15 +54,6 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.mode != modeNormal {
 		return m, nil
 	}
-	if next, cmd, handled := m.handleWorkspaceMouse(event); handled {
-		if cmd != nil || next.newWorkspaceCardSelected || event.Action == tea.MouseActionPress {
-			return next, cmd
-		}
-		m = next
-	}
-	if next, cmd, handled := m.handleTaskMouse(event); handled {
-		return next, cmd
-	}
 	active := state.ActiveTask(m.snapshot.State)
 	if active == nil {
 		m.mouseSelection = consoleSelection{}
@@ -70,6 +61,9 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch event.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown, tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
+		if m.snapshot.State.Focus != state.FocusConsole {
+			return m, nil
+		}
 		frameArea, ok := m.codexFrameArea()
 		if !ok {
 			return m, nil
@@ -228,62 +222,8 @@ func (m ClientModel) taskPanelContextArea() (consoleArea, bool) {
 	}, true
 }
 
-func (m ClientModel) handleWorkspaceMouse(event tea.MouseEvent) (ClientModel, tea.Cmd, bool) {
-	if event.Action != tea.MouseActionPress && event.Action != tea.MouseActionMotion {
-		return m, nil, false
-	}
-	area, ok := m.newWorkspaceCardArea()
-	if ok && mouseInConsoleArea(event, area) {
-		alreadyFocused := m.snapshot.State.Focus == state.FocusWorkspaces
-		m.mouseSelection = consoleSelection{}
-		m.newWorkspaceCardSelected = true
-		m.snapshot.State.Focus = state.FocusWorkspaces
-		m.snapshot.State.NavOpen = true
-		if event.Action == tea.MouseActionPress || !alreadyFocused {
-			return m, m.request("focus", map[string]string{"target": "workspaces"}), true
-		}
-		return m, nil, true
-	}
-	if event.Action == tea.MouseActionMotion && m.newWorkspaceCardSelected {
-		m.newWorkspaceCardSelected = false
-		return m, nil, true
-	}
-	if event.Action == tea.MouseActionPress {
-		m.newWorkspaceCardSelected = false
-	}
-	return m, nil, false
-}
-
 func (m ClientModel) newWorkspaceCardArea() (consoleArea, bool) {
 	return newWorkspaceTemplateCardAreaFor(m.cfg, m.dashboardState(), m.width, m.height, m.snapshot.NavWidth, m.workspaceRenderOptions())
-}
-
-func (m ClientModel) handleTaskMouse(event tea.MouseEvent) (ClientModel, tea.Cmd, bool) {
-	if event.Action != tea.MouseActionPress && event.Action != tea.MouseActionMotion {
-		return m, nil, false
-	}
-	area, ok := m.newTaskRowArea()
-	if ok && mouseInConsoleArea(event, area) {
-		alreadySelected := m.newTaskRowSelected && m.snapshot.State.Focus == state.FocusTasks
-		m.mouseSelection = consoleSelection{}
-		m.newWorkspaceCardSelected = false
-		m.newTaskRowSelected = true
-		m.snapshot.State.Focus = state.FocusTasks
-		m.snapshot.State.NavOpen = true
-		m.snapshot.GroupCursor = 0
-		if event.Action == tea.MouseActionPress || !alreadySelected {
-			return m, m.request("select_new_task", nil), true
-		}
-		return m, nil, true
-	}
-	if event.Action == tea.MouseActionMotion && m.newTaskRowSelected {
-		m.newTaskRowSelected = false
-		return m, nil, true
-	}
-	if event.Action == tea.MouseActionPress {
-		m.newTaskRowSelected = false
-	}
-	return m, nil, false
 }
 
 func (m ClientModel) shouldForwardConsoleWheelToTask(active state.Task) bool {
