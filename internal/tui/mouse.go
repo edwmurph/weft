@@ -61,9 +61,6 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch event.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown, tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
-		if m.snapshot.State.Focus != state.FocusConsole {
-			return m, nil
-		}
 		frameArea, ok := m.codexFrameArea()
 		if !ok {
 			return m, nil
@@ -71,10 +68,16 @@ func (m ClientModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if !mouseInConsoleArea(event, frameArea) {
 			return m, nil
 		}
-		if m.shouldForwardConsoleWheelToTask(*active) {
-			if encoded, ok := terminalMouseWheelInput(event); ok {
-				return m, m.request("task_input", map[string]string{"encoded": encoded, "input": codexInputRaw})
+		if m.snapshot.State.Focus == state.FocusConsole {
+			if m.shouldForwardConsoleWheelToTask(*active) {
+				if encoded, ok := terminalMouseWheelInput(event); ok {
+					return m, m.request("task_input", map[string]string{"encoded": encoded, "input": codexInputRaw})
+				}
 			}
+			return m.scrollCodexHistory(event), nil
+		}
+		if !m.codexPreviewMode() || !m.canSelectCodexContent() {
+			return m, nil
 		}
 		return m.scrollCodexHistory(event), nil
 	}

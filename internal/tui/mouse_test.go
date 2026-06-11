@@ -661,7 +661,7 @@ func TestTerminalMouseWheelInputEncodesSGRWheel(t *testing.T) {
 	}
 }
 
-func TestClientMouseWheelIgnoredInTaskPreview(t *testing.T) {
+func TestClientMouseWheelScrollsTaskPreviewScrollback(t *testing.T) {
 	model := ClientModel{
 		cfg:    config.DefaultConfig(),
 		width:  140,
@@ -702,15 +702,74 @@ func TestClientMouseWheelIgnoredInTaskPreview(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("preview mouse wheel should not forward input to Codex")
 	}
-	if model.codexScrollOffset != 0 {
-		t.Fatalf("scroll offset = %d, want 0", model.codexScrollOffset)
+	if model.codexScrollOffset != 3 {
+		t.Fatalf("scroll offset = %d, want 3", model.codexScrollOffset)
 	}
 	view := model.View()
-	if !strings.Contains(view, "history line 10") || strings.Contains(view, "history line 02") {
-		t.Fatalf("preview should stay at the bottom after wheel input:\n%s", view)
+	if !strings.Contains(view, "history line 02") || strings.Contains(view, "history line 10") {
+		t.Fatalf("preview should show older scrollback after wheel input:\n%s", view)
 	}
 	if model.snapshot.State.Focus != state.FocusTasks || !model.snapshot.State.NavOpen {
 		t.Fatalf("preview wheel should keep dashboard focus/nav, got %s/%t", model.snapshot.State.Focus, model.snapshot.State.NavOpen)
+	}
+
+	updated, _ = model.handleMouse(tea.MouseMsg{
+		X:      area.x,
+		Y:      area.y,
+		Button: tea.MouseButtonWheelDown,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+	if model.codexScrollOffset != 0 {
+		t.Fatalf("scroll offset after preview wheel down = %d, want 0", model.codexScrollOffset)
+	}
+}
+
+func TestClientMouseWheelIgnoredWhenTaskPreviewHasNoSelectedTask(t *testing.T) {
+	model := ClientModel{
+		cfg:    config.DefaultConfig(),
+		width:  140,
+		height: 8,
+		snapshot: ipc.Snapshot{
+			State: state.State{
+				Focus:               state.FocusWorkspaces,
+				NavOpen:             true,
+				ActiveTaskID:        "a",
+				SelectedTaskID:      "",
+				SelectedWorkspaceID: "w",
+				Workspaces:          []state.Workspace{{ID: "w", Path: "/tmp/project"}},
+				Tasks:               []state.Task{{ID: "a", WorkspaceID: "w", TypeID: config.DefaultTaskTypeShell}},
+			},
+			NavWidth:             minTwoPaneNavWidth,
+			LiveTitle:            "Codex",
+			CodexContent:         strings.Join([]string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
+			CodexPlainLines:      []string{"history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+			CodexScrollback:      strings.Join([]string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"}, "\n"),
+			CodexScrollbackLines: []string{"history line 01", "history line 02", "history line 03", "history line 04", "history line 05", "history line 06", "history line 07", "history line 08", "history line 09", "history line 10"},
+			GroupCursor:          1,
+		},
+	}
+	area, ok := model.codexFrameArea()
+	if !ok {
+		t.Fatal("expected task preview frame area")
+	}
+
+	updated, cmd := model.handleMouse(tea.MouseMsg{
+		X:      area.x,
+		Y:      area.y,
+		Button: tea.MouseButtonWheelUp,
+		Action: tea.MouseActionPress,
+	})
+	model = updated.(ClientModel)
+
+	if cmd != nil {
+		t.Fatal("preview mouse wheel without selected task should not forward input to Codex")
+	}
+	if model.codexScrollOffset != 0 {
+		t.Fatalf("scroll offset = %d, want 0", model.codexScrollOffset)
+	}
+	if view := model.View(); !strings.Contains(view, "No task selected") || strings.Contains(view, "history line 02") {
+		t.Fatalf("non-task preview wheel should keep the empty preview state:\n%s", view)
 	}
 }
 
