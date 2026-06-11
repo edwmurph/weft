@@ -1,6 +1,6 @@
 package version
 
-var Version = "0.21.1"
+var Version = "0.21.2"
 
 var BuildChannel = "source"
 
