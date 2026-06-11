@@ -76,31 +76,9 @@ func TestFreshDashboardNewTaskFallsBackWhenShellMissing(t *testing.T) {
 		<-clientDone
 	})
 
-	clientScreen := tui.NewTerminalScreen(100, 32)
-	var clientMu sync.Mutex
-	var clientRaw bytes.Buffer
-	go func() {
-		buf := make([]byte, 8192)
-		for {
-			n, err := clientPTY.Read(buf)
-			if n > 0 {
-				clientMu.Lock()
-				clientScreen.Write(string(buf[:n]))
-				clientRaw.Write(buf[:n])
-				clientMu.Unlock()
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	clientOutput := func() string {
-		clientMu.Lock()
-		defer clientMu.Unlock()
-		return clientScreen.String()
-	}
+	clientScreen, clientRaw, clientMu, clientOutput := observeDirectClientPTY(clientPTY, 100, 32)
 	pane := "direct-client-missing-shell"
-	registerDirectClient(clientCmd, clientPTY, clientScreen, &clientRaw, &clientMu, clientDone)
+	registerDirectClient(clientCmd, clientPTY, clientScreen, clientRaw, clientMu, clientDone)
 	waitFor(t, "supervisor socket", 8*time.Second, func() bool {
 		_, err := os.Stat(filepath.Join(runtimeDir, "weft.sock"))
 		return err == nil
@@ -1763,30 +1741,8 @@ func TestAttachedDashboardKeyboardAndRenderingE2E(t *testing.T) {
 		}
 		<-clientDone
 	})
-	clientScreen := tui.NewTerminalScreen(160, 38)
-	var clientMu sync.Mutex
-	var clientRaw bytes.Buffer
-	go func() {
-		buf := make([]byte, 8192)
-		for {
-			n, err := clientPTY.Read(buf)
-			if n > 0 {
-				clientMu.Lock()
-				clientScreen.Write(string(buf[:n]))
-				clientRaw.Write(buf[:n])
-				clientMu.Unlock()
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	clientOutput := func() string {
-		clientMu.Lock()
-		defer clientMu.Unlock()
-		return clientScreen.String()
-	}
-	registerDirectClient(clientCmd, clientPTY, clientScreen, &clientRaw, &clientMu, clientDone)
+	clientScreen, clientRaw, clientMu, clientOutput := observeDirectClientPTY(clientPTY, 160, 38)
+	registerDirectClient(clientCmd, clientPTY, clientScreen, clientRaw, clientMu, clientDone)
 	if panes := directLines(t, env, "list-panes", "-t", pane, "-F", "#{pane_id}"); len(panes) != 1 {
 		t.Fatalf("pane count = %d (%v), want 1", len(panes), panes)
 	}
@@ -3700,10 +3656,16 @@ func startDirectDashboardClient(t *testing.T, env []string, bin string, workspac
 		}
 		<-clientDone
 	})
+	clientScreen, clientRaw, clientMu, output := observeDirectClientPTY(clientPTY, cols, rows)
+	registerDirectClient(clientCmd, clientPTY, clientScreen, clientRaw, clientMu, clientDone)
+	_ = pane
+	return output, clientDone
+}
 
+func observeDirectClientPTY(clientPTY *os.File, cols int, rows int) (*tui.TerminalScreen, *bytes.Buffer, *sync.Mutex, func() string) {
 	clientScreen := tui.NewTerminalScreen(cols, rows)
-	var clientMu sync.Mutex
-	var clientRaw bytes.Buffer
+	clientMu := &sync.Mutex{}
+	clientRaw := &bytes.Buffer{}
 	go func() {
 		buf := make([]byte, 8192)
 		for {
@@ -3719,14 +3681,12 @@ func startDirectDashboardClient(t *testing.T, env []string, bin string, workspac
 			}
 		}
 	}()
-	registerDirectClient(clientCmd, clientPTY, clientScreen, &clientRaw, &clientMu, clientDone)
 	output := func() string {
 		clientMu.Lock()
 		defer clientMu.Unlock()
 		return clientScreen.String()
 	}
-	_ = pane
-	return output, clientDone
+	return clientScreen, clientRaw, clientMu, output
 }
 
 func writeVisibleFakeCodex(t *testing.T, dir string, name string) string {
