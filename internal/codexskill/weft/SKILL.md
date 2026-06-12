@@ -22,7 +22,9 @@ Use this skill when running as Codex inside a Weft task or when diagnosing a loc
 - For another Codex task, pass `--task <id>` to `set`, `show`, or `clear` in any notes command family.
 - Follow any user, repo, or installed-skill instructions that define how task notes should be used.
 - If nothing else says otherwise, use task notes for handy links to running or slow external work: GitHub Actions workflow runs, pull request reviews, issue threads, deployment logs, long-running job dashboards, or any URL the user may need to reopen later.
-- Keep preview shortforms very short, heading medforms concise and durable, and longforms detailed enough for handoff. Prefer the best current link plus status or next check. Avoid secrets.
+- Keep preview shortforms very short, heading medforms concise and durable, and longforms detailed enough for handoff. Banner-facing notes should use a minimal phrase for the current work, such as `Checking CI`, `Applying fixes`, or `Watching release`. Prefer the best current link plus status or next check. Avoid secrets.
+- Make banner-facing notes visual when it helps scanning progress, for example `Applying fixes [###---] 3/6` or `CI [######--] 75%`. Use progress meters only for work expected to take more than a couple minutes or with a clear multi-step path.
+- Update banner-facing notes only when there is a meaningful state or progress change. Avoid rewriting notes for routine tool calls, tiny steps, or cosmetic timestamp churn.
 
 ## Weft Diagnostics
 
